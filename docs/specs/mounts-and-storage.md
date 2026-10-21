@@ -40,9 +40,14 @@ and *Open* starts there; putting one on the share is the user's choice, and noth
   `folder="<label>/<relative path>"`, [[plugins#browsers]]), a machine-independent **location**, and a **mappings**
   table (below);
 - which plugins ([[plugins#overview]]) to load;
-- the default **creation directory** for new grouping-entity documents (authors, cross-cutting collections, public
-  learning paths — [[plugins#grouping-entities]]); *discovery* of existing entity documents needs no declared
-  locations — it is type-based, so the scanner finds them wherever they sit in any scanned root.
+- a **home** for each kind of grouping-entity document — creators, collections, learning paths
+  ([[plugins#grouping-entities]]) — as `homes: {"creator": {"root": <root id>, "path": <relative path>}, "collection":
+  …, "learning_path": …}`, each a folder under one of its roots, the three free to be one folder. A new or materialized
+  entity of that kind is created there, and the location editor offers it as a move. It is set from a root's or a
+  folder's context menu in the Root Catalog panel, *Set as Home for Creators / Collections / Learning Paths*, and that
+  row carries the role's glyph; a home whose root is removed, or whose folder is gone, is unset and the panel says so.
+  With no home set, creating an entity asks for one first. *Discovery* of existing entity documents needs no home — it
+  is type-based, so the scanner finds them wherever they sit in any scanned root.
 
 **A root's identity is its location; what differs per machine is its mapping.** The location is the same on every box:
 for a share, the server and share path (`//nas/data/Tutorials`), read from this machine's mount table when the root is

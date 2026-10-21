@@ -523,7 +523,8 @@ catalog is opened. The word *collection* is not used for it: that is a resource 
 **Neither dock has a toolbar.** The Root Catalog dock's title bar holds *Refresh* and the Browsers dock's *New Table
 Browser*; *Scan*, *Add Root* and *Remove Root* are entries of `Root Catalog` and *Rename Browser* of `Browsers`, the
 rare actions being the menu's ([[appendices.code-conventions#command-surfaces]]). **One object owns the open file
-and its cache** — the catalog — and both docks read it and hear from it when it changed; neither holds the file.
+and its cache** — the catalog — and both docks read it and hear from it when it changed; neither holds the file. A
+third, the **Tag Browser**, lists the values its records share ([[plugins#tag-browser]]).
 
 - **The Root Catalog dock** (#378) — a column view: the first column is the `.rehuco`'s roots by label
   ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
@@ -649,6 +650,9 @@ and its cache** — the catalog — and both docks read it and hear from it when
     **replaces** that field's token and keeps the rest of the line. The current browser is the focused one, else the
     one focused last, and a link with no browser open opens a default one to carry it. Roots and the browsers are
     otherwise independent.
+  - **A saved search** narrows a browser beside its line: a dropdown under the filter line names one, and the rows are
+    those matching both ([[plugins#saved-searches]]). The Tag Browser sets the line as a link does
+    ([[plugins#tag-browser]]).
   - **New Table Browser** offers presets on its menu (#400) — a click on it is *Default* (the common columns); then
     one *<Type> Columns* entry per type that contributes columns (`catalog_type_fields`), today *Tutorial Columns* and
     *Reference Images Columns*: that type's columns shown, every other type's hidden, a `type:` token on the line, and
@@ -707,7 +711,7 @@ and its cache** — the catalog — and both docks read it and hear from it when
 `File` and `Browsers` are twins — the verbs that open or create, the verbs on the open set, then the open list,
 A–Z, with the focused one checked; `File` ends with Settings and Quit. `Root Catalog` is the same shape without a list,
 there being one catalog: New, Open, Open Recent, then Scan, Add Root and Remove Root, which are the dock's own
-actions and so are enabled as the dock enables them. `Browsers` leads with *New Table Browser*; the image
+actions and so are enabled as the dock enables them. `Browsers` leads with *New Table Browser* and *Save Search…* ([[plugins#saved-searches]]); the image
 browser (#403) adds its own entry and kind icon when it lands. `View` is what is visible — themes and the dock
 toggles — and `Tools` holds the catalog-wide maintenance operations.
 
@@ -732,11 +736,15 @@ filter://publishers?name=Example%20Publisher
   harmless); the value always rides the `name` query parameter, percent-encoded, so any character a name can contain
   survives — including `/` and `,`, which a path- or delimiter-based encoding would trip over. The value is never
   encoded into the path or a bare query string: one `name=` parser serves every field.
-- **Initial field set:** `authors`, `tags`, `publishers` — the three values [[plugins#browsers]] linkifies.
+- **Field set:** `authors`, `tags`, `publishers` — the three values [[plugins#browsers]] linkifies — and
+  `collections`, `learning_paths`, which the Tag Browser's rows set ([[plugins#tag-browser]]) once the cache indexes
+  them ([[data-model#cache-schema]]).
   `advertised_tags` and `extra_tags` share the single `tags` domain: clicking a tag filters on the tag regardless of
   which list it came from; the two-list split is an editing-side concept, not a filtering one.
-- **Authors first** (#398). Each author name in the viewer is a `filter://` anchor, beside the external `http(s)` link
-  an author entry's URL adds ([[field-schema#authors]]); tags and publishers linkify later. Link handling never
+- **Authors first** (#398), **then tags and publishers.** Each author name in the viewer is a `filter://` anchor, beside the external `http(s)` link
+  an author entry's URL adds ([[field-schema#authors]]). Every tag, of either list, and the viewer's Publisher row
+  are linked the same way, and a **Tags** or **Publisher** cell's context menu offers what an Authors cell's does
+  (#460). Link handling never
   enables the label's own external-link opening: one handler dispatches on scheme — `filter://` internally,
   validated `http(s)` to the system browser — so a `filter://` link can never leak to the OS, and no other scheme is
   ever followed. A clicked link travels up to the window like a field's status message, and the window brings the
@@ -744,6 +752,118 @@ filter://publishers?name=Example%20Publisher
 - **A link is a filter-line token.** Dispatching `filter://authors?name=Foo%20Bar` sets `authors:"Foo Bar"` on the
   current browser's filter line in the Browsers dock ([[plugins#rehuco-dock]]) — one filter grammar, reached by
   typing or by clicking.
+
+### §13.5.3 The Tag Browser dock
+
+[[[plugins#tag-browser]]]
+
+A third top-level dock beside Root Catalog and Browsers, the **Tag Browser**, lists the named things the open catalog
+holds — the values its resources share, rather than the resources — with its own `View` toggle, revealed when a
+catalog is opened. It is what TutCatalog4's tree dock was (`history/tutcatalog.md`): who and what is in here, how much
+of each, and the place to describe, filter on and rename them.
+
+- **The tree.** Six branches, in this order, each grouped by first letter:
+
+  ```text
+  Authors (123)
+    A (12)
+      Abcd (5)
+      …
+    C (2)
+      Cdef (1)
+      Cxxx (7)
+    123 (4)
+  Publishers (…)
+  Tags (…)
+  Collections (…)
+  Learning Paths (…)
+  Searches (…)
+  ```
+
+  A value sits under the **first letter of its folded name** (`fold`, so *Émile* is under `E`); one starting with
+  anything but a letter — a digit, a symbol — is under a single **`123`** group, last. Groups and values sort by folded
+  name. A branch or group row counts its **children** — `Authors (123)` is 123 authors, `A (12)` twelve of them — and
+  its tooltip adds the resources they cover (`12 authors, 345 resources`); a value row counts the **resources** that
+  carry it. An empty group is not shown; an empty branch is, at `(0)`.
+- **Where the values come from.** Authors, tags and publishers are the cache's value tables, collections and learning
+  paths its membership titles ([[data-model#cache-schema]]). **A value is one per folded name**, as the cache keys it,
+  so `Foo` and `foo` are one row, shown in its most common spelling, and its pane lists every spelling. Learning paths
+  are the current identity's own and the reserved `public` scope's, as the viewer shows them (#189) — never another
+  user's private path. A **search** row counts the rows its filter matches. Counts come from the browsers' in-memory
+  snapshot ([[plugins#rehuco-dock]]), never from a query of their own, and follow it as rows change; a search's count
+  is worked out off the GUI thread.
+- **Genuine and discovered.** An author, publisher, collection or learning path with a document of its own
+  ([[plugins#grouping-entities]]) carries its type's icon; one known only from the resources naming it carries none. A
+  document no resource names yet is listed at `(0)`. A creator with both roles is listed under Authors and Publishers.
+- **Selecting shows; the default action filters.** Selecting a row shows it in a **details pane** under the tree:
+  - an author, publisher, collection or learning path: **Name**, **Description** (the Markdown editor the Description
+    dock uses) and **URLs**, one per row, a row that is not an http(s) URL flagged; for a creator, its **Author** and
+    **Publisher** roles;
+  - a tag: **Name** alone — a tag has no description and no URLs;
+  - a search: **Name** and **Filter** — a search's description *is* its filter, and it has no URLs.
+
+  Under the editors, a button for every entry of the row's context menu, the default in bold: **Filter by** (the
+  default), **Open document** for a genuine entity, **Create document** for a discovered one, **Delete** for a search.
+  A branch or group row shows its counts and nothing to edit.
+- **Filtering replaces; Ctrl adds.** The default action — a double-click, Enter, the bold button or the menu entry —
+  sets the row on the **current browser** in the Browsers dock as a click-to-filter link does
+  ([[plugins#filter-urls]]) and brings that dock forward, except that the line becomes `<field>:"<value>"` **alone**,
+  replacing whatever it held. With **Ctrl** (Ctrl+double-click, Ctrl+Enter) the token is **added** to the line instead
+  and the rest kept. A search row picks itself in the browser's saved-search dropdown ([[plugins#saved-searches]]) and
+  empties the line, which Ctrl keeps. **Filter on selection**, a checkbox on the Root Catalog settings page, off by
+  default, makes every selection change the default action, so walking the tree with the arrow keys walks the browser
+  along; Ctrl held while moving adds instead.
+- **Editing writes the document.** An edit of a genuine entity's description, URLs or roles is saved to its document
+  as an edit in its own Main Editor would be, and a document of it open elsewhere follows as any open document follows
+  its file. A discovered entity has nothing to write to: its editors are enabled, and the first edit asks to **create**
+  its document in its kind's home ([[plugins#grouping-entities]]) — creating one is deliberate, never a side effect of
+  browsing — with the name, the edit, and for a creator the role of the branch it was created from, filled in.
+- **Renaming** is editing **Name** and committing it (Enter, or leaving the field), after a confirmation saying how
+  many records change. Every record naming the old value is rewritten ([[sync#value-rename]]), open documents
+  included, without touching their unsaved edits. Renaming onto a name that already exists:
+  - an author, publisher, collection or learning path **merges** into the existing one ([[plugins#entity-merge]]);
+  - a tag **disappears** into the existing one: every resource that carried the old tag carries the other, once;
+  - a search is **refused** — two filters do not merge.
+
+  A rename to the same name in another case or with other diacritics is a rename, not a merge: it corrects the
+  spelling everywhere.
+- **New Author**, **New Publisher**, **New Collection** and **New Learning Path** are on the branch rows' context menus:
+  each asks for a name and creates the document in its kind's home, opened in Documents.
+- **A filter line above the tree** narrows the values by the shared matcher (every word found, case and diacritics
+  ignored, #475), keeping the branches and groups that still hold one.
+- **No toolbar** ([[appendices.code-conventions#command-surfaces]]): the context menu, the pane's buttons and the
+  `View` toggle are the dock's surfaces.
+
+#### Saved searches
+
+[[[plugins#saved-searches]]]
+
+A **saved search** is a name and a filter line's text. **Save Search…** — beside each table browser's filter line and in
+the `Browsers` menu — asks for a name and keeps the current line. Under every table browser's filter line a dropdown
+names the browser's saved search, `(none)` by default, and the rows shown are those matching **both: `(saved) AND
+(line)`**, so a search can be narrowed by hand without being edited. The grammar ANDs everything today, so this is the
+two texts' tokens together; once OR arrives (#476, #477) it is the two parsed as parenthesized groups, which is why it
+is stated as AND and not as joining the text. Click-to-filter links and the Tag Browser write the line, never the saved
+search. A browser remembers which search it shows, and a clone copies it.
+
+- **Names are unique**, compared folded; a rename onto an existing name is refused. Editing a search's filter in the
+  Tag Browser applies at once to every browser showing it; deleting one sets those browsers to `(none)`.
+- **Where they live is a setting.** A catalog's searches are a file of their own, by default beside the browsers' state
+  in the app's own folder; the Root Catalog settings page's **Saved searches file** points it elsewhere — typically one
+  file on the share that every machine names. The setting is per machine, like the browsers. The file is read again
+  whenever the Tag Browser or a dropdown is shown and before every change is written (read, apply, write); two machines
+  changing it at the same moment means the last write wins, which a list this small and this rarely written affords.
+
+#### Completion from the catalog
+
+[[[plugins#value-completion]]]
+
+The editors that take a catalog's values offer them: the authors, the tags, a source card's publisher, and the
+collections and learning-paths editors. After two typed characters a popup lists the known values containing them,
+case and diacritics ignored, from the snapshot the Tag Browser counts and the names of the entity documents; picking
+one inserts it as the catalog spells it. In a comma-separated line it completes the item under the caret. With no
+catalog open there is nothing to offer and nothing pops up. Completion only suggests: a value the catalog has never seen
+is kept as typed.
 
 ## §13.6 Tutorial plugin
 
@@ -1034,21 +1154,21 @@ since this is a system-integration side effect rather than a view/edit operation
 motivating "custom actions with tracked side effects" as a first-class plugin capability ([[plugins#core-vs-plugin]]),
 not just schema/viewer/editor/web.
 
-## §13.9 Grouping-entity plugins: collection, author, learning path
+## §13.9 Grouping-entity plugins: creator, collection, learning path
 
 [[[plugins#grouping-entities]]]
 
 Three types share one template — **a grouping entity is a metadata-only resource**: `1 entity == 1 .rehu` with its own
-`type`, no content files (the measured sizes are simply omitted), synced, retained, and rebuilt like any resource, with
-its browser/editor contributed by its plugin ([[plugins#browsers]]). All three arrive with the catalog cache (CacheDB's
-`.rehudb` — their browsers are what needs it), and none changes the v1 on-disk membership fields
+`type`, no content files of its own (the measured sizes are simply omitted), synced, retained, and rebuilt like any
+resource. All three arrive with the catalog cache (CacheDB's `.rehudb` — their browser, the Tag Browser
+([[plugins#tag-browser]]), is what needs it), and none changes the v1 on-disk membership fields
 ([[field-schema#sources]]), which are already the reference mechanism this design builds on.
 
 | | referenced by | natural home | own wrinkle |
 | --- | --- | --- | --- |
-| **collection** | member's `collections[]` | members' parent dir *when containment-shaped*, else the configured home | dual placement |
-| **author** | credited name in `authors` ([[field-schema#authors]]) | configured home | alias aggregation |
-| **learning path** | member's `learning_paths[]` | configured home / owner's per-user state | owned per-user, shared by copy into the reserved `public` scope ([[field-schema#learning-path-ownership]]) |
+| **creator** | a credited name in `authors` ([[field-schema#authors]]); a source's `publisher` ([[field-schema#sources]]) | above its own resources, else the creators' home | one party, two roles; alias aggregation |
+| **collection** | member's `collections[]` | members' parent dir *when containment-shaped*, else the collections' home | dual placement |
+| **learning path** | member's `learning_paths[]` | the learning paths' home / owner's per-user state | owned per-user, shared by copy into the reserved `public` scope ([[field-schema#learning-path-ownership]]) |
 
 - **Discovered vs. genuine.** An entity needs no document to exist: the membership entries on resources alone define a
   *discovered* entity — browsable, weightless, derived. A *genuine* entity has its own `.rehu`. The rule for which is
@@ -1076,21 +1196,81 @@ its browser/editor contributed by its plugin ([[plugins#browsers]]). All three a
   on every member — is served by rendering each membership's entity blurb in the member's viewer ("part of *X* — …",
   one section per membership). Nothing needs to pick *the* collection, so the multiple-membership ambiguity that
   killed description *inheritance* never arises.
-- **Author specifics.** The entity's alias spellings and per-store URLs ride its own `sources`-shaped list
-  ([[daz3d-personal-database#authors-urls]]); aggregating credited spellings into one entity uses the
-  duplicate-review verdict flow ([[instances-and-dedup#duplicate-review]]) — propose, human verdict, never re-ask.
-  Resources keep referencing authors by credited name; membership-by-identity (UUIDs on the references) follows the
-  same later trajectory as collections ([[field-schema#deferred-items]]).
+- **What every entity carries.** Its **name** is its primary source's title — a field every resource already has, so
+  the viewer, a browser row and the cache need nothing new; its prose is the core `description`; a portrait, a logo or
+  a cover is a screenshot (`<stem>01.jpg`), as for any resource; and its block holds **`urls`**, a list — a creator's
+  site, store pages and profiles, a collection's series page. An entity is matched to the resources naming it **by
+  folded name** (`fold`, the cache's rule), so a resource crediting *José* names the entity *Jose*.
+- **Creator: one party, two roles.** An author and a publisher are often the same studio, so they are one type,
+  `creator`, with two flags in its block, **`author`** and **`publisher`**, either or both. Its badge names the roles
+  (*Author*, *Publisher*, *Author · Publisher*). One created from the Tag Browser's Authors branch starts as an author,
+  from Publishers as a publisher; one with both is listed under both. Merging an author onto a publisher yields one
+  creator with both roles ([[plugins#entity-merge]]).
+- **Creator specifics.** Its per-store URLs are the `urls` above; alias spellings
+  ([[daz3d-personal-database#authors-urls]]) are later work, and aggregating credited spellings into one entity will use
+  the duplicate-review verdict flow ([[instances-and-dedup#duplicate-review]]) — propose, human verdict, never re-ask.
+  Until then two spellings that fold differently are two creators, and a rename onto the other merges them
+  ([[plugins#entity-merge]]). Resources keep referencing creators by credited name; membership-by-identity (UUIDs on
+  the references) follows the same later trajectory as collections ([[field-schema#deferred-items]]).
 - **Learning-path specifics.** Paths are per-user with a private/public toggle ([[field-schema#per-user-shared]]). A
   *private* path likely stays pure per-user state with **the entity document minted at publication** — privacy by
   non-existence beats privacy by access rule — decided finally when the plugin is built. v1 (single-user, no
   entities) is unaffected either way.
-- **Placement and discovery.** The directory tree is *never* the source of membership — a containment-shaped
-  collection's `info.rehu` sitting in its members' parent directory is only that entity's natural home (the scan
-  descends past every record, whatever its type, [[data-model#scan-and-staleness]]). Every other grouping entity lives
-  in the **configured creation directory** declared in `.rehuco` ([[mounts-and-storage#rehuco-scope]]). *Discovery* of
-  existing entity documents needs no declared locations at all — it is type-based: the scanner finds them wherever
-  they sit in any scanned root, so a share arriving with its own authors is just documents in its roots.
+- **Placement is free; each kind has a home.** The directory tree is *never* the source of membership. An entity
+  document may sit **above its members** — a containment-shaped collection's `info.rehu` in the folder holding its
+  tutorials, a creator's `info.rehu` over the folders of its own tutorials and packs — or anywhere else under a scanned
+  root as a standalone `<name>.rehu`; the scan descends past every record, whatever its type
+  ([[data-model#scan-and-staleness]]). Each kind has a **home** the `.rehuco` declares
+  ([[mounts-and-storage#rehuco-scope]]) — creators, collections, learning paths, one folder or three — where a new or
+  materialized entity of that kind is created: a collection that gathers tutorials from many places lives there, and so
+  does almost every learning path. *Discovery* needs no home at all — it is type-based: the scanner finds entity
+  documents wherever they sit in any scanned root, so a share arriving with its own creators is just documents in its
+  roots.
+- **Names, and moving home.** Each kind has a location name template on the Locations settings page, beside the
+  resource types' (#322) — `{name}` for a creator, `{title}` for a collection and a learning path by default — which
+  names a new document and fills the location editor's suggestions. The location editor of an entity document also
+  offers its kind's home; picking it moves the document there, its screenshots with it as in any rename: a rename
+  within a root, the checksum-gated move across roots or filesystems (#339).
+
+### Merging two entities
+
+[[[plugins#entity-merge]]]
+
+Renaming an entity **A** onto the name of an existing **B** of the same kind ([[plugins#tag-browser]]) merges A into B.
+**B survives** — its id is the one references will carry once they carry ids. Either may be discovered:
+
+- **Both discovered:** only the members change — every resource naming A names B instead ([[sync#value-rename]]).
+- **A genuine, B discovered:** A's document is renamed to B's name in place, id kept; nothing moves.
+- **A discovered, B genuine:** only the members change.
+- **Both genuine:** B's document takes A's:
+  - **URLs** — B's, then each of A's that B lacks.
+  - **Description** — B's, then A's under a heading naming A, a rule between: the non-blank parts joined by
+    `\n\n---\n\n# <A's name>\n\n`. A description that is empty or only whitespace is dropped, separator and heading
+    with it, so a lone surviving part is kept verbatim. *Foo* described `Foo 123` and *Bar* described `Bar 456`; Bar
+    renamed onto Foo leaves Foo with:
+
+    ```markdown
+    Foo 123
+
+    ---
+
+    # Bar
+
+    Bar 456
+    ```
+
+  - **Roles** (creators) — the union of both.
+  - **Files** — everything A's stem owns moves beside B (the set a standalone rename moves,
+    [[plugins#toolkit-surfaces]]). A's screenshots take B's next free `<stem>NN` slots in their own order, except one
+    **identical to a screenshot B already has**, byte for byte, which is dropped; any other file keeps its suffix under
+    B's stem. **A's description is rewritten to name the moved images** before it is appended — Markdown, HTML `<img>`
+    and reference-style links alike, as the `.tc` conversion rewrites them. Whatever else the user does not want is
+    removed afterwards in B's Images editor: the merge keeps everything but duplicates.
+  - Then **A's `.rehu`** and its `.checksum` go by the deletion policy (#312: the Recycle Bin where there is one).
+    **Never A's folder** — a containment-shaped collection's `info.rehu` sits in its members' folder.
+- **Order:** move the files, write B, rewrite the members, delete A last. A run stopped at any point leaves a
+  duplicate, never a loss, and carries on where it stopped: the merge is a job ([[sync#value-rename]]). It waits while
+  either document is open with unsaved edits, and says so.
 
 ## §13.10 Shared capability worth extracting
 

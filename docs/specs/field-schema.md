@@ -96,8 +96,9 @@ disk scan (which in rehuco feed `current_duration` / `current_size` — see [[fi
 
 [[[field-schema#resource-types]]]
 
-`type` selects one of three. Fields fall into tiers so "common" means *common to all types*
-only:
+`type` selects one of three resource types — or, for a grouping entity ([[plugins#grouping-entities]]), one of
+three entity types, `creator`, `collection` and `learning_path`. Fields fall into tiers so "common" means
+*common to all types* only:
 
 > [!NOTE]
 > **Where a type's field list is authored: in the plugin declaration** (settled in
@@ -140,12 +141,18 @@ only:
   and what counting its archived and loose images finds — [[data-model#resource-scoping]]); declares **no** duration
   ([[field-schema#duration-size]]), so the value
   that leaked as `720` in tc4 has nowhere to land.
-- **Collection** — a series/grouping node; its **`title` is the series name** that members
-  reference via `collections[].title`. **Which fields it shows/edits is deferred** until a real
-  collection is in hand ([[field-schema#deferred-items]]), including whether it carries a recomputed member-stats cache
-  (in tc4 the extra fields it held were only such a cache, sparing a descent into member
-  subfolders). This is separate from the `collections` membership fields, which are settled
-  ([[field-schema#sources]]).
+- **Grouping entities** ([[plugins#grouping-entities]]) — metadata-only documents, the common core plus one own field
+  each: **`urls`**, a list of http(s) URLs. Their name is the primary source's title, their prose the core
+  `description`.
+  - **Creator** — an author, a publisher or both: the block adds the flags **`author`** and **`publisher`**. Members
+    reference it by a credited name in `authors` or a source's `publisher`, matched by folded name.
+  - **Collection** — a series/grouping node; its **`title` is the series name** that members reference via
+    `collections[].title`. Whether it also carries a recomputed member-stats cache (in tc4 the extra fields it held
+    were only such a cache, sparing a descent into member subfolders) is still deferred
+    ([[field-schema#deferred-items]]). This is separate from the `collections` membership fields, which are settled
+    ([[field-schema#sources]]).
+  - **Learning path** — the entity a member's owned `learning_paths[]` entry names by `title`
+    ([[field-schema#learning-path-ownership]]).
 
 **On disk:** the common core is nested in the reserved **`core` block**; every non-common field is nested under a
 **plugin block keyed by `type`** (`tutorial`, `reference_images`), each carrying its own `format_version`
@@ -154,7 +161,8 @@ plugin shape and won't need restructuring when plugins land. A block `format_ver
 the fields live there but no plugin owns them; **`1`** is the first defined block layout — per-user state nested under
 the block's `users` map ([[field-schema#per-user-shared]]). Fields shared by Tutorial and
 ReferenceImages (`rating`, the boolean flags, `collections`, `learning_paths`)
-live inside whichever plugin block the file has — the per-user subset under `users`. Collection has no block yet. See
+live inside whichever plugin block the file has — the per-user subset under `users`. A grouping entity's block
+holds its `urls` (and a creator's two roles). See
 the [[field-schema#example-files]]
 fixtures.
 
@@ -718,16 +726,14 @@ Field order, in the three groups the layout separates:
   the declarations themselves, each plugin naming its own fields and the core naming the common ones
   ([[field-schema#resource-types]]). The generic editor still does not depend on it — an undeclared key falls back
   ([[plugins#fallback-editor]]), which is what lets the boundary move without losing a value.
-- **Collection *type* — deferred** ([[field-schema#resource-types]]) — which fields a `type: Collection` record
-  shows/edits, and whether it re-gains a **recomputed** member-stats cache. Decide when a real
-  collection is in hand. *(The `collections` membership fields are settled, [[field-schema#sources]].)* Partially
-  designed since: placement, discovered-vs-genuine, and entity authority are recorded in [[plugins#grouping-entities]];
-  only the type's own field set still waits for a real collection.
-- **Author entity plugin — deferred to the catalog-cache era** — aliases and per-store URLs as a metadata-only
-  grouping-entity type ([[plugins#grouping-entities]], [[daz3d-personal-database#authors-urls]]), arriving with
-  CacheDB's `.rehudb` (its browser/aggregation UI is what needs the cache); documents reference authors by
-  credited name until then, and per-document `{name, url}` entries ([[field-schema#authors]]) fold into the entity
-  when it lands.
+- **Collection *type* — designed** ([[field-schema#resource-types]], [[plugins#grouping-entities]]): the common core
+  plus `urls`, placed above its members or in the collections' home, edited from the Tag Browser
+  ([[plugins#tag-browser]]). Still deferred: whether it re-gains a **recomputed** member-stats cache.
+- **Creator entity — designed** ([[plugins#grouping-entities]]): one `creator` type for authors and publishers, with
+  `author`/`publisher` flags and `urls`, browsed and edited in the Tag Browser ([[plugins#tag-browser]]). Documents
+  keep referencing creators by credited name, matched by folded name; a per-document `{name, url}` author entry
+  ([[field-schema#authors]]) stays where it is. Still deferred: **aliases**
+  ([[daz3d-personal-database#authors-urls]]) and references by id.
 - **Optional scalars read as `None` — done (#100 core, #101 display)** — absent is not `0`: the measured/claimed
   numerics (`original_size` / `current_size`, the three durations, `current_count`), `rating` (it may be negative, so
   `0` is a real rating and unrated must be `None`), and `released` read as `None` when absent; strings, lists, and the
@@ -740,7 +746,8 @@ Field order, in the three groups the layout separates:
   resource identity ([[data-model#stable-identity]]) once UUIDs are minted.
 - **Per-user storage — resolved** ([[field-schema#per-user-shared]]): per-user keys nest under the plugin block's
   `users` map from block layout v1. Still open here: the catalog-cache-era **mass-rename** job (old username → new,
-  across every file naming the user) and where a **public** learning path lives (below).
+  across every file naming the user — the same job family as the library-wide value rename, [[sync#value-rename]]) and
+  where a **public** learning path lives (below).
 - **Learning-path visibility storage — resolved** ([[field-schema#learning-path-ownership]]): a public path
   is a **copy** into the reserved `public` scope, leaving the owner's entry untouched, so there is no
   un-publish and no question of where an un-shared path lands. Ownership is structural (who holds the full
