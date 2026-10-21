@@ -30,7 +30,7 @@ implemented. Carried a dedicated **scrapper** tool for seeding metadata from pub
 | `info.tc` sidecar | YAML | Built — `.rehu` (JSON); `.tc` read and converted |
 | Display fields | Yes | Built |
 | Edit fields | Never landed | Built |
-| Tags dock: authors and publishers with counts, and flags (complete, error, has `info.tc`, cover, checked, disk online); click cycles ignore / include / exclude | Yes (`tags_dock.py`) | **TBD** as a dock. Filtering: Built for typed tokens (`folder`, `authors`, `tags`, `publishers`, `type`) in the table browsers' filter line; click-to-filter only for authors (right-click an authors cell, #460). **Not built**: filtering by collection or learning path, include/exclude, saved filters. Filtering by flag is not built either |
+| Tags dock: authors and publishers with counts, and flags (complete, error, has `info.tc`, cover, checked, disk online); click cycles ignore / include / exclude | Yes (`tags_dock.py`) | **Planned** as the Tag Browser ([[plugins#tag-browser]]), without include/exclude. Filtering: Built for typed tokens (`folder`, `authors`, `tags`, `publishers`, `type`) in the table browsers' filter line; click-to-filter only for authors (right-click an authors cell, #460). **Not built**: filtering by collection or learning path, include/exclude, saved filters. Filtering by flag is not built either |
 | SQLite cache and search | Yes | Built — `.rehudb` and the filter line |
 | `.tc` file-type association | Linux MIME | Built for `.rehu` on Windows, macOS and Linux (`application/x-rehuco`) |
 | Scraping (scrapper tool) | Yes | Built — ArtStation and Udemy, plus a user script |

@@ -130,3 +130,71 @@ lock, or **failed on a conflict** with its payload kept. *Inspect* on a failed o
 opens the conflict dialog over the current file; *Discard* drops the payload. A document with a pending or failed save
 says so in its banner. Nothing is retried behind the user's back after a conflict: the file changed under them, and
 the decision is theirs.
+
+## §7.5 Library-wide rename
+
+[[[sync#value-rename]]]
+
+> [!NOTE]
+> **Opus, like the rest of this file.** A rename writes every record naming a value, some of them open with unsaved
+> edits; the rebase below is what keeps those edits and keeps the next save from conflicting, and a subtle error in it
+> loses either the edit or the rename.
+
+Renaming a value from the Tag Browser ([[plugins#tag-browser]]) — an author, a publisher, a tag, a collection or a
+learning path — rewrites every record that names it. It is a **job on the task queue** ([[appendices.task-queue]]),
+not a loop in the window, and not a save: it carries no base version, because it changes one value and nothing else.
+
+**What changes in a record.** One pure rewrite per kind, the same function wherever it runs, matching the old value
+**by folded name** (`fold`, the cache's rule — the Tag Browser lists one row per folded name, so every spelling of it is
+renamed):
+
+- an author — the name of every `authors` entry, plain string or `{name, url}` record;
+- a tag — every entry of `advertised_tags` and `extra_tags`;
+- a publisher — the `publisher` of every source;
+- a collection — the `title` of every `collections[]` entry;
+- a learning path — the `title` of every **owned** entry in the current identity's scope and in the reserved `public`
+  scope, and in no other user's ([[field-schema#learning-path-ownership]]); a subscription is a bare `{ref}` and
+  follows by itself.
+
+When the new value is already there, the list is **deduplicated by folded name, keeping the first** — which is the
+whole of a tag merge and the member side of an entity merge ([[plugins#entity-merge]]). A record that names neither
+value is not written.
+
+**The job.** Its input is the list of records the cache says name the value (authors, tags and publishers through their
+value tables; collections and learning paths through theirs, [[data-model#cache-schema]]). Each record is rewritten
+under its lock ([[sync#lock-file]]) — take, re-read, rewrite, write atomically, re-read, release — and the job keeps
+the version before and the version after. It **checkpoints after every record**, so a job stopped by quitting, a
+pause or a share going away resumes with the records it has not done. **A record it cannot write is skipped and
+named, never fatal**: locked by another writer, unreachable, unreadable or locked as a document (a newer format, an
+unparseable file), or a legacy `.tc`, which is converted first. A run with skips ends failed, saying how many records
+were not renamed and listing them with the reason; **Retry** runs only those — safe, because a record already renamed
+reads as one with nothing to change. The cache follows each write through the notifier, so the Tag Browser's counts
+move as the job runs rather than all at once.
+
+**An open document follows, and keeps its edits.** A document open in the app may hold unsaved edits made on top of the
+file the job is about to rewrite. It must end with the rename *and* the edits, still dirty, with no "changed on disk"
+banner and no conflict on its next save. So the file is written first, and the document is **rebased** onto it, on the
+GUI thread, from what the job hands back for that record:
+
+1. **Only if it was based on exactly those bytes.** The document's base version must have the content hash of the
+   version the job read before writing. Otherwise the file changed for some other reason as well, and the ordinary
+   rules apply — a clean document reloads, a dirty one says the file changed, its save is compared as any save is.
+2. **The same rewrite runs on the document's values and on its base**, the bound editors follow without marking the
+   document dirty or clean — **its dirty state is untouched** — and its base version becomes the version the job read
+   after writing. Its next save re-reads a file whose hash is that version: nothing to compare, no conflict, and the
+   per-user merge ([[sync#compare-and-swap]]) sees exactly the user's own edits as theirs.
+3. **The notifier's report of the same write is absorbed.** The change event may reach the document before the rebase
+   or after it. A dirty document remembers the signature of the change it last saw; the rebase clears "changed on disk"
+   when that signature is the job's own write, and a report arriving after the rebase matches the base already. A
+   report of any other change keeps the banner.
+
+A save pressed between the job's write and the rebase is an honest conflict showing the old value against the new, which
+is rare and correct. A document whose file was rewritten before it was opened simply reads the renamed file. A rebase
+missed (two writes with one signature) leaves the ordinary banner, never a wrong merge: the guard is the content hash.
+When saves become queued jobs ([[sync#apply-payload]]), a payload waiting in the queue is rebased by the same rule
+before it is applied, or it would conflict with the rename.
+
+**Merging two entity documents** is a second job, run before the member rewrite when both A and B have documents
+([[plugins#entity-merge]]): it moves A's files beside B, writes B under B's lock, and deletes A last, checkpointing
+after each step. It waits while either document is open with unsaved edits — those are whole documents changing shape,
+not one value, and are not rebased.

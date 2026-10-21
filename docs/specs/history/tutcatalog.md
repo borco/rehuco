@@ -32,10 +32,10 @@ decision; **TBD** is a gap not yet decided or filed.
 | Feature | TutCatalog | rehuco |
 | --- | --- | --- |
 | `info.tc` sidecar per tutorial | YAML | Built — `.rehu` is JSON; `.tc` is read and converted (one file or a folder tree), never written |
-| Tags / authors / publishers / learning paths browser: a tree dock, each entry with a count, click to search | Yes (`tagsview.cpp`, `tagmodel.cpp`) | **TBD** — the grouping-entity plugins ([[plugins#grouping-entities]]) are specified, none is built |
-| Rename a tag or author everywhere, from that tree (a rename onto an existing name merges) | Yes — rewrites every affected `info.tc` | **TBD** |
-| Token search: `publisher:`, `author:`, `tag:`, `xtag:`, `path:`, `name:` | Yes | Built for typed tokens (`folder`, `authors`, `tags`, `publishers`, `type`) in the table browsers' filter line; click-to-filter only for authors (right-click an authors cell, #460). **Not built**: filtering by collection or learning path, include/exclude, saved filters |
-| Saved searches (favourites) | Yes | **TBD** |
+| Tags / authors / publishers / learning paths browser: a tree dock, each entry with a count, click to search | Yes (`tagsview.cpp`, `tagmodel.cpp`) | **Planned** — the Tag Browser ([[plugins#tag-browser]]): authors, publishers, tags, collections, learning paths and saved searches, grouped by first letter, with counts |
+| Rename a tag or author everywhere, from that tree (a rename onto an existing name merges) | Yes — rewrites every affected `info.tc` | **Planned** — a job rewriting every record, open documents rebased with their edits kept ([[sync#value-rename]]); an entity merge joins descriptions, URLs and files ([[plugins#entity-merge]]) |
+| Token search: `publisher:`, `author:`, `tag:`, `xtag:`, `path:`, `name:` | Yes | Built for typed tokens (`folder`, `authors`, `tags`, `publishers`, `type`) in the table browsers' filter line; click-to-filter only for authors (right-click an authors cell, #460); tags and publishers, and `collections:`/`learning_paths:` fields, are **planned** ([[plugins#filter-urls]]). **Not built**: include/exclude |
+| Saved searches (favourites) | Yes | **Planned** — named filters, a dropdown under each browser's filter line, ANDed with it ([[plugins#saved-searches]]) |
 | Catalog browser (folders → table) | Yes | Built — Browsers panel over the `.rehudb` cache, with a filter line. A change made outside the app shows after the next scan |
 | infoviewer: view and edit fields | Yes | Built |
 | Rendered Markdown description | Yes | Built, with an editor |

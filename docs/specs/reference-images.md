@@ -138,7 +138,7 @@ so the earlier slices leave room for it, not because it is next.
 
 A practice run spans packs, so its record has no single `.rehu` to live in. The precedent is the **learning
 path** ([[plugins#grouping-entities]], [[field-schema#learning-path-ownership]]): a per-user, metadata-only
-document in the user's configured creation directory ([[mounts-and-storage#rehuco-scope]]). A **practice
+document in the learning paths' home ([[mounts-and-storage#rehuco-scope]]). A **practice
 session** document holds the prompt or filter it was generated from, its schedule (for instance ten 30-second
 poses, five 2-minute, two 10-minute), and the ordered list of `(resource UUID, image key)` pairs shown, with
 timestamps and whether each was skipped. The last N sessions are kept; older ones are pruned, which is the

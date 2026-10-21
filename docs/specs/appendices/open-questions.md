@@ -213,8 +213,9 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
   move step (#339, #443), not more Locations rows.
 - **`type:` and a `folder:` root label fold ASCII only** (SQLite `NOCASE`), while free text and
   `authors`/`tags`/`publishers` fold case and diacritics since #475.
-- **The history pages' missing rows** (#471) — tag, author, publisher and learning-path browsers (TutCatalog's tree
-  dock, whose rename rewrote every `info.tc`; TutCatalogPy2's include/exclude dock), filters by collection, path or
-  flag, saved filters, and TutCatalog5's user-editable fields ([[plugins#core-vs-plugin]]). Decide, then file.
+- **The history pages' missing rows** (#471) — the tag/author/publisher/learning-path tree, the rename that rewrote
+  every `info.tc`, filters by collection and saved searches are decided ([[plugins#tag-browser]],
+  [[sync#value-rename]]); still open are TutCatalogPy2's include/exclude clicks, filters by path or flag, and
+  TutCatalog5's user-editable fields ([[plugins#core-vs-plugin]]). Decide, then file.
 - **A checksum file with no rehu** defaults to a disabled *Verify old checksums* (#457), so a double-click does
   nothing; whether Open is the fallback is undecided.

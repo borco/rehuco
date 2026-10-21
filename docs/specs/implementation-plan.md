@@ -143,6 +143,23 @@ the redesign added:
 
 Root caching (#449–#451) follows, unchanged by the redesign.
 
+## Tag Browser and entities — designed, not started
+
+**Goal:** see every author, publisher, tag, collection and learning path the catalog holds, describe them, filter by
+them, rename them everywhere, and keep named searches ([[plugins#tag-browser]], [[plugins#grouping-entities]],
+[[sync#value-rename]]; spec #548).
+
+**Tracer bullet:** the Tag Browser's tree over the snapshot, with counts and filtering (#556), on the cache's
+collections and learning-path tables (#550) and saved searches (#552). Click-to-filter on tags and publishers (#551)
+stands alone.
+
+Then thicken: the entity types (#549) and their homes (#554), editing from the pane (#558), name templates and the move
+home (#557), completion in the editors (#555); the rename — the pure rewrite (#553), the job (#559), open documents
+rebased (#560), the entity merge (#561), and renaming from the pane (#562).
+
+**Exit criteria:** rename a tag used by a hundred records while one of them is open with an unsaved edit — every record
+renamed, the open one still dirty with its edit, and its save landing without a conflict.
+
 ## Saves — the lock, the compare, the job
 
 **Goal:** two agents on one share, a web user writing progress through a node, and someone editing a file by hand are
