@@ -1,4 +1,4 @@
-"""The app-wide queue of slow work: one job at a time, in an order the user can change
+"""The app-wide queue of slow work: one job at a time per chain, in an order the user can change
 ([[architecture-design#components]], [[appendices.task-queue]]).
 
 GUI-free and Qt-free on purpose ([[appendices.task-queue#home]]): the queue's contract is written in
@@ -17,13 +17,16 @@ from contextlib import contextmanager
 from contextvars import Context, copy_context
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Condition, RLock, Thread
+from threading import Condition, RLock, Thread, current_thread
+from time import monotonic
 from typing import Any, Final
 
 from borco_core.logging import LogScope
 
+from .chain_registry import DEFAULT_CHAIN_REGISTRY, ChainRegistry
 from .persistable_task_job import PersistableTaskJob, TaskQueueItem
 from .task_job import (
+    DISK_CHAIN,
     FINISHED_JOB_STATES,
     JobCancelled,
     JobPaused,
@@ -47,6 +50,13 @@ Long enough for a cooperative job to reach its next checkpoint and unwind, short
 the app never feels hung. A job that ignores its checkpoints outlives this, which is why the worker is
 a daemon thread as well -- the wait is a courtesy, not the thing that makes the process exit."""
 
+WORKER_IDLE_SECONDS: Final = 2.0
+"""How long a chain's worker thread stays with nothing to run before it exits (#563).
+
+A thread per chain is started when the chain first has work and let go once it has been idle this long, so a burst
+of saves to one server costs one thread for its duration and a chain nobody uses again costs nothing. Short, because
+starting a thread is cheap; not zero, because a chain fed job by job would otherwise start one per job."""
+
 MOVABLE_JOB_STATES: Final = frozenset({JobState.QUEUED, JobState.PAUSED})
 """The states a job can be reordered in ([[appendices.task-queue#reorder]]).
 
@@ -62,14 +72,19 @@ or come back running -- and nothing else is a legal answer: a restored job has n
 stopped in this session, so every other state would be a claim about a session that is over."""
 
 
+# Eight, and each is one thing the engine keeps: its lock, the jobs, who is watching, the next serial, the job
+# each chain is running, the thread serving each chain, whether it is shutting down, and the families a chain must
+# belong to. They are read and written together under the one lock, which is why they live in one class.
+# pylint: disable-next=too-many-instance-attributes
 class TaskQueue:
-    """Runs jobs one at a time, and lets them be paused, reordered, removed and retried.
+    """Runs jobs one at a time per chain, chains side by side, and lets them be paused, reordered, removed and retried.
 
-    **Serial by construction, not by configuration** ([[appendices.task-queue#serial]]). There is one
-    worker thread and there is no number to raise: the specified behavior is that multi-selecting ten
-    resources serializes the work rather than running it all at once, because ten hashes against one
-    disk are slower than one, not faster. A future parallel lane over a genuinely different resource
-    would be a second queue, never a count on this one.
+    **Serial per chain, by construction, not by configuration** ([[appendices.task-queue#serial]], #563). Every job
+    declares the chain it takes turns in (:attr:`~rehuco_core.tasks.TaskJob.chain`); one worker thread serves each
+    chain that has work, and there is still no number to raise: multi-selecting ten resources serializes their
+    hashes, because ten hashes against one disk are slower than one, while a save to a share -- a different
+    resource -- lands beside them instead of behind them. Parallelism comes from distinct chains, never from a
+    count on one.
 
     **The engine schedules; the job stops itself** ([[appendices.task-queue#job-responsibility]]).
     Asking a running job to pause or cancel is a call *into* the job, which holds the request and acts
@@ -93,6 +108,8 @@ class TaskQueue:
     > A job's :meth:`~rehuco_core.tasks.TaskJob.pause`, ``cancel`` and ``resume`` are likewise called
     > with this lock held, so they must be quick and must not call back into the queue. They are
     > specified as recording a request, which is all that needs doing under a lock.
+
+    :param chains: the chain families a job's :attr:`~rehuco_core.tasks.TaskJob.chain` must belong to (#563).
     """
 
     @dataclass(frozen=True)
@@ -112,9 +129,9 @@ class TaskQueue:
         done: int
         total: int | None
 
-    # Sixteen, and each is a distinct fact about one job: its identity and label, the job itself, the
-    # context it was enqueued in, what it declared about itself, where it has got to, what it
-    # reported, why it failed, what it was asked, and what it last gave the queue to write down.
+    # Seventeen, and each is a distinct fact about one job: its identity and label, the job itself, the
+    # context it was enqueued in, what it declared about itself (the chain it takes turns in included), where it has
+    # got to, what it reported, why it failed, what it was asked, and what it last gave the queue to write down.
     # `resume_requested` alone stays off the status: it exists for one gap -- a pause taken back too
     # late to stop the unwind -- and its only observable effect is the state that outcome is recorded
     # as.
@@ -138,6 +155,7 @@ class TaskQueue:
         resumes_where_it_stopped: bool = False
         progress_unit: str = ""
         persistable: bool = False
+        chain: str | None = DISK_CHAIN
         captured: TaskQueue.Captured | None = None
         state: JobState = JobState.QUEUED
         done: int = 0
@@ -146,6 +164,14 @@ class TaskQueue:
         summary: str | None = None
         stop_requested: StopRequest | None = None
         resume_requested: bool = False
+
+        @property
+        def lane(self) -> str | int:
+            """The line this job waits in: its chain, or -- unchained -- a line of its own, keyed by its serial.
+
+            :returns: what the worker serving this job is keyed by.
+            """
+            return self.chain if self.chain is not None else self.serial
 
         def status(self) -> JobStatus:
             """Snapshot this entry for an observer.
@@ -166,6 +192,7 @@ class TaskQueue:
                 resumes_where_it_stopped=self.resumes_where_it_stopped,
                 persistable=self.persistable,
                 summary=self.summary,
+                chain=self.chain,
             )
 
         def unfinished(self) -> bool:
@@ -225,14 +252,17 @@ class TaskQueue:
                 self.__entry.total = total
                 self.__notify(self.__entry)
 
-    def __init__(self) -> None:
+    def __init__(self, chains: ChainRegistry = DEFAULT_CHAIN_REGISTRY) -> None:
+        self.__chains: Final = chains
         self.__condition: Final = Condition(RLock())
         self.__entries: list[TaskQueue.Entry] = []
         self.__listeners: list[TaskQueueListener] = []
         self.__next_serial = 0
-        self.__running: TaskQueue.Entry | None = None
+        self.__running: dict[str | int, TaskQueue.Entry] = {}
+        """The job each lane is inside right now, by lane -- at most one per lane, which is the whole of serial."""
         self.__stopping = False
-        self.__worker: Thread | None = None
+        self.__workers: dict[str | int, Thread] = {}
+        """The thread serving each lane that has had work lately; a worker takes itself out when it goes idle."""
 
     # region observation
 
@@ -285,7 +315,7 @@ class TaskQueue:
     # region the queue
 
     def enqueue(self, job: TaskJob) -> int:
-        """Accept ``job``, starting the worker thread if this is the first one.
+        """Accept ``job``, starting a worker thread for its chain if none serves it.
 
         The job's declarations -- :attr:`~rehuco_core.tasks.TaskJob.label`,
         :attr:`~rehuco_core.tasks.TaskJob.source`,
@@ -307,6 +337,8 @@ class TaskQueue:
 
         :param job: the work to run.
         :returns: the job's serial, for :meth:`cancel`, :meth:`move`, :meth:`remove` and the rest.
+        :raises ValueError: if the job's chain belongs to no registered family (#563): two kinds of job would
+            otherwise share a chain by spelling it alike, or a typo run one beside the work it should wait for.
         :raises RuntimeError: if the queue has been shut down; shutdown is terminal, and silently
             accepting work that will never run would be worse than refusing it.
         """
@@ -400,7 +432,7 @@ class TaskQueue:
 
         A **paused** job returns to :attr:`~rehuco_core.tasks.JobState.QUEUED` in the position it held
         and runs when its turn comes round: there is no force-start
-        ([[appendices.task-queue#reorder]]). The queue runs exactly one job at a time, so its order
+        ([[appendices.task-queue#reorder]]). The queue runs exactly one job at a time per chain, so its order
         already answers *what runs next* -- to run a job now, :meth:`move` it to the top.
 
         A **running** job is asked to take its pending stop back, and **the job answers**. If it has
@@ -534,6 +566,7 @@ class TaskQueue:
                 entry.stop_requested = None
                 entry.resume_requested = False
                 self.__capture(entry)
+                self.__ensure_worker(entry.lane)
                 self.__notify_updated(entry)
             self.__condition.notify_all()
 
@@ -644,7 +677,7 @@ class TaskQueue:
             or wait longer.
         """
         with self.__condition:
-            return self.__condition.wait_for(lambda: self.__running is None, timeout)
+            return self.__condition.wait_for(lambda: not self.__running, timeout)
 
     def shutdown(self, timeout: float = DEFAULT_SHUTDOWN_TIMEOUT) -> None:
         """Cancel everything and wait for the worker to stop ([[appendices.task-queue#teardown]]).
@@ -653,11 +686,13 @@ class TaskQueue:
         here and the wrong one for quitting with work outstanding -- for that, :meth:`pause` and
         :meth:`wait_until_idle` first, and shut down once what matters has been written.
 
-        The worker is a **daemon** thread, so a job that ignores its checkpoints can never hold the
+        Every worker is a **daemon** thread, so a job that ignores its checkpoints can never hold the
         process open past this -- the wait is what gives a cooperative job the chance to close what it
-        opened, and a job that outlives it is logged rather than waited on forever.
+        opened, and a job that outlives it is logged rather than waited on forever. The wait is one deadline
+        shared by every chain's worker, not one per thread: quitting must not take longer because more chains
+        were busy.
 
-        :param timeout: how long to wait for the running job to unwind, in seconds.
+        :param timeout: how long to wait for the running jobs to unwind, in seconds.
         """
         with self.__condition:
             self.__stopping = True
@@ -666,12 +701,14 @@ class TaskQueue:
                     if entry.unfinished():
                         self.__ask_stop(entry, StopRequest.CANCEL)
             self.__condition.notify_all()
-            worker = self.__worker
-            self.__worker = None
-        if worker is not None:
-            worker.join(timeout)
-            if worker.is_alive():
-                LOG.warning("A task outlived the %.1fs shutdown wait and is still running.", timeout)
+            workers = tuple(self.__workers.values())
+            self.__workers.clear()
+        deadline = monotonic() + timeout
+        for worker in workers:
+            worker.join(max(0.0, deadline - monotonic()))
+        outlived = sum(1 for worker in workers if worker.is_alive())
+        if outlived:
+            LOG.warning("%d task(s) outlived the %.1fs shutdown wait and are still running.", outlived, timeout)
 
     # endregion
 
@@ -708,10 +745,14 @@ class TaskQueue:
         :param error: why it failed, for a job restored as failed.
         :param summary: what it found, for a job restored as done.
         :returns: the entry now in the queue.
+        :raises ValueError: if the job's chain belongs to no registered family.
         :raises RuntimeError: if the queue has been shut down.
         """
         if self.__stopping:
             raise RuntimeError("This task queue has been shut down.")
+        chain = job.chain
+        if chain is not None and self.__chains.family_of(chain) is None:
+            raise ValueError(f"Task {job.label!r} declares the chain {chain!r}, which no chain family owns.")
         entry = TaskQueue.Entry(
             serial=self.__next_serial,
             job=job,
@@ -722,6 +763,7 @@ class TaskQueue:
             resumes_where_it_stopped=job.resumes_where_it_stopped,
             progress_unit=job.progress_unit,
             persistable=isinstance(job, PersistableTaskJob),
+            chain=chain,
             state=state,
             done=done,
             total=total,
@@ -734,7 +776,8 @@ class TaskQueue:
             self.__entries.append(entry)
             index = len(self.__entries) - 1
             status = entry.status()
-            self.__ensure_worker()
+            if entry.state is JobState.QUEUED:
+                self.__ensure_worker(entry.lane)
             self.__notify(lambda listener: listener.job_enqueued(status, index))
         return entry
 
@@ -772,15 +815,20 @@ class TaskQueue:
         summary = item.get("summary") if saved is JobState.DONE else None
         done, total = self.__saved_progress(item, job)
         label = item.get("label")
-        return self.__accept(
-            job,
-            label=label if isinstance(label, str) else None,
-            state=restored,
-            done=done,
-            total=total,
-            error=error if isinstance(error, str) else None,
-            summary=summary if isinstance(summary, str) else None,
-        )
+        try:
+            return self.__accept(
+                job,
+                label=label if isinstance(label, str) else None,
+                state=restored,
+                done=done,
+                total=total,
+                error=error if isinstance(error, str) else None,
+                summary=summary if isinstance(summary, str) else None,
+            )
+        except ValueError as error_raised:
+            # a job class whose chain family this build no longer registers: one dropped row, never a failed start
+            LOG.warning("A saved task could not be restored: %s", error_raised)
+            return None
 
     @staticmethod
     def __saved_state(value: object) -> JobState | None:
@@ -975,6 +1023,7 @@ class TaskQueue:
             entry.state = JobState.QUEUED
             entry.stop_requested = None
             entry.resume_requested = False
+            self.__ensure_worker(entry.lane)
             self.__notify_updated(entry)
             return True
         if entry.state is not JobState.RUNNING or entry.stop_requested is None:
@@ -1020,49 +1069,62 @@ class TaskQueue:
         status = entry.status()
         self.__notify(lambda listener: listener.job_updated(status))
 
-    def __ensure_worker(self) -> None:
-        """Start the worker thread if it is not running yet.
+    def __ensure_worker(self, lane: str | int) -> None:
+        """Start the thread serving ``lane`` if none is (#563).
 
-        Lazy rather than started in ``__init__``: a queue nobody has given work to should not cost a
-        thread, and the agent builds one at startup whether or not anything is ever enqueued.
+        Lazy rather than started in ``__init__``: a queue nobody has given work to should not cost a thread, and a
+        chain nobody has used yet should not either. Called with the condition held, wherever a job becomes
+        :attr:`~rehuco_core.tasks.JobState.QUEUED`, so no eligible job ever waits in a lane nobody serves.
+
+        :param lane: the chain, or an unchained job's serial.
         """
-        if self.__worker is not None:
+        if lane in self.__workers or self.__stopping:
             return
-        self.__worker = Thread(target=self.__work, name="rehuco-task-queue", daemon=True)
-        self.__worker.start()
+        worker = Thread(target=self.__work, args=(lane,), name=f"rehuco-task-queue:{lane}", daemon=True)
+        self.__workers[lane] = worker
+        worker.start()
 
-    def __work(self) -> None:
-        """Take jobs one at a time, forever, until shutdown.
+    def __work(self, lane: str | int) -> None:
+        """Take ``lane``'s jobs one at a time until the lane has been idle for a while, or shutdown.
 
-        The whole of the serialization: one thread, one job in flight, and the next one chosen only
-        once the last has returned. **A paused job is simply not eligible** -- there is no queue-wide
-        flag in this loop, which is what makes pausing one job leave the rest running.
+        The whole of the serialization: one thread per lane, one job of it in flight, and the next one chosen only
+        once the last has returned. **A paused job is simply not eligible** -- there is no queue-wide flag in this
+        loop, which is what makes pausing one job leave the rest running. A thread that finds nothing for
+        :data:`WORKER_IDLE_SECONDS` takes itself out, under the condition, so an enqueue that comes a moment later
+        finds no worker registered and starts a fresh one rather than waking a thread that is leaving.
+
+        :param lane: the chain this thread serves, or an unchained job's serial.
         """
         while True:
             with self.__condition:
-                entry = self.__next_queued()
-                while not self.__stopping and entry is None:
-                    self.__condition.wait()
-                    entry = self.__next_queued()
+                entry = self.__next_queued(lane)
+                if entry is None and not self.__stopping:
+                    self.__condition.wait_for(
+                        lambda: self.__stopping or self.__next_queued(lane) is not None, WORKER_IDLE_SECONDS
+                    )
+                    entry = self.__next_queued(lane)
                 if self.__stopping or entry is None:
+                    if self.__workers.get(lane) is current_thread():
+                        del self.__workers[lane]
                     return
                 if not self.__validated(entry):
                     self.__condition.notify_all()
                     continue
                 with self.__watching_paused():
                     entry.state = JobState.RUNNING
-                    self.__running = entry
+                    self.__running[lane] = entry
                     self.__notify_updated(entry)
                 control = TaskQueue.Control(self.__condition, entry, self.__notify_updated)
             self.__run(entry, control)
 
-    def __next_queued(self) -> TaskQueue.Entry | None:
-        """Find the job to run next.
+    def __next_queued(self, lane: str | int) -> TaskQueue.Entry | None:
+        """Find the job ``lane`` runs next.
 
-        :returns: the first queued entry in the queue's order, or ``None`` when there is none.
+        :param lane: the chain, or an unchained job's serial.
+        :returns: the first queued entry of that lane in the queue's order, or ``None`` when there is none.
         """
         for entry in self.__entries:
-            if entry.state is JobState.QUEUED:
+            if entry.state is JobState.QUEUED and entry.lane == lane:
                 return entry
         return None
 
@@ -1085,7 +1147,7 @@ class TaskQueue:
         """
         state, error = entry.context.run(self.__invoke, entry, control)
         with self.__condition:
-            self.__running = None
+            self.__running.pop(entry.lane, None)
             if self.__entry(entry.serial) is entry:
                 with self.__watching_paused():
                     if state is JobState.PAUSED:

@@ -11,7 +11,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Final
 
-from .task_job import JobCancelled, JobControl, JobPaused, StopRequest
+from .task_job import DISK_CHAIN, JobCancelled, JobControl, JobPaused, StopRequest
 
 
 class TaskJobBase:
@@ -65,6 +65,10 @@ class TaskJobBase:
     Empty by default because that is the honest answer for a job that reports one step: most work is
     either a single indivisible action or something the author has not yet decided how to count, and a
     default naming a unit would put a made-up one on both."""
+
+    chain: str | None = DISK_CHAIN
+    """Whom this job takes turns with (#563): this machine's disks, unless a job names the one resource it
+    would hammer -- or ``None``, to run beside everything else."""
 
     def __init__(self) -> None:
         self.__lock: Final = RLock()

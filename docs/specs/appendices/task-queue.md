@@ -53,30 +53,55 @@ A queue in front of a queue would be one more place for records — and rows —
 > coalescing that turns that into one repaint belongs to the observer, which is the only layer that
 > knows what a repaint costs. The engine reporting less would be the engine deciding for it.
 
-## 2. Serial by construction, not by configuration
+## 2. Serial per chain, by construction, not by configuration
 
 [[[appendices.task-queue#serial]]]
 
-One worker thread, one job in flight, and **no number to raise**. Ten checksum jobs against one disk are
-slower run together than run in turn, so serialization is the specified behavior rather than a starting
-value — and a `maxConcurrency` setting would be an invitation to break it.
+- [#563: feat(core): task queue runs one job per chain, chains in parallel](https://github.com/borco/rehuco/issues/563)
 
-`QThreadPool` with a count of one was considered and rejected on three counts: serial would become a
-setting; a submitted `QRunnable` is no longer the queue's to reorder, so the pending list would have to
-be kept outside the pool anyway; and the global pool is already shared with other background work, so
-its count is not this queue's to own. A `QThread` with a worker object moved onto it was rejected for
-forcing jobs to be `QObject`s, which contradicts *the engine knows none of them*.
+One job in flight **per chain**, and **no number to raise**. Ten checksum jobs against one disk are slower run
+together than run in turn, so serialization is the specified behavior rather than a starting value — and a
+`maxConcurrency` setting would be an invitation to break it.
 
-**Whether a bounded parallel lane is ever allowed** is recorded here as answered *no, for now*, since the
-issue asked for a decision rather than an assumption. If one is ever wanted — a network lane alongside a
-disk lane — it is a **second queue over a different resource**, never a concurrency count on this one.
-Two queues make the resource each is protecting explicit; one queue with a number makes it invisible.
+**A chain names the resource its jobs would hammer.** Every job declares one (`TaskJob.chain`), read once at enqueue:
+jobs sharing a chain run one after another, in the queue's order; jobs in different chains run at the same time;
+`None` is unchained and runs as soon as it is accepted. Every job that has not thought about it inherits
+`DISK_CHAIN`, *this machine's disks*, so the hashes, scans and conversions take turns exactly as they did when the
+queue had one line. A save knows its server and declares it, so it lands beside a thousand-file sweep instead of
+behind it, and two saves to one share still take turns.
+
+**A chain name is claimed, not spelled.** A string can be spelled alike by two authors who never met: a checksum job
+and a save both calling theirs `nas` would take turns nobody asked for, and a typo would put a job in a chain of its
+own and run it beside the work it was meant to wait for. So a job module registers a **family** once, at import, in
+`DEFAULT_CHAIN_REGISTRY` — a second claim of the same name raises — and builds its keys only through it: the name
+alone, or `name:resource` for one chain per resource. A name never holds the `:`, so the part of a key before its
+first `:` names exactly one family and two families' keys cannot be equal. The queue refuses a job whose chain no
+family owns, and drops one restored from a queue file whose family this build no longer registers, as it drops an
+unknown kind (§6.3).
+
+This is the answer to the question this section used to record as *no, for now*: whether a parallel lane is ever
+allowed. It said a lane over a different resource would be **a second queue, never a count on this one**, because a
+queue with a number makes the protected resource invisible. A chain keeps that property — each one names its
+resource — and generalises the second queue to a key **the job owns**, because the job is what knows which resource
+it would hammer. One queue still holds every row, so the dock, persistence, reordering and the exit sequence are
+unchanged.
+
+**One daemon thread per chain with work**, started when the chain first has a queued job and gone once it has been
+idle for a couple of seconds; an unchained job gets a thread of its own. Pausing, cancelling, removing and moving act
+on one entry whatever its chain, and `paused` is still derived from the rows. Shutdown cancels everything and joins
+every worker against one shared deadline, so quitting does not take longer because more chains were busy.
+
+`QThreadPool` was considered and rejected on three counts: serial would become a setting; a submitted `QRunnable` is
+no longer the queue's to reorder, so the pending list would have to be kept outside the pool anyway; and the global
+pool is shared with other background work and joined by Qt at exit, which a job blocked on a switched-off server
+would hold up ([[appendices.code-conventions#worker-threads]]). A `QThread` with a worker object moved onto it was
+rejected for forcing jobs to be `QObject`s, which contradicts *the engine knows none of them*.
 
 ## 3. The engine schedules; the job stops itself
 
 [[[appendices.task-queue#jobs]]]
 
-A job is a `Protocol`. The engine orders jobs, runs one at a time, and records outcomes; **everything
+A job is a `Protocol`. The engine orders jobs, runs one at a time per chain (§2), and records outcomes; **everything
 about stopping belongs to the job**. Asking a running job to pause or cancel is a call *into* it —
 `pause()`, `cancel()`, `resume()` — and it holds the request and acts on it wherever its own work
 divides.
@@ -115,8 +140,9 @@ delegated to HTTP range requests.
 **A cursor does the same job here.** A job asked to pause *returns* from `run()`; on resume, `run()` is
 called again and the job picks up from whatever it kept. There is no stack to hold, so:
 
-- **The single worker thread and its loop are unchanged.** No run token, no thread per paused job, no
-  N-thread shutdown join. §2 is untouched, which is the clearest evidence this was the right call.
+- **The worker loop is unchanged.** No run token, no thread per paused job, no thread held for a parked
+  stack. §2 was untouched by this, which is the clearest evidence it was the right call; the threads §2 has since
+  gained serve chains, not paused jobs (#563).
 - **In-session pause and across-restart resume are the same mechanism** — both re-enter `run()`. That is
   what makes them one feature instead of two.
 - **The cost is paid selectively.** A job with nothing kept starts over, which is honest and costs
@@ -247,10 +273,10 @@ surprise, and the per-job call is exactly as easy to reach.
 
 `SCHEDULED` is deliberately **not** a state: queued and scheduled are the same concept — a job waiting
 its turn — and a resumed job is `QUEUED` like any other. There is likewise **no force-start**. The
-queue runs exactly one job at a time, so its order already *is* the answer to "what runs next":
-resuming a multi-selection schedules them all and the topmost starts, and to run a specific job now you
-move it to the top. Forcing would have to mean running two things at once, which is the one thing this
-component is specified not to do.
+queue runs exactly one job at a time per chain (§2), so its order already *is* the answer to "what runs next"
+in that chain: resuming a multi-selection schedules them all and the topmost of each chain starts, and to run a
+specific job now you move it to the top. Forcing would have to mean running two jobs of one chain at once, which is
+the one thing this component is specified not to do.
 
 ### 3.4 Reordering applies to what has not started
 
@@ -587,8 +613,8 @@ indicator is an **animation**, and a delegate repaints only when its row's data 
 and the cell paints as garbage. A bar is drawn only where there is a fraction to draw; every other case
 is text, or nothing. This is recorded rather than merely deleted so the next reader does not restore it.
 
-**No force-start**, matching §3.3: the queue runs exactly one job at a time, so its order already is the
-answer to *what runs next*. Resuming a multi-selection schedules them all and the topmost starts; to run
+**No force-start**, matching §3.3: the queue runs exactly one job at a time per chain, so its order already is
+the answer to *what runs next*. Resuming a multi-selection schedules them all and the topmost starts; to run
 a specific job now, move it to the top and resume it.
 
 **Pausing informs, it never blocks.** The dock reads one bit — `JobStatus.resumes_where_it_stopped` —
