@@ -129,7 +129,8 @@ you already have; which one is a setting.
 Which panels you had open, how you'd arranged them, and which file was in front are remembered per
 resource and restored when you open it again.
 
-Work that takes minutes runs on a **task queue** rather than in the window: one job at a time, each row
+Work that takes minutes runs on a **task queue** rather than in the window: one job at a time on this machine's
+disks, each row
 showing its progress and its own log, pausable, cancellable, reorderable, and written down so it survives
 quitting. Checksums, `.tc` imports, scrapes and image downloads all run on it; an app-wide **Tasks** panel
 shows the queue, beside an app-wide **Log**.

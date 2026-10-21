@@ -99,6 +99,13 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ### Changed
 
+- The task queue runs one job at a time **per chain** (#563). A job declares `chain`, the resource it would hammer:
+  jobs sharing one take turns in the queue's order, jobs in different chains run at the same time, each chain on a
+  daemon thread started when it has work and let go once idle, and `None` runs a job as soon as it is accepted.
+  Every job keeps today's behaviour through `TaskJobBase.chain = DISK_CHAIN`. `JobStatus.chain` carries it; shutdown
+  joins every worker against one deadline. A chain belongs to a family registered once in a `ChainRegistry`
+  (`DEFAULT_CHAIN_REGISTRY`), which builds its keys as `name` or `name:resource`; a second claim of a name is refused,
+  and so is a job whose chain no family owns -- dropped, with a warning, when it comes back from a queue file.
 - The file notifier recognises an atomic save by the temporary sibling's new name, `<name>.<random>.tmp` (the random
   part being `tempfile.mkstemp`'s eight characters, so a user's own `a.b.tmp` is no save); the dotted name earlier
   builds wrote is still recognised.

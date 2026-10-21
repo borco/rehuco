@@ -14,6 +14,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
+from .chain_registry import DISK_FAMILY
+
 
 @dataclass(frozen=True)
 class JobScope:
@@ -45,9 +47,9 @@ class JobState(StrEnum):
     ([[appendices.task-queue#reorder]])."""
 
     RUNNING = "running"
-    """The worker thread is inside this job's ``run``. Exactly one job is ever in this state, and it is
-    the only job the engine ever calls :meth:`TaskJob.pause`, :meth:`TaskJob.resume` or
-    :meth:`TaskJob.cancel` on."""
+    """A worker thread is inside this job's ``run``. At most one job of each :attr:`TaskJob.chain` is ever in
+    this state (#563), and the running ones are the only jobs the engine ever calls :meth:`TaskJob.pause`,
+    :meth:`TaskJob.resume` or :meth:`TaskJob.cancel` on."""
 
     PAUSED = "paused"
     """Asked to pause, and it obeyed: its ``run`` has *returned* and the next job was free to start.
@@ -102,6 +104,13 @@ what the jobs shipped here count, and they exist so that neither side spells the
 
 PROGRESS_UNIT_RESOURCES: Final = "resources"
 """What a job counting whole resources declares (#248)."""
+
+DISK_CHAIN: Final = DISK_FAMILY.chain()
+"""The chain every job that has not thought about it runs in (#563, [[appendices.task-queue#serial]]).
+
+One name for *this machine's disks*, so the jobs that hash, scan and convert keep taking turns as they always have.
+A job that knows the one resource it would hammer -- a save knows its server -- declares a chain of its own, built by
+a family it registered (:class:`~rehuco_core.tasks.ChainRegistry`)."""
 
 
 class JobCancelled(Exception):
@@ -250,6 +259,25 @@ class TaskJob(Protocol):
         :attr:`source`.
         """
 
+    @property
+    def chain(self) -> str | None:
+        """Which jobs this one takes turns with (#563, [[appendices.task-queue#serial]]).
+
+        Jobs sharing a chain run one after another, in the queue's order; jobs in different chains run at the same
+        time. ``None`` is **unchained**: the job runs as soon as it is accepted, beside whatever else is running.
+
+        **The job is what knows which resource it would hammer.** Serialization exists so ten hashes against one
+        disk do not run at once, not so a save to a share waits behind them -- so the key is the job's own
+        declaration, named for the resource: :data:`DISK_CHAIN` for this machine's disks, a server's name for a save
+        to it. There is still no number to raise: parallelism comes from distinct chains, never from a count.
+
+        **A key a family built** (:class:`~rehuco_core.tasks.ChainFamily`): the queue refuses a chain whose family
+        was never registered, so two kinds of job cannot share a chain by spelling it alike, nor a typo run a job
+        beside the work it was meant to wait for.
+
+        Read once at enqueue and carried on every :class:`JobStatus`. Not persisted: a rebuilt job declares it again.
+        """
+
     def run(self, control: JobControl) -> None:
         """Do the work, on the worker thread.
 
@@ -348,11 +376,11 @@ class ReportingTaskJob(TaskJob, Protocol):
         """
 
 
-# Thirteen, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
-# it has got and in what, what went wrong, what has been asked of it, what stopping it would cost, and
-# whether it will still be here tomorrow. The last five are the job's own declarations, copied here so that a
-# status answers without reaching back for the job object -- which a reader on another thread has no
-# business holding.
+# Fourteen, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
+# it has got and in what, what went wrong, what has been asked of it, what stopping it would cost, whether it
+# will still be here tomorrow, and whom it takes turns with. The last six are the job's own declarations, copied
+# here so that a status answers without reaching back for the job object -- which a reader on another thread has
+# no business holding.
 @dataclass(frozen=True)
 # pylint: disable-next=too-many-instance-attributes
 class JobStatus:
@@ -396,6 +424,8 @@ class JobStatus:
         silently.
     :param summary: what a finished job found, as its :attr:`ReportingTaskJob.outcome` says it, else ``None``
         (#457). Kept with a finished job across a restart, like :attr:`error`.
+    :param chain: the job's :attr:`TaskJob.chain`, read once at enqueue (#563): which jobs it takes turns with,
+        or ``None`` for one that runs beside everything else.
     """
 
     serial: int
@@ -411,6 +441,7 @@ class JobStatus:
     resumes_where_it_stopped: bool = False
     persistable: bool = False
     summary: str | None = None
+    chain: str | None = DISK_CHAIN
 
     @property
     def scope(self) -> JobScope:

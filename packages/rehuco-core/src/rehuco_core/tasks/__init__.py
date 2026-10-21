@@ -1,4 +1,4 @@
-"""The app-wide task queue: slow work, run one job at a time ([[appendices.task-queue]]).
+"""The app-wide task queue: slow work, run one job at a time per chain ([[appendices.task-queue]]).
 
 The non-GUI half of the *task queue / dock* component ([[architecture-design#components]]) -- the layer
 agent and node alike run jobs on. It holds the engine and the vocabulary a job is written in, and
@@ -13,6 +13,8 @@ The package is split by what a reader is here for:
 - :mod:`~rehuco_core.tasks.persistable_task_job` -- what a job adds to survive a restart, and the
   record it survives as.
 - :mod:`~rehuco_core.tasks.task_job_registry` -- what turns a saved kind back into a job.
+- :mod:`~rehuco_core.tasks.chain_registry` -- who owns which chain names, so two kinds of job never
+  share a chain by accident.
 - :mod:`~rehuco_core.tasks.task_queue_listener` -- the observation seam a dock or a status page
   implements.
 - :mod:`~rehuco_core.tasks.task_queue` -- :class:`~rehuco_core.tasks.TaskQueue` itself, and its worker
@@ -22,8 +24,10 @@ Nothing here imports Qt, and nothing here knows what any job does
 ([[appendices.task-queue#home]]).
 """
 
+from .chain_registry import DEFAULT_CHAIN_REGISTRY, ChainFamily, ChainRegistry
 from .persistable_task_job import PersistableTaskJob, TaskQueueItem
 from .task_job import (
+    DISK_CHAIN,
     FINISHED_JOB_STATES,
     PROGRESS_UNIT_BYTES,
     PROGRESS_UNIT_RESOURCES,
@@ -49,13 +53,17 @@ from .task_queue import (
 from .task_queue_listener import TaskQueueListener
 
 __all__ = [
+    "DEFAULT_CHAIN_REGISTRY",
     "DEFAULT_SHUTDOWN_TIMEOUT",
     "DEFAULT_TASK_JOB_REGISTRY",
+    "DISK_CHAIN",
     "FINISHED_JOB_STATES",
     "MOVABLE_JOB_STATES",
     "PROGRESS_UNIT_BYTES",
     "PROGRESS_UNIT_RESOURCES",
     "RESTORED_UNFINISHED_STATES",
+    "ChainFamily",
+    "ChainRegistry",
     "JobCancelled",
     "JobControl",
     "JobOutcome",
