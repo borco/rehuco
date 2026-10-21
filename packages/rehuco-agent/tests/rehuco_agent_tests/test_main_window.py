@@ -5151,8 +5151,8 @@ def test_opening_the_task_queue_dock_from_the_action_bar_checks_the_menu_compani
 
 
 class GatedJob(TaskJobBase):
-    """A job that reports once, then blocks until released -- the window's own queue is real here,
-    the same discipline ``tests/tasks/test_task_queue_widget.py`` uses (#239).
+    """A job that reports once, then blocks until released -- the window's own queue is real here, the same
+    discipline ``tests/tasks/test_task_queue_model.py`` uses (#239).
 
     :param label: the job's label.
     """
