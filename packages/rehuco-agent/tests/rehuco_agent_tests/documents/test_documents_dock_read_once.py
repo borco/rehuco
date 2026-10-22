@@ -5,9 +5,11 @@ from pathlib import Path
 from pytest import mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.document_registry import DocumentRegistry, load_record
+from rehuco_agent.documents.document_registry import DocumentRegistry
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_core.access import Records, ResourceKey
+
+from rehuco_agent_tests.record_reads import read_now
 
 from .test_rehu_document_model_conflict import write_record
 
@@ -29,7 +31,7 @@ def test_a_record_read_by_the_opener_is_handed_to_the_registry(
     write_record(path, "Old")
     records = Records()
     key = ResourceKey(path)
-    read = load_record(records, key)
+    read = read_now(records, key)
     registry = DocumentRegistry(records=records)
     acquire = mocker.spy(registry, "acquire")
     dock = DocumentsDock(registry=registry)

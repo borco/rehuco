@@ -10,6 +10,7 @@ import copy
 import logging
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
 from typing import Any, Final, cast
@@ -52,27 +53,12 @@ from ..fields.unknown_field import UnknownField
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
+from .record_reader import RecordReader
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 from .rename_holders import RenameHolderReport
 from .tc_conversion_outcomes import scan_after_conversion
 
 LOG: Final = logging.getLogger(__name__)
-
-
-def load_record(records: Records, key: ResourceKey) -> LoadedRecord:
-    """Read ``key`` the way a holder opens it (#381, #416): see
-    :func:`~rehuco_agent.documents.document_registry.load_record`, which this defers to.
-
-    Looked up when called, not when this module loads: the registry builds models of this class, so its module
-    imports this one.
-
-    :param records: what the record is read through.
-    :param key: the record.
-    :returns: the record, or a locked stub standing in for it.
-    """
-    from .document_registry import load_record as read  # pylint: disable=import-outside-toplevel,cyclic-import
-
-    return read(records, key)
 
 
 # The three groups below are **coercion** groups: they say how a plugin-block value is read and written
@@ -208,7 +194,23 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         resource is asked to stand aside rather than made to finish first (#241). ``None`` -- most
         tests, and any caller with no running work to coordinate with -- renames directly, which is
         exactly what a coordinator holding no readers does anyway.
+    :param reader: what the record is read through off the GUI thread when it is opened, reverted or loaded (#564);
+        a reader of this model's own when not given.
     """
+
+    @dataclass(frozen=True, slots=True)
+    class OutstandingRead:
+        """A read of the record this model waits for (#564).
+
+        :param key: the record being read.
+        :param rebuild: rebuild the form whatever its structure once it arrives (:meth:`__load`).
+        :param fill: the document already shows the record's save not landed, so the read only fills in what that is
+            based on.
+        """
+
+        key: ResourceKey
+        rebuild: bool
+        fill: bool
 
     unknown_fields_changed = Signal()
     """Fires when the set of unrecognized active-block fields changes -- i.e. one is dropped via
@@ -427,6 +429,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """What this document's save that has not landed is doing, in the banner's words -- *Save pending*, *Waiting for
     the share*, *Save failed* -- or empty while there is none (#497). Set by whoever owns the save jobs."""
 
+    reading = SimpleProperty[Path | None](None)
+    """The file being read for this document while it shows nothing it can be edited from yet, or ``None`` (#564): a
+    record opened, reverted or loaded with no save of it pending, its read off the GUI thread
+    ([[offline-editing#overview]]). The document keeps showing what it showed -- nothing, for one just opened -- and
+    ``DocumentSubDocks`` locks its editors and says *Reading…* until the file arrives. A record with a save not landed
+    never reads this way: that save shows at once, and the read only fills in what it is based on
+    ([[sync#unlanded-save]])."""
+
     gone = SimpleProperty("")
     """The sentence naming this edited document's file or folder that is not there any more, or empty (#497): its
     edits are kept, and no save is made until it is reverted, closed, or the file or folder comes back -- a save never
@@ -488,10 +498,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         rename_coordinator: RenameCoordinator | None = None,
         pending: bool = False,
         pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None,
+        reader: RecordReader | None = None,
     ) -> None:
         super().__init__(parent)
         self.__document = document
         self.__records: Final = records if records is not None else Records()
+        self.__reader: Final = reader if reader is not None else RecordReader(self.__records, rename_coordinator, self)
+        self.__read_serial = 0
+        """Counts the reads asked for: an answer carrying an older count is for a read this model moved on from."""
+        self.__read_out: RehuDocumentModel.OutstandingRead | None = None
+        """The read this model waits for, or ``None``."""
+        self.__after_read: Final[list[Callable[[], None]]] = []
+        """What waits for the read out to arrive (:meth:`when_read`)."""
         self.__version = version
         """What the document was read or last saved at; see the class's ``version``."""
         self.__base_data = copy.deepcopy(document.data)
@@ -564,6 +582,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         records: Records | None = None,
         rename_coordinator: RenameCoordinator | None = None,
         pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None,
+        reader: RecordReader | None = None,
     ) -> RehuDocumentModel:
         """Start a new, empty document, optionally already bound to a save path.
 
@@ -579,6 +598,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param records: forwarded to the constructor; see the class docstring.
         :param rename_coordinator: forwarded to the constructor; see its own docstring (#241).
         :param pending_save_of: forwarded to the constructor; see the class docstring.
+        :param reader: forwarded to the constructor; see the class docstring.
         :returns: the new model, wrapping a fresh in-memory `RehuDocument` that already carries its own
             ``id`` (:meth:`~rehuco_core.RehuDocument.new`, [[data-model#stable-identity]]). Starts **not**
             :attr:`saved_on_disk` -- it has never been persisted to its path, so Revert is disabled until
@@ -590,6 +610,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             records=records,
             rename_coordinator=rename_coordinator,
             pending_save_of=pending_save_of,
+            reader=reader,
         )
         model.saved_on_disk = False
         if path is not None:
@@ -607,6 +628,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         records: Records | None = None,
         rename_coordinator: RenameCoordinator | None = None,
         pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None,
+        reader: RecordReader | None = None,
     ) -> RehuDocumentModel:
         """Start a **pending** stand-in for an existing file that has deliberately not been read yet --
         session restore's deferred document load (#66).
@@ -626,6 +648,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param records: forwarded to the constructor; see the class docstring.
         :param rename_coordinator: forwarded to the constructor; see its own docstring (#241).
         :param pending_save_of: forwarded to the constructor; see the class docstring.
+        :param reader: forwarded to the constructor; see the class docstring.
         :returns: the pending model; empty, clean, and unlocked until :meth:`load_pending` runs.
         """
         return cls(
@@ -635,6 +658,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             rename_coordinator=rename_coordinator,
             pending=True,
             pending_save_of=pending_save_of,
+            reader=reader,
         )
 
     @property
@@ -648,32 +672,35 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     @property
     def pending(self) -> bool:
-        """Whether this model is a session-restore placeholder whose file has not been read yet (#66).
+        """Whether this model is a placeholder whose file has not been read yet: a session-restore one (#66), or one
+        just opened whose read is out (#564).
 
         While true, every consumer that reads the file or its directory as a side effect of merely
         *existing* stands down -- the On Disk view already defers to its ``showEvent``, and
         `ConversionBackupActions`, `ChecksumActions`, and `RehuDocumentImageScanner` each guard on this
         -- so building the dock shell for a restored session touches no files at all
-        ([[mounts-and-storage#offline-mounts]]). Cleared by :meth:`load_pending` (via :meth:`revert`)
-        and by any other file seam that replaces the placeholder with real content; each of those emits
-        :attr:`reloaded`, which is the signal those consumers already catch up on -- so no separate
-        notify signal is carried for this flag.
+        ([[mounts-and-storage#offline-mounts]]). Cleared when the read arrives, or at once when the record's save not
+        landed is shown instead, and by any other file seam that replaces the placeholder with real content; each of
+        those emits :attr:`reloaded`, which is the signal those consumers already catch up on -- so no separate notify
+        signal is carried for this flag.
         """
         return self.__pending
 
     def load_pending(self) -> None:
         """Read the file this :attr:`pending` placeholder stands in for -- the deferred half of the
-        session restore's open (#66), run the first time the document's tab actually becomes visible.
+        session restore's open (#66), run the first time the document's tab actually becomes visible, and the
+        whole of an ordinary open (#564).
 
-        Loads the path the way :meth:`load` loads any file -- including materializing the empty **locked** dock
-        for a file that has since vanished or become unparseable ([[data-model#write-integrity]]) -- and always
-        rebuilds the whole form (:attr:`active_block_changed`) for the real type in place of the placeholder's
-        typeless one, since that rebuild is also when the dock adopts the layout the session remembered for it.
+        Reads the path the way :meth:`load` reads any file, off the GUI thread -- including materializing the empty
+        **locked** dock for a file that has since vanished or become unparseable ([[data-model#write-integrity]]) --
+        and always rebuilds the whole form (:attr:`active_block_changed`) for the real type in place of the
+        placeholder's typeless one, since that rebuild is also when the dock adopts the layout the session remembered
+        for it.
 
-        A no-op on a model that is not (or no longer) pending, so a stale second trigger never reloads
-        a document out from under live edits.
+        A no-op on a model that is not (or no longer) pending, or whose read is already out, so a stale second trigger
+        never reloads a document out from under live edits.
         """
-        if self.__pending:
+        if self.__pending and self.reading is None:
             # a placeholder is always bound to the path it stands in for (create_pending)
             self.__read(cast(ResourceKey, self.key), rebuild=True)
 
@@ -682,13 +709,38 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         a document just opened shows ([[sync#unlanded-save]]). A record never saved holds none yet, however dirty a
         new document starts.
 
-        :param record: the file as the caller has just read it, laid under the save rather than read again; ``None``
-            reads it.
+        Never reads: the save is laid over the file as this model last read it, or as the caller just did. A placeholder
+        not read yet, or one whose read is out, is left to that read, which shows the save when it arrives.
+
+        :param record: the file as the caller has just read it; ``None`` takes what this model last read.
         """
         key = self.key
         own_edits = self.dirty and self.saved_on_disk
-        if key is not None and not own_edits and not self.__pending and self.__pending_save_for(key) is not None:
-            self.__read(key, rebuild=False, record=record)
+        if key is None or own_edits or self.__pending or self.reading is not None:
+            return
+        payload = self.__pending_save_for(key)
+        if payload is None:
+            return
+        if record is None:
+            record = LoadedRecord(
+                self.__document, self.__version, tuple(self.__document.lock_reasons), self.__disk_signature
+            )
+        self.adopt_unsaved(payload, record if record.version is not None else None, dirty=False)
+
+    def when_read(self, callback: Callable[[], None]) -> None:
+        """Run ``callback`` once the file being read for this document has arrived and is shown (#564) -- at once when
+        no such read is out. For a caller that judges what an open showed: whether it read at all, what type it is.
+
+        :param callback: what to run; dropped with the model (:meth:`stop_reading`).
+        """
+        if self.reading is None:
+            callback()
+        else:
+            self.__after_read.append(callback)
+
+    def stop_reading(self) -> None:
+        """Take nothing from the read out, if any, nor run what waits for it -- for a holder letting this model go."""
+        self.__read_out = None
 
     @property
     def document(self) -> RehuDocument:
@@ -840,6 +892,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             instead -- it is the saved state now ([[sync#unlanded-save]]).
         """
         self.saving = False
+        if self.__read_out is not None and self.__read_out.fill:
+            # what landed is newer than anything the read out can say of the file
+            self.__read_out = None
         deferred, self.__signature_during_save = self.__signature_during_save, None
         edited = payload_changes(payload.payload, self.__document.payload_to_write())
         kept = {
@@ -963,7 +1018,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param folder_gone: whether the folder the file is in is gone too.
         """
         path = self.path
-        if self.__pending or self.saving or path is None or self.locked:
+        if self.__pending or self.reading is not None or self.saving or path is None or self.locked:
+            # a read out says what it finds itself
             return
         if not self.saved_on_disk:
             self.gone = f"The resource's folder is gone: {path.parent}" if folder_gone else ""
@@ -1101,6 +1157,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         structure is what the form already shows. Like any open, it reads under the identity set now, which an
         identity-setting change made since the document was opened has moved.
 
+        **The file is read off the GUI thread** (#564): a save not landed is shown at once, the file filling in only
+        what it is based on; otherwise the document is :attr:`reading`, locked, until the file arrives.
+
         :raises ValueError: if the document has no local path (it is no file this machine reads).
         """
         path, key = self.path, self.key
@@ -1114,33 +1173,71 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Show the ``.rehu`` (or legacy ``.tc``) at ``path`` in this model, in place of what it showed (#381).
 
         The one way a model takes a file's contents after it is built -- a preview moving on to the next
-        resource, and :meth:`revert` loading the same file again: the file is read the way a holder opens it
-        (:func:`~rehuco_agent.documents.document_registry.load_record` -- a ``.tc`` routed to its own loader,
-        a file that will not read as an empty **locked** stub), and every field is reseeded from it, which every
-        editor and viewer follows through its binding. **Nothing is rebuilt unless the form's structure
-        changed** (:meth:`__form_shape`).
+        resource, and :meth:`revert` loading the same file again: the file is read the way a holder opens it, off the
+        GUI thread (:class:`~.record_reader.RecordReader` -- a ``.tc`` routed to its own loader, a file that will not
+        read as an empty **locked** stub), and every field is reseeded from it once it arrives, which every editor and
+        viewer follows through its binding. Until then the model shows what it showed, :attr:`reading`. **Nothing is
+        rebuilt unless the form's structure changed** (:meth:`__form_shape`).
 
         :param path: the file to show.
         """
         self.__read(ResourceKey(path), rebuild=False)
 
-    def __read(self, key: ResourceKey, *, rebuild: bool, record: LoadedRecord | None = None) -> bool:
-        """Show the record at ``key`` as it stands on this machine: its save that has not landed, if it has one, laid
-        over the file as read ([[sync#unlanded-save]]), else the file.
+    def __read(self, key: ResourceKey, *, rebuild: bool) -> bool:
+        """Show the record at ``key`` as it stands on this machine, its file read off the GUI thread (#564): its save
+        that has not landed, if it has one, **at once** -- the read then fills in only what that save is based on
+        ([[sync#unlanded-save]]) -- else the file once it arrives, :attr:`reading` meanwhile.
 
         :param key: the record.
-        :param rebuild: rebuild the form whatever its structure (:meth:`__load`).
-        :param record: the file as already read, when the caller has just read it; ``None`` reads it.
+        :param rebuild: rebuild the form whatever its structure once the file arrives (:meth:`__load`).
         :returns: whether a save not landed is what is shown.
         """
-        if record is None:
-            record = load_record(self.__records, key)
         payload = self.__pending_save_for(key)
-        if payload is None:
-            self.__load(record, rebuild=rebuild)
-            return False
-        self.adopt_unsaved(payload, record if record.version is not None else None, dirty=False)
-        return True
+        if payload is not None:
+            self.adopt_unsaved(payload, None, dirty=False)
+        self.__request_read(RehuDocumentModel.OutstandingRead(key, rebuild, fill=payload is not None))
+        return payload is not None
+
+    def __request_read(self, read: RehuDocumentModel.OutstandingRead) -> None:
+        """Ask for ``read``, in place of any read out: whatever that one brings is dropped when it arrives.
+
+        :param read: the read.
+        """
+        self.__read_serial += 1
+        self.__read_out = read
+        self.reading = None if read.fill else read.key.path
+        self.__reader.read(read.key, partial(self.__on_read, self.__read_serial))
+
+    def __on_read(self, serial: int, record: LoadedRecord) -> None:
+        """Take a read that arrived, unless this model moved on from it (GUI thread, #564).
+
+        **A read is judged on arrival.** One this model no longer waits for -- another read asked for since (a
+        revert, the preview moving on to another record), a save that landed meanwhile, or the model let go -- is
+        dropped. One that only fills in the record's save not landed touches nothing the document shows or anything
+        edited meanwhile: only the file's signature and its on-disk format version, as far as the file could be read.
+        One the document was waiting for shows the record as it stands now: its save not landed, if one
+        appeared meanwhile, laid over the file, else the file.
+
+        :param serial: which read this is.
+        :param record: what it read.
+        """
+        read = self.__read_out
+        if serial != self.__read_serial or read is None:
+            return
+        self.__read_out = None
+        self.reading = None
+        if read.fill:
+            self.__disk_signature = record.signature
+            self.__document.adopt_disk_versions(record.document)
+            self.__recompute_upgradable()
+        elif (payload := self.__pending_save_for(read.key)) is not None:
+            self.adopt_unsaved(payload, record if record.version is not None else None, dirty=False)
+        else:
+            self.__load(record, rebuild=read.rebuild)
+        waiting = list(self.__after_read)
+        self.__after_read.clear()
+        for callback in waiting:
+            callback()
 
     def __pending_save_for(self, key: ResourceKey) -> SavePayload | None:
         """The record's save that has not landed, if it has one.
@@ -1305,7 +1402,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             # landed is the record here, which nothing on disk reloads over; its own check judges the file
             self.__signature_during_save = (mtime_ns, size)
             return
-        if self.__pending or self.__disk_signature is None or self.__disk_signature == (mtime_ns, size):
+        if (
+            self.__pending
+            or self.reading is not None
+            or self.__disk_signature is None
+            or self.__disk_signature == (mtime_ns, size)
+        ):
+            # not read yet, or a read out that will show the file as it is now
             return
         if self.dirty:
             self.changed_on_disk = True
@@ -1337,6 +1440,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param relocation: the rename's executed plan.
         :returns: whether this document's location changed.
         """
+        read = self.__read_out
+        if read is not None and (moved := relocation.relocate(read.key)) != read.key:
+            # the record being read went with the rename: what the old path gives now is not it
+            self.__request_read(replace(read, key=moved))
         key = self.key
         if key is None:
             return False

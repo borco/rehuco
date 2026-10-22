@@ -33,7 +33,7 @@ def test_the_finished_states_are_the_three_a_job_never_leaves_on_its_own() -> No
 
     * compare the finished set against the three terminal states
     * verify the three a job can still leave are absent -- ``paused`` above all, since a paused job is
-      unfinished work that shutdown must still cancel
+      unfinished work that comes back unfinished after a restart
     """
     assert FINISHED_JOB_STATES == {JobState.DONE, JobState.FAILED, JobState.CANCELLED}
     assert not FINISHED_JOB_STATES & {JobState.QUEUED, JobState.RUNNING, JobState.PAUSED}

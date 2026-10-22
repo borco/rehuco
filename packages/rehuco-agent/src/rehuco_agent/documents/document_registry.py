@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Final, cast
 from uuid import UUID
 
-from borco_core.logging import LogScope
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import RenameCoordinator, SavePayload
 from rehuco_core.access import KeyRelocation, LoadedRecord, Records, ResourceKey
@@ -14,13 +13,14 @@ from rehuco_core.access import KeyRelocation, LoadedRecord, Records, ResourceKey
 from ..resource_events import ResourceEvents
 from ..settings.identity_settings import shared_identity_settings
 from .held_files_watch import HeldFilesWatch
+from .record_reader import RecordReader
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
 
 
-# eight: the rename barrier, the announcements, the records, the disk watch, where pending saves are found, and the
-# three maps of the held models -- each read on its own
+# nine: the rename barrier, the announcements, the records, the disk watch, the record reads, where pending saves are
+# found, and the three maps of the held models -- each read on its own
 # pylint: disable-next=too-many-instance-attributes
 class DocumentRegistry(QObject):
     """Owns every open :class:`RehuDocumentModel`, one per key, and hands the same one to every holder.
@@ -78,6 +78,7 @@ class DocumentRegistry(QObject):
         self.__disk: Final = HeldFilesWatch(self.__events.changes, self.__records, rename_coordinator, roots, self)
         self.__disk.statted.connect(self.__on_statted)
         self.__disk.missing.connect(self.__on_missing)
+        self.__reader: Final = RecordReader(self.__records, rename_coordinator, self)
         self.__events.moved.connect(self.__on_moved)
         self.__events.changed.connect(self.__on_files_changed)
         self.__events.root_stale.connect(self.__on_root_stale)
@@ -97,10 +98,17 @@ class DocumentRegistry(QObject):
         acquired model listens to as well."""
         return self.__events
 
+    @property
+    def reader(self) -> RecordReader:
+        """What every held model's record is read through, off the GUI thread (#564) -- for whoever else reads a record
+        a document is about to show."""
+        return self.__reader
+
     def stop_watching(self) -> None:
         """Stop watching the folders of the documents under no root, and every read still out, before the window goes:
         nothing is delivered after."""
         self.__disk.stop()
+        self.__reader.stop()
 
     def watch_loose_folders(self) -> None:
         """Watch exactly the folders of the held documents under no root -- after the held documents, their keys or
@@ -141,9 +149,12 @@ class DocumentRegistry(QObject):
         ``lazy``) acquisition of another holder's still-unread placeholder reads it
         (:meth:`RehuDocumentModel.load_pending`, a no-op on a loaded model).
 
-        Building one **always** yields a model, never an error ([[data-model#write-integrity]]): a file that
-        is missing, unparseable or refused becomes an **empty, locked** model bound to the path, whose lock
-        reason names the failure.
+        **A model built for a read is a placeholder whose read has started** (#564): the file is read off the GUI
+        thread, so a share that has gone silent never holds the window (:attr:`reader`). A record with a save not
+        landed shows that save at once, editable; one with nothing pending is :attr:`~RehuDocumentModel.reading`
+        until the file arrives. The read **always** yields a record, never an error
+        ([[data-model#write-integrity]]): a file that is missing, unparseable or refused becomes an **empty, locked**
+        model bound to the path, whose lock reason names the failure.
 
         :param key: the key of a ``.rehu`` to load, or to create when ``new``; a ``.tc`` loads through
             :func:`rehuco_core.load_tc` instead ([[acquisition-tooling#tc-to-rehu]]), locked and read-only.
@@ -151,9 +162,8 @@ class DocumentRegistry(QObject):
             (:meth:`RehuDocumentModel.create_new`) instead of reading it -- nothing is written until a save.
         :param lazy: build an unread placeholder (:meth:`RehuDocumentModel.create_pending`, session
             restore, #66) that its holder reads later. Never honored for ``new`` (nothing to defer) or a
-            ``.tc`` (:meth:`RehuDocument.reload`, what the deferred read runs through, re-reads only a
-            ``.rehu``).
-        :param record: the file as the caller has just read it (:func:`load_record`), built from rather than read
+            ``.tc`` (restored at once, as it always was).
+        :param record: the file as the caller has already read it (:attr:`reader`), built from rather than read
             again; ``None`` reads it. Unused for a model already held, a new one or a placeholder.
         :returns: the held model; :attr:`~RehuDocumentModel.pending` tells whether it is still unread.
         """
@@ -164,22 +174,25 @@ class DocumentRegistry(QObject):
                 model.load_pending()
             return model
 
-        model, record = self.__build(
-            key, new=new, lazy=lazy and not new and key.path.suffix.lower() != ".tc", record=record
-        )
+        lazy = lazy and not new and key.path.suffix.lower() != ".tc"
+        model = self.__build(key, new=new, record=record)
         model.setParent(self)
         # a record whose save has not landed opens on that save, its saved state on this machine (#497) -- laid over the
-        # file just read, not a second read of it
+        # file just read, never a second read of it; a placeholder's own read lays it (load_pending, below)
         model.follow_pending_save(record)
         self.__models[key] = model  # pylint: disable=unsupported-assignment-operation
         self.__holders[model] = 1  # pylint: disable=unsupported-assignment-operation
         self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
         model.key_changed.connect(self.__on_key_changed)  # type: ignore[attr-defined]
+        model.reading_changed.connect(self.__on_reading_changed)  # type: ignore[attr-defined]
         model.reloaded.connect(self.__on_reloaded)
         if not new and not model.pending:
             # opening is the access verify-on-access hears of (#487); a focus of a model already held is not one, and
             # an unread placeholder is announced by the read that loads it (its reload), never before (#66)
             self.__events.announce_accessed((key,))
+        if not lazy:
+            # after the reload is heard above: a save not landed shows at once, and that is the open's access
+            model.load_pending()
         self.watch_loose_folders()
         self.model_acquired.emit(model)
         return model
@@ -198,8 +211,10 @@ class DocumentRegistry(QObject):
             self.__holders[model] = holders  # pylint: disable=unsupported-assignment-operation
             return
         del self.__holders[model]  # pylint: disable=unsupported-delete-operation
+        model.stop_reading()
         self.__unmap(model, self.__keys.pop(model))
         model.key_changed.disconnect(self.__on_key_changed)  # type: ignore[attr-defined]
+        model.reading_changed.disconnect(self.__on_reading_changed)  # type: ignore[attr-defined]
         model.reloaded.disconnect(self.__on_reloaded)
         model.deleteLater()
         self.watch_loose_folders()
@@ -267,13 +282,33 @@ class DocumentRegistry(QObject):
     def __on_key_changed(self, key: ResourceKey | None) -> None:
         """Move the sending model's entry to its new ``key``.
 
-        A key another held model already has is left to that model -- two models of one record are a
-        conflict this registry can't resolve, only report; the moved model stays held, just unfindable.
-
         :param key: the model's new key.
         """
         # only a held model is connected here: acquire connects it and the last release disconnects it
-        model = cast(RehuDocumentModel, self.sender())
+        self.__rekey(cast(RehuDocumentModel, self.sender()), key)
+
+    def __on_reading_changed(self, reading: Path | None) -> None:
+        """Hold the sending model under the record it is reading, as soon as the read starts (#564): a preview moving on
+        to another record is found as that record while its file is on the way -- and opened by promoting the preview,
+        never as a second document of it -- and no longer as the record it still shows.
+
+        :param reading: the file being read, or ``None`` once it arrived -- when :attr:`~RehuDocumentModel.key_changed`
+            moves the entry, to the same key.
+        """
+        if reading is not None:
+            self.__rekey(cast(RehuDocumentModel, self.sender()), ResourceKey(reading))
+
+    def __rekey(self, model: RehuDocumentModel, key: ResourceKey | None) -> None:
+        """Move ``model``'s entry to ``key``.
+
+        A key another held model already has is left to that model -- two models of one record are a
+        conflict this registry can't resolve, only report; the moved model stays held, just unfindable.
+
+        :param model: a held model.
+        :param key: its key now.
+        """
+        if key == self.__keys[model]:
+            return
         self.__unmap(model, self.__keys[model])
         self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
         if key is not None and self.__models.get(key) is not None:
@@ -301,46 +336,41 @@ class DocumentRegistry(QObject):
         if key is not None and self.__models.get(key) is model:
             del self.__models[key]  # pylint: disable=unsupported-delete-operation
 
-    def __build(
-        self, key: ResourceKey, *, new: bool, lazy: bool, record: LoadedRecord | None
-    ) -> tuple[RehuDocumentModel, LoadedRecord | None]:
-        """Build the model for ``key`` -- see :meth:`acquire` for ``new``, ``lazy`` and ``record``.
+    def __build(self, key: ResourceKey, *, new: bool, record: LoadedRecord | None) -> RehuDocumentModel:
+        """Build the model for ``key`` -- see :meth:`acquire` for ``new`` and ``record``.
 
         :param key: the document's key.
         :param new: start a new, dirty document.
-        :param lazy: start an unread placeholder (already narrowed by :meth:`acquire`).
-        :param record: the file as already read, or ``None`` to read it.
-        :returns: the new, parentless model, and the record it was read from -- ``None`` when nothing was read.
+        :param record: the file as already read, or ``None`` for a placeholder its holder reads.
+        :returns: the new, parentless model.
         """
         if new:
-            model = RehuDocumentModel.create_new(
+            return RehuDocumentModel.create_new(
                 key.path,
                 username=shared_identity_settings().current_username,
                 records=self.__records,
                 rename_coordinator=self.__rename_coordinator,
                 pending_save_of=self.__pending_save_for,
+                reader=self.__reader,
             )
-            return model, None
-        if lazy:
-            model = RehuDocumentModel.create_pending(
-                key.path,
-                username=shared_identity_settings().current_username,
-                records=self.__records,
-                rename_coordinator=self.__rename_coordinator,
-                pending_save_of=self.__pending_save_for,
-            )
-            return model, None
         if record is None:
-            record = load_record(self.__records, key)
-        model = RehuDocumentModel(
+            return RehuDocumentModel.create_pending(
+                key.path,
+                username=shared_identity_settings().current_username,
+                records=self.__records,
+                rename_coordinator=self.__rename_coordinator,
+                pending_save_of=self.__pending_save_for,
+                reader=self.__reader,
+            )
+        return RehuDocumentModel(
             record.document,
             records=self.__records,
             version=record.version,
             signature=record.signature,
             rename_coordinator=self.__rename_coordinator,
             pending_save_of=self.__pending_save_for,
+            reader=self.__reader,
         )
-        return model, record
 
     def __pending_save_for(self, key: ResourceKey) -> SavePayload | None:
         """A record's save that has not landed, asked of the save owner once there is one.
@@ -349,31 +379,3 @@ class DocumentRegistry(QObject):
         :returns: its data, or ``None``.
         """
         return None if self.__pending_save_of is None else self.__pending_save_of(key)
-
-
-def load_record(records: Records, key: ResourceKey) -> LoadedRecord:
-    """Read ``key``, or an empty locked stub standing in for it when it cannot be read -- the one way a record is
-    read for a model, whether a holder is opening it or a model is loading it again (#381, #416).
-
-    The record is read through ``records`` ([[nodes#access-seam]]), which routes a ``.tc`` to its own loader and draws
-    the missing-vs-unparseable line once, so the holder gets a locked, never-savable stub instead of an exception
-    ([[data-model#write-integrity]]). Each kind is handed the identity that matches its provenance
-    (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at each read -- the
-    document keeps it until it is read again, so a later identity-setting change reaches a document opened
-    afterwards, or one reverted or loaded in place afterwards (#381). A ``.tc`` import files its per-user state under
-    the **unknown** user, since a flag carried in from the file was not set by this install's identity; a ``.rehu``
-    (whose per-user writes this UI makes) is opened under the **current** user.
-
-    **The read is logged, under this resource's own scope** (#200); a failed read is logged by ``records``, as an
-    error: there is no document -- the stub stands in for one.
-
-    :param records: what the record is read through.
-    :param key: the record (a ``.rehu``, or a legacy ``.tc``).
-    :returns: the record, or a locked stub standing in for it.
-    """
-    settings = shared_identity_settings()
-    with LogScope.open(key.path):
-        record = records.load(key, username=settings.current_username, unknown_username=settings.unknown_username)
-        if not record.document.load_failed:
-            LOG.info("Read %s as %s", key, record.document.type or "an untyped resource")
-        return record

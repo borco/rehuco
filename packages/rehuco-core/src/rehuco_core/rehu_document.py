@@ -715,6 +715,16 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         # (#142), so a save right after a revert reads as the no-op it is
         self.__saved_metadata = self.__metadata_text()
 
+    def adopt_disk_versions(self, read: RehuDocument) -> None:
+        """Take what the file says its versions are from ``read``, a fresh read of it, keeping everything else -- for a
+        document that shows something other than the file, such as a save of it not landed yet, and has just learned
+        what the file underneath is.
+
+        :param read: the file, as just read.
+        """
+        self.__on_disk_format_version = read.on_disk_format_version
+        self.__on_disk_active_block_format_version = read.on_disk_active_block_format_version
+
     def rebind_path(self, path: Path | str) -> None:
         """Re-point this document at ``path`` after its file moved on disk underneath it -- a completed
         rename (:func:`~rehuco_core.rename_rehu_resource`, [[plugins#toolkit-surfaces]]).

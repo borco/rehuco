@@ -99,6 +99,10 @@ from rehuco_agent.settings.videos_settings import shared_videos_settings
 from rehuco_agent.settings.web_search_settings import shared_web_search_settings
 from rehuco_core import DEFAULT_CHECKSUM_TRUST, DEFAULT_DELETER_PROVIDER, AppFolders, RootOverlap
 
+from rehuco_agent_tests.record_reads import (  # noqa: F401  # pylint: disable=unused-import
+    fixture_held_reads,
+    fixture_inline_record_reads,
+)
 from rehuco_agent_tests.settings_page_stubs import (  # noqa: F401  # pylint: disable=unused-import
     fixture_real_settings_pages,
     fixture_stub_settings_pages,

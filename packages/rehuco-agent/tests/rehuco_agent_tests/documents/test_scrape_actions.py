@@ -553,7 +553,7 @@ def test_another_record_loaded_in_place_says_nothing_of_the_last_one_s_scrapes(
     def load(name: str) -> None:
         other = RehuDocument({"type": "Tutorial", "title": name}, PATH.with_name(f"{name}.rehu"))
         mocker.patch(
-            "rehuco_agent.documents.rehu_document_model.load_record",
+            "rehuco_agent.documents.record_reader.RecordReader.read_record",
             return_value=LoadedRecord(other, None, tuple(other.lock_reasons), None),
         )
         doc_model.load(PATH.with_name(f"{name}.rehu"))

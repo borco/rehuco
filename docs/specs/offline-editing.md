@@ -15,6 +15,16 @@ is not something to edit, and an edit made to it apart from the file would be th
 design declines to have ([[sync#overview]]). A document opened from an offline root locks with the reason
 ([[data-model#lock-vocabulary]]) and opens for editing again when the share comes back.
 
+**A record with a save not landed is the exception.** That save is a borrowed copy of the record
+([[sync#unlanded-save]]): its payload, not the file, is the record on this machine. The document opens on it at once,
+editable whether or not the share answers, and its next Save replaces the pending one, which lands when the share is
+back.
+
+**Nothing waits for the share in the window.** The file is read off the window's thread
+([[appendices.code-conventions#worker-threads]]). A record with nothing pending says *Reading…* with its editors locked
+until the file arrives, and a share that never answers ends in the locked view above, with its reason. A record with a
+save not landed shows the save meanwhile; the read only fills in what the document is based on.
+
 **Per-user state is always editable, through the queue.** A rating, a note, a *viewed* flag, progress watched from a
 borrowed or local copy: each is a save job whose target is the user's sidecar on the share
 ([[sync#apply-payload]]). While the share is unreachable the job waits, persisted with its payload, counted in Pending

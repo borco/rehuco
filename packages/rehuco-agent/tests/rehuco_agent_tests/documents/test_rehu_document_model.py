@@ -26,7 +26,7 @@ from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
-from rehuco_agent.documents import document_registry
+from rehuco_agent.documents import record_reader
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, key_label
 from rehuco_agent.fields import FieldsTab, UnknownField
@@ -132,12 +132,12 @@ def reloads_as(mocker: MockerFixture, document: RehuDocument, change: Callable[[
     :returns: the stand-in reader, to assert on what was read.
     """
 
-    def read(_records: Records, _key: ResourceKey) -> LoadedRecord:
+    def read(_records: Records, _key: ResourceKey, **_identity: str) -> LoadedRecord:
         if change is not None:
             change()
         return LoadedRecord(document, None, tuple(document.lock_reasons), None)
 
-    return mocker.patch("rehuco_agent.documents.rehu_document_model.load_record", side_effect=read)
+    return mocker.patch("rehuco_agent.documents.record_reader.RecordReader.read_record", side_effect=read)
 
 
 def converts_to(mocker: MockerFixture, document: RehuDocument) -> MagicMock:
@@ -3892,7 +3892,7 @@ class RecordingSink:
 def scoped_sink(qtbot: QtBot) -> Iterator[Callable[[Hashable | None], RecordingSink]]:
     """Provide a way to record what the shared bridge routes to one scope.
 
-    The model's own logger, the shared loader's a model reads a file through (#381), and the save job's a model
+    The model's own logger, the reader's a model reads a file through (#381, #564), and the save job's a model
     writes it through (#497) are attached to the bridge with propagation off, so these records reach the bridge under
     test and neither the console nor a handler another test left behind.
 
@@ -3904,7 +3904,7 @@ def scoped_sink(qtbot: QtBot) -> Iterator[Callable[[Hashable | None], RecordingS
     bridge = shared_log_bridge()
     loggers = [
         logging.getLogger(RehuDocumentModel.__module__),
-        logging.getLogger(document_registry.__name__),
+        logging.getLogger(record_reader.__name__),
         logging.getLogger(save_record_job.__name__),
     ]
     previous = [(logger.propagate, logger.level) for logger in loggers]

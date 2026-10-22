@@ -4,6 +4,7 @@
 import logging
 import time
 from collections.abc import Container
+from functools import partial
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -644,6 +645,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # widget. Which one -- the session's own, its type's saved default (#62, #320), or the as-built
         # it already has -- is the widget's own decision, so what a default means lives in one place
         dock.document_widget.adopt_layout(state)
+        if preview and model.reading is not None:
+            # the type whose preview layout this takes is known once the file arrives (#564)
+            model.when_read(partial(self.__lay_out_preview, dock, None))
 
         return dock
 
@@ -675,6 +679,34 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             self.__registry.release(old)
             layout_type = None
         loaded = time.perf_counter()
+        # the record's type is known once its file arrives, which is read off the GUI thread (#564)
+        widget.model.when_read(partial(self.__lay_out_preview, preview, layout_type))
+        # a preview already current stays so, and the tracker says nothing -- the window still has to hear
+        # that its focused document is another one now
+        was_current = self.__tracker.current_dock is preview
+        self.__activate(preview)
+        if was_current:
+            self.document_focus_changed.emit(widget)
+        # what the GUI thread was held for, phase by phase: the number a slow preview is judged by
+        LOG.debug(
+            "Preview of %s: load %.0f ms, total %.0f ms",
+            key,
+            (loaded - started) * 1000,
+            (time.perf_counter() - started) * 1000,
+        )
+        return widget
+
+    def __lay_out_preview(self, preview: DocumentDock, layout_type: str | None) -> None:
+        """Lay out the preview for the record it shows, once that record is shown (#39, #564) -- unless it is no longer
+        the preview by then.
+
+        :param preview: the preview dock.
+        :param layout_type: the type it showed before moving on to the record, or ``None`` when it was built afresh for
+            it.
+        """
+        if preview is not self.__preview:
+            return
+        widget = preview.document_widget
         if layout_type is None:
             # built afresh: laid out the way any new preview is
             widget.adopt_layout(self.__preview_layout_for(widget))
@@ -685,22 +717,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             if state is None or not widget.restore_state(state):
                 widget.sub_docks.apply_default_layout()
         # a record of the type already shown keeps the arrangement the reader has in front of them
-        laid_out = time.perf_counter()
-        # a preview already current stays so, and the tracker says nothing -- the window still has to hear
-        # that its focused document is another one now
-        was_current = self.__tracker.current_dock is preview
-        self.__activate(preview)
-        if was_current:
-            self.document_focus_changed.emit(widget)
-        # what the GUI thread was held for, phase by phase: the number a slow preview is judged by
-        LOG.debug(
-            "Preview of %s: load %.0f ms, layout %.0f ms, total %.0f ms",
-            key,
-            (loaded - started) * 1000,
-            (laid_out - loaded) * 1000,
-            (time.perf_counter() - started) * 1000,
-        )
-        return widget
 
     def __promote(self, preview: DocumentDock, *, announce: bool = True) -> None:
         """Make ``preview`` an ordinary document dock (#39), remembering the layout it leaves first.

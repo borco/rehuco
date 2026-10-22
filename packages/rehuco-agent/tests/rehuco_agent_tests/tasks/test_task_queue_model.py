@@ -279,6 +279,8 @@ def test_a_worker_thread_update_is_delivered_on_the_gui_thread(
     assert status.total == 1
 
     job.let_finish()
+    # the worker settles the job on its own time: a pump alone can end before the snapshot of it is posted
+    wait_until_done(queue)
     deliver()
     assert model.status_at(0).state.value == "done"
 

@@ -118,6 +118,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - `payload_changes(before, after)` lists the field paths two payloads differ at, and `paths_overlap` says whether
   two of them touch. `RehuDocument.unlogged_dropped_block_keys` names the dropped blocks not logged yet, and
   `note_written` records what a save wrote and discarded.
+- `RehuDocument.adopt_disk_versions(read)` takes the on-disk format versions from a fresh read of the file, keeping
+  everything else -- for a document showing a save not landed yet (#564).
 - `merge_users` and `Records.save` take `dropped`, the blocks a snapshot left out on purpose, so a save built from
   one never adds them back from the file (`add_file_only_blocks`). `Records.save(new=True)` refuses as a
   `RecordConflict` a first save onto a record that already exists.
@@ -131,6 +133,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   joins every worker against one deadline. A chain belongs to a family registered once in a `ChainRegistry`
   (`DEFAULT_CHAIN_REGISTRY`), which builds its keys as `name` or `name:resource`; a second claim of a name is refused,
   and so is a job whose chain no family owns -- dropped, with a warning, when it comes back from a queue file.
+- `TaskQueue.shutdown()` stops the workers and leaves every job in the state it stands in, instead of cancelling every
+  unfinished one (#564): a queue written by the exit sequence stays true whoever listens, so a waiting job comes back
+  waiting. A job still running is asked to pause rather than cancelled.
 - `JobStatus.error` is now `JobStatus.message` (#497): why a job failed, or what a waiting one waits for. A queue
   file is written with the key `message`, and one written by an earlier build is still read by its `error` key.
 - The file notifier recognises an atomic save by the temporary sibling's new name, `<name>.<random>.tmp` (the random
