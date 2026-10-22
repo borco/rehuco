@@ -454,6 +454,28 @@ def stays_put(model: RehuDocumentModel) -> Generator[None]:
     assert not moves
 
 
+def renaming(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> tuple[DocumentRegistry, ResourceEvents, RehuDocumentModel, Path]:
+    """A model held in a registry whose events hear a coordinator, its rename on disk mocked to land at ``modelling``.
+
+    :param mocker: pytest-mock fixture.
+    :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
+    :returns: the registry, its events, the model and the record's path once renamed.
+    """
+    load_document(mocker)
+    renamed = FAKE_PATH.parent.with_name("modelling") / "info.rehu"
+    renamer = mocker.patch("rehuco_core.rename_coordination.RehuRenamer", autospec=True).return_value
+    renamer.rename.return_value = renamed
+    renamer.relocation = Relocation(((FAKE_PATH.parent, renamed.parent),))
+    mocker.patch.object(RenameCoordinator, "_RenameCoordinator__step_out_of")
+    coordinator = RenameCoordinator()
+    events = delete_at_teardown(ResourceEvents())
+    coordinator.add_rename_listener(events.announce_moved)
+    registry = DocumentRegistry(rename_coordinator=coordinator, resource_events=events)
+    return registry, events, registry.acquire(FAKE_KEY), renamed
+
+
 def test_the_renaming_document_adopts_its_rename_exactly_once(
     mocker: MockerFixture, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
 ) -> None:
@@ -467,17 +489,7 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(
     * verify ``key_changed`` and ``image_scanner_changed`` fired once each, and the registry re-keyed it
     """
     del qtbot
-    load_document(mocker)
-    renamed = FAKE_PATH.parent.with_name("modelling") / "info.rehu"
-    renamer = mocker.patch("rehuco_core.rename_coordination.RehuRenamer", autospec=True).return_value
-    renamer.rename.return_value = renamed
-    renamer.relocation = Relocation(((FAKE_PATH.parent, renamed.parent),))
-    mocker.patch.object(RenameCoordinator, "_RenameCoordinator__step_out_of")
-    coordinator = RenameCoordinator()
-    events = delete_at_teardown(ResourceEvents())
-    coordinator.add_rename_listener(events.announce_moved)
-    registry = DocumentRegistry(rename_coordinator=coordinator, resource_events=events)
-    model = registry.acquire(FAKE_KEY)
+    registry, _, model, renamed = renaming(mocker, delete_at_teardown)
     keys: list[object] = []
     scanners: list[object] = []
     model.key_changed.connect(keys.append)  # type: ignore[attr-defined]
@@ -488,6 +500,30 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(
     assert keys == [ResourceKey(renamed)]
     assert len(scanners) == 1
     assert registry.find(ResourceKey(renamed)) is model
+
+
+def test_a_rename_is_announced_as_an_access_of_its_new_key_after_the_move(
+    mocker: MockerFixture, qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
+    """The cache follows a rename reading nothing, so the record is announced as accessed at its new key -- after the
+    move, or a check planned before the cache rebased its row would be dropped as overtaken (#566).
+
+    **Test steps:**
+
+    * hold a model in a registry whose events hear a coordinator, with the rename on disk mocked
+    * rename it from its location editor, recording the events' moves and accesses in one list
+    * verify the move came first, then one access of the new key
+    """
+    del qtbot
+    _, events, model, renamed = renaming(mocker, delete_at_teardown)
+    heard: list[tuple[str, object]] = []
+    events.moved.connect(lambda relocation: heard.append(("moved", relocation)))
+    events.accessed.connect(lambda keys: heard.append(("accessed", keys)))
+
+    assert model.rename_location("modelling")
+
+    assert [kind for kind, _ in heard] == ["moved", "accessed"]
+    assert heard[1] == ("accessed", (ResourceKey(renamed),))
 
 
 # endregion

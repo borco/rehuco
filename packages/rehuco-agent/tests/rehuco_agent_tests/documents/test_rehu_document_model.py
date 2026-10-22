@@ -377,6 +377,101 @@ def test_rename_location_adopts_the_new_path_on_success(mocker: MockerFixture) -
     assert model.rename_error == ""
 
 
+def test_a_rename_that_landed_is_announced_once_from_the_new_path(mocker: MockerFixture) -> None:
+    """``renamed`` fires once the rename landed, with the model already at its new path -- what the registry announces
+    for the cache to read the record there (#566).
+
+    **Test steps:**
+
+    * mock the core rename to succeed on a dirty document, its save patched
+    * rename it, noting the model's path each time ``renamed`` fires
+    * verify it fired once, at the new path
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_folder" / "info.rehu"))
+    model.title = "New Title"
+    mocker.patch.object(model, "save")
+    renamed = TUTORIALS / "new_name" / "info.rehu"
+    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=renamed)
+    heard: list[Path | None] = []
+    model.renamed.connect(lambda: heard.append(model.path))
+
+    assert model.rename_location("new_name") is True
+
+    assert heard == [renamed]
+
+
+def no_location(mocker: MockerFixture) -> RehuDocumentModel:
+    """A model with no path at all.
+
+    :param mocker: unused.
+    :returns: the model.
+    """
+    del mocker
+    return RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
+
+
+def pending_save(mocker: MockerFixture) -> RehuDocumentModel:
+    """A model whose record has a save not landed yet.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the model.
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
+    mocker.patch.object(model, "_RehuDocumentModel__pending_save_for", return_value=MagicMock())
+    return model
+
+
+def failing_save(mocker: MockerFixture) -> RehuDocumentModel:
+    """A dirty model whose save before the move fails.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the model.
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
+    model.title = "New Title"
+    mocker.patch.object(model, "save", side_effect=OSError(5, "offline mount"))
+    return model
+
+
+def failing_move(mocker: MockerFixture) -> RehuDocumentModel:
+    """A clean model whose move is refused.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the model.
+    """
+    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=OSError("boom"))
+    return RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
+
+
+@mark.parametrize(
+    "build",
+    [
+        param(no_location, id="no-location"),
+        param(pending_save, id="pending-save"),
+        param(failing_save, id="failing-save"),
+        param(failing_move, id="failing-move"),
+    ],
+)
+def test_a_rename_that_failed_is_never_announced(
+    mocker: MockerFixture, build: Callable[[MockerFixture], RehuDocumentModel]
+) -> None:
+    """A refused rename moved nothing, so nothing is to be read at a new path (#566).
+
+    **Test steps:**
+
+    * build a model whose rename is refused at one of its steps
+    * rename it
+    * verify it failed and ``renamed`` never fired
+    """
+    model = build(mocker)
+    heard: list[object] = []
+    model.renamed.connect(lambda: heard.append(None))
+
+    assert model.rename_location("new_name") is False
+
+    assert not heard
+
+
 def test_rename_location_reinstalls_the_image_scanner_on_success(mocker: MockerFixture) -> None:
     """A successful rename installs a **fresh** scanner, so ``image_scanner_changed`` tells the image
     strip and the Markdown viewer that the screenshot names they hold are stale.
