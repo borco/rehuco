@@ -40,7 +40,7 @@ from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
 from .single_choice_radio_buttons import SingleChoiceRadioButtons
 from .size_measurement_edit import SizeMeasurementEdit
-from .source_card_content import SourceCardContent, UrlEditDropFilter
+from .source_card_content import LinkDropPassFilter, SourceCardContent, UrlEditDropFilter
 from .sources_editor import SourcesEditor
 from .thumbnail_loader import ThumbnailLoader
 from .thumbnail_row import ThumbnailRow
@@ -69,6 +69,7 @@ __all__ = [
     "SourceCardContent",
     "SourcesEditor",
     "UrlEditDropFilter",
+    "LinkDropPassFilter",
     "ImageDescription",
     "ImageExporter",
     "image_mime",

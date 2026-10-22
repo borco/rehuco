@@ -19,8 +19,8 @@ class UrlEditDropFilter(QObject):
 
     A `QLineEdit` already accepts a plain-text drop and would insert the link's characters at the drop point;
     what a link dropped **on a URL edit** means is the edit's new text, whole. Only a link is taken here: any
-    other drop is left to the edit's own handling. The edits beside it accept no drops at all
-    (:class:`SourceCardContent`), which is what lets a link dropped anywhere else on the card reach the Main
+    other drop is left to the edit's own handling. The edits beside it hand a link on instead
+    (:class:`LinkDropPassFilter`), which is what lets a link dropped anywhere else on the card reach the Main
     Editor dock's scrape.
 
     :param edit: the URL edit.
@@ -49,6 +49,44 @@ class UrlEditDropFilter(QObject):
         return True
 
 
+class LinkDropPassFilter(QObject):
+    """Hands a link dropped on a text edit to the widget behind it, leaving any other drop to the edit.
+
+    A `QLineEdit` accepts drops by default and inserts a dropped link's characters, so it would swallow a link
+    meant for the Main Editor dock's scrape. A drop that `UrlDrop.parse` recognises is therefore ignored here,
+    which has Qt offer it to the nearest ancestor that accepts drops; every other drop, a title or a publisher's
+    name among them, is the edit's own to insert.
+
+    :param edit: the text edit.
+    """
+
+    def __init__(self, edit: LineEdit) -> None:
+        super().__init__(edit)
+        self.__edit: Final = edit
+        edit.installEventFilter(self)
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802  (Qt override)
+        """See :meth:`QObject.eventFilter`: ignore a drag or drop carrying a link, so Qt offers it to the
+        widget behind the edit; let anything else reach the edit.
+
+        :param watched: the edit this filter is installed on.
+        :param event: the event to inspect.
+        :returns: whether the event was consumed here.
+        """
+        if watched is not self.__edit or event.type() not in (
+            QEvent.Type.DragEnter,
+            QEvent.Type.DragMove,
+            QEvent.Type.Drop,
+        ):
+            return False
+        drop_event = cast(QDropEvent, event)
+        if UrlDrop.parse(drop_event.mimeData()) is None:
+            return False
+        drop_event.ignore()
+        return True
+
+
 class SourceCardContent(QWidget):
     """One source, as three captioned line edits: a `CardContent` ([[plugins#field-toolkit]]).
 
@@ -64,8 +102,9 @@ class SourceCardContent(QWidget):
     **The top card is the primary**, but nothing on the card says so: the captions stay plain, so dragging a
     card never makes a different one look changed.
 
-    A link dropped on the URL edit replaces its text (:class:`UrlEditDropFilter`); the title and publisher
-    edits accept no drops, so a link dropped on them reaches the dock behind the editor.
+    A link dropped on the URL edit replaces its text (:class:`UrlEditDropFilter`); a link dropped on the title
+    or publisher edit reaches the dock behind the editor (:class:`LinkDropPassFilter`), and any other text
+    dropped on them is inserted.
 
     :param parent: optional Qt parent.
     """
@@ -102,8 +141,8 @@ class SourceCardContent(QWidget):
         for caption, edit in zip(self.__captions, self.__edits.values(), strict=True):
             layout.addRow(caption, edit)
         for edit in (self.__title, self.__publisher):
-            edit.setAcceptDrops(False)
-        UrlEditDropFilter(self.__url)  # parented to the edit, which is what keeps it alive
+            LinkDropPassFilter(edit)  # parented to the edit, which is what keeps it alive
+        UrlEditDropFilter(self.__url)
         for edit in self.__edits.values():
             edit.value_changed.connect(self.__on_edited)
 
