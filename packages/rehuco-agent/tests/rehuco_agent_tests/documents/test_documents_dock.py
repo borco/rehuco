@@ -28,7 +28,7 @@ from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
-from rehuco_agent.documents import document_registry
+from rehuco_agent.documents import document_registry, record_reader
 from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER, DocumentDock
 from rehuco_agent.documents.document_registry import DocumentRegistry
 from rehuco_agent.documents.document_widget import DocumentWidget
@@ -1932,11 +1932,9 @@ def configure_identity(mocker: MockerFixture, *, current: str = "admin", unknown
     :param current: the current username ``shared_identity_settings()`` should report.
     :param unknown: the unknown username ``shared_identity_settings()`` should report.
     """
-    mocker.patch.object(
-        document_registry,
-        "shared_identity_settings",
-        return_value=IdentitySettings(current_username=current, unknown_username=unknown),
-    )
+    settings = IdentitySettings(current_username=current, unknown_username=unknown)
+    mocker.patch.object(document_registry, "shared_identity_settings", return_value=settings)
+    mocker.patch.object(record_reader, "shared_identity_settings", return_value=settings)
 
 
 def test_open_document_threads_the_current_username(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2081,7 +2079,7 @@ def read_sink(qtbot: QtBot) -> Iterator[RecordingSink]:
     """
     del qtbot  # only needed so a QApplication and an event loop exist
     bridge = shared_log_bridge()
-    logger = logging.getLogger(document_registry.__name__)
+    logger = logging.getLogger(record_reader.__name__)
     previous_propagate = logger.propagate
     previous_level = logger.level
     # DEBUG explicitly: this logger's own level is NOTSET, so the effective floor would otherwise be the
@@ -3310,12 +3308,12 @@ def test_a_preview_logs_how_long_it_held_the_window(
     mocker: MockerFixture, qtbot: QtBot, caplog: LogCaptureFixture
 ) -> None:
     """Each preview logs, at debug level, how long the GUI thread was held -- per phase for a switch in place, so
-    a slow one says where its time went (#381).
+    a slow one says where its time went (#381). The layout follows the record's read (#564), so it is no phase of it.
 
     **Test steps:**
 
     * show one document in the preview, then another
-    * verify a line for the new preview, then one naming the load, layout and total of the switch
+    * verify a line for the new preview, then one naming the load and total of the switch
     """
     load_document(mocker)
     dock = DocumentsDock()
@@ -3328,7 +3326,7 @@ def test_a_preview_logs_how_long_it_held_the_window(
     lines = [record.getMessage() for record in caplog.records if "review of" in record.getMessage()]
     assert lines[0].startswith(f"New preview of {FAKE_PATH}: total ")
     assert lines[1].startswith(f"Preview of {OTHER_PATH}: load ")
-    assert all(phase in lines[1] for phase in ("layout ", "total "))
+    assert "total " in lines[1]
 
 
 def test_showing_what_the_preview_shows_does_not_take_the_focus(mocker: MockerFixture, qtbot: QtBot) -> None:

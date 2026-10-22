@@ -24,9 +24,10 @@ Two different kinds of data live beside a resource, with different natural owner
 | Resource metadata | `info.rehu` | Anyone who edits the resource | Real but rare: two people editing the same record's details apart |
 | Per-user state | `info.user-<name>.rehuser` ([[data-model#single-file]]) | That user, from any of their devices | Only between one user's devices; merges by field |
 
-**Metadata is edited only while the file is reachable.** A record whose share is offline shows its cached details
-read-only ([[offline-editing#overview]]); what remains writable offline is per-user state, through the queued jobs
-below. The two statements that were v1's hardest promise — a single writer, and offline edits that converge — are no
+**Metadata is edited only while the file is reachable, or while a save of it has not landed.** A record whose share is
+offline shows its cached details read-only ([[offline-editing#overview]]); what remains writable offline is per-user
+state, through the queued jobs below, and a record whose save is still pending, which is a borrowed copy
+([[sync#unlanded-save]]). The two statements that were v1's hardest promise — a single writer, and offline edits that converge — are no
 longer needed: a save that cannot reach the file waits, and a save that finds the file changed is a conflict shown to
 the user.
 
@@ -94,10 +95,12 @@ ten seconds. Then:
   ([[field-schema#watch-progress]]); free-text notes that genuinely collide keep both and say so. Data is never
   silently lost.
 - **Changed in the details** → the save is a **conflict**: the job fails with the conflict kept on it, and the document
-  stays dirty under the conflict banner. No dialog pops while the user is elsewhere; the **next Save** re-reads the file
-  and first shows every value the two versions disagree on with its original, the user's (the live document, edits
-  made since the failed save included) and the file's; the user picks per row and saves, or discards their edits
-  ([[nodes#access-seam]]). A Save on a document whose file changed on disk under its edits does the same.
+  stays dirty under the conflict banner. No dialog pops while the user is elsewhere; the **next Save** first shows every
+  value the two versions disagree on, the file's side as the failed save read it, with its original, the user's (the
+  live document, edits made since the failed save included) and the file's; the user picks per row and saves, or
+  discards their edits ([[nodes#access-seam]]). That save is checked like any other, so a file changed once more
+  meanwhile fails it again. A Save on a document whose file changed on disk under its edits is a save like any other:
+  its own check merges the change by field, or fails as a conflict.
 
 **Deletion is a filesystem fact.** A record deleted on the share is gone for everyone: the notifier reports it, the
 cache drops the row, a queued save for it fails and says the file is gone. **A save never recreates a folder, or the
@@ -159,8 +162,10 @@ for a save the queued payload does. Every rule below is the borrow's.
 
 - **The pending payload is the saved state.** Pressing Save hands the edits to it and leaves the document clean; an
   edit after that makes it dirty again. **Revert** goes back to the pending payload, **opening** the record — again, or
-  after a restart, since the payload is written down with the queue — shows it, clean, under the pending-save banner.
-  The file is still read, so a document whose share answers knows what it is based on.
+  after a restart, since the payload is written down with the queue — shows it, clean, under the pending-save banner,
+  at once and editable whether or not the share answers ([[offline-editing#overview]]). The file is still read, in the
+  background, so a document whose share answers knows what it is based on: the read fills in the file's signature and
+  format version, and never what the document shows or anything edited meanwhile.
 - **Closing loses only what was not saved.** Discard when closing drops the edits since the last Save; the pending
   save stays and lands later, exactly as closing a borrowed document leaves the copy.
 - **Nothing drops a pending save on its own.** It leaves only by landing or by **Drop** — *Discard Save* in the Tasks
@@ -207,7 +212,7 @@ nothing about dirty documents: their edits, and each one's dock layout, are kept
 config folder, and the next start reopens those documents dirty with those edits, whether or not the session is
 restored — at once on a local drive, once the share answers otherwise, and one whose share does not answer stays kept
 for the start after. A never-saved document comes back new, bound to its path; one whose file changed meanwhile shows
-the changed-on-disk banner, so its Save shows the differences; one whose file or folder is gone reopens with its edits
+the changed-on-disk banner, and its save is checked against the file; one whose file or folder is gone reopens with its edits
 and the *gone* banner rather than being dropped. With the setting off, quitting asks as before; closing one document by
 hand always asks Save / Discard / Cancel. What was saved is never in question at a quit: a save not landed is written
 down with the queue, and comes back as the record's saved state ([[sync#unlanded-save]]).

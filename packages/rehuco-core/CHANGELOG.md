@@ -118,6 +118,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - `payload_changes(before, after)` lists the field paths two payloads differ at, and `paths_overlap` says whether
   two of them touch. `RehuDocument.unlogged_dropped_block_keys` names the dropped blocks not logged yet, and
   `note_written` records what a save wrote and discarded.
+- `RehuDocument.adopt_disk_versions(read)` takes the on-disk format versions from a fresh read of the file, keeping
+  everything else -- for a document showing a save not landed yet (#564).
 - `merge_users` and `Records.save` take `dropped`, the blocks a snapshot left out on purpose, so a save built from
   one never adds them back from the file (`add_file_only_blocks`). `Records.save(new=True)` refuses as a
   `RecordConflict` a first save onto a record that already exists.

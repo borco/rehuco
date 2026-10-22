@@ -151,6 +151,9 @@ CONFLICT_MESSAGE: Final = (
 SAVING_MESSAGE: Final = "Saving…"
 """The notice for a document whose save has been handed to a job and has not come back yet (#497)."""
 
+READING_MESSAGE: Final = "Reading {path}…"
+"""The notice for a document waiting for its file to be read, its editors locked until it arrives (#564)."""
+
 GONE_REMEDY: Final = " Nothing is saved until it is back; <i>Revert</i> or closing the document discards the edits."
 """What follows the sentence naming a document's missing file or folder (#497)."""
 
@@ -202,9 +205,9 @@ class UrlDropFilter(QObject):
     exactly as it always has.
 
     :param actions: where a recognized drop is submitted.
-    :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
-        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no local path, refuses the
-        drop outright rather than queuing a scrape with nowhere to land.
+    :param model: the document, read for :attr:`~.RehuDocumentModel.locked`, :attr:`~.RehuDocumentModel.reading`
+        and :attr:`~.RehuDocumentModel.path` -- a locked document, one still waiting for its file (#564), or one
+        with no local path, refuses the drop outright rather than queuing a scrape with nowhere to land.
     :param parent: the owner; the filter goes with it.
     """
 
@@ -226,7 +229,7 @@ class UrlDropFilter(QObject):
         if event.type() not in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop):
             return False
         drop_event = cast(QDropEvent, event)
-        if self.__model.locked or self.__model.path is None:
+        if self.__model.locked or self.__model.reading is not None or self.__model.path is None:
             return False
         drop = UrlDrop.parse(drop_event.mimeData())
         if drop is None:
@@ -283,8 +286,9 @@ class ImageDropFilter(QObject):
     every image case 4 finds is downloaded outright, the same as a scrape's own images already are.
 
     :param image_downloads: where a recognized drop is written or submitted.
-    :param model: the document, read for :attr:`~.RehuDocumentModel.locked` and
-        :attr:`~.RehuDocumentModel.path` -- a locked document, or one with no local path, refuses the
+    :param model: the document, read for :attr:`~.RehuDocumentModel.locked`, :attr:`~.RehuDocumentModel.reading`
+        and :attr:`~.RehuDocumentModel.path` -- a locked document, one still waiting for its file (#564), or one
+        with no local path, refuses the
         drop outright.
     :param parent: the owner; the filter goes with it.
     """
@@ -312,7 +316,7 @@ class ImageDropFilter(QObject):
         if event.type() not in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop):
             return False
         drop_event = cast(QDropEvent, event)
-        if self.__model.locked or self.__model.path is None:
+        if self.__model.locked or self.__model.reading is not None or self.__model.path is None:
             return False
         data = drop_event.mimeData()
         if event.type() == QEvent.Type.DragEnter or self.__own is None:
@@ -711,7 +715,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # disabled until the document has been saved to disk: there is nothing on disk to revert to, and
         # reverting a not-yet-written path would replace the editable document with a locked MISSING stub,
         # silently discarding the edits (#147). The first save sets saved_on_disk and re-enables it.
-        self.__revert_action.setEnabled(model.saved_on_disk)
+        self.__revert_action.setEnabled(model.saved_on_disk and model.reading is None)
         self.__connect(model.saved_on_disk_changed, self.__on_saved_on_disk_changed)  # type: ignore[attr-defined]
 
         self.__convert_keep_backups_action: Final = QAction("Convert, &Keep Backups", host.widget)
@@ -731,7 +735,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # the Save action's own failing-save guard (#146)
         self.__upgrade_action.triggered.connect(self.__on_save_triggered)
 
-        self.__save_action.setEnabled(model.dirty or bool(model.pending_save))
+        self.__save_action.setEnabled((model.dirty or bool(model.pending_save)) and model.reading is None)
         self.__connect(model.dirty_changed, self.__on_dirty_changed)  # type: ignore[attr-defined]
         self.__connect(model.pending_save_changed, self.__on_dirty_changed)  # type: ignore[attr-defined]
 
@@ -800,10 +804,11 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__image_drop_filter: Final = ImageDropFilter(self.__image_downloads, model, self)
         images_dock.installEventFilter(self.__image_drop_filter)  # pylint: disable=no-member
 
-        self.__set_editors_locked(model.locked)
+        self.__set_editors_locked(self.__editors_locked())
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
         self.__connect(model.lock_reasons_changed, self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
+        self.__connect(model.reading_changed, self.__on_reading_changed)  # type: ignore[attr-defined]
         self.__connect(model.upgradable_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.changed_on_disk_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.conflict_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
@@ -1252,7 +1257,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         clean model, to pick up a change made outside this app. Its own gate is
         :attr:`~RehuDocumentModel.saved_on_disk` (:meth:`__on_saved_on_disk_changed`), not dirtiness.
         """
-        self.__save_action.setEnabled(self.__model.dirty or bool(self.__model.pending_save))
+        self.__save_action.setEnabled(
+            (self.__model.dirty or bool(self.__model.pending_save)) and self.__model.reading is None
+        )
 
     def __on_saved_on_disk_changed(self, saved_on_disk: bool) -> None:
         """Enable Revert only once the document has been saved to disk at least once (#147).
@@ -1272,7 +1279,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         :param saved_on_disk: the model's new saved-on-disk state.
         """
-        self.__revert_action.setEnabled(saved_on_disk)
+        self.__revert_action.setEnabled(saved_on_disk and self.__model.reading is None)
         if saved_on_disk:
             self.__refresh_content_images()
 
@@ -1285,9 +1292,25 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         needs the same live list :meth:`__banner_rows` already reads off the model, not a stale copy
         the signal happened to carry.
         """
-        self.__set_editors_locked(self.__model.locked)
+        self.__set_editors_locked(self.__editors_locked())
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
+
+    def __on_reading_changed(self) -> None:
+        """Lock the editors, disable Save and Revert, and say so while the document waits for its file to be read --
+        and undo all three once it arrives (#564): nothing it shows meanwhile is what an edit or a save would be based
+        on."""
+        self.__set_editors_locked(self.__editors_locked())
+        self.__on_dirty_changed()
+        self.__revert_action.setEnabled(self.__model.saved_on_disk and self.__model.reading is None)
+        self.__banner.set_rows(self.__banner_rows())
+
+    def __editors_locked(self) -> bool:
+        """Whether the editors are locked: a lock reason stands, or the document waits for its file to be read.
+
+        :returns: the answer.
+        """
+        return self.__model.locked or self.__model.reading is not None
 
     def __on_upgradable_changed(self) -> None:
         """Swap the toolbar's write action and rebuild the inline notice strip as the model's upgrade
@@ -1434,7 +1457,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__swap_dock_contents(self.__editor_docks, self.__form.make_editor(self.__model), editor_min_heights)
         self.__swap_dock_contents(self.__viewer_docks, self.__form.make_viewer(self.__model))
         outgoing.delete_later()
-        self.__set_editors_locked(self.__model.locked)
+        self.__set_editors_locked(self.__editors_locked())
         rebuilt = self.__stateful_widgets()
         for name, state in saved_state.items():
             widget = rebuilt.get(name)
@@ -1585,7 +1608,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         unsafe, while this describes an action that already went wrong
         (`MessageBannerSeverity`) and left the document as it was.
 
-        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then an error row while
+        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then a reading row while
+            the document waits for its file (:attr:`~RehuDocumentModel.reading`, #564), then an error row while
             the document's file or folder is :attr:`~RehuDocumentModel.gone` (#497), then a refused-save
             row while :attr:`~RehuDocumentModel.conflict` stands (#416), or else a changed-on-disk row while
             :attr:`~RehuDocumentModel.changed_on_disk` is set (#487), then a pending-save row while
@@ -1598,6 +1622,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             its last failure (#73).
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
+        if self.__model.reading is not None:
+            rows.append(MessageBannerRow(MessageBannerSeverity.INFO, READING_MESSAGE.format(path=self.__model.reading)))
         if self.__model.gone:
             rows.append(MessageBannerRow(MessageBannerSeverity.ERROR, self.__model.gone + GONE_REMEDY))
         if self.__model.conflict is not None:

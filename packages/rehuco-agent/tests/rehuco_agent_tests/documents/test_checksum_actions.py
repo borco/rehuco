@@ -639,7 +639,7 @@ def load_another_record(mocker: MockerFixture, model: RehuDocumentModel) -> None
     """
     other = RehuDocument({"type": "Tutorial", "sources": [{"title": "Modelling", "primary": True}]}, OTHER_INFO_PATH)
     mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.load_record",
+        "rehuco_agent.documents.record_reader.RecordReader.read_record",
         return_value=LoadedRecord(other, None, tuple(other.lock_reasons), None),
     )
     model.load(OTHER_INFO_PATH)

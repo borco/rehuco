@@ -7,10 +7,11 @@ with what it read or wrote itself. Real files under ``tmp_path``.
 from pathlib import Path
 
 from pytest import mark
-from rehuco_agent.documents.document_registry import load_record
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import RehuDocument
 from rehuco_core.access import Records, ResourceKey
+
+from rehuco_agent_tests.record_reads import read_now
 
 pytestmark = mark.usefixtures("real_path_stat")
 
@@ -39,7 +40,7 @@ def opened(path: Path) -> RehuDocumentModel:
     :returns: the model.
     """
     records = Records()
-    record = load_record(records, ResourceKey(path))
+    record = read_now(records, ResourceKey(path))
     return RehuDocumentModel(record.document, records=records, version=record.version, signature=record.signature)
 
 

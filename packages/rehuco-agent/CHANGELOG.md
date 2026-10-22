@@ -38,6 +38,11 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ### Changed
 
+- **Opening, reverting and previewing no longer freeze the window** (#564). The record's file is read in the
+  background: until it arrives the document says *Reading…* with its editors, Save and Revert locked, and a share
+  that never answers ends in the locked view naming why. A record whose save has not landed opens on that save at
+  once, editable, whether or not its share answers -- the read only fills in what the save is based on. Quitting
+  never waits for a read still out.
 - **Saving no longer freezes the window** (#497). Save, and Upgrade, hand the document's edits to a save task on the
   task queue and leave the document editable; its banner says *Saving…* while the task is out, and *Save pending*,
   *Save waiting* (with what for), *Save paused* or *Save failed* (with why) for a save that has not landed. Saves to
@@ -51,13 +56,14 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   someone else created meanwhile stops as a conflict instead of writing over it.
 - **A save that has not landed is the record's saved state on this machine**, like a borrowed copy (#497). Save leaves
   the document saved; **Revert** goes back to the pending save rather than the file, and **opening the record** --
-  again, or after a restart -- shows it. Closing a document and choosing *Discard* drops only what was edited since
+  again, or after a restart -- shows it at once, editable even while its share does not answer. Closing a document and choosing *Discard* drops only what was edited since
   the last Save; the save stays and lands later. A change on disk while a save is pending reloads nothing: the save's
   own check judges it. Save stays available on a document whose save failed or waits, and tries it again. A rename
   from the location field is refused while a save of the record has not landed, since it writes the record first.
 - **A save that meets a conflict no longer pops up a dialog.** The document shows its conflict notice, and the next
-  Save reads the file again and shows the differences first, the *Mine* column being the document as it is now. A
-  Save on a document whose file changed on disk while it had edits does the same.
+  Save shows the differences the refused save found first, the *Mine* column being the document as it is now; what is
+  kept is checked like any save, so a file changed once more is refused again. A Save on a document whose file
+  changed on disk while it had edits is a save like any other: it merges the change, or stops as a conflict.
 - **Closing an unsaved document, Save All and quitting wait for the save** behind a progress dialog (Cancel stops
   waiting and leaves the save queued). A conflict there shows the differences; a save that cannot land asks **Try
   Again**, **Leave It Pending** or **Cancel**.

@@ -1,8 +1,8 @@
 """Tests for ``UnsavedChanges``: unsaved edits kept across a quit, and their documents reopened with them on the next
 start -- at once on a local drive, as the device answers otherwise (#497).
 
-The kept edits are a real file under ``tmp_path``; the Documents dock, the records and the startup presence are mocks
--- each has its own tests.
+The kept edits are a real file under ``tmp_path``; the Documents dock, the record reader and the startup presence are
+mocks -- each has its own tests.
 """
 
 import json
@@ -18,12 +18,12 @@ from pytest_mock import MockerFixture
 from rehuco_agent.documents import unsaved_changes as module
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.documents.record_reader import RecordReader
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.unsaved_changes import UNSAVED_CHANGES_FILENAME, UNSAVED_CHANGES_VERSION, UnsavedChanges
-from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.state_file import encode_bytes
-from rehuco_core import RecordVersion, RehuDocument, SavePayload
-from rehuco_core.access import LoadedRecord, Records, ResourceKey
+from rehuco_core import LockReason, LockReasonKind, RecordVersion, RehuDocument, SavePayload
+from rehuco_core.access import LoadedRecord, ResourceKey
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 
@@ -91,8 +91,8 @@ def record_file(folder: Path) -> Path:
 # the owner's collaborators and what each test reaches for
 # pylint: disable-next=too-many-instance-attributes
 class Rig:
-    """An :class:`UnsavedChanges` over a mocked Documents dock, records and startup presence, keeping its edits in a
-    file under ``tmp_path``.
+    """An :class:`UnsavedChanges` over a mocked Documents dock, record reader and startup presence, keeping its edits in
+    a file under ``tmp_path``.
 
     :param mocker: pytest-mock fixture.
     :param tmp_path: the test's folder.
@@ -107,7 +107,7 @@ class Rig:
         self.model: Final = mocker.Mock(spec=RehuDocumentModel)
         self.model.gone = ""
         self.dock.open_document.return_value.model = self.model
-        self.records: Final = mocker.Mock(spec=Records)
+        self.reader: Final = mocker.Mock(spec=RecordReader)
         self.presence_class: Final = mocker.patch.object(module, "StartupPresence")
         self.presence: Final = self.presence_class.return_value
         self.presence.local_paths = {}
@@ -131,7 +131,7 @@ class Rig:
 
         :returns: the owner.
         """
-        return self.__delete(UnsavedChanges(self.dock, self.records, self.store))
+        return self.__delete(UnsavedChanges(self.dock, self.reader, self.store))
 
     def answer(self, folder: Path, presence: Presence) -> None:
         """Deliver the scan's verdict on ``folder``, as the startup presence would.
@@ -151,8 +151,24 @@ class Rig:
         """
         document = mocker.Mock(spec=RehuDocument)
         document.payload_to_write.return_value = dict(ON_DISK)
-        record = LoadedRecord(document, version, (), None)
-        self.records.load.return_value = record
+        return self.__answer(LoadedRecord(document, version, (), None))
+
+    def read_missing(self, mocker: MockerFixture) -> LoadedRecord:
+        """Have the record's file read as not there, its folder answering: the locked stub a read gives then.
+
+        :param mocker: pytest-mock fixture.
+        :returns: the read.
+        """
+        missing = (LockReason(LockReasonKind.MISSING, "gone"),)
+        return self.__answer(LoadedRecord(mocker.Mock(spec=RehuDocument), None, missing, None))
+
+    def __answer(self, record: LoadedRecord) -> LoadedRecord:
+        """Have every read answer ``record`` at once.
+
+        :param record: the read.
+        :returns: ``record``.
+        """
+        self.reader.read.side_effect = lambda _key, answer: answer(record)
         return record
 
 
@@ -218,10 +234,8 @@ def test_kept_edits_reopen_on_the_next_start(rig: Rig, tmp_path: Path, mocker: M
     rig.build().reopen()
 
     rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False, record=current)
-    settings = shared_identity_settings()
-    rig.records.load.assert_called_once_with(
-        ResourceKey(path), username=settings.current_username, unknown_username=settings.unknown_username
-    )
+    rig.reader.read.assert_called_once()
+    assert rig.reader.read.call_args.args[0] == ResourceKey(path)
     differences.assert_called_once_with(BASE_PAYLOAD, EDITS, ON_DISK, USERNAME)
     rig.model.adopt_unsaved.assert_called_once_with(payload_at(path), current)
 
@@ -315,7 +329,7 @@ def test_the_kept_edits_live_in_the_config_folder(mocker: MockerFixture, tmp_pat
     del real_path_stat
     mocker.patch.object(module, "config_folder", return_value=tmp_path)
 
-    UnsavedChanges(mocker.Mock(spec=DocumentsDock), mocker.Mock(spec=Records)).forget()
+    UnsavedChanges(mocker.Mock(spec=DocumentsDock), mocker.Mock(spec=RecordReader)).forget()
 
     assert (tmp_path / UNSAVED_CHANGES_FILENAME).is_file()
 
@@ -499,20 +513,20 @@ def test_a_gone_folder_reopens_with_its_banner(rig: Rig, tmp_path: Path, differe
     rig.answer(path.parent, Presence.GONE)
 
     rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False, record=None)
-    rig.records.load.assert_not_called()
+    rig.reader.read.assert_not_called()
     differences.assert_not_called()
     rig.model.adopt_unsaved.assert_called_once_with(payload_at(path), None)
     assert rig.model.gone == f"The resource's folder is gone: {path.parent}"
 
 
-def test_a_gone_file_reopens_with_its_banner(rig: Rig, tmp_path: Path, differences: Any) -> None:
+def test_a_gone_file_reopens_with_its_banner(rig: Rig, tmp_path: Path, mocker: MockerFixture, differences: Any) -> None:
     """Edits of a read record whose file is gone, its folder there, reopen saying the file is gone.
 
     **Test steps:**
 
-    * keep the edits of a read document whose folder is there but its file not, on a local drive; reopen
-    * verify the document opened as a read one, the file was not read, it adopted its edits against nothing, and its
-      banner names the file
+    * keep the edits of a read document whose folder is there but its file not, on a local drive; reopen, the read
+      finding the file missing
+    * verify the document opened from that read, it adopted its edits against nothing, and its banner names the file
     """
     del differences
     folder = tmp_path / "res"
@@ -520,21 +534,22 @@ def test_a_gone_file_reopens_with_its_banner(rig: Rig, tmp_path: Path, differenc
     path = folder / "res.rehu"
     write_entries(rig.store, [entry_of(payload_at(path))])
     rig.presence.local_paths = {folder: Presence.PRESENT}
+    missing = rig.read_missing(mocker)
 
     rig.build().reopen()
 
-    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False, record=None)
-    rig.records.load.assert_not_called()
+    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=False, record=missing)
     rig.model.adopt_unsaved.assert_called_once_with(payload_at(path), None)
     assert rig.model.gone == f"The file is gone: {path}"
 
 
-def test_a_never_saved_document_reopens_new(rig: Rig, tmp_path: Path, differences: Any) -> None:
+def test_a_never_saved_document_reopens_new(rig: Rig, tmp_path: Path, mocker: MockerFixture, differences: Any) -> None:
     """Edits of a record never written reopen as a new document, with no banner.
 
     **Test steps:**
 
-    * keep the edits of a never-saved document, its file not there; reopen on a local drive
+    * keep the edits of a never-saved document, its file not there; reopen on a local drive, the read finding it
+      missing
     * verify it opened as a new document, adopted its edits against nothing, and its banner stayed empty
     """
     del differences
@@ -543,10 +558,11 @@ def test_a_never_saved_document_reopens_new(rig: Rig, tmp_path: Path, difference
     path = folder / "res.rehu"
     write_entries(rig.store, [entry_of(payload_at(path, base=None, first_save=True))])
     rig.presence.local_paths = {folder: Presence.PRESENT}
+    missing = rig.read_missing(mocker)
 
     rig.build().reopen()
 
-    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=True, record=None)
+    rig.dock.open_document.assert_called_once_with(ResourceKey(path), state=LAYOUT, new=True, record=missing)
     rig.model.adopt_unsaved.assert_called_once_with(payload_at(path, base=None, first_save=True), None)
     assert rig.model.gone == ""
 

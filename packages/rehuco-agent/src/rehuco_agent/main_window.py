@@ -8,6 +8,7 @@
 import logging
 import sys
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Final, cast, override
 
@@ -85,7 +86,7 @@ from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
 from .documents.pending_saves import PendingSaves
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
-from .documents.rehu_document_model import key_label
+from .documents.rehu_document_model import RehuDocumentModel, key_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
 from .documents.unsaved_changes import UnsavedChanges
 from .fields.type_field import type_label
@@ -435,7 +436,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             pending_saves=self.__pending_saves,
         )
         # edits kept across a quit (#497), reopened once the session is
-        self.__unsaved_changes: Final = UnsavedChanges(self.__documents_dock, self.__records, parent=self)
+        self.__unsaved_changes: Final = UnsavedChanges(
+            self.__documents_dock, self.__document_registry.reader, parent=self
+        )
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__documents_dock.filter_requested.connect(self.__on_filter_requested)
@@ -2177,14 +2180,23 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     def __opened(self, path: Path, widget: DocumentWidget) -> None:
         """Note an open the user asked for by a path: the remembered paths hear it was reached, and ``Open recents``
-        records the path -- not for a load-failure stub (:attr:`~RehuDocument.load_failed`), which is no file you
-        opened.
+        records the path once the file is read (#564) -- not for a load-failure stub
+        (:attr:`~RehuDocument.load_failed`), which is no file you opened.
 
         :param path: the path the open was asked for, resolved -- a record, a folder or an archive.
         :param widget: the document the open showed.
         """
         self.__reached(widget)
-        if not widget.model.document.load_failed:
+        model = widget.model
+        model.when_read(partial(self.__record_recent, path, model))
+
+    def __record_recent(self, path: Path, model: RehuDocumentModel) -> None:
+        """Record ``path`` in ``Open recents`` unless ``model``, the document it opened, could not be read.
+
+        :param path: the path the open was asked for.
+        :param model: the document, its file read.
+        """
+        if not model.document.load_failed:
             self.__recent_files.record(path)
 
     def __open_key(self, key: object) -> None:
@@ -2264,8 +2276,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if not isinstance(key, ResourceKey):
             return
         model = self.__document_registry.find(key)
-        if model is not None and not model.document.load_failed:
-            self.__recent_files.record(key.path)
+        if model is not None:
+            model.when_read(partial(self.__record_recent, key.path, model))
 
     def __on_open_requested(self, path: object) -> None:
         """Open a record an already-open document asked for -- another resource double-clicked in its

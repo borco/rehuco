@@ -23,7 +23,6 @@ from rehuco_core.access import Records, ResourceKey
 
 from ..dialogs.record_conflict_dialog import ConflictResolution
 from ..resource_events import ResourceEvents
-from ..settings.identity_settings import shared_identity_settings
 from ..tasks import TaskQueueModel
 from .document_registry import DocumentRegistry
 from .rehu_document_model import UNTITLED_LABEL, RehuDocumentModel
@@ -133,10 +132,10 @@ class PendingSaves(QObject):
     def save(self, parent: QWidget, model: RehuDocumentModel) -> bool:
         """Hand ``model``'s edits to its record's save, and go back to editing (the Save and Upgrade actions).
 
-        **The differences come first** when the file is known to have changed since the document read it -- a save
-        refused as a conflict, or a change heard on disk: the file is read again and the conflict dialog shows what
-        differs, before anything is queued. A file found unchanged after all asks nothing. No dialog ever pops out of
-        a job's own failure; it waits for this.
+        **The differences come first** after a save refused as a conflict: the conflict dialog shows what differs, the
+        file's side as the refused save read it, before anything is queued -- nothing is read here (#564). A change
+        heard on disk alone asks nothing: the save's own check judges it, merging it by field or failing as a conflict
+        ([[sync#unlanded-save]]). No dialog ever pops out of a job's own failure; it waits for this.
 
         A clean document whose record has a save not landed saves it again: a waiting one is tried now, a failed one
         retried -- which is how a failure is settled from the document ([[sync#unlanded-save]]). Refused, saying
@@ -149,7 +148,7 @@ class PendingSaves(QObject):
         """
         if model.gone:
             return False
-        if (model.conflict is not None or model.changed_on_disk) and not self.__settle_differences(parent, model):
+        if model.conflict is not None and not self.__settle_differences(parent, model, model.conflict):
             return False
         key = model.key
         nothing_to_save = not model.dirty and not model.upgradable
@@ -312,28 +311,17 @@ class PendingSaves(QObject):
         self.__serials[cast(ResourceKey, model.key)] = serial  # pylint: disable=unsupported-assignment-operation
         return serial
 
-    def __settle_differences(self, parent: QWidget, model: RehuDocumentModel) -> bool:
-        """Show what the file and the document disagree on, when the file changed since the document read it, and take
-        what the person keeps.
+    def __settle_differences(self, parent: QWidget, model: RehuDocumentModel, conflict: RecordConflict) -> bool:
+        """Show what the file and the document disagree on, after a save refused as a conflict, and take what the person
+        keeps. The file is as the refused save read it: a save of what is kept is checked like any other, so a file
+        changed once more meanwhile is refused again ([[sync#compare-and-swap]]).
 
         :param parent: the widget the dialog is parented to.
         :param model: the document.
-        :returns: ``True`` to go on -- kept values taken, edits discarded, or the file unchanged after all; ``False``
-            when cancelled.
+        :param conflict: the refusal, carrying the file as it read it.
+        :returns: ``True`` to go on -- kept values taken, or edits discarded; ``False`` when cancelled.
         """
         key = cast(ResourceKey, model.key)
-        settings = shared_identity_settings()
-        current = self.__records.load(
-            key, username=settings.current_username, unknown_username=settings.unknown_username
-        )
-        base = model.base_version
-        if current.version is None or (base is not None and current.version.file_hash == base.file_hash):
-            # nothing to compare with -- the save says why -- or nothing changed after all
-            model.conflict = None
-            model.changed_on_disk = False
-            return True
-        conflict = RecordConflict(current.document, current.version)
-        model.conflict = conflict
         resolution, values = ask_about_conflict(parent, model, conflict)
         if resolution is ConflictResolution.CANCEL:
             return False

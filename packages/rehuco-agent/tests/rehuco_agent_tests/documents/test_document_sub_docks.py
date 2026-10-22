@@ -200,7 +200,7 @@ def test_another_record_loaded_in_place_lets_go_of_what_the_last_one_showed(
     other_path = Path.cwd() / "fake" / "b" / "info.rehu"
     other = RehuDocument({"type": "Tutorial", "sources": [{"title": "Bar", "primary": True}]}, other_path)
     mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.load_record",
+        "rehuco_agent.documents.record_reader.RecordReader.read_record",
         return_value=LoadedRecord(other, None, tuple(other.lock_reasons), None),
     )
     model.load(other_path)

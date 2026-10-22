@@ -1188,6 +1188,8 @@ def test_open_file_records_a_successful_open_into_recents(mocker: MockerFixture,
     """
     widget = mocker.MagicMock()
     widget.model.document.load_failed = False
+    # a document whose file has been read: what the open judges is there
+    widget.model.when_read.side_effect = lambda callback: callback()
     mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
@@ -1211,6 +1213,8 @@ def test_open_file_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: Q
     """
     widget = mocker.MagicMock()
     widget.model.document.load_failed = True
+    # a document whose file has been read: what the open judges is there
+    widget.model.when_read.side_effect = lambda callback: callback()
     mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
@@ -1232,6 +1236,8 @@ def test_open_folder_records_a_successful_open_into_recents(mocker: MockerFixtur
     """
     widget = mocker.MagicMock()
     widget.model.document.load_failed = False
+    # a document whose file has been read: what the open judges is there
+    widget.model.when_read.side_effect = lambda callback: callback()
     mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
@@ -1255,6 +1261,8 @@ def test_open_folder_does_not_record_a_failed_open(mocker: MockerFixture, qtbot:
     """
     widget = mocker.MagicMock()
     widget.model.document.load_failed = True
+    # a document whose file has been read: what the open judges is there
+    widget.model.when_read.side_effect = lambda callback: callback()
     mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
@@ -1276,6 +1284,8 @@ def test_open_archive_records_a_successful_open_into_recents(mocker: MockerFixtu
     """
     widget = mocker.MagicMock()
     widget.model.document.load_failed = False
+    # a document whose file has been read: what the open judges is there
+    widget.model.when_read.side_effect = lambda callback: callback()
     mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
@@ -1299,6 +1309,8 @@ def test_open_archive_does_not_record_a_failed_open(mocker: MockerFixture, qtbot
     """
     widget = mocker.MagicMock()
     widget.model.document.load_failed = True
+    # a document whose file has been read: what the open judges is there
+    widget.model.when_read.side_effect = lambda callback: callback()
     mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
@@ -8328,6 +8340,8 @@ def test_a_kept_open_document_the_user_opens_and_closes_stays_closed(
     widget = mocker.MagicMock()
     widget.model.path = remote
     widget.model.document.load_failed = False
+    # a document whose file has been read: what the open judges is there
+    widget.model.when_read.side_effect = lambda callback: callback()
     dock_verb = {"open_file": "open_document"}.get(route, route)
     mocker.patch(f"rehuco_agent.main_window.DocumentsDock.{dock_verb}", return_value=widget)
 

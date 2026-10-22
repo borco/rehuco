@@ -7,21 +7,23 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Final
+from unittest.mock import ANY
 
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytest import LogCaptureFixture, mark, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.document_registry import DocumentRegistry, load_record
+from rehuco_agent.documents.document_registry import DocumentRegistry
 from rehuco_agent.documents.document_widget import DocumentWidget
+from rehuco_agent.documents.record_reader import RecordReader
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.resource_events import ResourceEvents
-from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_core import RecordConflict, RehuDocument, Relocation, RenameCoordinator
 from rehuco_core.access import ChangeFeed, Records, ResourceKey
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 from rehuco_agent_tests.qt_waits import wait_destroyed
+from rehuco_agent_tests.record_reads import HeldReads, read_now
 
 from .test_rehu_document_model_conflict import edit_on_disk, retitle, write_record
 from .test_rehu_document_model_pending_saves import answering
@@ -651,80 +653,6 @@ def test_a_placeholder_read_later_still_refuses_a_save_over_a_change_on_disk(qtb
         model.save()
 
 
-@mark.usefixtures("real_path_stat")
-def test_a_record_is_read_with_its_version_and_signature_and_logged(
-    caplog: LogCaptureFixture, tmp_path: Path, qtbot: QtBot
-) -> None:
-    """``load_record`` hands a model all it needs to save safely later: the document, what it was read at, and the
-    file's signature; the read is logged with the record's type.
-
-    **Test steps:**
-
-    * read a real record through records
-    * verify the document, a version, and the file's signature, under the current identity
-    * verify the read was logged
-    """
-    del qtbot
-    path = tmp_path / "info.rehu"
-    write_record(path, "Old")
-    stat = path.stat()
-
-    with caplog.at_level(logging.INFO):
-        record = load_record(Records(), ResourceKey(path))
-
-    assert record.document.title == "Old"
-    assert record.document.username == shared_identity_settings().current_username
-    assert record.version is not None
-    assert record.signature == (stat.st_mtime_ns, stat.st_size)
-    assert f"Read {ResourceKey(path)} as tutorial" in caplog.messages
-
-
-@mark.usefixtures("real_path_stat")
-def test_a_record_that_cannot_be_read_is_a_locked_stub_and_no_read_is_logged(
-    caplog: LogCaptureFixture, tmp_path: Path, qtbot: QtBot
-) -> None:
-    """A missing file opens as a locked stub with nothing to save against, and is not logged as read.
-
-    **Test steps:**
-
-    * read a record whose file does not exist
-    * verify a locked stub with no version and no signature
-    * verify no read was logged
-    """
-    del qtbot
-    path = tmp_path / "info.rehu"
-
-    with caplog.at_level(logging.INFO):
-        record = load_record(Records(), ResourceKey(path))
-
-    assert record.document.load_failed
-    assert record.lock_reasons
-    assert (record.version, record.signature) == (None, None)
-    assert not [message for message in caplog.messages if message.startswith("Read ")]
-
-
-@mark.usefixtures("real_path_stat")
-def test_a_legacy_record_files_its_flags_under_the_unknown_user(tmp_path: Path, qtbot: QtBot) -> None:
-    """A ``.tc``'s per-user flags were not set by this install's identity, so they are read as the unknown user's,
-    and it is never saved over.
-
-    **Test steps:**
-
-    * write a legacy ``.tc`` carrying a rating, and read it through ``load_record``
-    * verify the rating is filed under the unknown user, and there is no version
-    """
-    del qtbot
-    path = tmp_path / "info.tc"
-    path.write_text("type: Tutorial\ntitle: Legacy\nrating: 4\n", encoding="utf-8")
-
-    record = load_record(Records(), ResourceKey(path))
-
-    unknown = shared_identity_settings().unknown_username
-    assert record.document.title == "Legacy"
-    assert record.document.user_field(unknown, "rating") == 4
-    assert record.version is None
-
-
 # endregion
 
 
@@ -804,7 +732,7 @@ def test_a_record_the_caller_read_is_built_from_without_reading_it_again(
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
     records = Records()
-    read = load_record(records, ResourceKey(path))
+    read = read_now(records, ResourceKey(path))
     load = mocker.spy(records, "load")
     registry = DocumentRegistry(records=records)
 
@@ -862,6 +790,99 @@ def test_following_pending_saves_shows_each_held_records_own(qtbot: QtBot, tmp_p
     registry.follow_pending_saves(answering(edited_snapshot(first), first))
 
     assert [(model.title, model.dirty) for model in models] == [("Mine", False), ("Second", False)]
+
+
+# endregion
+
+
+# region reads off the GUI thread (#564)
+
+
+def test_an_open_reads_the_record_through_the_registrys_reader(held_reads: HeldReads, qtbot: QtBot) -> None:
+    """A record opened is a placeholder whose read has started, through the reader the registry owns: the file is not
+    read on the GUI thread, and the document says it is reading it.
+
+    **Test steps:**
+
+    * hold every read back, and acquire a record
+    * verify the model is unread and reading its file, and the registry's reader was asked for it
+    """
+    del qtbot
+    registry = DocumentRegistry()
+
+    model = registry.acquire(FAKE_KEY)
+
+    assert (model.pending, model.reading) == (True, FAKE_PATH)
+    held_reads.read.assert_called_once_with(registry.reader, FAKE_KEY, ANY)
+
+
+def test_only_the_last_release_lets_go_of_the_read(mocker: MockerFixture, held_reads: HeldReads, qtbot: QtBot) -> None:
+    """A model another holder still shows keeps waiting for its read; its last release lets go of it.
+
+    **Test steps:**
+
+    * acquire a record twice, and release it once
+    * verify the model still waits for its read
+    * release it again
+    * verify it let go of its read
+    """
+    del held_reads, qtbot
+    stop_reading = mocker.patch.object(RehuDocumentModel, "stop_reading", autospec=True)
+    registry = DocumentRegistry()
+    model = registry.acquire(FAKE_KEY)
+    registry.acquire(FAKE_KEY)
+
+    registry.release(model)
+
+    stop_reading.assert_not_called()
+
+    registry.release(model)
+
+    stop_reading.assert_called_once_with(model)
+
+
+def test_a_model_is_found_under_the_record_it_is_reading(held_reads: HeldReads, qtbot: QtBot) -> None:
+    """A model moving on to another record is held under that record as soon as its read starts, and no longer under
+    the one it still shows -- so an open of either meanwhile finds the right thing (#564).
+
+    **Test steps:**
+
+    * acquire a record and let it arrive; load another record in it, its read held
+    * verify the model is found under the record being read, and not under the one it shows
+    * let the read arrive
+    * verify it is still found under that record, once, and the model shows it
+    """
+    del qtbot
+    registry = DocumentRegistry()
+    model = registry.acquire(FAKE_KEY)
+    held_reads.answer(0)
+
+    model.load(OTHER_PATH)
+
+    assert (registry.find(OTHER_KEY), registry.find(FAKE_KEY)) == (model, None)
+    assert model.path == FAKE_PATH
+
+    held_reads.answer(1)
+
+    assert (registry.find(OTHER_KEY), registry.find(FAKE_KEY)) == (model, None)
+    assert model.path == OTHER_PATH
+
+
+def test_stopping_stops_every_read_still_out(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Before the window goes, the registry's reader answers no read still out.
+
+    **Test steps:**
+
+    * stop the registry's watching
+    * verify its reader was stopped
+    """
+    del qtbot
+    stop = mocker.patch.object(RecordReader, "stop", autospec=True)
+    registry = DocumentRegistry()
+
+    registry.stop_watching()
+
+    stop.assert_called_once_with(registry.reader)
 
 
 # endregion

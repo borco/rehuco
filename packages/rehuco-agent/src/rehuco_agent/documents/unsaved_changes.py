@@ -3,20 +3,21 @@
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Final
 
 from borco_core import Presence
 from PySide6.QtCore import QObject
-from rehuco_core import SavePayload, record_differences
-from rehuco_core.access import Records, ResourceKey
+from rehuco_core import LockReasonKind, SavePayload, record_differences
+from rehuco_core.access import LoadedRecord, ResourceKey
 
 from ..settings.persistent_settings import config_folder
 from ..settings.state_file import decode_bytes, encode_bytes, read_state_file, write_state_file
 from ..startup_presence import StartupPresence
-from .document_registry import load_record
 from .document_widget import DocumentWidget
 from .documents_dock import DocumentsDock
+from .record_reader import RecordReader
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -47,17 +48,17 @@ class UnsavedChanges(QObject):
     device does not answer at start is kept for the next, and so is never lost because a server was off.
 
     :param dock: the Documents dock the documents reopen in.
-    :param records: what a reopened document's file is read through.
+    :param reader: what a reopened document's file is read through, off the GUI thread (#564).
     :param path: the file; ``unsaved-changes.json`` in the config folder unless a test says otherwise.
     :param parent: optional Qt parent.
     """
 
     def __init__(
-        self, dock: DocumentsDock, records: Records, path: Path | None = None, parent: QObject | None = None
+        self, dock: DocumentsDock, reader: RecordReader, path: Path | None = None, parent: QObject | None = None
     ) -> None:
         super().__init__(parent)
         self.__dock: Final = dock
-        self.__records: Final = records
+        self.__reader: Final = reader
         self.__path: Final = path if path is not None else config_folder() / UNSAVED_CHANGES_FILENAME
         self.__waiting: Final[dict[Path, UnsavedEntry]] = {}
         """The entries whose folder has not been heard from yet, by folder."""
@@ -118,21 +119,28 @@ class UnsavedChanges(QObject):
             if path.parent != folder:
                 continue
             del self.__waiting[path]  # pylint: disable=unsupported-delete-operation
-            self.__open(entry, folder_gone=presence is Presence.GONE)
+            if presence is Presence.GONE:
+                self.__open(entry, None)
+            else:
+                # read once, off the GUI thread: what the edits are compared with is also what the document is built
+                # from
+                self.__reader.read(ResourceKey(path), partial(self.__open, entry))
         if not self.__waiting:
             self.__write([])
 
-    def __open(self, entry: UnsavedEntry, *, folder_gone: bool) -> None:
+    def __open(self, entry: UnsavedEntry, record: LoadedRecord | None) -> None:
         """Reopen one kept document with its edits.
 
         :param entry: the kept edits.
-        :param folder_gone: whether the record's folder is gone.
+        :param record: the record's file as just read -- a locked stub when it could not be -- or ``None`` when its
+            folder is gone.
         """
         payload = entry.payload
         key = ResourceKey(payload.path)
-        file_there = not folder_gone and payload.path.exists()
-        # read once: what the edits are compared with is also what the document is built from
-        record = load_record(self.__records, key) if file_there else None
+        folder_gone = record is None
+        file_there = record is not None and not any(
+            reason.kind == LockReasonKind.MISSING for reason in record.lock_reasons
+        )
         widget = self.__dock.open_document(
             key, state=entry.layout, new=payload.first_save and not file_there, record=record
         )

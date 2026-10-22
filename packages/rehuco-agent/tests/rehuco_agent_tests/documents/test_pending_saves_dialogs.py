@@ -13,13 +13,10 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.dialogs.record_conflict_dialog import ConflictResolution
 from rehuco_agent.documents import pending_saves as module
-from rehuco_agent.settings.identity_settings import shared_identity_settings
-from rehuco_core import JobState, RecordVersion, RehuDocument
-from rehuco_core.access import LoadedRecord
+from rehuco_core import JobState
 
 from rehuco_agent_tests.documents.test_pending_saves import (  # noqa: F401  # pylint: disable=unused-import
     FAIL_REASON,
-    KEY,
     OTHER_SOURCE,
     WAIT_REASON,
     Rig,
@@ -29,46 +26,10 @@ from rehuco_agent_tests.documents.test_pending_saves import (  # noqa: F401  # p
     payload_of,
 )
 
-BASE: Final = RecordVersion("meta", "base", ())
-"""The version the document read."""
-
-THEIRS: Final = RecordVersion("meta", "theirs", ())
-"""The version the file holds after someone else's save."""
-
 KEPT: Final = {("core", "title"): "Kept"}
 """What the person keeps in the conflict dialog."""
 
 BUTTONS: Final = QMessageBox.StandardButton
-
-
-def loaded(mocker: MockerFixture, version: RecordVersion | None) -> LoadedRecord:
-    """The record as a read of its file answers it.
-
-    :param mocker: pytest-mock fixture.
-    :param version: its version, or ``None`` for a file with nothing to compare with.
-    :returns: the read.
-    """
-    return LoadedRecord(mocker.Mock(spec=RehuDocument), version, (), None)
-
-
-def read_as(rig: Rig, record: LoadedRecord) -> None:
-    """Have every read of the record answer ``record``.
-
-    :param rig: the rig.
-    :param record: the read.
-    """
-    rig.records.load.return_value = record
-
-
-def assert_read_as_the_current_user(rig: Rig) -> None:
-    """Verify the record was read once, for the current user.
-
-    :param rig: the rig.
-    """
-    settings = shared_identity_settings()
-    rig.records.load.assert_called_once_with(
-        KEY, username=settings.current_username, unknown_username=settings.unknown_username
-    )
 
 
 @fixture(name="ask")
@@ -105,28 +66,23 @@ def no_unexpected_question(mocker: MockerFixture) -> None:
 def test_a_save_of_a_conflicted_document_shows_the_differences_and_saves_what_was_kept(
     rig: Rig, parent: QWidget, mocker: MockerFixture, ask: Any
 ) -> None:
-    """A document whose last save was refused reads the file again and shows what differs before anything is queued.
+    """A document whose last save was refused shows what differs before anything is queued -- the file as the refused
+    save read it, never read again here (#564).
 
     **Test steps:**
 
-    * mark the document conflicted, read at one version, with the file at another
+    * mark the document conflicted
     * save, answering *Save* in the dialog
-    * verify the file was read for the current user, the dialog was asked about the file as it is now, the kept values
-      were taken, and the edits were queued
+    * verify the file was not read, the dialog was asked about the refusal's own file, the kept values were taken, and
+      the edits were queued
     """
-    rig.model.conflict = a_conflict(mocker)
-    rig.model.base_version = BASE
-    current = loaded(mocker, THEIRS)
-    read_as(rig, current)
+    conflict = a_conflict(mocker)
+    rig.model.conflict = conflict
 
     assert rig.owner.save(parent, rig.model) is True
 
-    assert_read_as_the_current_user(rig)
-    (_, model, conflict) = ask.call_args.args
-    assert model is rig.model
-    assert conflict.theirs is current.document
-    assert conflict.version == THEIRS
-    assert rig.model.conflict is conflict
+    rig.records.load.assert_not_called()
+    ask.assert_called_once_with(parent, rig.model, conflict)
     rig.model.resolve_conflict.assert_called_once_with(KEPT)
     assert len(rig.enqueued) == 1
 
@@ -140,7 +96,7 @@ def test_discarding_in_the_differences_reverts_and_drops_the_pending_save(
 
     **Test steps:**
 
-    * save once (or not), then hear a change on disk with the file at another version
+    * save once (or not), then mark the document conflicted
     * save, answering *Discard*, the revert leaving the document clean
     * verify the document reverted once, nothing more was queued, and ``True`` came back
     * with a row: verify it was removed, the banner cleared, and the document told its save is over
@@ -149,8 +105,7 @@ def test_discarding_in_the_differences_reverts_and_drops_the_pending_save(
         rig.owner.save(parent, rig.model)
         rig.model.pending_save = "Save pending"
     serial = rig.serial_of_save() if with_row else None
-    rig.model.changed_on_disk = True
-    read_as(rig, loaded(mocker, THEIRS))
+    rig.model.conflict = a_conflict(mocker)
     ask.return_value = (ConflictResolution.DISCARD, {})
     rig.model.revert.side_effect = lambda: setattr(rig.model, "dirty", False)
 
@@ -173,12 +128,11 @@ def test_cancelling_the_differences_saves_nothing(rig: Rig, parent: QWidget, moc
 
     **Test steps:**
 
-    * hear a change on disk with the file at another version
+    * mark the document conflicted
     * save, answering *Cancel*
     * verify ``False`` came back and nothing was queued
     """
-    rig.model.changed_on_disk = True
-    read_as(rig, loaded(mocker, THEIRS))
+    rig.model.conflict = a_conflict(mocker)
     ask.return_value = (ConflictResolution.CANCEL, {})
 
     assert rig.owner.save(parent, rig.model) is False
@@ -187,29 +141,22 @@ def test_cancelling_the_differences_saves_nothing(rig: Rig, parent: QWidget, moc
     rig.model.resolve_conflict.assert_not_called()
 
 
-@mark.parametrize("version", [BASE, None])
-def test_a_file_found_unchanged_asks_nothing(
-    rig: Rig, parent: QWidget, mocker: MockerFixture, ask: Any, version: RecordVersion | None
-) -> None:
-    """A file found at the version the document read -- or with nothing to compare with -- is saved without a question.
+def test_a_change_heard_on_disk_alone_is_the_saves_to_judge(rig: Rig, parent: QWidget, ask: Any) -> None:
+    """A file changed on disk under the edits, with no save refused yet, is saved without a question or a read: the
+    save's own check merges the change or refuses it as a conflict ([[sync#unlanded-save]], #564).
 
     **Test steps:**
 
-    * hear a change on disk and mark the document conflicted, with the file read back at the document's version, or
-      with no version
+    * hear a change on disk
     * save
-    * verify no dialog was shown, both flags were cleared, and the edits were queued
+    * verify no dialog was shown, the file was not read, and the edits were queued
     """
     rig.model.changed_on_disk = True
-    rig.model.conflict = a_conflict(mocker)
-    rig.model.base_version = BASE
-    read_as(rig, loaded(mocker, version))
 
     assert rig.owner.save(parent, rig.model) is True
 
     ask.assert_not_called()
-    assert rig.model.conflict is None
-    assert rig.model.changed_on_disk is False
+    rig.records.load.assert_not_called()
     assert len(rig.enqueued) == 1
 
 
@@ -259,7 +206,6 @@ def test_inspecting_a_conflicted_save_raises_its_conflict_in_the_document_and_sa
     job.gone = "The file is gone"
     rig.start()
     rig.model.fail_save.reset_mock()
-    read_as(rig, loaded(mocker, THEIRS))
     rig.model.fail_save.side_effect = lambda conflict, gone: setattr(rig.model, "conflict", conflict)
 
     rig.owner.inspect(parent, serial, rig.model)
@@ -558,13 +504,11 @@ def test_save_and_wait_shows_a_conflict_and_saves_what_was_kept(
     **Test steps:**
 
     * patch the wait: the row fails as a conflict, then -- saved again -- lands
-    * have the file read back at another version, and resolving clear the conflict
+    * have resolving clear the conflict
     * save and wait
     * verify the dialog was asked once, the failed row was retried with the kept data, and ``True`` came back
     """
     conflict = a_conflict(mocker)
-    rig.model.base_version = BASE
-    read_as(rig, loaded(mocker, THEIRS))
     rig.model.resolve_conflict.side_effect = lambda values: setattr(rig.model, "conflict", None)
 
     def refuse() -> None:
