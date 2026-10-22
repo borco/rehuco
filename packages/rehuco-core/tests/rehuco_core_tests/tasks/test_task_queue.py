@@ -2094,45 +2094,76 @@ def test_retrying_a_serial_that_belongs_to_nothing_is_accepted(queue: TaskQueue)
 # region Teardown
 
 
-def test_shutdown_stops_the_worker_and_cancels_what_is_left(queue: TaskQueue, listener: RecordingListener) -> None:
-    """Quitting with work in flight must leave no thread and no queued job pretending it will run.
+def test_shutdown_stops_the_worker_and_leaves_a_queued_job_queued(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """Shutting down stops the engine, not the work: a job still queued is not run, and is left queued -- what the exit
+    sequence wrote down stays true (#497).
 
     **Test steps:**
 
     * hold a job running with a second queued behind it
     * release the running job and shut the queue down
-    * verify the queued job was cancelled and no worker thread survives
+    * verify the queued job never moved and never ran, and nothing is left running
     """
     gated = GatedJob()
     queue.enqueue(gated)
-    queued = queue.enqueue(RecordingJob("never"))
+    order: list[str] = []
+    queued = queue.enqueue(RecordingJob("never", order))
     assert gated.entered.wait(TIMEOUT)
     gated.release.set()
 
     queue.shutdown()
 
-    assert listener.states_of(queued) == [JobState.CANCELLED]
+    assert listener.states_of(queued) == []
+    assert next(status for status in queue.jobs() if status.serial == queued).state is JobState.QUEUED
+    assert not order
     assert all(status.state is not JobState.RUNNING for status in queue.jobs())
 
 
-def test_shutdown_cancels_a_paused_job(queue: TaskQueue, listener: RecordingListener) -> None:
-    """A paused job is unfinished work, so shutdown owes it the same answer as a queued one.
+def test_shutdown_leaves_a_paused_job_paused(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A paused job was held by the user or by the quit, and comes back held: shutting down tells it nothing.
 
     **Test steps:**
 
     * start a checkpointing job and pause it so it unwinds
     * shut the queue down
-    * verify the job was cancelled
+    * verify the job is still paused, and was told nothing more
     """
     job = CheckpointingJob()
     serial = queue.enqueue(job)
     assert job.entered.wait(TIMEOUT)
     queue.pause_job(serial)
     assert wait_for_state(listener, serial, JobState.PAUSED)
+    told = len(listener.states_of(serial))
 
     queue.shutdown()
 
-    assert listener.states_of(serial)[-1] is JobState.CANCELLED
+    assert len(listener.states_of(serial)) == told
+    assert queue.jobs()[0].state is JobState.PAUSED
+    job.release.set()
+
+
+def test_shutdown_pauses_a_job_still_running_rather_than_cancelling_it(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """A job that ignored the quit's pause is asked again, to pause -- it keeps what it needs to carry on, where a
+    cancel would throw it away.
+
+    **Test steps:**
+
+    * start a checkpointing job, and shut the queue down while it runs
+    * verify it unwound to paused, never cancelled, and did not finish
+    """
+    job = CheckpointingJob()
+    serial = queue.enqueue(job)
+    assert job.entered.wait(TIMEOUT)
+
+    queue.shutdown()
+
+    assert listener.states_of(serial)[-1] is JobState.PAUSED
+    assert JobState.CANCELLED not in listener.states_of(serial)
+    assert not job.finished
     job.release.set()
 
 

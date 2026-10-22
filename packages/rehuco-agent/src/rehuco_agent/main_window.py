@@ -1799,9 +1799,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         turn "quit" into a window that will not close -- so a job left running is logged, not blocked
         on.
 
-        The task queue dock's widget is detached **before** ``shutdown()``: shutdown synchronously emits
-        ``job_updated`` for each job it cancels, and each would otherwise schedule a wake-up whose
-        dispatch runs against a widget already being torn down.
+        Shutting down leaves every job as the pause left it, so what was saved stays true (#497). The task queue
+        dock's widget is detached **before** ``shutdown()`` all the same: a job still running is asked to pause
+        again, and the ``job_updated`` that says so would otherwise schedule a wake-up whose dispatch runs against a
+        widget already being torn down.
         """
         # the coordinator is process-wide and outlives this window (#204), so its listener has to be
         # taken back rather than left pointing at a queue that is about to be shut down

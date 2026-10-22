@@ -88,8 +88,8 @@ unchanged.
 
 **One daemon thread per chain with work**, started when the chain first has a queued job and gone once it has been
 idle for a couple of seconds; an unchained job gets a thread of its own. Pausing, cancelling, removing and moving act
-on one entry whatever its chain, and `paused` is still derived from the rows. Shutdown cancels everything and joins
-every worker against one shared deadline, so quitting does not take longer because more chains were busy.
+on one entry whatever its chain, and `paused` is still derived from the rows. Shutdown stops every worker and joins
+them against one shared deadline, so quitting does not take longer because more chains were busy.
 
 `QThreadPool` was considered and rejected on three counts: serial would become a setting; a submitted `QRunnable` is
 no longer the queue's to reorder, so the pending list would have to be kept outside the pool anyway; and the global
@@ -527,13 +527,19 @@ it that were not obvious in the abstract:
 
 [[[appendices.task-queue#teardown]]]
 
-Shutting the queue down cancels everything and joins the worker with a timeout. Shutdown is terminal: a
-queue that has been shut down refuses further work rather than accepting jobs that will never run.
-Nothing has to be released first — §3.1 means no job is ever parked waiting on the queue, so a paused
-job is simply an unfinished one, cancelled where it stands.
+Shutting the queue down **stops the engine, not the work**: it joins the workers with a timeout and leaves every
+job in the state it stands in. Shutdown is terminal: a queue that has been shut down refuses further work rather
+than accepting jobs that will never run. Nothing has to be released first — §3.1 means no job is ever parked waiting
+on the queue, so a queued, paused or waiting job is simply unfinished work, and comes back as it was (§6). A job
+still running, one that ignored the pause, is asked to pause again rather than cancelled, so it keeps what it needs
+to carry on.
 
-**Cancelling is the wrong verb for quitting with work outstanding**, though, which is why it is not the
-only thing here. The app must be closeable without anyone having to remember what they had planned, so
+**Until #497 shutdown cancelled everything**, and that was the bug it was written to avoid: the exit sequence wrote
+the queue down, then the shutdown cancelled each unfinished job, and the queue file — still listening — wrote the
+cancellations over it. A save waiting for its share came back cancelled, no longer the record's saved state
+([[sync#unlanded-save]]). Cancelling is the user's verb, never the quit's.
+
+The app must be closeable without anyone having to remember what they had planned, so
 the exit sequence is *pause, wait, save, shut down*: `pause()` asks every unfinished job to stop — a waiting one
 excepted, which is written down waiting (§3.5) —
 `wait_until_idle()` waits for the running one to unwind to `paused` — at which point it has kept
@@ -699,9 +705,9 @@ but a waiting one has not been asked, Resume All while any job is paused or paus
 
 **Closing the app runs the exit sequence from §7** — `pause()`, `wait_until_idle()`, the store's `save()`,
 the model's `detach()`, then `shutdown()` — before the outer dock layout is captured, so a floating queue
-dock's visibility is never written mid-teardown. The observer detaches *before* `shutdown()`: shutdown
-synchronously emits `job_updated` for each job it cancels, and each would otherwise schedule a wake-up
-whose dispatch runs against a model whose widget is already being torn down.
+dock's visibility is never written mid-teardown. The observer detaches *before* `shutdown()`: shutdown asks a job
+still running to pause, which emits `job_updated`, and that would otherwise schedule a wake-up whose dispatch runs
+against a model whose widget is already being torn down.
 
 **Quitting is silent unless it would actually cost something.** If every unfinished job is
 `safely_interruptible` *and* `persistable`, the queue is written and the app quits with no prompt — being

@@ -346,6 +346,26 @@ def test_pausing_the_queue_leaves_a_waiting_job_waiting(
     assert wait_for_state(listener, serial, JobState.DONE)
 
 
+def test_shutting_down_leaves_a_waiting_job_waiting(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A job waiting for its share when the queue shuts down is still waiting -- the state the exit sequence wrote down,
+    so a save waiting for its share comes back waiting, not cancelled (#497).
+
+    **Test steps:**
+
+    * let a job wait, then shut the queue down
+    * verify it still waits with its reason, and was told nothing more
+    """
+    serial = queue.enqueue(WaitingJob())
+    assert wait_for_state(listener, serial, JobState.WAITING)
+    told = len(listener.states_of(serial))
+
+    queue.shutdown()
+
+    status = queue.jobs()[0]
+    assert (status.state, status.message) == (JobState.WAITING, REASON)
+    assert len(listener.states_of(serial)) == told
+
+
 def test_the_queue_reads_as_paused_with_a_job_still_waiting(queue: TaskQueue, listener: RecordingListener) -> None:
     """A waiting row is not one a bulk pause can reach, so it does not keep the Pause control from reading *paused*.
 

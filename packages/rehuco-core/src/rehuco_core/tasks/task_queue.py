@@ -707,11 +707,13 @@ class TaskQueue:
             return self.__condition.wait_for(lambda: not self.__running, timeout)
 
     def shutdown(self, timeout: float = DEFAULT_SHUTDOWN_TIMEOUT) -> None:
-        """Cancel everything and wait for the worker to stop ([[appendices.task-queue#teardown]]).
+        """Stop the workers, leaving every job as it stands ([[appendices.task-queue#teardown]]).
 
-        Terminal: a queue that has been shut down accepts no more work. Cancelling is the right verb
-        here and the wrong one for quitting with work outstanding -- for that, :meth:`pause` and
-        :meth:`wait_until_idle` first, and shut down once what matters has been written.
+        Terminal: a queue that has been shut down accepts no more work. **It stops the engine, not the work**: a
+        queued, paused or waiting job keeps its state, so what the exit sequence wrote down -- *pause, wait, save* --
+        stays true whoever is listening, and a save waiting for its share comes back waiting (#497). A job still
+        running, one that ignored the pause, is asked to pause again rather than cancelled, so it keeps whatever it
+        needs to carry on.
 
         Every worker is a **daemon** thread, so a job that ignores its checkpoints can never hold the
         process open past this -- the wait is what gives a cooperative job the chance to close what it
@@ -725,8 +727,8 @@ class TaskQueue:
             self.__stopping = True
             with self.__watching_paused():
                 for entry in self.__entries:
-                    if entry.unfinished():
-                        self.__ask_stop(entry, StopRequest.CANCEL)
+                    if entry.state is JobState.RUNNING:
+                        self.__ask_stop(entry, StopRequest.PAUSE)
             self.__condition.notify_all()
             workers = tuple(self.__workers.values())
             self.__workers.clear()

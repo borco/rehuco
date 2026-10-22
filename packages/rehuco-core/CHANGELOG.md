@@ -131,6 +131,9 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   joins every worker against one deadline. A chain belongs to a family registered once in a `ChainRegistry`
   (`DEFAULT_CHAIN_REGISTRY`), which builds its keys as `name` or `name:resource`; a second claim of a name is refused,
   and so is a job whose chain no family owns -- dropped, with a warning, when it comes back from a queue file.
+- `TaskQueue.shutdown()` stops the workers and leaves every job in the state it stands in, instead of cancelling every
+  unfinished one (#564): a queue written by the exit sequence stays true whoever listens, so a waiting job comes back
+  waiting. A job still running is asked to pause rather than cancelled.
 - `JobStatus.error` is now `JobStatus.message` (#497): why a job failed, or what a waiting one waits for. A queue
   file is written with the key `message`, and one written by an earlier build is still read by its `error` key.
 - The file notifier recognises an atomic save by the temporary sibling's new name, `<name>.<random>.tmp` (the random
