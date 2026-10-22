@@ -128,6 +128,10 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   of is scanned as the file opens; a root scanned before is left to its watcher and to verify-on-access, and one
   that cannot be reached is scanned once it is back, as before. Opening the open file again while its scans run
   queues nothing more.
+- **Renaming a resource from its location field updates the catalog with what was just saved** (#566). A rename
+  saves unsaved edits first; the Browsers and the Root Catalog kept the values from before that save until a later
+  one, and a new record named this way was not listed at all. The record is now read again under its new name once
+  the rename lands.
 
 ## [0.3.0] - 2026-10-12
 
