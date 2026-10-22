@@ -15,6 +15,10 @@ REHUDB_SUFFIX: Final = ".rehudb"
 """The catalog cache's file extension ([[data-model#cache-schema]], #372) -- one SQLite file per ``.rehuco``,
 named by its rehuco id (:mod:`rehuco_core.rehudb`)."""
 
+USER_SIDECAR_SUFFIX: Final = ".rehuser"
+"""A per-user sidecar's file extension ([[data-model#single-file]], #513) -- ``<stem>.user-<name>.rehuser`` beside a
+record, holding one user's state for it (:mod:`rehuco_core.user_sidecars`)."""
+
 LEGACY_SUFFIX: Final = ".tc"
 """A legacy tc4 record's file extension -- the source format a conversion consumes
 ([[acquisition-tooling#convert-mechanics]]), and the second thing that makes a file *a resource*

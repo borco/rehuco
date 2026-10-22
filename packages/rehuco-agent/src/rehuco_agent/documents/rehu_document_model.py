@@ -1068,16 +1068,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         return copy.deepcopy(self.__base_data)
 
-    def stored_text(self) -> str:
-        """The record's text as the file holds it -- not what a save would write.
+    def stored_files(self) -> list[tuple[str, str]]:
+        """The record's files as they sit on disk -- the record and every user's sidecar -- not what a save would
+        write.
 
-        :returns: the text.
+        :returns: each file's name and text, the record first.
         :raises OSError: there is no file, or it could not be read.
         """
         key = self.key
         if key is None:
             raise FileNotFoundError("this document has no file yet")
-        return self.__records.stored_text(key)
+        return self.__records.stored_files(key)
 
     def rename_conflicts(self, new_name: str) -> bool:
         """Whether renaming to ``new_name`` would land on something already there

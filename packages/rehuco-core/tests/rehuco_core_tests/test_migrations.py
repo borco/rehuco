@@ -11,7 +11,6 @@ from typing import Any, Final
 
 import pytest
 from pytest import mark, param
-from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_PLUGIN_REGISTRY,
@@ -299,7 +298,7 @@ def test_an_empty_payload_gains_a_stamp_but_no_core_block() -> None:
     assert data == {"format_version": CURRENT_FORMAT_VERSION}
 
 
-def test_loading_a_v1_file_migrates_it_and_saving_stamps_the_new_version(mocker: MockerFixture) -> None:
+def test_loading_a_v1_file_migrates_it_and_saving_stamps_the_new_version(tmp_path: Path) -> None:
     """The end-to-end contract: a v1 file opens transparently, and the upgrade only reaches **disk** on
     save ([[data-model#schema-version]]).
 
@@ -321,10 +320,10 @@ def test_loading_a_v1_file_migrates_it_and_saving_stamps_the_new_version(mocker:
     assert [block.key for block in doc.inactive_blocks()] == ["reference_images"]
     assert doc.format_version == CURRENT_FORMAT_VERSION
 
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
-    doc.save(Path("/fake/info.rehu"))
+    path = tmp_path / "info.rehu"
+    doc.save(path)
 
-    saved = json.loads(mock_write.call_args[0][1])
+    saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["format_version"] == CURRENT_FORMAT_VERSION
     assert saved["core"]["type"] == "tutorial"
     assert saved["reference_images"] == {"images_count": 12}

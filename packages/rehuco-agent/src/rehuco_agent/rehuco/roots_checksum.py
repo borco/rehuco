@@ -30,11 +30,13 @@ BOOKKEEPING_KINDS: Final = frozenset(
         FileKind.OWN_RECORD,
         FileKind.OWN_SCREENSHOT,
         FileKind.OWN_MANIFEST,
+        FileKind.OWN_USER_STATE,
         FileKind.FOREIGN_RECORD,
         FileKind.FOREIGN_SIDECAR,
     }
 )
-"""The kinds a record, a checksum file or a screenshot is listed as: files a record never checksums."""
+"""The kinds a record, a checksum file, a per-user sidecar or a screenshot is listed as: files a record never
+checksums."""
 
 VERDICT_WORDS: Final = {
     FileChecksumState.OK: "Matching",

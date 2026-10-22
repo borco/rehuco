@@ -53,6 +53,7 @@ from .resource_scoping import (
     is_record_name,
 )
 from .tc_conversion_backups import is_conversion_backup
+from .user_sidecars import is_user_sidecar_name
 
 MAX_NAMED_UNREADABLE: Final = 3
 """How many unreadable directories an error names before it counts the rest.
@@ -439,14 +440,20 @@ class ContentFileScanner:
         beside it, so the same ``info00.jpg`` is bookkeeping next to an ``info.rehu`` and a normal file
         in a directory that has none. A ``.orig`` backup counts wherever it sits and against no record at
         all (#253): what it is a backup *of* is whatever the directory holding it is, which is the rule
-        :mod:`rehuco_core.tc_conversion_backups` restores by and the one asked here.
+        :mod:`rehuco_core.tc_conversion_backups` restores by and the one asked here. A record's lock and its
+        per-user sidecars count on their names alone too: neither is ever anyone's content.
 
         :param filename: the candidate's file name.
         :param records: the record names found in that file's own directory, from :meth:`__record_names`.
-        :returns: whether it is a record, a record's lock file (#512), one of a record's ``<record>NN`` screenshots, a
-            record's checksum manifest, or a retained conversion backup.
+        :returns: whether it is a record, a record's lock file (#512), a per-user sidecar (#513), one of a record's
+            ``<record>NN`` screenshots, a record's checksum manifest, or a retained conversion backup.
         """
-        if is_conversion_backup(filename) or is_record_name(filename) or is_lock_name(filename):
+        if (
+            is_conversion_backup(filename)
+            or is_record_name(filename)
+            or is_lock_name(filename)
+            or is_user_sidecar_name(filename)
+        ):
             return True
         stem, suffix = os.path.splitext(filename)
         suffix = suffix.lower()

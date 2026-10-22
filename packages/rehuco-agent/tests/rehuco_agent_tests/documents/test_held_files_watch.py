@@ -510,10 +510,50 @@ def test_a_sweep_expects_the_held_documents_in_the_folder(recursive: bool, expec
     """
     held = [key(LOOSE / "x" / "info.rehu"), key(LOOSE / "x" / "sub" / "foo.rehu"), key(LOOSE / "y" / "info.rehu")]
     known: Callable[[], dict[Path, tuple[int, int] | None]] = HeldFilesWatch.known(
-        WatchedFolder(LOOSE / "x", None, recursive), held
+        WatchedFolder(LOOSE / "x", None, recursive), held, RenameCoordinator()
     )
 
     assert known() == dict.fromkeys(expected)
+
+
+def test_a_sweep_expects_each_held_documents_sidecars_as_they_are_now(tmp_path: Path) -> None:
+    """A document is read with its per-user sidecars (#513): a sweep expects those beside each held document as the
+    folder holds them at the sweep, so one written after the watch started is compared too.
+
+    **Test steps:**
+
+    * ask what a sweep of a folder holding one document expects, with one sidecar beside it
+    * add a second sidecar, and another record's
+    * verify the first sweep expects the document and its sidecar, the next both of its sidecars, never the other's
+    """
+    record = tmp_path / "lesson.rehu"
+    (tmp_path / "lesson.user-ioan.rehuser").write_text("{}", encoding="utf-8")
+    known = HeldFilesWatch.known(WatchedFolder(tmp_path, None, False), [key(record)], RenameCoordinator())
+    first = known()
+
+    (tmp_path / "lesson.user-bob.rehuser").write_text("{}", encoding="utf-8")
+    (tmp_path / "other.user-bob.rehuser").write_text("{}", encoding="utf-8")
+
+    assert first == dict.fromkeys([record, tmp_path / "lesson.user-ioan.rehuser"])
+    assert known() == dict.fromkeys(
+        [record, tmp_path / "lesson.user-bob.rehuser", tmp_path / "lesson.user-ioan.rehuser"]
+    )
+
+
+def test_a_sweep_still_expects_a_document_whose_folder_cannot_be_listed(mocker: MockerFixture) -> None:
+    """A folder the share will not list has no sidecars to name; the held document is still expected.
+
+    **Test steps:**
+
+    * make listing a record's sidecars fail
+    * verify a sweep expects the held document alone
+    """
+    held = key(LOOSE / "x" / "info.rehu")
+    mocker.patch("rehuco_agent.documents.held_files_watch.user_sidecar_paths", side_effect=OSError("unreachable"))
+
+    known = HeldFilesWatch.known(WatchedFolder(LOOSE / "x", None, False), [held], RenameCoordinator())
+
+    assert known() == {held.path: None}
 
 
 # endregion

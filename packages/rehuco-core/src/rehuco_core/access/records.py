@@ -14,6 +14,7 @@ from ..rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
 from ..tc_conversion import convert_tc
 from ..tc_document import load_tc
 from ..tc_screenshots import ScreenshotNamePattern
+from ..user_sidecars import user_sidecar_paths
 from .keys import ResourceKey
 from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
 
@@ -152,14 +153,24 @@ class Records:
             raise RecordConflict(theirs_document, theirs_version)
         return merge_users(document.data, theirs_document.data, base, username, dropped=dropped)
 
-    def stored_text(self, key: ResourceKey) -> str:
-        """A record's text as stored.
+    def stored_files(self, key: ResourceKey) -> list[tuple[str, str]]:
+        """A record's files as stored: the record, then each of its per-user sidecars ([[data-model#single-file]]) --
+        every user's, in name order. A legacy ``.tc`` has none.
 
         :param key: the record.
-        :returns: its text.
-        :raises OSError: it could not be read.
+        :returns: each file's name and text; a sidecar gone between the listing and its read is left out.
+        :raises OSError: the record could not be read, its folder listed, or a sidecar read.
         """
-        return key.path.read_text(encoding="utf-8")
+        path = key.path
+        files = [(path.name, path.read_text(encoding="utf-8"))]
+        if path.suffix.lower() == LEGACY_SUFFIX:
+            return files
+        for sidecar in sorted(user_sidecar_paths(path).values(), key=lambda sidecar: sidecar.name):
+            try:
+                files.append((sidecar.name, sidecar.read_text(encoding="utf-8")))
+            except FileNotFoundError:
+                continue
+        return files
 
     def convert(  # pylint: disable=too-many-arguments
         self,
@@ -256,13 +267,23 @@ class Records:
 
     @staticmethod
     def __signature(path: Path) -> FileSignature | None:
-        """A file's modification time and size, or ``None`` when it cannot be stat'ed.
+        """A record's modification time and size, with its per-user sidecars' -- the latest time and the sizes summed
+        -- since it is read with them ([[data-model#single-file]]): another device's progress is a change to it too.
 
-        :param path: the file.
-        :returns: its signature.
+        :param path: the record.
+        :returns: its signature, or ``None`` when the record cannot be stat'ed or its folder listed -- what a watch
+            reads as the record gone; a sidecar that cannot be stat'ed is left out, since the record is still there.
         """
         try:
             stat = path.stat()
+            sidecars = user_sidecar_paths(path).values()
         except OSError:
             return None
-        return stat.st_mtime_ns, stat.st_size
+        mtime_ns, size = stat.st_mtime_ns, stat.st_size
+        for sidecar in sidecars:
+            try:
+                status = sidecar.stat()
+            except OSError:
+                continue
+            mtime_ns, size = max(mtime_ns, status.st_mtime_ns), size + status.st_size
+        return mtime_ns, size

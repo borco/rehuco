@@ -2073,26 +2073,27 @@ def test_sources_exposes_the_document_records(model: RehuDocumentModel, document
     assert "primary" not in model.sources[0]
 
 
+@mark.usefixtures("real_path_stat")
 def test_a_file_with_duplicate_sources_opens_clean_and_saves_as_it_is(mocker: MockerFixture, tmp_path: Path) -> None:
     """Duplicates are never acted on automatically (#386): opening does not dirty the model, and a save
     writes both entries.
 
     **Test steps:**
 
-    * open a document holding the same URL twice
+    * write a record holding the same URL twice under ``tmp_path`` and open it
     * verify the model is clean and both entries are listed
     * save, with the atomic write mocked, and verify both entries were written
     """
     url = "https://example.com/page"
     sources = [{"title": "T", "url": url, "primary": True}, {"title": "T", "url": url}]
-    mocker.patch.object(
-        Path,
-        "read_text",
-        return_value=json.dumps(
+    path = tmp_path / "info.rehu"
+    path.write_text(
+        json.dumps(
             {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial", "sources": sources}, "tutorial": {}}
         ),
+        encoding="utf-8",
     )
-    model = RehuDocumentModel(RehuDocument.load(tmp_path / "info.rehu"))
+    model = RehuDocumentModel(RehuDocument.load(path))
     mocker.patch("rehuco_core.record_file_lock.RecordFileLock")
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
@@ -3434,24 +3435,24 @@ def test_a_document_current_at_both_layers_is_not_upgradable(mocker: MockerFixtu
     assert model.upgradable is False
 
 
+@mark.usefixtures("real_path_stat")
 def test_saving_a_block_only_upgradable_document_clears_the_offer(mocker: MockerFixture, tmp_path: Path) -> None:
     """Saving upgrades whichever layer was stale, block included -- the same single-remedy contract the
     file-wide offer already has (:meth:`RehuDocumentModel.save`, #81).
 
     **Test steps:**
 
-    * load a document whose active block alone predates its plugin, confirming it starts upgradable
+    * write a record whose active block alone predates its plugin under ``tmp_path``
+    * load it, confirming it starts upgradable
     * save
     * verify the offer clears
     """
-    mocker.patch.object(
-        Path,
-        "read_text",
-        return_value=json.dumps(
-            {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}, "tutorial": {}}
-        ),
+    path = tmp_path / "info.rehu"
+    path.write_text(
+        json.dumps({"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}, "tutorial": {}}),
+        encoding="utf-8",
     )
-    document = RehuDocument.load(tmp_path / "info.rehu")
+    document = RehuDocument.load(path)
     model = RehuDocumentModel(document)
     assert model.upgradable is True
 

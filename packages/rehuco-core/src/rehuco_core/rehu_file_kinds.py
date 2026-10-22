@@ -54,6 +54,7 @@ from .directory_entries import is_walkable_directory
 from .record_file_lock import is_lock_name
 from .resource_scoping import is_directory_scoped, is_directory_scoped_name, is_record_name
 from .tc_conversion_backups import is_conversion_backup
+from .user_sidecars import user_sidecar_owner
 
 SCREENSHOT_STEM_PATTERN: Final = re.compile(r"^(?P<record>.*)\d{2}$")
 """Splits a candidate screenshot's stem into the record it would belong to and its two-digit index.
@@ -89,8 +90,13 @@ class FileKind(StrEnum):
     ``foo.rehu`` beside this one ([[data-model#resource-scoping]]'s tolerated coexistence). A resource
     of its own, so it is somewhere to *go* rather than something to read here."""
 
+    OWN_USER_STATE = "own_user_state"
+    """One user's sidecar for this record, ``<record>.user-<name>.rehuser`` ([[data-model#single-file]], #513) --
+    whoever's it is. Per-user state, not content, and not checksummed."""
+
     FOREIGN_SIDECAR = "foreign_sidecar"
-    """A screenshot or manifest belonging to a foreign record. Bookkeeping, and not this resource's."""
+    """A screenshot, manifest or per-user sidecar belonging to a foreign record. Bookkeeping, and not this
+    resource's."""
 
     FOREIGN_CONTENT = "foreign_content"
     """A file a foreign *file-scoped* record covers -- its same-stem sibling (#254). Content, but not
@@ -319,7 +325,8 @@ class DirectoryClassifier:
         """Name one file, in the order the rules override one another.
 
         A backup first, because it is the one thing excluded on its name alone and against no record
-        (#253). Then a record -- this resource's own or a neighbour's. Then the sibling rules, which
+        (#253). Then a record -- this resource's own or a neighbour's. Then a per-user sidecar, named after its record
+        and never anything else, whether or not the record is there (#513). Then the sibling rules, which
         need to know *which* record claims the name, since ``foo00.jpg`` is this record's screenshot
         beside ``foo.rehu`` and a foreign one beside ``bar.rehu``. Then coverage (#254), in the three
         shapes that take content out of this record's: a **file-scoped** record's content is its
@@ -339,6 +346,10 @@ class DirectoryClassifier:
             return FileKind.CONVERSION_BACKUP
         if is_record_name(filename):
             return FileKind.OWN_RECORD if self.__is_own(filename, own_directory) else FileKind.FOREIGN_RECORD
+        user_state_of = user_sidecar_owner(filename)
+        if user_state_of is not None:
+            own = own_directory and user_state_of[0].lower() == self.__slug
+            return FileKind.OWN_USER_STATE if own else FileKind.FOREIGN_SIDECAR
         stem, suffix = os.path.splitext(filename)
         stem, suffix = stem.lower(), suffix.lower()
         sidecar_of = self.__sidecar_owner(stem, suffix, records)

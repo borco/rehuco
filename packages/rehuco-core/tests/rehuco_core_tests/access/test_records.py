@@ -23,6 +23,7 @@ from rehuco_core import (
     ResourceKey,
     current_block_version,
     record_version,
+    user_sidecar_paths,
 )
 
 from rehuco_core_tests.test_tc_conversion import TC_YAML
@@ -94,6 +95,17 @@ def on_disk(path: Path) -> dict[str, Any]:
     :returns: its JSON.
     """
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def users_on_disk(path: Path, block: str = "tutorial") -> dict[str, Any]:
+    """A block's per-user fields as stored in the record's sidecars, by each sidecar's slug.
+
+    :param path: the record.
+    :param block: the block key.
+    :returns: each user's fields in that block, for the sidecars holding the block.
+    """
+    stored = {slug: on_disk(sidecar) for slug, sidecar in user_sidecar_paths(path).items()}
+    return {slug: fields[block] for slug, fields in stored.items() if block in fields}
 
 
 def write_meanwhile(path: Path, users: dict[str, Any] | None = None, **core: Any) -> None:
@@ -347,7 +359,8 @@ def test_a_save_merges_a_progress_entry_written_meanwhile(tmp_path: Path, freeze
 
     * load a record; meanwhile, another writer adds a progress entry for the same user and a rating for ``bob``
     * change the loaded rating and save it later against the loaded version
-    * verify the file holds all three, the save reports a merge, the document holds them too, ``updated`` is unmoved
+    * verify the sidecars hold all three, the save reports a merge, the document holds them too, ``updated`` is
+      unmoved
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data({USERNAME: {"rating": 1}}))
@@ -359,11 +372,11 @@ def test_a_save_merges_a_progress_entry_written_meanwhile(tmp_path: Path, freeze
     loaded.document.set_active_user_field("rating", 5)
     saved = records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=False)
 
-    stored = on_disk(path)
-    assert stored["tutorial"]["users"] == {USERNAME: {"rating": 5, "progress": {"a.mp4": 12}}, "bob": {"rating": 2}}
-    assert stored["core"]["updated"] == UPDATED
+    users = users_on_disk(path)
+    assert users == {USERNAME: {"rating": 5, "progress": {"a.mp4": 12}}, "bob": {"rating": 2}}
+    assert on_disk(path)["core"]["updated"] == UPDATED
     assert saved.users_merged is True
-    assert loaded.document.data["tutorial"]["users"] == stored["tutorial"]["users"]
+    assert loaded.document.data["tutorial"]["users"] == users
     assert saved.version == load(records, key).version
 
 
@@ -379,7 +392,7 @@ def test_the_first_per_user_field_written_meanwhile_into_a_bare_block_is_no_conf
     * write a tutorial whose block has no ``users`` map, and load it
     * meanwhile, ``bob`` writes the first per-user field into the block
     * change the loaded rating and save against the loaded version later
-    * verify no conflict, both ratings on disk, ``updated`` unmoved
+    * verify no conflict, both ratings in their sidecars, ``updated`` unmoved
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
@@ -391,9 +404,8 @@ def test_the_first_per_user_field_written_meanwhile_into_a_bare_block_is_no_conf
     loaded.document.set_active_user_field("rating", 4)
     saved = records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=False)
 
-    stored = on_disk(path)
-    assert stored["tutorial"]["users"] == {USERNAME: {"rating": 4}, "bob": {"rating": 2}}
-    assert stored["core"]["updated"] == UPDATED
+    assert users_on_disk(path) == {USERNAME: {"rating": 4}, "bob": {"rating": 2}}
+    assert on_disk(path)["core"]["updated"] == UPDATED
     assert saved.users_merged is True
 
 
@@ -406,7 +418,8 @@ def test_per_user_fields_written_meanwhile_into_a_block_the_record_lacked_surviv
     * write a tutorial with no ``tutorial`` block, and load it
     * meanwhile, ``bob`` rates it, which creates the block on disk
     * retitle the loaded record and save it against the loaded version
-    * verify the save reports a merge, and the file holds the new title and ``bob``'s rating with the block's stamp
+    * verify the save reports a merge, the record holds the new title and the block's stamp, and ``bob``'s sidecar
+      his rating
     """
     path = tmp_path / "info.rehu"
     data = tutorial_data()
@@ -422,7 +435,8 @@ def test_per_user_fields_written_meanwhile_into_a_block_the_record_lacked_surviv
     stored = on_disk(path)
     assert saved.users_merged is True
     assert stored["core"]["sources"][0]["title"] == "Mine"
-    assert stored["tutorial"] == {"format_version": current_block_version("tutorial"), "users": {"bob": {"rating": 3}}}
+    assert stored["tutorial"] == {"format_version": current_block_version("tutorial")}
+    assert users_on_disk(path) == {"bob": {"rating": 3}}
 
 
 def test_a_metadata_edit_made_meanwhile_is_a_conflict(tmp_path: Path) -> None:
@@ -484,7 +498,7 @@ def test_overwrite_writes_over_a_metadata_edit_and_still_merges_per_user_fields(
 
     * load a record; meanwhile, another writer changes its description and rates it as ``bob``
     * change the loaded description and save with ``overwrite``
-    * verify the caller's description and ``bob``'s rating are both in the file
+    * verify the caller's description is in the record and ``bob``'s rating in his sidecar
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
@@ -495,9 +509,8 @@ def test_overwrite_writes_over_a_metadata_edit_and_still_merges_per_user_fields(
     loaded.document.data["core"]["description"] = "mine"
     saved = records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=True)
 
-    stored = on_disk(path)
-    assert stored["core"]["description"] == "mine"
-    assert stored["tutorial"]["users"] == {"bob": {"rating": 2}}
+    assert on_disk(path)["core"]["description"] == "mine"
+    assert users_on_disk(path) == {"bob": {"rating": 2}}
     assert saved.users_merged is True
 
 
@@ -511,7 +524,8 @@ def test_a_save_whose_details_are_the_files_keeps_the_files_updated(
 
     * load a record; meanwhile, another writer changes its description and its ``updated``
     * make the same description edit here, rate it, and save later with ``overwrite``
-    * verify the file holds the description and the rating, and the file's ``updated`` -- on the document too
+    * verify the record holds the description and the file's ``updated`` -- on the document too -- and the sidecar
+      the rating
     """
     path = tmp_path / "info.rehu"
     key = write_record(path, tutorial_data())
@@ -526,7 +540,7 @@ def test_a_save_whose_details_are_the_files_keeps_the_files_updated(
 
     stored = on_disk(path)
     assert stored["core"]["description"] == "theirs"
-    assert stored["tutorial"]["users"] == {USERNAME: {"rating": 5}}
+    assert users_on_disk(path) == {USERNAME: {"rating": 5}}
     assert stored["core"]["updated"] == THEIRS_UPDATED
     assert loaded.document.updated == THEIRS_UPDATED
 
@@ -741,19 +755,46 @@ def test_a_legacy_record_is_never_saved_over(tmp_path: Path) -> None:
 
 
 # region stored text and conversion
-def test_stored_text_is_the_file_as_it_is(tmp_path: Path) -> None:
-    """The text as stored, byte for byte -- not the document reserialized.
+def test_stored_files_are_the_files_as_they_are(tmp_path: Path) -> None:
+    """The record's text and then every user's sidecar's, by name, each byte for byte -- not the document
+    reserialized; another record's sidecar is not among them.
 
     **Test steps:**
 
-    * write a record with a layout of its own
-    * verify ``stored_text`` answers it unchanged
+    * write a record with a layout of its own, two sidecars of its own out of name order, and another record's
+    * verify ``stored_files`` answers the record first, then its sidecars by name, each unchanged
     """
     path = tmp_path / "info.rehu"
     text = json.dumps(tutorial_data(), indent=7)
     path.write_text(text, encoding="utf-8")
+    sidecars = {
+        "info.user-bob.rehuser": '{"format_version": 1, "tutorial": {"rating": 2}}',
+        "info.user-admin.rehuser": '{ "format_version" : 1 }',
+    }
+    for name, sidecar in sidecars.items():
+        (tmp_path / name).write_text(sidecar, encoding="utf-8")
+    (tmp_path / "other.user-admin.rehuser").write_text('{"format_version": 1}', encoding="utf-8")
 
-    assert Records().stored_text(ResourceKey(path)) == text
+    assert Records().stored_files(ResourceKey(path)) == [
+        ("info.rehu", text),
+        ("info.user-admin.rehuser", sidecars["info.user-admin.rehuser"]),
+        ("info.user-bob.rehuser", sidecars["info.user-bob.rehuser"]),
+    ]
+
+
+def test_a_legacy_records_stored_files_are_only_itself(tmp_path: Path) -> None:
+    """A ``.tc`` has no sidecars: its stored files are just its own text, whatever sits beside it.
+
+    **Test steps:**
+
+    * write a ``.tc`` and a sidecar named after its stem
+    * verify ``stored_files`` answers only the ``.tc``
+    """
+    path = tmp_path / "info.tc"
+    path.write_text(TC_YAML, encoding="utf-8")
+    (tmp_path / "info.user-admin.rehuser").write_text('{"format_version": 1}', encoding="utf-8")
+
+    assert Records().stored_files(ResourceKey(path)) == [("info.tc", TC_YAML)]
 
 
 def test_convert_writes_the_rehu_and_loads_it(tmp_path: Path) -> None:

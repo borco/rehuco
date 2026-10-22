@@ -18,10 +18,11 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.source_views import (
     NOT_ON_DISK_PLACEHOLDER,
+    UNSAVED_RECORD,
     OnDiskView,
     SavePreviewView,
 )
-from rehuco_core import CURRENT_FORMAT_VERSION, RecordVersion, RehuDocument, SaveOutcome
+from rehuco_core import CURRENT_FORMAT_VERSION, RecordVersion, RehuDocument, SaveOutcome, user_sidecar_path
 
 REHU_PATH: Final = Path.cwd() / "fake" / "info.rehu"
 TC_PATH: Final = Path.cwd() / "fake" / "info.tc"
@@ -72,16 +73,14 @@ def shown_on_disk(qtbot: QtBot, model: RehuDocumentModel) -> OnDiskView:
     return view
 
 
-def label(view: SavePreviewView | OnDiskView, name: str) -> QLabel:
-    """Return a view's inner text label.
+def label(view: SavePreviewView | OnDiskView, name: str = UNSAVED_RECORD.name) -> QLabel:
+    """Return the label a view shows one file's text in.
 
     :param view: the inspection view to inspect.
-    :param name: the label's object name.
+    :param name: the file's name; by default the record of a document with no path.
     :returns: the `QLabel`.
     """
-    found = view.findChild(QLabel, name)
-    assert isinstance(found, QLabel)
-    return found
+    return view.text_label(name)
 
 
 # endregion
@@ -96,9 +95,13 @@ def test_save_preview_renders_the_documents_serialized_json(
     **Test steps:**
 
     * build a Save Preview over the sample model
-    * verify the label's text equals ``model.document.serialize()``
+    * verify it shows the record as ``model.document.serialize()``, then each sidecar as
+      ``model.document.serialize_user_sidecars()`` renders it
     """
-    assert label(save_preview, SavePreviewView.LABEL_NAME).text() == model.document.serialize()
+    sidecars = model.document.serialize_user_sidecars()
+    assert save_preview.files() == [(UNSAVED_RECORD.name, model.document.serialize())] + [
+        (user_sidecar_path(UNSAVED_RECORD, slug).name, text) for slug, text in sidecars.items()
+    ]
 
 
 def test_save_preview_rerenders_after_a_model_edit(save_preview: SavePreviewView, model: RehuDocumentModel) -> None:
@@ -111,7 +114,7 @@ def test_save_preview_rerenders_after_a_model_edit(save_preview: SavePreviewView
     """
     model.title = "Edited Title"
 
-    text = label(save_preview, SavePreviewView.LABEL_NAME).text()
+    text = label(save_preview).text()
     assert text == model.document.serialize()
     assert "Edited Title" in text
 
@@ -132,11 +135,11 @@ def test_save_preview_rerenders_after_dropping_an_unknown_field(qtbot: QtBot) ->
     qtbot.addWidget(view)
     view.show()
     qtbot.waitExposed(view)
-    assert "mystery" in label(view, SavePreviewView.LABEL_NAME).text()
+    assert "mystery" in label(view).text()
 
     model.remove_unknown_field("mystery")
 
-    text = label(view, SavePreviewView.LABEL_NAME).text()
+    text = label(view).text()
     assert "mystery" not in text
     assert text == model.document.serialize()
 
@@ -158,7 +161,7 @@ def test_save_preview_rerenders_after_a_source_is_appended(
 
     model.add_source("Other Publisher", "https://other.example.com/page")
 
-    text = label(save_preview, SavePreviewView.LABEL_NAME).text()
+    text = label(save_preview).text()
     assert "https://other.example.com/page" in text
     assert text == model.document.serialize()
 
@@ -201,7 +204,7 @@ def test_save_preview_catches_up_when_shown_after_a_hidden_edit(qtbot: QtBot, mo
     view.show()
     qtbot.waitExposed(view)
 
-    text = label(view, SavePreviewView.LABEL_NAME).text()
+    text = label(view).text()
     assert text == model.document.serialize()
     assert "Edited While Hidden" in text
 
@@ -242,7 +245,7 @@ def test_save_preview_renders_a_locked_document(qtbot: QtBot) -> None:
     view = SavePreviewView(model)
     qtbot.addWidget(view)
 
-    assert label(view, SavePreviewView.LABEL_NAME).text() == model.document.serialize()
+    assert label(view).text() == model.document.serialize()
 
 
 def test_save_preview_uses_the_fixed_system_font_family(save_preview: SavePreviewView) -> None:
@@ -251,10 +254,10 @@ def test_save_preview_uses_the_fixed_system_font_family(save_preview: SavePrevie
     **Test steps:**
 
     * build a Save Preview
-    * verify the label's font family is the fixed system font's family
+    * verify the record's label font family is the fixed system font's family
     """
     expected = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
-    assert label(save_preview, SavePreviewView.LABEL_NAME).font().family() == expected
+    assert label(save_preview).font().family() == expected
 
 
 # endregion
@@ -267,11 +270,11 @@ def test_on_disk_shows_a_placeholder_when_the_document_has_no_path(qtbot: QtBot,
     **Test steps:**
 
     * build and show an On Disk view over the path-less sample model
-    * verify the label shows the not-on-disk placeholder
+    * verify it shows one file, named as an unsaved record, holding the not-on-disk placeholder
     """
     view = shown_on_disk(qtbot, model)
 
-    assert label(view, OnDiskView.LABEL_NAME).text() == NOT_ON_DISK_PLACEHOLDER
+    assert view.files() == [(UNSAVED_RECORD.name, NOT_ON_DISK_PLACEHOLDER)]
 
 
 def test_on_disk_shows_a_placeholder_when_the_file_does_not_exist(qtbot: QtBot) -> None:
@@ -280,12 +283,12 @@ def test_on_disk_shows_a_placeholder_when_the_file_does_not_exist(qtbot: QtBot) 
     **Test steps:**
 
     * build a model bound to a path, with ``read_text`` raising ``FileNotFoundError``
-    * verify the On Disk view shows the placeholder
+    * verify the On Disk view shows one file, under the record's name, holding the placeholder
     """
     model = RehuDocumentModel.create_new(REHU_PATH)
     view = shown_on_disk(qtbot, model)
 
-    assert label(view, OnDiskView.LABEL_NAME).text() == NOT_ON_DISK_PLACEHOLDER
+    assert view.files() == [(REHU_PATH.name, NOT_ON_DISK_PLACEHOLDER)]
 
 
 def test_on_disk_shows_the_verbatim_file_bytes(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -297,14 +300,14 @@ def test_on_disk_shows_the_verbatim_file_bytes(qtbot: QtBot, mocker: MockerFixtu
     **Test steps:**
 
     * build a model over a document bound to a real path, and mock ``read_text`` to a raw string
-    * verify the On Disk view shows that raw string exactly
+    * verify the On Disk view shows that raw string exactly, under the record's name
     """
     raw = '{"format_version": 1,\n   "type": "Tutorial"}\n'
     mocker.patch.object(Path, "read_text", return_value=raw)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo"}]}, REHU_PATH))
     view = shown_on_disk(qtbot, model)
 
-    assert label(view, OnDiskView.LABEL_NAME).text() == raw
+    assert view.files() == [(REHU_PATH.name, raw)]
 
 
 def test_on_disk_shows_the_original_tc_file(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -314,7 +317,7 @@ def test_on_disk_shows_the_original_tc_file(qtbot: QtBot, mocker: MockerFixture)
     **Test steps:**
 
     * build a legacy ``.tc``-backed model, with ``read_text`` returning the raw ``.tc`` text
-    * verify the On Disk view shows that ``.tc`` text
+    * verify the On Disk view shows that ``.tc`` text alone, under the ``.tc``'s name
     """
     tc_text = '{"legacy tc": true}\n'
     mocker.patch.object(Path, "read_text", return_value=tc_text)
@@ -323,7 +326,7 @@ def test_on_disk_shows_the_original_tc_file(qtbot: QtBot, mocker: MockerFixture)
     )
     view = shown_on_disk(qtbot, model)
 
-    assert label(view, OnDiskView.LABEL_NAME).text() == tc_text
+    assert view.files() == [(TC_PATH.name, tc_text)]
 
 
 @mark.usefixtures("real_path_stat")
@@ -336,20 +339,20 @@ def test_on_disk_rereads_the_file_after_a_save(qtbot: QtBot, tmp_path: Path) -> 
     **Test steps:**
 
     * write an "old" text to a file under ``tmp_path``, and build a dirty model bound to it
-    * verify the view first shows the old text, then the file's newly-written text after a save
+    * verify the view first shows the old text, then the file's newly-written text after a save, under its name
     """
     path = tmp_path / "info.rehu"
     old = "old on disk\n"
     path.write_text(old, encoding="utf-8")
     model = RehuDocumentModel.create_new(path)  # starts dirty, bound to a path
     view = shown_on_disk(qtbot, model)
-    assert label(view, OnDiskView.LABEL_NAME).text() == old
+    assert label(view, path.name).text() == old
 
     model.save()
 
     written = path.read_text(encoding="utf-8")
     assert written != old
-    assert label(view, OnDiskView.LABEL_NAME).text() == written
+    assert label(view, path.name).text() == written
 
 
 @mark.usefixtures("real_path_stat")
@@ -372,11 +375,11 @@ def test_on_disk_rereads_the_file_when_a_queued_save_lands(qtbot: QtBot, tmp_pat
     payload = model.snapshot()
     model.begin_save()
     path.write_text("new on disk\n", encoding="utf-8")
-    assert label(view, OnDiskView.LABEL_NAME).text() == "old on disk\n"
+    assert label(view, path.name).text() == "old on disk\n"
 
     model.complete_save(payload, SaveOutcome(payload.payload, RecordVersion("metadata", "file", ()), None, False))
 
-    assert label(view, OnDiskView.LABEL_NAME).text() == "new on disk\n"
+    assert label(view, path.name).text() == "new on disk\n"
 
 
 def test_on_disk_rereads_after_a_revert(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -398,12 +401,12 @@ def test_on_disk_rereads_after_a_revert(qtbot: QtBot, mocker: MockerFixture) -> 
     mocker.patch.object(document, "reload")
     model = RehuDocumentModel(document)
     view = shown_on_disk(qtbot, model)
-    assert label(view, OnDiskView.LABEL_NAME).text() == "old on disk\n"
+    assert label(view, REHU_PATH.name).text() == "old on disk\n"
     read.return_value = "new on disk\n"
 
     model.revert()
 
-    assert label(view, OnDiskView.LABEL_NAME).text() == "new on disk\n"
+    assert label(view, REHU_PATH.name).text() == "new on disk\n"
 
 
 def test_on_disk_does_not_reread_on_a_plain_field_edit(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -450,7 +453,7 @@ def test_on_disk_reads_nothing_while_hidden(qtbot: QtBot, mocker: MockerFixture)
     qtbot.waitExposed(view)
 
     assert read.call_count == 1
-    assert label(view, OnDiskView.LABEL_NAME).text() == "on disk\n"
+    assert label(view, REHU_PATH.name).text() == "on disk\n"
 
 
 def test_on_disk_does_not_reread_when_shown_again_unchanged(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -483,14 +486,13 @@ def test_on_disk_uses_the_fixed_system_font_family(qtbot: QtBot, model: RehuDocu
 
     **Test steps:**
 
-    * build an On Disk view
-    * verify the label's font family is the fixed system font's family
+    * build and show an On Disk view over the path-less sample model -- a hidden one shows no file yet
+    * verify the placeholder's label font family is the fixed system font's family
     """
-    view = OnDiskView(model)
-    qtbot.addWidget(view)
+    view = shown_on_disk(qtbot, model)
 
     expected = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
-    assert label(view, OnDiskView.LABEL_NAME).font().family() == expected
+    assert label(view).font().family() == expected
 
 
 # endregion

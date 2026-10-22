@@ -8,7 +8,7 @@ from typing import Final
 
 from borco_core import Presence, presence_of
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import DEFAULT_RENAME_COORDINATOR, RenameCoordinator, is_directory_scoped
+from rehuco_core import DEFAULT_RENAME_COORDINATOR, RenameCoordinator, is_directory_scoped, user_sidecar_paths
 from rehuco_core.access import ChangeFeed, Records, ResourceKey
 from rehuco_core.notify import FileNotifier, WatchedFolder
 
@@ -94,24 +94,45 @@ class HeldFilesWatch(QObject):
             if folder not in folders:
                 self.__notifiers.pop(folder).stop()
         for folder in folders - self.__notifiers.keys():
-            notifier = FileNotifier(folder, self.__feed, HeldFilesWatch.known(folder, held), self.__coordinator)
+            known = HeldFilesWatch.known(folder, held, self.__coordinator)
+            notifier = FileNotifier(folder, self.__feed, known, self.__coordinator)
             self.__notifiers[folder] = notifier  # pylint: disable=unsupported-assignment-operation
             notifier.start()
 
     @staticmethod
-    def known(folder: WatchedFolder, held: Collection[ResourceKey]) -> Callable[[], dict[Path, tuple[int, int] | None]]:
+    def known(
+        folder: WatchedFolder, held: Collection[ResourceKey], coordinator: RenameCoordinator
+    ) -> Callable[[], dict[Path, tuple[int, int] | None]]:
         """What a sweep of a watched folder compares with the disk, should it be polled: the held documents in it, as
-        they were when the watch started.
+        they were when the watch started, and the per-user sidecars beside each as they are at the sweep -- a document
+        is read with them (#513).
 
         :param folder: the folder.
         :param held: the held documents' keys.
+        :param coordinator: the rename barrier the sidecars are listed under, so a rename never sees a reader.
         :returns: the reader; it expects nothing of a file it has not seen.
         """
         top = ResourceKey(folder.path)
         inside = tuple(
             key.path for key in held if (key.is_at_or_beneath(top) if folder.recursive else key.parent == top)
         )
-        return lambda: dict.fromkeys(inside)
+
+        def read() -> dict[Path, tuple[int, int] | None]:
+            """The held documents and their sidecars, a sidecar left out while its folder cannot be listed.
+
+            :returns: each file, expecting nothing of it.
+            """
+            known: dict[Path, tuple[int, int] | None] = dict.fromkeys(inside)
+            for record in inside:
+                try:
+                    with coordinator.holding():
+                        sidecars = user_sidecar_paths(record).values()
+                except OSError:
+                    continue
+                known.update(dict.fromkeys(sidecars))
+            return known
+
+        return read
 
     def __stat(self, keys: list[ResourceKey]) -> None:
         """Read the files, each under the rename hold, and deliver them unless stopped (a daemon thread).

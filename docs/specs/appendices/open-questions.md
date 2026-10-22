@@ -117,8 +117,7 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
 
 - **Full `.rehu` schema** — field ownership (common vs. plugin) is settled ([[data-model#rehu-format]],
   [[plugins#core-vs-plugin]]); the complete field list/types per plugin is being designed separately. Archival is a tag
-  ([[borrowing#scheduled-archival]]), not a schema state. The per-user sidecar's first version and the one-time
-  migration of the `users` maps into it are decided in shape, not yet in fields ([[data-model#single-file]]).
+  ([[borrowing#scheduled-archival]]), not a schema state.
 - **Access-rule representation** — the model is settled ([[discovery-trust-access#access-control]]: per node,
   server-enforced, full/per-resource/dynamic-tag grants); how a grant is written and how grants combine is not.
 - **What converts a video for the web** — playback and the conversion rules are decided ([[nodes#web-playback]]); the

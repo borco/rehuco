@@ -70,7 +70,7 @@ def test_a_per_user_change_does_not_move_updated(tmp_path: Path, freezer: Frozen
     **Test steps:**
 
     * load a rated record, change the rating at a later time, save
-    * verify the new rating is written and ``updated`` is the stored one
+    * verify the new rating is written to the user's sidecar and ``updated`` is the stored one
     """
     path = tmp_path / "info.rehu"
     write_record(path, {"admin": {"rating": 2}})
@@ -80,7 +80,8 @@ def test_a_per_user_change_does_not_move_updated(tmp_path: Path, freezer: Frozen
     document.set_active_user_field("rating", 5)
     document.save()
 
-    assert json.loads(path.read_text(encoding="utf-8"))["tutorial"]["users"] == {"admin": {"rating": 5}}
+    sidecar = json.loads((tmp_path / "info.user-admin.rehuser").read_text(encoding="utf-8"))
+    assert sidecar == {"format_version": 1, "tutorial": {"rating": 5}}
     assert stored_updated(path) == UPDATED
 
 

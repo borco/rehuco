@@ -88,6 +88,7 @@ from .constants import (
     REHU_SUFFIX,
     REHUCO_SUFFIX,
     REHUDB_SUFFIX,
+    USER_SIDECAR_SUFFIX,
     VIDEO_EXTENSIONS,
 )
 from .content_keys import content_key, content_path, is_valid_content_key
@@ -106,6 +107,7 @@ from .migrations import (
     CURRENT_CHECKSUM_RECORD_VERSION,
     CURRENT_FORMAT_VERSION,
     CURRENT_REHUCO_VERSION,
+    CURRENT_REHUSER_VERSION,
     current_block_version,
     migrate_block_data,
     migrate_checksum_data,
@@ -392,6 +394,13 @@ from .tc_screenshots import (
     screenshot_name_patterns_state,
 )
 from .titled_index import INDEX_KEY, TITLE_KEY, titled_index, with_titled_index
+from .user_sidecars import (
+    UserSidecarError,
+    is_user_sidecar_name,
+    user_sidecar_path,
+    user_sidecar_paths,
+    user_slug,
+)
 from .watch_progress import (
     END_TOLERANCE_SECONDS,
     ProgressEntry,
@@ -441,6 +450,7 @@ __all__ = [
     "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
     "CURRENT_REHUCO_VERSION",
+    "CURRENT_REHUSER_VERSION",
     "Catalog",
     "CatalogCache",
     "CatalogCheckpoint",
@@ -666,8 +676,10 @@ __all__ = [
     "TcScreenshotPlan",
     "TcScreenshotScanner",
     "USERS_KEY",
+    "USER_SIDECAR_SUFFIX",
     "UnconvertedScreenshot",
     "UnlinkDeleter",
+    "UserSidecarError",
     "VIDEO_EXTENSIONS",
     "VerifyChecksumsJob",
     "VideoFacts",
@@ -723,6 +735,7 @@ __all__ = [
     "is_legacy_screenshot",
     "is_lock_name",
     "is_record_name",
+    "is_user_sidecar_name",
     "is_valid_content_key",
     "learning_path_records_by_scope",
     "learning_path_ref",
@@ -805,6 +818,9 @@ __all__ = [
     "titled_index",
     "update_checksum_record",
     "user_differences",
+    "user_sidecar_path",
+    "user_sidecar_paths",
+    "user_slug",
     "verify_checksums",
     "visible_learning_paths",
     "watch_totals",

@@ -24,6 +24,12 @@ DIRECTORY: Final = Path("/fake/tutorial")
 TC_PATH: Final = DIRECTORY / "info.tc"
 TARGET_PATH: Final = DIRECTORY / "info.rehu"
 
+
+def sidecar_path(slug: str) -> Path:
+    """The per-user sidecar a conversion writes beside :data:`TARGET_PATH` for ``slug``."""
+    return DIRECTORY / f"info.user-{slug}.rehuser"
+
+
 TC_YAML: Final = "type: Tutorial\ntitle: Some Title\ndescription: '![](cover)'\n"
 
 # The membership fields together: one scalar collection and several flat learning-path names, listed
@@ -75,17 +81,26 @@ def mock_environment(
     :param mocker: pytest-mock fixture.
     :param existing: paths that should report as already existing on disk.
     :param plan: the screenshot scan result to hand back.
-    :param tc_yaml: the ``.tc`` file's raw YAML text; defaults to :data:`TC_YAML`.
+    :param tc_yaml: the ``.tc`` file's raw YAML text, the only file there is to read; defaults to :data:`TC_YAML`.
     :param measured_size: what :func:`~rehuco_core.content_size_on_disk` answers, or an exception
         instance (e.g. :class:`~rehuco_core.ContentUnreachableError`) for it to raise instead.
-    :returns: the created mocks, keyed by what they stand in for.
+    :returns: the created mocks, keyed by what they stand in for; ``write`` stands in for every atomic write, the
+        record's and its per-user sidecars' alike.
     """
-    mocker.patch.object(Path, "read_text", return_value=tc_yaml)
+
+    def read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        del args, kwargs
+        if self == TC_PATH:
+            return tc_yaml
+        raise FileNotFoundError(self)
+
+    mocker.patch.object(Path, "read_text", autospec=True, side_effect=read_text)
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self in existing)
     mocker.patch.object(
         Path, "stat", return_value=mocker.MagicMock(st_mtime=MTIME, st_size=len(tc_yaml.encode("utf-8")))
     )
     mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mocker.patch("rehuco_core.user_sidecars.atomic_write_text", mock_write)
     mocker.patch("rehuco_core.tc_conversion.RecordFileLock")
     mocker.patch("rehuco_core.tc_conversion.scan_tc_screenshots", return_value=plan)
     mock_rename = mocker.patch.object(Path, "rename", autospec=True)
@@ -100,6 +115,18 @@ def mock_environment(
         "unlink": mock_unlink,
         "content_size_on_disk": mock_size,
     }
+
+
+def written(mocks: dict[str, Any], path: Path) -> dict[str, Any]:
+    """The JSON last written to ``path`` through the mocked atomic write.
+
+    :param mocks: what :func:`mock_environment` returned.
+    :param path: the file written.
+    :returns: its payload.
+    """
+    texts = [call.args[1] for call in mocks["write"].call_args_list if call.args[0] == path]
+    assert texts, f"nothing was written to {path}"
+    return json.loads(texts[-1])
 
 
 def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None:
@@ -119,7 +146,7 @@ def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None
 
     assert isinstance(document, RehuDocument)
     assert document.legacy_tc is False
-    saved = json.loads(mocks["write"].call_args[0][1])
+    saved = written(mocks, TARGET_PATH)
     assert saved["core"]["sources"][0]["title"] == "Some Title"
     assert saved["core"]["description"] == "![](info00)"
     # two checks in one: ``UUID()`` raises on a string that is no UUID at all, and -- since it also
@@ -161,28 +188,31 @@ def test_no_screenshot_is_ever_backed_up(mocker: MockerFixture) -> None:
 
 
 def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFixture) -> None:
-    """The identity given to :func:`convert_tc` reaches the saved block's ``users`` key, and the fresh
-    document adopts it -- so an imported resource's per-user state has a known owner from the first write
+    """The identity given to :func:`convert_tc` names the sidecar the per-user flags are written to, and the
+    fresh document adopts it -- so an imported resource's per-user state has a known owner from the first write
     ([[field-schema#per-user-shared]]).
 
     **Test steps:**
 
     * convert a `.tc` under an explicit username
-    * verify the saved current-stamped block nests the per-user flags under that username, and the
-      returned document reads them back as that identity
+    * verify the saved record's block is current-stamped and holds no ``users`` map, that username's sidecar
+      holds the per-user flags and no other sidecar was written, and the returned document reads them back as
+      that identity
     """
     mocks = mock_environment(mocker)
 
     document = convert_tc(TC_PATH, keep_backups=True, username="alice")
 
-    saved = json.loads(mocks["write"].call_args[0][1])
+    saved = written(mocks, TARGET_PATH)
     assert saved["tutorial"]["format_version"] == current_block_version("tutorial")
-    assert set(saved["tutorial"]["users"]) == {"alice"}
-    assert saved["tutorial"]["users"]["alice"]["favorite"] is False
+    assert "users" not in saved["tutorial"]
+    assert {call.args[0] for call in mocks["write"].call_args_list} == {TARGET_PATH, sidecar_path("alice")}
+    flags = written(mocks, sidecar_path("alice"))["tutorial"]
+    assert flags["favorite"] is False
     assert document.username == "alice"
     # the source `.tc` carried no rating, so none is fabricated: it is omitted, and reads back unrated
     # ([[field-schema#deferred-items]]) -- 0 is a genuine rating, so absent must not coerce to it
-    assert "rating" not in saved["tutorial"]["users"]["alice"]
+    assert "rating" not in flags
     assert document.rating is None
 
 
@@ -195,14 +225,14 @@ def test_convert_files_per_user_flags_under_the_unknown_user_by_default(mocker: 
     **Test steps:**
 
     * convert a `.tc` with no username
-    * verify the saved block nests the per-user flags under ``unknown``, and the document adopts it
+    * verify the per-user flags are written only to ``unknown``'s sidecar, and the document adopts it
     """
     mocks = mock_environment(mocker)
 
     document = convert_tc(TC_PATH, keep_backups=True)
 
-    saved = json.loads(mocks["write"].call_args[0][1])
-    assert set(saved["tutorial"]["users"]) == {"unknown"}
+    assert {call.args[0] for call in mocks["write"].call_args_list} == {TARGET_PATH, sidecar_path("unknown")}
+    assert "favorite" in written(mocks, sidecar_path("unknown"))["tutorial"]
     assert document.username == "unknown"
 
 
@@ -220,7 +250,8 @@ def test_convert_round_trips_collection_and_owned_learning_paths(mocker: MockerF
     **Test steps:**
 
     * convert a ``.tc`` with one collection and two learning paths (listed out of alphabetical order)
-    * verify the saved ``collections`` entry, and the owned learning-path entries in list order
+    * verify the saved ``collections`` entry, and the owned learning-path entries in list order in the unknown
+      user's sidecar
     * verify no ``visibility`` key survives anywhere in the saved payload
     * construct a document from the saved payload and verify the block is not reshaped on load
     """
@@ -228,17 +259,18 @@ def test_convert_round_trips_collection_and_owned_learning_paths(mocker: MockerF
 
     convert_tc(TC_PATH, keep_backups=True)
 
-    saved = json.loads(mocks["write"].call_args[0][1])
+    saved = written(mocks, TARGET_PATH)
     block = saved["tutorial"]
     assert block["format_version"] == current_block_version("tutorial")
     assert block["collections"] == [{"title": "Some Collection", "index": 2}]
-    assert block["users"]["unknown"]["learning_paths"] == [
+    assert written(mocks, sidecar_path("unknown"))["tutorial"]["learning_paths"] == [
         {"title": "Path B", "index": 0, "ref": 1},
         {"title": "Path A", "index": 0, "ref": 2},
     ]
     assert "visibility" not in json.dumps(saved)
+    assert "visibility" not in json.dumps(written(mocks, sidecar_path("unknown")))
 
-    reloaded = RehuDocument(json.loads(mocks["write"].call_args[0][1]))
+    reloaded = RehuDocument(written(mocks, TARGET_PATH))
     assert reloaded.data["tutorial"] == block
 
 
@@ -552,7 +584,7 @@ def test_current_size_is_measured_rather_than_trusted(mocker: MockerFixture) -> 
 
     document = convert_tc(TC_PATH, keep_backups=True)
 
-    saved = json.loads(mocks["write"].call_args[0][1])
+    saved = written(mocks, TARGET_PATH)
     assert saved["core"]["current_size"] == 123
     assert document.current_size == 123
     mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, EXCLUDED_FILE_PATTERNS)
@@ -576,7 +608,7 @@ def test_an_unreachable_resource_stores_no_current_size(mocker: MockerFixture) -
 
     convert_tc(TC_PATH, keep_backups=True)
 
-    saved = json.loads(mocks["write"].call_args[0][1])
+    saved = written(mocks, TARGET_PATH)
     assert "current_size" not in saved["core"]
 
 

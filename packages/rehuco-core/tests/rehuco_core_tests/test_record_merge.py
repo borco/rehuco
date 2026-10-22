@@ -7,7 +7,7 @@ from typing import Any
 
 from freezegun.api import FrozenDateTimeFactory
 from pytest import raises
-from rehuco_core import RehuDocument, current_block_version, merge_write
+from rehuco_core import RehuDocument, current_block_version, merge_write, user_sidecar_paths
 
 
 def write_tutorial(path: Path) -> dict[str, Any]:
@@ -39,6 +39,18 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def users_on_disk(path: Path) -> dict[str, Any]:
+    """Parse each user's tutorial fields from the sidecars beside the record.
+
+    :param path: the record.
+    :returns: each sidecar's tutorial fields, by the user its name carries.
+    """
+    return {
+        slug: json.loads(sidecar.read_text(encoding="utf-8"))["tutorial"]
+        for slug, sidecar in user_sidecar_paths(path).items()
+    }
+
+
 def test_a_merge_write_changes_only_what_it_mutates(tmp_path: Path) -> None:
     """Whatever the change does not touch is written back as the file held it, so two writers changing
     different parts both survive.
@@ -54,7 +66,7 @@ def test_a_merge_write_changes_only_what_it_mutates(tmp_path: Path) -> None:
     merge_write(path, lambda doc: doc.set_user_field("bob", "viewed", True), username="admin", touch_updated=False)
 
     saved = read_json(path)
-    assert saved["tutorial"]["users"] == {"bob": {"viewed": True}}
+    assert users_on_disk(path) == {"bob": {"viewed": True}}
     assert saved["tutorial"]["complete"] is True
     assert saved["core"]["description"] == "kept"
     assert saved["core"]["updated"] == "2026-01-01T00:00:00Z"
@@ -95,7 +107,7 @@ def test_a_merge_reads_what_is_on_disk_not_a_stale_copy(tmp_path: Path) -> None:
     merge_write(path, lambda doc: doc.set_user_field("bob", "viewed", True), username="admin", touch_updated=False)
     merge_write(path, lambda doc: doc.set_user_field("carol", "todo", True), username="admin", touch_updated=False)
 
-    assert read_json(path)["tutorial"]["users"] == {"bob": {"viewed": True}, "carol": {"todo": True}}
+    assert users_on_disk(path) == {"bob": {"viewed": True}, "carol": {"todo": True}}
     assert "level" not in read_json(path)["tutorial"]
     assert open_document.active_field("level") == "beginner"
     assert "users" not in open_document.active_block
@@ -166,4 +178,4 @@ def test_merge_writes_of_one_record_in_this_process_take_turns(tmp_path: Path) -
         first.join(5)
         second.join(5)
 
-    assert read_json(path)["tutorial"]["users"] == {"bob": {"viewed": True}, "carol": {"todo": True}}
+    assert users_on_disk(path) == {"bob": {"viewed": True}, "carol": {"todo": True}}

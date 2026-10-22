@@ -43,6 +43,7 @@ from rehuco_core_tests.access.test_records import (
     USERNAME,
     on_disk,
     tutorial_data,
+    users_on_disk,
     write_meanwhile,
     write_record,
 )
@@ -153,7 +154,7 @@ def test_a_save_reports_per_user_fields_merged_from_the_file(tmp_path: Path) -> 
 
     * write a record and snapshot it with an edited description
     * meanwhile, another writer rates it for ``bob``
-    * write the job's payload; verify the file keeps ``bob``'s rating and the edit
+    * write the job's payload; verify ``bob``'s sidecar keeps his rating and the record the edit
     * verify the result reports the merge and the outcome names it
     """
     path = tmp_path / "info.rehu"
@@ -163,9 +164,8 @@ def test_a_save_reports_per_user_fields_merged_from_the_file(tmp_path: Path) -> 
 
     result = job.write()
 
-    stored = on_disk(path)
-    assert stored["tutorial"]["users"] == {"bob": {"rating": 2}}
-    assert stored["core"]["description"] == "edited"
+    assert users_on_disk(path) == {"bob": {"rating": 2}}
+    assert on_disk(path)["core"]["description"] == "edited"
     assert result.users_merged is True
     assert job.outcome == JobOutcome("Saved; per-user fields merged from the file")
 
