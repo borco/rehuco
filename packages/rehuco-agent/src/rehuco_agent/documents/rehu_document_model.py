@@ -233,6 +233,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     (#174); a consumer that only cares whether a *value* moved should bind to that value's own notify
     signal instead."""
 
+    renamed = Signal()
+    """Fires once a :meth:`rename_location` landed, after every holder followed it (#566): the record at its new key
+    may say more than what was cached of it under the old one -- the save the rename wrote first, or one whose report
+    named the path the rename emptied -- so it is checked again. Never on a rename that failed: nothing moved."""
+
     active_block_changed = Signal()
     """Fires when the whole field composition must be re-resolved from scratch: the outgoing block's
     editors go away, the incoming block's fields render, and the set of unknown-field and inactive-block
@@ -1118,6 +1123,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         back, and the one case it cannot (`PartialRenameError`) says so in the message it carries, which
         is the message this model then shows.
 
+        A rename that landed emits :attr:`renamed`, so the record is read at its new key (#566): the cache follows a
+        rename by rebasing its rows, reading nothing, and the save written first was reported under the old path.
+
         A banner row, not a dialog: a retry/cancel dialog
         (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`, #146) needs a widget
         to parent to, which a `QObject` doesn't have -- but a failed rename also has nothing to
@@ -1148,7 +1156,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                     return self.__rename_failed(
                         f'Could not save "{self.current_name}" before renaming it: {self.__failure_reason(error)}'
                     )
-            return self.__move(new_name)
+            if not self.__move(new_name):
+                return False
+        # after the move was announced and every holder followed it: a check planned before the cache rebased its row
+        # would be dropped as overtaken
+        self.renamed.emit()
+        return True
 
     def revert(self) -> None:
         """Discard in-memory edits and go back to the record's saved state: its save that has not landed, if it has

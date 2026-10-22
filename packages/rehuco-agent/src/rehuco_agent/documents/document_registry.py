@@ -185,7 +185,8 @@ class DocumentRegistry(QObject):
         self.__keys[model] = key  # pylint: disable=unsupported-assignment-operation
         model.key_changed.connect(self.__on_key_changed)  # type: ignore[attr-defined]
         model.reading_changed.connect(self.__on_reading_changed)  # type: ignore[attr-defined]
-        model.reloaded.connect(self.__on_reloaded)
+        model.reloaded.connect(self.__on_record_read)
+        model.renamed.connect(self.__on_record_read)
         if not new and not model.pending:
             # opening is the access verify-on-access hears of (#487); a focus of a model already held is not one, and
             # an unread placeholder is announced by the read that loads it (its reload), never before (#66)
@@ -215,7 +216,8 @@ class DocumentRegistry(QObject):
         self.__unmap(model, self.__keys.pop(model))
         model.key_changed.disconnect(self.__on_key_changed)  # type: ignore[attr-defined]
         model.reading_changed.disconnect(self.__on_reading_changed)  # type: ignore[attr-defined]
-        model.reloaded.disconnect(self.__on_reloaded)
+        model.reloaded.disconnect(self.__on_record_read)
+        model.renamed.disconnect(self.__on_record_read)
         model.deleteLater()
         self.watch_loose_folders()
 
@@ -272,9 +274,10 @@ class DocumentRegistry(QObject):
             if model is not None:
                 model.note_file_gone(folder_gone=folder_gone)
 
-    def __on_reloaded(self) -> None:
-        """Announce the record a held model just read again as accessed, so the catalog cache is checked against it:
-        what a revert read -- after a change on disk, or by hand -- is what the record says now (#487)."""
+    def __on_record_read(self) -> None:
+        """Announce the record a held model just read again, or renamed, as accessed, so the catalog cache is checked
+        against it: what a revert read -- after a change on disk, or by hand -- is what the record says now (#487), and
+        so is what a rename moved, which the cache followed reading nothing (#566)."""
         key = cast(RehuDocumentModel, self.sender()).key
         if key is not None:
             self.__events.announce_accessed((key,))
