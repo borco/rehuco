@@ -127,7 +127,7 @@ def test_a_non_stamping_save_leaves_updated_alone(tmp_path: Path, freezer: Froze
 
     * write a tutorial record, then load it at a later time
     * change a per-user field and save without stamping
-    * verify the change landed and ``updated`` is the stored value
+    * verify the change landed in ``bob``'s sidecar and ``updated`` is the stored value
     """
     path = tmp_path / "info.rehu"
     path.write_text(json.dumps(tutorial_data()), encoding="utf-8")
@@ -137,9 +137,9 @@ def test_a_non_stamping_save_leaves_updated_alone(tmp_path: Path, freezer: Froze
     doc.set_user_field("bob", "viewed", True)
     doc.save(touch_updated=False)
 
-    saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["tutorial"]["users"] == {"bob": {"viewed": True}}
-    assert saved["core"]["updated"] == "2026-01-01T00:00:00Z"
+    sidecar = json.loads((tmp_path / "info.user-bob.rehuser").read_text(encoding="utf-8"))
+    assert sidecar == {"format_version": 1, "tutorial": {"viewed": True}}
+    assert json.loads(path.read_text(encoding="utf-8"))["core"]["updated"] == "2026-01-01T00:00:00Z"
 
 
 def test_a_non_stamping_first_write_stamps_no_created_either(tmp_path: Path) -> None:

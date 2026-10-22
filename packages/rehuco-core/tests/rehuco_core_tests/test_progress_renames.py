@@ -18,6 +18,7 @@ from rehuco_core import (
     plan_progress_renames,
     reattach_renamed_progress,
     record_progress,
+    user_sidecar_paths,
 )
 from rehuco_core.plugins import DEFAULT_PLUGIN_REGISTRY
 from rehuco_core.progress_renames import file_digest, move_progress_entries
@@ -35,6 +36,15 @@ def hashed(name: str, digest: str = DIGEST) -> ChecksumEntry:
     :returns: the parsed entry.
     """
     return ChecksumEntry(name, "xxh3", digest, None, "matched")
+
+
+def stored_bytes(path: Path) -> list[bytes]:
+    """Read a record's bytes and its sidecars', to tell whether anything was written.
+
+    :param path: the record.
+    :returns: the record's bytes, then each sidecar's by slug.
+    """
+    return [path.read_bytes(), *(sidecar.read_bytes() for sidecar in user_sidecar_paths(path).values())]
 
 
 @dataclass
@@ -325,10 +335,11 @@ def test_a_renamed_file_takes_its_entry_by_size(tmp_path: Path) -> None:
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["core"]["updated"] == UPDATED
     assert saved["tutorial"]["videos"] == {"01/a.mp4": {"duration": 10.0}}
-    assert saved["tutorial"]["users"]["admin"]["progress"] == {
+    users = users_of(path)
+    assert users["admin"]["progress"] == {
         "01/a renamed.mp4": {"position": 4.0, "duration": 10.0, "size": 5, "viewed": False}
     }
-    assert list(saved["tutorial"]["users"]["bob"]["progress"]) == ["01/other.mp4"]
+    assert list(users["bob"]["progress"]) == ["01/other.mp4"]
 
 
 def test_a_renamed_folder_is_matched_by_its_recorded_hashes(tmp_path: Path) -> None:
@@ -407,14 +418,14 @@ def test_nothing_is_written_when_no_entry_is_missing(tmp_path: Path) -> None:
 
     * record progress on the only file, and add an unkeyed one
     * reattach
-    * verify no move and the record's bytes unchanged
+    * verify no move and the record's and its sidecars' bytes unchanged
     """
     path = make_tutorial(tmp_path / "t", ["a.mp4", "b.mp4"])
     record_progress(path, "admin", "a.mp4", 1.0, None)
-    before = path.read_bytes()
+    before = stored_bytes(path)
 
     assert not reattach_renamed_progress(path, "admin")
-    assert path.read_bytes() == before
+    assert stored_bytes(path) == before
 
 
 def test_a_user_with_no_progress_has_nothing_to_reattach(tmp_path: Path) -> None:
@@ -423,15 +434,15 @@ def test_a_user_with_no_progress_has_nothing_to_reattach(tmp_path: Path) -> None
     **Test steps:**
 
     * reattach for a user with no entries, beside another user's missing one
-    * verify no move and the record's bytes unchanged
+    * verify no move and the record's and its sidecars' bytes unchanged
     """
     block = {"users": {"bob": {"progress": {"old.mp4": {"position": 1.0, "size": 3}}}}}
     path = make_tutorial(tmp_path / "t", [], block=block)
     (tmp_path / "t" / "new.mp4").write_bytes(b"123")
-    before = path.read_bytes()
+    before = stored_bytes(path)
 
     assert not reattach_renamed_progress(path, "admin")
-    assert path.read_bytes() == before
+    assert stored_bytes(path) == before
 
 
 def test_a_missing_file_with_no_match_leaves_the_record_alone(tmp_path: Path) -> None:
@@ -441,7 +452,7 @@ def test_a_missing_file_with_no_match_leaves_the_record_alone(tmp_path: Path) ->
 
     * hold a missing entry and a keyed file of its size, the size rung off and no ``.checksum``
     * reattach
-    * verify no move and the record's bytes unchanged
+    * verify no move and the record's and its sidecars' bytes unchanged
     """
     block = {
         "users": {"admin": {"progress": {"gone.mp4": {"position": 1.0, "size": 3}, "kept.mp4": {"position": 2.0}}}}
@@ -449,10 +460,10 @@ def test_a_missing_file_with_no_match_leaves_the_record_alone(tmp_path: Path) ->
     path = make_tutorial(tmp_path / "t", [], block=block)
     (tmp_path / "t" / "kept.mp4").write_bytes(b"123")
     (tmp_path / "t" / "new.mp4").write_bytes(b"123")
-    before = path.read_bytes()
+    before = stored_bytes(path)
 
     assert not reattach_renamed_progress(path, "admin", match_by_size=False)
-    assert path.read_bytes() == before
+    assert stored_bytes(path) == before
 
 
 def test_a_stored_key_that_is_not_a_content_key_stays_missing(tmp_path: Path) -> None:

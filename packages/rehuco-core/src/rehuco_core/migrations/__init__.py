@@ -17,6 +17,8 @@ vocabulary, because a migration is a frozen historical record).
   first shape), stamped under the record's own ``version`` key (#203).
 - :mod:`~rehuco_core.migrations.rehuco` -- the ``.rehuco`` roots file's chain (empty today: v1 is the first
   shape), stamped under ``format_version`` (#371).
+- :mod:`~rehuco_core.migrations.rehuser` -- the ``.rehuser`` per-user sidecar's chain (empty today: v1 is the first
+  shape), stamped under ``format_version`` (#513).
 - :mod:`~rehuco_core.migrations.rehudb` -- the ``.rehudb`` cache's schema chain, whose steps take a database
   connection rather than a payload and whose version is ``PRAGMA user_version`` (#372).
 
@@ -26,7 +28,7 @@ a plugin knows nothing about its own history. Every chain is validated at import
 
 from typing import Final, Protocol
 
-from . import checksum, reference_images, rehu, rehuco, rehudb, tutorial
+from . import checksum, reference_images, rehu, rehuco, rehudb, rehuser, tutorial
 from .runner import Chain, Step, run, stamped_version, validate_chain
 
 
@@ -74,6 +76,10 @@ CURRENT_REHUCO_VERSION = rehuco.CURRENT_VERSION
 """The ``.rehuco`` ``format_version`` this build understands -- the head of the
 :mod:`~rehuco_core.migrations.rehuco` chain ([[data-model#local-file-trio]], #371)."""
 
+CURRENT_REHUSER_VERSION = rehuser.CURRENT_VERSION
+"""The ``.rehuser`` ``format_version`` this build understands -- the head of the
+:mod:`~rehuco_core.migrations.rehuser` chain ([[data-model#single-file]], #513)."""
+
 
 def validate_all_chains() -> None:
     """Assert every registered chain is well-formed; called once at import (fail-fast on a declaration bug).
@@ -85,6 +91,7 @@ def validate_all_chains() -> None:
     validate_chain(checksum.CHAIN, checksum.BASE_VERSION)
     validate_chain(rehuco.CHAIN, rehuco.BASE_VERSION)
     validate_chain(rehudb.CHAIN, rehudb.BASE_VERSION)
+    validate_chain(rehuser.CHAIN, rehuser.BASE_VERSION)
     for target in BLOCK_TARGETS.values():
         validate_chain(target.CHAIN, target.BASE_VERSION)
 
@@ -119,6 +126,15 @@ def migrate_rehuco_data(data: dict) -> None:
     rehuco.migrate_rehuco_data(data)
 
 
+def migrate_rehuser_data(data: dict) -> None:
+    """Bring a parsed ``.rehuser`` payload up to :data:`CURRENT_REHUSER_VERSION`, in place
+    ([[data-model#single-file]], #513).
+
+    :param data: the parsed JSON object; mutated to the current layout and stamped.
+    """
+    rehuser.migrate_rehuser_data(data)
+
+
 def migrate_block_data(block: dict, plugin_key: str, username: str) -> None:
     """Bring one plugin block up to its chain's head, in place ([[plugins#plugin-blocks]]).
 
@@ -150,6 +166,7 @@ __all__ = [
     "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
     "CURRENT_REHUCO_VERSION",
+    "CURRENT_REHUSER_VERSION",
     "Chain",
     "MigrationTarget",
     "Step",
@@ -158,6 +175,7 @@ __all__ = [
     "migrate_checksum_data",
     "migrate_rehu_data",
     "migrate_rehuco_data",
+    "migrate_rehuser_data",
     "run",
     "stamped_version",
     "validate_all_chains",

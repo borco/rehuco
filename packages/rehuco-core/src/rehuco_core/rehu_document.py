@@ -71,6 +71,15 @@ from .rehu_parse_limits import (
     oversized_file_reason,
 )
 from .rehu_serialization import ordered_for_file
+from .user_sidecars import (
+    UserSidecarError,
+    join_user_sidecars,
+    joined_text,
+    read_user_sidecars,
+    sidecar_text,
+    split_user_sidecars,
+    write_user_sidecars,
+)
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -299,11 +308,15 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """:meth:`load`, also handing back the text the document was parsed from -- so what is derived from the
         file's content (a :class:`~rehuco_core.RecordVersion`, #416) describes this very read.
 
+        The record's per-user sidecars are read with it and joined into its ``users`` maps
+        (:mod:`~rehuco_core.user_sidecars`, [[data-model#single-file]]), so the text is theirs too.
+
         :param path: path to the ``.rehu`` file.
         :param plugins: the plugins installed here; see :class:`RehuDocument`.
         :param username: the active identity; see :class:`RehuDocument`.
-        :returns: the document and the file's text.
-        :raises RehuFormatError: as :meth:`load`.
+        :returns: the document, and the file's text followed by its sidecars'
+            (:func:`~rehuco_core.user_sidecars.joined_text`).
+        :raises RehuFormatError: as :meth:`load`, or a sidecar cannot be read as one.
         """
         path = Path(path)
         oversized = oversized_file_reason(path.stat().st_size)
@@ -328,6 +341,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # and read as best it can be ([[data-model#schema-version]]) -- but it is not a v2 file
             # either, and silence would let a broken one pass for one.
             LOG.warning("%s: has a 'core' block but no usable format_version -- reading it as unversioned", path)
+        try:
+            sidecars = read_user_sidecars(path)
+        except UserSidecarError as exc:
+            raise RehuFormatError(str(exc)) from exc
+        join_user_sidecars(data, sidecars, username)
         # read the file's own stamp before constructing: the migrator restamps the payload to the current
         # version on the way in, so this is the last moment the *file*'s version is visible
         document = cls(
@@ -338,7 +356,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             on_disk_format_version=cls.__coerced_version(data),
             on_disk_active_block_format_version=cls.__raw_active_block_version(data, plugins),
         )
-        return document, text
+        return document, joined_text(text, sidecars)
 
     @classmethod
     def open_or_locked(
@@ -527,7 +545,6 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # block over the file's own content, and a save must never be what discards it
             # ([[data-model#schema-version]]).
             self.created = self.__utc_now_timestamp()
-        text = self.serialize()
         changed = edited if edited is not None else self.__metadata_text() != self.__saved_metadata
         if touch_updated and changed:
             # the record's content changed since load/last save, so this save is an *edit* landing on
@@ -537,8 +554,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # write leaves the in-memory value ahead of disk -- harmless: the baseline only advances
             # below on success, so a retried save restamps fresh, and a revert restores the disk value.
             self.updated = self.__utc_now_timestamp()
-            text = self.serialize()
-        atomic_write_text(target, text)
+        self.__write(target)
         self.__saved_metadata = self.__metadata_text()
         self.__path = target
         self.__log_discarded_blocks(target)
@@ -546,6 +562,25 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         # failed save leaves the document still describing the file that is actually there
         self.__on_disk_format_version = self.format_version
         self.__on_disk_active_block_format_version = self.__coerced_active_block_version()
+
+    def __write(self, target: Path) -> None:
+        """Write the record and its per-user sidecars ([[data-model#single-file]]): the sidecars first, so a write cut
+        short between the two leaves the per-user half landed, which the retried save merges onto; then the record,
+        only where its text changes -- so a per-user write leaves the file everyone edits untouched.
+
+        :param target: the record's path.
+        :raises UserSidecarError: a sidecar on disk was written by a newer build.
+        :raises OSError: a file could not be read or written.
+        """
+        record, sidecars = split_user_sidecars(self.payload_to_write())
+        write_user_sidecars(target, sidecars)
+        text = self.__record_text(record)
+        try:
+            current = target.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            current = None
+        if current != text:
+            atomic_write_text(target, text)
 
     def serialize(self) -> str:
         """Render this document as the exact pretty-printed JSON text :meth:`save` writes to disk.
@@ -562,9 +597,31 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         state and never touches disk: a locked or legacy ``.tc``-backed document still has a live
         in-memory payload worth showing, even though saving it is refused.
 
+        The record's text only: its ``users`` maps go to the sidecars (:meth:`serialize_user_sidecars`,
+        [[data-model#single-file]]), as a save writes them.
+
         :returns: the document's canonical on-disk text, trailing newline included.
         """
-        return json.dumps(self.payload_to_write(), indent=2, ensure_ascii=False) + "\n"
+        return self.__record_text(split_user_sidecars(self.payload_to_write())[0])
+
+    def serialize_user_sidecars(self) -> dict[str, str]:
+        """Render each per-user sidecar a save writes beside this document, the way :meth:`serialize` renders the
+        record ([[data-model#single-file]]).
+
+        :returns: each sidecar's text, by the slug its file name carries (:func:`~rehuco_core.user_slug`), in slug
+            order.
+        """
+        sidecars = split_user_sidecars(self.payload_to_write())[1]
+        return {slug: sidecar_text(sidecars[slug]) for slug in sorted(sidecars)}
+
+    @staticmethod
+    def __record_text(record: dict[str, Any]) -> str:
+        """A record's payload as its file's text.
+
+        :param record: the payload, its ``users`` maps already split off.
+        :returns: pretty-printed JSON, trailing newline included.
+        """
+        return json.dumps(record, indent=2, ensure_ascii=False) + "\n"
 
     def payload_to_write(self) -> dict[str, Any]:
         """The payload a save would write: :attr:`data` in file order, without the blocks the persistence invariant

@@ -29,6 +29,7 @@ from rehuco_core import (
     lock_path_for,
     record_progress,
     update_checksum_record,
+    user_sidecar_path,
     verify_checksums,
 )
 
@@ -247,7 +248,7 @@ def test_a_progress_write_never_conflicts_with_a_details_edit(tmp_path: Path) ->
 
     * write a record, and start a process that loads it and waits
     * record progress here, then let the process retitle and save
-    * verify its save landed, and the file holds both the title and the progress
+    * verify its save landed, the record holds the title and bob's sidecar the progress
     """
     path = tmp_path / "info.rehu"
     write_tutorial(path)
@@ -262,8 +263,8 @@ def test_a_progress_write_never_conflicts_with_a_details_edit(tmp_path: Path) ->
         proceed.touch()
         landed = saver.result(timeout=RESULT_TIMEOUT)
 
-    saved = json.loads(path.read_text(encoding="utf-8"))
+    bobs = json.loads(user_sidecar_path(path, "bob").read_text(encoding="utf-8"))
     assert landed
     assert RehuDocument.load(path).title == "worker"
-    assert set(saved["tutorial"]["users"]["bob"]["progress"]) == {"part.mp4"}
+    assert set(bobs["tutorial"]["progress"]) == {"part.mp4"}
     assert not lock_path_for(path).exists()

@@ -10,6 +10,7 @@ from freezegun.api import FrozenDateTimeFactory
 from pytest import approx, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
+    CURRENT_REHUSER_VERSION,
     ContentUnreachableError,
     ProgressEntry,
     RehuDocument,
@@ -25,6 +26,8 @@ from rehuco_core import (
     record_progress,
     set_progress_entry,
     set_videos,
+    user_sidecar_path,
+    user_sidecar_paths,
     watch_totals,
 )
 
@@ -39,11 +42,12 @@ def make_tutorial(
     record: str = "info.rehu",
     resource_type: str = "tutorial",
 ) -> Path:
-    """Write a tutorial record and empty content files under ``folder``.
+    """Write a tutorial record, its users' sidecars and empty content files under ``folder``.
 
     :param folder: the resource's folder, created.
     :param files: content files to create, relative to ``folder``.
-    :param block: extra entries for the tutorial block (``videos``, ``users``).
+    :param block: extra entries for the tutorial block (``videos``, ``users``); its ``users`` map is written to each
+        user's sidecar beside the record, as a save stores it.
     :param record: the record's file name -- ``info.rehu``, or ``<stem>.rehu`` for a standalone one.
     :param resource_type: the record's type.
     :returns: the record's path.
@@ -52,35 +56,47 @@ def make_tutorial(
     for name in files:
         (folder / name).parent.mkdir(parents=True, exist_ok=True)
         (folder / name).write_bytes(b"")
+    shared = dict(block or {})
+    users: dict[str, Any] = shared.pop("users", {})
     data: dict[str, Any] = {
         "format_version": 2,
         "core": {"type": resource_type, "id": "550e8400-e29b-41d4-a716-446655440000", "updated": UPDATED},
-        resource_type: {"format_version": current_block_version(resource_type), **(block or {})},
+        resource_type: {"format_version": current_block_version(resource_type), **shared},
     }
     path = folder / record
     path.write_text(json.dumps(data), encoding="utf-8")
+    for username, fields in users.items():
+        sidecar = {"format_version": CURRENT_REHUSER_VERSION, resource_type: fields}
+        user_sidecar_path(path, username).write_text(json.dumps(sidecar), encoding="utf-8")
     return path
 
 
 def users_of(path: Path) -> dict[str, Any]:
-    """Read the tutorial block's ``users`` map as stored.
+    """Read each user's tutorial fields as stored in the sidecars beside the record.
 
     :param path: the record.
-    :returns: the map, empty when absent.
+    :returns: each sidecar's tutorial fields, by the user its name carries; empty when there are none.
     """
-    return json.loads(path.read_text(encoding="utf-8"))["tutorial"].get("users", {})
+    users: dict[str, Any] = {}
+    for slug, sidecar in user_sidecar_paths(path).items():
+        stored = json.loads(sidecar.read_text(encoding="utf-8"))
+        if "tutorial" in stored:
+            users[slug] = stored["tutorial"]
+    return users
 
 
 # region record_progress -- what it writes
 def test_a_progress_write_replaces_only_its_own_entry(tmp_path: Path, freezer: FrozenDateTimeFactory) -> None:
     """The write touches ``users.<username>.progress.<key>`` and nothing else: another user's progress,
-    the same user's other entries, the shared ``videos`` and ``updated`` all stay as stored.
+    the same user's other entries, the shared ``videos`` and ``updated`` all stay as stored -- the record and the
+    other user's sidecar hold what they held.
 
     **Test steps:**
 
-    * write a record holding another user's progress, an older entry, a videos map and other fields
+    * write a record holding a videos map and other fields, and sidecars holding another user's progress and an
+      older entry
     * record progress on one file at a later time
-    * verify only that entry changed
+    * verify the record's and the other user's payloads are unchanged and only that entry changed
     """
     videos = {"a.mp4": {"duration": 100.0}}
     path = make_tutorial(
@@ -95,15 +111,15 @@ def test_a_progress_write_replaces_only_its_own_entry(tmp_path: Path, freezer: F
             },
         },
     )
+    record_before = json.loads(path.read_text(encoding="utf-8"))
+    bob_before = json.loads(user_sidecar_path(path, "bob").read_text(encoding="utf-8"))
     freezer.move_to("2026-10-12T10:00:00Z")
 
     record_progress(path, "admin", "a.mp4", 12.5, 100.0)
 
-    saved = json.loads(path.read_text(encoding="utf-8"))
-    assert saved["core"]["updated"] == UPDATED
-    assert saved["tutorial"]["complete"] is True
-    assert saved["tutorial"]["videos"] == videos
-    assert saved["tutorial"]["users"] == {
+    assert json.loads(path.read_text(encoding="utf-8")) == record_before
+    assert json.loads(user_sidecar_path(path, "bob").read_text(encoding="utf-8")) == bob_before
+    assert users_of(path) == {
         "admin": {
             "rating": 4,
             "progress": {
@@ -464,9 +480,8 @@ def test_a_progress_write_and_a_metadata_write_both_survive_in_either_order(tmp_
     merge_write(path, lambda doc: doc.set_active_field("level", "advanced"), username="admin", touch_updated=True)
     record_progress(path, "admin", "b.mp4", 2.0, 10.0)
 
-    saved = json.loads(path.read_text(encoding="utf-8"))["tutorial"]
-    assert saved["level"] == "advanced"
-    assert set(saved["users"]["admin"]["progress"]) == {"a.mp4", "b.mp4"}
+    assert json.loads(path.read_text(encoding="utf-8"))["tutorial"]["level"] == "advanced"
+    assert set(users_of(path)["admin"]["progress"]) == {"a.mp4", "b.mp4"}
 
 
 def test_a_progress_write_leaves_an_open_documents_unsaved_edit_alone(tmp_path: Path) -> None:
@@ -768,13 +783,13 @@ def test_forgetting_removes_a_stored_key_that_is_not_a_content_key(tmp_path: Pat
 
     * hold an entry under ``../a.mp4``
     * forget it
-    * verify it is gone
+    * verify it is gone, and with it all of the user's state: their sidecar holds nothing
     """
     path = make_tutorial(tmp_path / "t", [], block={"users": {"admin": {"progress": {"../a.mp4": {"position": 1}}}}})
 
     assert forget_progress(path, "admin", "../a.mp4") is True
 
-    assert users_of(path) == {"admin": {}}
+    assert not users_of(path)
 
 
 # endregion

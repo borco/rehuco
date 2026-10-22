@@ -614,39 +614,39 @@ def test_the_base_data_follows_a_save(tmp_path: Path) -> None:
     assert base[TYPE]["users"][DEFAULT_CURRENT_USERNAME]["rating"] == 2
 
 
-def test_the_stored_text_is_the_file_not_the_edited_document(tmp_path: Path) -> None:
-    """The On Disk view shows the file through the records; an unsaved edit is not in it.
+def test_the_stored_files_are_the_files_not_the_edited_document(tmp_path: Path) -> None:
+    """The On Disk view shows the files through the records; an unsaved edit is not in them.
 
     **Test steps:**
 
     * open a record and edit its title
-    * verify the stored text is the file's text, still without the edit
+    * verify the stored files start with the record's text, still without the edit, and no file holds the edit
     """
     path = tmp_path / "info.rehu"
     write_record(path, "Old")
     model = opened(path)
     model.title = "Mine"
 
-    text = model.stored_text()
+    files = model.stored_files()
 
-    assert text == path.read_text(encoding="utf-8")
-    assert '"Old"' in text
-    assert '"Mine"' not in text
+    assert files[0] == (path.name, path.read_text(encoding="utf-8"))
+    assert '"Old"' in files[0][1]
+    assert all('"Mine"' not in text for _, text in files)
 
 
-def test_a_document_with_no_location_has_no_stored_text(qtbot: QtBot) -> None:
+def test_a_document_with_no_location_has_no_stored_files(qtbot: QtBot) -> None:
     """With no file behind it, there is nothing stored to show.
 
     **Test steps:**
 
     * start a new document with no path
-    * verify ``stored_text`` raises ``FileNotFoundError``
+    * verify ``stored_files`` raises ``FileNotFoundError``
     """
     del qtbot
     model = RehuDocumentModel.create_new(None)
 
     with raises(FileNotFoundError):
-        model.stored_text()
+        model.stored_files()
 
 
 def test_the_record_signature_is_what_a_reported_file_is_compared_with(tmp_path: Path) -> None:

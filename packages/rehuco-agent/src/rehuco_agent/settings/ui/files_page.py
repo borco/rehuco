@@ -10,6 +10,7 @@ from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
     REHU_SUFFIX,
+    USER_SIDECAR_SUFFIX,
 )
 
 from ...item_action_icons import apply_item_action_icons
@@ -126,7 +127,7 @@ class FilesPage(QWidget):
         self.__ui.patterns_editor.values = excluded.excluded_file_patterns
 
     def __structural_summary(self) -> str:
-        """Describe the four structural exclusions, written from the constants rather than restated.
+        """Describe the five structural exclusions, written from the constants rather than restated.
 
         :returns: one line per exclusion, naming the record-derived shape and what it is.
         """
@@ -137,6 +138,7 @@ class FilesPage(QWidget):
                 f"{RECORD_PLACEHOLDER}{REHU_SUFFIX} — every resource record found while scanning",
                 f"{RECORD_PLACEHOLDER}NN with {screenshots} — its screenshots",
                 f"{RECORD_PLACEHOLDER} with {manifests} — its checksum manifest",
+                f"{RECORD_PLACEHOLDER}.user-<name>{USER_SIDECAR_SUFFIX} — each user's own state for it",
                 f"anything ending in {BACKUP_SUFFIX} — the backups a conversion keeps",
             ]
         )

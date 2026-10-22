@@ -18,8 +18,10 @@ from typing import Final
 from uuid import UUID
 
 from ..access import Changed, ChangeEvent, ChangeFeed, FolderChanged, KeyRelocation, Moved, ResourceKey, RootStale
+from ..constants import REHU_SUFFIX
 from ..record_file_lock import is_lock_name
 from ..resource_scoping import is_record_name
+from ..user_sidecars import user_sidecar_owner
 from .raw_change import RawChange, RawChangeKind
 
 LOG: Final = logging.getLogger(__name__)
@@ -154,6 +156,8 @@ class ChangeCoalescer:
           sibling's own creation and writes are no one's business.
         - **A record's lock file** (#512) is no one's business either: taken and removed by every save, it changes
           nothing anyone holds.
+        - **A per-user sidecar written, created or deleted** is its record changed as well (#513): the record is read
+          with its sidecars, so whoever holds the one holds the other.
         - **A file created, written or deleted** is changed; a deleted folder is itself changed: whoever holds records
           beneath it looks them up.
         - **A folder's listing changed** when an entry in it is there at the end of the batch and was not at the start,
@@ -184,6 +188,9 @@ class ChangeCoalescer:
                     tally.changed[key] = None
                 case _:
                     pass
+            record = cls.record_of_user_sidecar(change.destination or change.path)
+            if record is not None and change.kind is not RawChangeKind.OVERFLOW:
+                tally.changed[record] = None
         events = tally.events()
         if any(change.kind is RawChangeKind.OVERFLOW for change in batch):
             events.append(RootStale(root_id) if root_id is not None else FolderChanged(ResourceKey(folder)))
@@ -211,6 +218,16 @@ class ChangeCoalescer:
                 pairs.insert(index, (earlier_source.joinpath(*tail), destination))
                 return
         pairs.append((source, destination))
+
+    @staticmethod
+    def record_of_user_sidecar(path: Path) -> ResourceKey | None:
+        """The record a per-user sidecar belongs to ([[data-model#single-file]]).
+
+        :param path: any path.
+        :returns: the ``.rehu`` named by its stem, or ``None`` when ``path`` is no sidecar.
+        """
+        owner = user_sidecar_owner(path.name)
+        return None if owner is None else ResourceKey(path.with_name(f"{owner[0]}{REHU_SUFFIX}"))
 
     @staticmethod
     def is_atomic_write_temporary(path: Path) -> bool:

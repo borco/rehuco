@@ -35,7 +35,14 @@ from rehuco_core import (
 from .roots_folder_model import RootsFolderModel, RootsNodeKind
 
 MANAGED_KINDS: Final = frozenset(
-    {FileKind.CONTENT, FileKind.OWN_RECORD, FileKind.OWN_SCREENSHOT, FileKind.OWN_MANIFEST, FileKind.DIRECTORY}
+    {
+        FileKind.CONTENT,
+        FileKind.OWN_RECORD,
+        FileKind.OWN_SCREENSHOT,
+        FileKind.OWN_MANIFEST,
+        FileKind.OWN_USER_STATE,
+        FileKind.DIRECTORY,
+    }
 )
 """What a record takes as its own, seen from one of its folders: content, its own bookkeeping, and folders (a folder
 with a record of its own is its own resource, and is asked as one)."""

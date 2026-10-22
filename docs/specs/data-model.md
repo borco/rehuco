@@ -77,16 +77,31 @@ but that user's other device.
 - **`<stem>.user-<name>.rehuser`** holds one user's state for one record: ratings, favourites, *viewed* flags,
   progress, bookmarks, notes, learning-path memberships — what the plugin blocks' `users` maps hold today
   ([[field-schema#per-user-shared]]). `<name>` is the username, lower-cased, ASCII, filesystem-safe; Windows and macOS
-  compare names case-insensitively, so the fold is not optional. The extension matches the family: `.rehu`,
-  `.rehuco`, `.rehudb`, `.rehuser`.
+  compare names case-insensitively, so the fold is not optional. The fold is NFKD to ASCII, lower case, every run of
+  characters outside `a-z 0-9 . _ -` one `_`, the ends trimmed of `._-` (`Ioan Călin` → `ioan_calin`); two names that
+  fold alike share one sidecar, and a name that folds to nothing keeps its state in the record. The reserved scopes are
+  sidecars too: `info.user-public.rehuser`, `info.user-unknown.rehuser`. A scope holding nothing has none. The
+  extension matches the family: `.rehu`, `.rehuco`, `.rehudb`, `.rehuser`.
 - **It has its own `format_version` and migration chain**, like the record and like a plugin block
   ([[data-model#schema-version]]). Its first version is a JSON object of `block key → that user's fields`, the same
-  shape the `users` map held per block.
+  shape the `users` map held per block, beside the file's `format_version`.
+- **The split is storage only.** A record is read with every sidecar beside it, joined into its `users` maps, so the
+  version a save is checked against, the per-field merge and the conflict rows ([[nodes#access-seam]]) see one record;
+  the version hashes the record's text and each sidecar's, so a change to either is a change. A save splits them out
+  again, **under the record's own lock** (`info.rehu.lock` guards its sidecars), writes the sidecars first and the
+  record last — a save cut short between the two has landed its per-user half, which the retry merges onto — and
+  writes each file only when its text changes: a progress write leaves the record untouched, and a details edit every
+  sidecar. A user whose state is all removed keeps a sidecar holding only its stamp, so nothing removed reads back.
+- **A sidecar changed is its record changed**, for every reader: the notifier reports both, and a record's signature
+  covers its sidecars, so an open document follows another device's progress as it follows any outside edit.
+- **A sidecar that cannot be read** — unparseable, past a sanity cap, or from a newer build, which a save must never
+  write over — fails the record's load, so the record opens locked; narrowing that to the one scope is #568.
 - **The record's own `users` maps migrate out on save**, one time: a save of a record that still carries them writes
   each user's map into that user's sidecar, through the same lock and merge as any sidecar save
   ([[sync#overview]]), and the record without them. A record never saved again keeps its maps and is read as before.
 - **The conflict dialog reads both files**: a refused save lists the record's and the sidecar's disagreements in one
-  place, the same rows as today ([[nodes#access-seam]]).
+  place, the same rows as today ([[nodes#access-seam]]). The agent's Save Preview and On Disk views show the files
+  apart, one collapsible section each, the record first and then every user's sidecar.
 - **Scans, checksums, renames and the file browser know the sidecar** as they know the screenshots: it belongs to the
   record's stem ([[data-model#resource-scoping]]), moves with a rename, is never checksummed as content, and is listed
   as what it is.

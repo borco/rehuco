@@ -47,8 +47,7 @@ Two reserved top-level keys, and everything else is a **block**:
     "description": "Markdown, rendered in the viewer."
   },
   "tutorial": {
-    "format_version": 1,
-    "rating": 4,
+    "format_version": 2,
     "complete": true
   }
 }
@@ -59,10 +58,17 @@ Two reserved top-level keys, and everything else is a **block**:
 - **`core`** — the fields every resource has, whatever kind it is: identity, timestamps, where it came
   from, authors, tags, a Markdown description.
 - **`type`** — names the **active block**. Here `"tutorial"`, so the `tutorial` block holds this
-  resource's type-specific fields (rating, completion, durations). Change the type and a different
+  resource's type-specific fields (completion, durations). Change the type and a different
   block becomes active; the outgoing one stays in the file.
 - **Any other top-level key** is another block. A file can carry several — a `tutorial` block *and* a
   `reference_images` block, or a block belonging to a plugin this machine doesn't have installed.
+
+**What belongs to one person sits beside the record, not in it.** A rating, the *viewed* and *favorite*
+flags, learning paths and watch progress are one user's, so each user's live in their own
+`info.user-<name>.rehuser` next to `info.rehu` — `{"format_version": 1, "tutorial": {"rating": 4}}`.
+The app reads a record together with every such file and saves each one only when it changed, so
+recording where you stopped in a video never rewrites the file everyone edits. A record written before
+these files existed still carries its users' state inside; its next save moves it out.
 
 **Resource types are plugins.** A plugin declares an ordered list of keys: the first is its real name,
 the rest are old spellings accepted on read and rewritten on save. Three are built in — `tutorial`,

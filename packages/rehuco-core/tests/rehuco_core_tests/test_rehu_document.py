@@ -9,6 +9,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -33,6 +34,7 @@ from rehuco_core import (
     authors_comma_editable,
     current_block_version,
     duplicate_source_rows,
+    is_user_sidecar_name,
 )
 
 # A Tutorial document exercising multi-source, a plugin block, and unknown keys ([[field-schema#example-files]]).
@@ -95,13 +97,47 @@ def load_doc(
 def mock_file_contents(mocker: MockerFixture, text: str) -> None:
     """Mock ``Path.read_text`` to return ``text``, and ``Path.stat`` to report its real byte size --
     the pairing every ``RehuDocument.load``/``TcDocument.load`` caller needs since #88's size cap reads
-    ``stat()`` before ``read_text``.
+    ``stat()`` before ``read_text``. A per-user sidecar ([[data-model#single-file]]) reads as absent, so a
+    save finds none to compare with or write over.
 
     :param mocker: pytest-mock fixture.
     :param text: the file content to serve.
     """
-    mocker.patch.object(Path, "read_text", return_value=text)
+
+    def read_text(path: Path, *_args: Any, **_kwargs: Any) -> str:
+        """Serve ``text`` for any file but a sidecar.
+
+        :param path: the file read.
+        :returns: ``text``.
+        :raises FileNotFoundError: ``path`` is a sidecar.
+        """
+        if is_user_sidecar_name(path.name):
+            raise FileNotFoundError(path)
+        return text
+
+    mocker.patch.object(Path, "read_text", new=read_text)
     mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=len(text.encode("utf-8"))))
+
+
+def mock_writes(mocker: MockerFixture) -> tuple[MagicMock, MagicMock]:
+    """Mock out both writers a save calls: the record's, and its per-user sidecars' ([[data-model#single-file]]).
+
+    :param mocker: pytest-mock fixture.
+    :returns: the record's writer and the sidecars' writer.
+    """
+    return (
+        mocker.patch("rehuco_core.rehu_document.atomic_write_text"),
+        mocker.patch("rehuco_core.user_sidecars.atomic_write_text"),
+    )
+
+
+def written_sidecars(sidecar_write: MagicMock) -> dict[str, Any]:
+    """The per-user sidecars a mocked save wrote, parsed, by file name.
+
+    :param sidecar_write: the sidecars' writer (:func:`mock_writes`).
+    :returns: each sidecar's last written JSON, by file name.
+    """
+    return {call.args[0].name: json.loads(call.args[1]) for call in sidecar_write.call_args_list}
 
 
 def test_common_field_accessors(mocker: MockerFixture) -> None:
@@ -139,13 +175,14 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
     **Test steps:**
 
     * mock ``Path.read_text`` to return the Tutorial fixture
-    * mock ``atomic_write_text`` to capture the written JSON
+    * mock the record's and the sidecars' ``atomic_write_text`` to capture the written JSON
     * load, edit the title, save
     * parse the captured JSON and verify the edit applied, and every unknown key -- top-level,
-      nested-sibling, and the plugin block -- survived untouched
+      nested-sibling, and the plugin block -- survived untouched, the block's ``users`` map in the user's
+      sidecar
     """
     doc = load_doc(mocker, TUTORIAL)
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, sidecar_write = mock_writes(mocker)
 
     doc.title = "Renamed Title"
     doc.save()
@@ -154,10 +191,9 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
     assert saved["core"]["sources"][0]["title"] == "Renamed Title"
     assert saved["core"]["sources"][0]["some_future_source_key"] == "kept verbatim"
     assert saved["core"]["some_future_core_key"] == "kept verbatim"
-    assert saved["tutorial"] == {
-        "format_version": current_block_version("tutorial"),
-        "complete": True,
-        "users": {"admin": {"rating": 4}},
+    assert saved["tutorial"] == {"format_version": current_block_version("tutorial"), "complete": True}
+    assert written_sidecars(sidecar_write) == {
+        "info.user-admin.rehuser": {"format_version": 1, "tutorial": {"rating": 4}}
     }
     assert saved["some_future_key"] == {"nested": [1, 2, 3]}
     assert saved["core"]["updated"] != TUTORIAL["core"]["updated"]  # a changed save refreshes updated (#142)
@@ -343,35 +379,51 @@ def test_format_version_defensively_coerces_a_malformed_value() -> None:
     assert doc.format_version == 0
 
 
-def saved_json(doc: RehuDocument, mocker: MockerFixture) -> dict[str, Any]:
-    """Save ``doc`` with the write mocked out and return the JSON it produced, key order intact.
+def saved_files(doc: RehuDocument, mocker: MockerFixture) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Save ``doc`` with the writes mocked out and return the JSON it produced, key order intact.
 
     :param doc: the document to save.
     :param mocker: pytest-mock fixture.
-    :returns: the parsed written JSON.
+    :returns: the parsed written record, and each parsed written sidecar by file name.
     """
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, sidecar_write = mock_writes(mocker)
     doc.save(FAKE_PATH)
-    return json.loads(mock_write.call_args[0][1])
+    return json.loads(mock_write.call_args[0][1]), written_sidecars(sidecar_write)
+
+
+def saved_json(doc: RehuDocument, mocker: MockerFixture) -> dict[str, Any]:
+    """Save ``doc`` with the writes mocked out and return the record's JSON it produced, key order intact.
+
+    :param doc: the document to save.
+    :param mocker: pytest-mock fixture.
+    :returns: the parsed written record.
+    """
+    return saved_files(doc, mocker)[0]
 
 
 def test_serialize_matches_exactly_what_save_writes(mocker: MockerFixture) -> None:
-    """``serialize`` returns byte-for-byte what ``save`` hands ``atomic_write_text`` -- the read-only
-    source view (#111) shows exactly what a save would write.
+    """``serialize`` returns byte-for-byte what ``save`` hands ``atomic_write_text`` for the record, and
+    ``serialize_user_sidecars`` what it hands it for each sidecar -- the read-only source view (#111) shows
+    exactly what a save would write.
 
     **Test steps:**
 
-    * load the Tutorial fixture and capture its ``serialize()`` text
-    * save it with the write mocked out
-    * verify the captured text equals the exact string ``save`` passed the writer
+    * load the Tutorial fixture and capture its ``serialize()`` and ``serialize_user_sidecars()`` texts
+    * save it with the writes mocked out
+    * verify the captured texts equal the exact strings ``save`` passed the record's and the sidecars' writers
     """
     doc = load_doc(mocker, TUTORIAL)
     text = doc.serialize()
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    sidecar_texts = doc.serialize_user_sidecars()
+    mock_write, sidecar_write = mock_writes(mocker)
 
     doc.save(FAKE_PATH)
 
     assert mock_write.call_args[0][1] == text
+    assert {call.args[0].name: call.args[1] for call in sidecar_write.call_args_list} == {
+        f"info.user-{slug}.rehuser": sidecar for slug, sidecar in sidecar_texts.items()
+    }
+    assert sidecar_texts.keys() == {"admin"}
 
 
 def test_serialize_renders_a_locked_document_that_save_would_refuse() -> None:
@@ -408,7 +460,7 @@ def test_a_changed_save_stamps_updated_with_the_save_time(
     """
     freezer.move_to("2026-07-23T10:15:30Z")
     doc = load_doc(mocker, TUTORIAL)
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, _ = mock_writes(mocker)
 
     doc.title = "Renamed Title"
     doc.save()
@@ -429,7 +481,7 @@ def test_an_unchanged_save_leaves_updated_alone(mocker: MockerFixture) -> None:
     * verify both written files still carry the fixture's own ``updated``
     """
     doc = load_doc(mocker, TUTORIAL)
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, _ = mock_writes(mocker)
 
     doc.save()
     doc.save(Path("/fake/copy.rehu"))
@@ -481,7 +533,7 @@ def test_a_second_unchanged_save_does_not_restamp_updated(
     """
     freezer.move_to("2026-07-23T10:15:30Z")
     doc = load_doc(mocker, TUTORIAL)
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, _ = mock_writes(mocker)
     doc.title = "Renamed Title"
     doc.save()
 
@@ -505,7 +557,7 @@ def test_reload_rebases_the_updated_baseline(mocker: MockerFixture) -> None:
     doc = load_doc(mocker, TUTORIAL)
     doc.title = "Never saved"
     doc.reload()
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, _ = mock_writes(mocker)
 
     doc.save()
 
@@ -676,12 +728,14 @@ def test_save_orders_the_active_block_and_leaves_inactive_blocks_untouched(mocke
 def test_save_orders_the_active_blocks_users_map_too(mocker: MockerFixture) -> None:
     """The active block's ``users`` map (#98, [[field-schema#per-user-shared]]) is ordered one level
     deeper too: usernames alphabetically, and each user's own fields alphabetically -- the same
-    canonical-order guarantee every other key in the file gets (#105).
+    canonical-order guarantee every other key in the file gets (#105). Each user's fields are written to
+    that user's sidecar ([[data-model#single-file]]), the sidecars in username order.
 
     **Test steps:**
 
     * save a document whose active block's ``users`` map has jumbled usernames and jumbled per-user fields
-    * verify both the usernames and each user's fields come back alphabetical
+    * verify the record holds no ``users`` map, the sidecars are written in username order, and each user's
+      fields come back alphabetical
     """
     doc = RehuDocument(
         {
@@ -696,11 +750,12 @@ def test_save_orders_the_active_blocks_users_map_too(mocker: MockerFixture) -> N
         }
     )
 
-    saved = saved_json(doc, mocker)
+    saved, sidecars = saved_files(doc, mocker)
 
-    assert list(saved["tutorial"]["users"]) == ["alice", "bob"]
-    assert list(saved["tutorial"]["users"]["alice"]) == ["favorite", "rating"]
-    assert list(saved["tutorial"]["users"]["bob"]) == ["favorite", "keep", "rating", "todo", "viewed"]
+    assert "users" not in saved["tutorial"]
+    assert list(sidecars) == ["info.user-alice.rehuser", "info.user-bob.rehuser"]
+    assert list(sidecars["info.user-alice.rehuser"]["tutorial"]) == ["favorite", "rating"]
+    assert list(sidecars["info.user-bob.rehuser"]["tutorial"]) == ["favorite", "keep", "rating", "todo", "viewed"]
 
 
 def test_save_leaves_a_malformed_users_map_or_per_user_value_untouched(mocker: MockerFixture) -> None:
@@ -717,7 +772,8 @@ def test_save_leaves_a_malformed_users_map_or_per_user_value_untouched(mocker: M
 
     * save one document whose ``users`` map is a non-object, and another whose ``users`` map holds a
       non-object per-user value
-    * verify both reach the file unchanged
+    * verify both reach the files unchanged: the non-object map stays in the record, the non-object value
+      goes to its user's sidecar ([[data-model#single-file]])
     """
     malformed_map = RehuDocument(
         {
@@ -733,7 +789,9 @@ def test_save_leaves_a_malformed_users_map_or_per_user_value_untouched(mocker: M
     )
 
     assert saved_json(malformed_map, mocker)["tutorial"]["users"] == "not-an-object"
-    assert saved_json(malformed_user, mocker)["tutorial"]["users"] == {"alice": "not-an-object"}
+    saved, sidecars = saved_files(malformed_user, mocker)
+    assert "users" not in saved["tutorial"]
+    assert sidecars == {"info.user-alice.rehuser": {"format_version": 1, "tutorial": "not-an-object"}}
 
 
 def test_save_passes_a_malformed_block_through_untouched(mocker: MockerFixture) -> None:
@@ -1332,16 +1390,19 @@ def test_optional_int_scalar_null_normalizes_away_on_save(attr: str, location: s
     **Test steps:**
 
     * construct a document whose ``attr`` is JSON ``null`` on disk, bound to a path
-    * mock ``atomic_write_text`` to capture the saved JSON, and save
-    * verify the saved container has no ``attr`` key
+    * mock the record's and the sidecars' ``atomic_write_text`` to capture the saved JSON, and save
+    * verify the saved container has no ``attr`` key -- for a per-user scalar, the user is left with nothing, so
+      no sidecar is written at all ([[data-model#single-file]])
     """
     doc = scalar_doc(location, attr, None, FAKE_PATH)
-    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
-    doc.save()
+    saved, sidecars = saved_files(doc, mocker)
 
-    saved = json.loads(write.call_args[0][1])
-    assert attr not in scalar_container(saved, location)
+    if location == "user":
+        assert "users" not in saved["tutorial"]
+        assert not sidecars
+    else:
+        assert attr not in scalar_container(saved, location)
 
 
 def dormant_block_scalar_doc(location: str, key: str, value: Any) -> RehuDocument:
@@ -1525,25 +1586,25 @@ def test_clearing_an_absent_per_user_rating_is_a_harmless_noop() -> None:
     assert "users" not in doc.data["tutorial"]
 
 
-def test_a_negative_rating_round_trips(mocker: MockerFixture) -> None:
+def test_a_negative_rating_round_trips(tmp_path: Path) -> None:
     """A negative rating survives a save/reload -- ``0`` is a genuine rating, so *unrated* is ``None`` and a
     negative value must never be mistaken for empty ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
-    * construct a document rated ``-3``, bound to a path
-    * verify the getter reads ``-3``, then save and re-read the captured JSON
+    * construct a document rated ``-3``, bound to a path in ``tmp_path``
+    * verify the getter reads ``-3``, then save, read the user's sidecar and load the record back
     * verify the saved and reloaded rating are both ``-3``
     """
-    doc = scalar_doc("user", "rating", -3, FAKE_PATH)
+    path = tmp_path / "info.rehu"
+    doc = scalar_doc("user", "rating", -3, path)
     assert doc.rating == -3
-    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
     doc.save()
 
-    saved = json.loads(write.call_args[0][1])
-    assert saved["tutorial"]["users"]["admin"]["rating"] == -3
-    assert RehuDocument(saved).rating == -3
+    sidecar = json.loads((tmp_path / "info.user-admin.rehuser").read_text(encoding="utf-8"))
+    assert sidecar["tutorial"]["rating"] == -3
+    assert RehuDocument.load(path).rating == -3
 
 
 def test_released_reads_none_when_absent() -> None:
@@ -1674,7 +1735,7 @@ def test_advertised_count_null_normalizes_away_on_save(mocker: MockerFixture) ->
     * verify the saved block has no ``advertised_count`` key
     """
     doc = reference_images_doc({"advertised_count": None}, FAKE_PATH)
-    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    write, _ = mock_writes(mocker)
 
     doc.save()
 
@@ -1723,7 +1784,7 @@ def test_an_open_ended_advertised_count_survives_a_save_and_load(mocker: MockerF
     * verify the claim reads back identical, and the measured count is untouched by it
     """
     doc = reference_images_doc({"advertised_count": "500+"}, FAKE_PATH)
-    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    write, _ = mock_writes(mocker)
 
     doc.save()
 
@@ -2149,9 +2210,7 @@ def test_an_empty_keyed_top_level_is_droppable_like_any_foreign_block() -> None:
     assert doc.data["audiopack"] == {"bitrate": 320}
 
 
-def test_a_mid_session_type_switch_round_trips_with_the_block_stamped_and_users_intact(
-    mocker: MockerFixture,
-) -> None:
+def test_a_mid_session_type_switch_round_trips_with_the_block_stamped_and_users_intact(tmp_path: Path) -> None:
     """A block created by a mid-session type switch + edit saves **stamped**, so reloading the file runs
     no migration over it and its ``users`` map survives -- the #134 data-loss chain, closed end-to-end.
 
@@ -2160,18 +2219,22 @@ def test_a_mid_session_type_switch_round_trips_with_the_block_stamped_and_users_
 
     **Test steps:**
 
-    * load a tutorial-typed document, switch its type to ``reference_images``, and file a per-user edit
+    * write a tutorial-typed record to ``tmp_path``, load it, switch its type to ``reference_images``, and
+      file a per-user edit
     * save, and verify the written block carries the plugin's current block ``format_version``
-    * load the written payload back and verify the per-user record is intact
+    * load the written record and its sidecar back and verify the per-user record is intact
     """
-    doc = load_doc(mocker, {"core": {"type": "tutorial"}, "tutorial": {"format_version": 1}})
+    path = tmp_path / "info.rehu"
+    path.write_text(json.dumps({"core": {"type": "tutorial"}, "tutorial": {"format_version": 1}}), encoding="utf-8")
+    doc = RehuDocument.load(path)
     doc.set_active_type("reference_images")
     doc.set_active_user_field("rating", 5)
 
-    saved = saved_json(doc, mocker)
+    doc.save()
+    saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["reference_images"]["format_version"] == current_block_version("reference_images")
 
-    reloaded = RehuDocument(saved)
+    reloaded = RehuDocument.load(path)
     assert reloaded.active_user_field("rating") == 5
     assert reloaded.active_block["users"] == {"admin": {"rating": 5}}
 
@@ -2453,7 +2516,8 @@ def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: 
 
     * load a tutorial-typed document that also carries ``reference_images`` and ``daz3d`` blocks
     * edit the active block, then save
-    * verify the edit landed and both inactive blocks were written back byte-for-byte
+    * verify the edit landed, the per-user rating went to the user's sidecar ([[data-model#single-file]]), and
+      both inactive blocks were written back byte-for-byte
     """
     data = {
         "type": "tutorial",
@@ -2462,16 +2526,15 @@ def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: 
         "daz3d": {"sku": "12345", "figures": ["G8F"]},
     }
     doc = load_doc(mocker, data)
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, sidecar_write = mock_writes(mocker)
 
     doc.set_active_field("complete", True)
     doc.save()
 
     saved = json.loads(mock_write.call_args[0][1])
-    assert saved["tutorial"] == {
-        "format_version": current_block_version("tutorial"),
-        "complete": True,
-        "users": {"admin": {"rating": 4}},
+    assert saved["tutorial"] == {"format_version": current_block_version("tutorial"), "complete": True}
+    assert written_sidecars(sidecar_write) == {
+        "info.user-admin.rehuser": {"format_version": 1, "tutorial": {"rating": 4}}
     }
     assert saved["reference_images"] == {"images_count": 12}
     assert saved["daz3d"] == {"sku": "12345", "figures": ["G8F"]}
@@ -2485,17 +2548,21 @@ def test_save_normalizes_alias_spellings_on_disk(mocker: MockerFixture) -> None:
 
     * load a document written with tc4's ``Tutorial`` type spelling
     * save it untouched
-    * verify the file now carries the declared main key, for both ``type`` and the block
+    * verify the file now carries the declared main key, for both ``type`` and the block, and the user's
+      sidecar ([[data-model#single-file]]) files the rating under it too
     """
     doc = load_doc(mocker, {"core": {"type": "Tutorial"}, "Tutorial": {"rating": 4}})
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, sidecar_write = mock_writes(mocker)
 
     doc.save()
 
     saved = json.loads(mock_write.call_args[0][1])
     assert saved["core"]["type"] == "tutorial"
-    assert saved["tutorial"] == {"format_version": current_block_version("tutorial"), "users": {"admin": {"rating": 4}}}
+    assert saved["tutorial"] == {"format_version": current_block_version("tutorial")}
     assert "Tutorial" not in saved
+    assert written_sidecars(sidecar_write) == {
+        "info.user-admin.rehuser": {"format_version": 1, "tutorial": {"rating": 4}}
+    }
 
 
 # region Block persistence invariant (#82, [[plugins#plugin-blocks]])
@@ -2912,7 +2979,7 @@ def test_a_save_that_carries_a_never_claimed_block_records_no_discard(
     * verify the foreign block was written and no discard was logged
     """
     doc = RehuDocument({"type": "tutorial", "tutorial": {"complete": True}, "reference_images": {"images_count": 12}})
-    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_write, _ = mock_writes(mocker)
 
     with caplog.at_level(logging.INFO, logger="rehuco_core.rehu_document"):
         doc.save(Path("/fake/info.rehu"))
@@ -4019,7 +4086,7 @@ def test_saving_an_upgraded_block_clears_the_pending_flag(mocker: MockerFixture)
     doc = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}})
     assert doc.active_block_upgrade_pending is True
 
-    mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    mock_writes(mocker)
     doc.save()
 
     assert doc.active_block_upgrade_pending is False
