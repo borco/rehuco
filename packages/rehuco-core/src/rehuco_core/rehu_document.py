@@ -72,11 +72,12 @@ from .rehu_parse_limits import (
 )
 from .rehu_serialization import ordered_for_file
 from .user_sidecars import (
-    UserSidecarError,
+    UnreadableSidecar,
     join_user_sidecars,
     joined_text,
     read_user_sidecars,
     sidecar_text,
+    slug_or_none,
     split_user_sidecars,
     write_user_sidecars,
 )
@@ -166,6 +167,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     :param load_failure: the reason this document stands in for a file that could not be read at all
         (:attr:`~LockReasonKind.MISSING` / :attr:`~LockReasonKind.INVALID_FILE`); set only by
         :meth:`locked_stub_for_error`. Defaults to ``None``: a genuinely-parsed document.
+    :param unreadable_sidecars: the per-user sidecars beside the file that could not be read, left out of the payload;
+        see :attr:`unreadable_sidecars`. Set only by :meth:`load_with_text`. Defaults to none.
     """
 
     def __init__(  # pylint: disable=too-many-arguments
@@ -179,6 +182,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         on_disk_format_version: int | None = None,
         on_disk_active_block_format_version: int | None = None,
         load_failure: LockReason | None = None,
+        unreadable_sidecars: tuple[UnreadableSidecar, ...] = (),
     ) -> None:
         # Final forbids rebinding __data to a different dict, not mutating this one -- every
         # setter edits __data (or a dict nested inside it) in place, so it is always current
@@ -191,6 +195,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__username: Final = username
         self.__on_disk_format_version = on_disk_format_version
         self.__on_disk_active_block_format_version = on_disk_active_block_format_version
+        self.__unreadable_sidecars = unreadable_sidecars
+        """See :attr:`unreadable_sidecars`. Not ``Final``: :meth:`reload` rebinds it."""
         self.__load_failure = load_failure
         """The load-failure reason (:attr:`load_failed`), or ``None`` for a genuinely-parsed document.
         Not ``Final``: :meth:`reload` rebinds it, which is what makes revert the fix-retry loop
@@ -309,14 +315,15 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         file's content (a :class:`~rehuco_core.RecordVersion`, #416) describes this very read.
 
         The record's per-user sidecars are read with it and joined into its ``users`` maps
-        (:mod:`~rehuco_core.user_sidecars`, [[data-model#single-file]]), so the text is theirs too.
+        (:mod:`~rehuco_core.user_sidecars`, [[data-model#single-file]]), so the text is theirs too. One that cannot be
+        read costs its own scope only: it is left out and named in :attr:`unreadable_sidecars`.
 
         :param path: path to the ``.rehu`` file.
         :param plugins: the plugins installed here; see :class:`RehuDocument`.
         :param username: the active identity; see :class:`RehuDocument`.
-        :returns: the document, and the file's text followed by its sidecars'
+        :returns: the document, and the file's text followed by the sidecars' that were read
             (:func:`~rehuco_core.user_sidecars.joined_text`).
-        :raises RehuFormatError: as :meth:`load`, or a sidecar cannot be read as one.
+        :raises RehuFormatError: as :meth:`load`.
         """
         path = Path(path)
         oversized = oversized_file_reason(path.stat().st_size)
@@ -341,11 +348,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # and read as best it can be ([[data-model#schema-version]]) -- but it is not a v2 file
             # either, and silence would let a broken one pass for one.
             LOG.warning("%s: has a 'core' block but no usable format_version -- reading it as unversioned", path)
-        try:
-            sidecars = read_user_sidecars(path)
-        except UserSidecarError as exc:
-            raise RehuFormatError(str(exc)) from exc
-        join_user_sidecars(data, sidecars, username)
+        sidecars, unreadable = read_user_sidecars(path)
+        join_user_sidecars(data, sidecars, username, unreadable)
         # read the file's own stamp before constructing: the migrator restamps the payload to the current
         # version on the way in, so this is the last moment the *file*'s version is visible
         document = cls(
@@ -355,6 +359,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             username=username,
             on_disk_format_version=cls.__coerced_version(data),
             on_disk_active_block_format_version=cls.__raw_active_block_version(data, plugins),
+            unreadable_sidecars=tuple(unreadable),
         )
         return document, joined_text(text, sidecars)
 
@@ -569,7 +574,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         only where its text changes -- so a per-user write leaves the file everyone edits untouched.
 
         :param target: the record's path.
-        :raises UserSidecarError: a sidecar on disk was written by a newer build.
+        :raises UserSidecarError: the payload holds fields for a sidecar that cannot be read, which is never written
+            over.
         :raises OSError: a file could not be read or written.
         """
         record, sidecars = split_user_sidecars(self.payload_to_write())
@@ -768,6 +774,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         # refreshed MISSING/INVALID_FILE reason when it still cannot be read. Read off the fresh document's
         # public surface -- a stub's lock_reasons is exactly its single load-failure reason (lock_reasons)
         self.__load_failure = fresh.lock_reasons[0] if fresh.load_failed else None
+        self.__unreadable_sidecars = fresh.unreadable_sidecars
         # the freshly-read file is, by definition, unchanged: rebase the `updated` bump's baseline on it
         # (#142), so a save right after a revert reads as the no-op it is
         self.__saved_metadata = self.__metadata_text()
@@ -841,6 +848,24 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         rather than off :attr:`lock_reasons` being non-empty (a real newer-format file is locked too).
         Tracks :meth:`reload`, so a later re-read that succeeds clears it."""
         return self.__load_failure is not None
+
+    @property
+    def unreadable_sidecars(self) -> tuple[UnreadableSidecar, ...]:
+        """The per-user sidecars beside the file that could not be read ([[data-model#single-file]]).
+
+        Not a lock: the record and every scope that was read stay editable. Each one's scope is left out of the
+        payload, and a save never writes over its file (:func:`~rehuco_core.user_sidecars.write_user_sidecars`).
+        Tracks :meth:`reload`, so a hand-fix is picked up by it.
+        """
+        return self.__unreadable_sidecars
+
+    @property
+    def own_sidecar_unreadable(self) -> bool:
+        """Whether the current user's own sidecar is among :attr:`unreadable_sidecars` -- what locks per-user editing,
+        and nothing else: the record's details stay editable.
+        """
+        own = slug_or_none(self.__username)
+        return own is not None and any(sidecar.slug == own for sidecar in self.__unreadable_sidecars)
 
     @property
     def lock_reasons(self) -> list[LockReason]:

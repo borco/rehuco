@@ -395,6 +395,7 @@ from .tc_screenshots import (
 )
 from .titled_index import INDEX_KEY, TITLE_KEY, titled_index, with_titled_index
 from .user_sidecars import (
+    UnreadableSidecar,
     UserSidecarError,
     is_user_sidecar_name,
     user_sidecar_path,
@@ -679,6 +680,7 @@ __all__ = [
     "USER_SIDECAR_SUFFIX",
     "UnconvertedScreenshot",
     "UnlinkDeleter",
+    "UnreadableSidecar",
     "UserSidecarError",
     "VIDEO_EXTENSIONS",
     "VerifyChecksumsJob",

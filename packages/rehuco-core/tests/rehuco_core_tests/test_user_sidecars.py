@@ -2,6 +2,7 @@
 [[data-model#single-file]])."""
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Final
 
@@ -10,6 +11,7 @@ from pytest import mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import CURRENT_REHUSER_VERSION, UserSidecarError, user_sidecar_path, user_sidecar_paths, user_slug
 from rehuco_core.user_sidecars import (
+    UnreadableSidecar,
     UserSidecar,
     join_user_sidecars,
     joined_text,
@@ -172,12 +174,76 @@ def test_reading_a_records_sidecars_reads_every_users(tmp_path: Path) -> None:
     write_json(tmp_path / "info.user-ioan.rehuser", {"tutorial": {"rating": 4}})
     write_json(tmp_path / "info.user-bob.rehuser", {"tutorial": {"rating": 2}})
 
-    sidecars = read_user_sidecars(tmp_path / "info.rehu")
+    sidecars, unreadable = read_user_sidecars(tmp_path / "info.rehu")
 
     assert [(sidecar.slug, sidecar.fields) for sidecar in sidecars] == [
         ("bob", {"tutorial": {"rating": 2}}),
         ("ioan", {"tutorial": {"rating": 4}}),
     ]
+    assert not unreadable
+
+
+@mark.parametrize(
+    ("text", "message"),
+    [
+        ("{not json", "invalid JSON"),
+        ("[1, 2]", "expected a JSON object"),
+        (json.dumps({"format_version": CURRENT_REHUSER_VERSION + 1}), "newer than this build"),
+    ],
+)
+def test_reading_a_records_sidecars_sets_one_that_cannot_be_read_apart(tmp_path: Path, text: str, message: str) -> None:
+    """One bad sidecar costs its own scope: it is named with its reason, and the others are still read.
+
+    **Test steps:**
+
+    * write Ioan's sidecar and a bad one for Bob beside ``info.rehu``
+    * read the record's sidecars
+    * verify Ioan's is read and Bob's is unreadable, naming its file, its slug and the cause
+    """
+    write_json(tmp_path / "info.user-ioan.rehuser", {"tutorial": {"rating": 4}})
+    (tmp_path / "info.user-bob.rehuser").write_text(text, encoding="utf-8")
+
+    sidecars, unreadable = read_user_sidecars(tmp_path / "info.rehu")
+
+    assert [sidecar.slug for sidecar in sidecars] == ["ioan"]
+    assert [(sidecar.name, sidecar.slug) for sidecar in unreadable] == [("info.user-bob.rehuser", "bob")]
+    assert re.match(rf"info\.user-bob\.rehuser: .*{message}", unreadable[0].reason)
+
+
+def test_reading_a_records_sidecars_sets_one_that_cannot_be_opened_apart(tmp_path: Path, mocker: MockerFixture) -> None:
+    """A sidecar the OS refuses -- a share's permission error, say -- is unreadable like a malformed one, with the
+    OS's own words as its reason.
+
+    **Test steps:**
+
+    * write a sidecar and make reading it raise ``PermissionError``
+    * read the record's sidecars
+    * verify it is unreadable, its reason naming the file and the error
+    """
+    write_json(tmp_path / "info.user-bob.rehuser", {"tutorial": {"rating": 2}})
+    mocker.patch(f"{MODULE}.read_user_sidecar", side_effect=PermissionError("denied"))
+
+    sidecars, unreadable = read_user_sidecars(tmp_path / "info.rehu")
+
+    assert not sidecars
+    assert [sidecar.reason for sidecar in unreadable] == ["info.user-bob.rehuser: could not be read — denied."]
+
+
+def test_reading_a_records_sidecars_leaves_out_one_gone_between_the_listing_and_its_read(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """Another device deleting a sidecar after it was listed is no failure of that sidecar: it is in neither list.
+
+    **Test steps:**
+
+    * write a sidecar and make reading it raise ``FileNotFoundError``
+    * read the record's sidecars
+    * verify neither list holds it
+    """
+    write_json(tmp_path / "info.user-bob.rehuser", {"tutorial": {"rating": 2}})
+    mocker.patch(f"{MODULE}.read_user_sidecar", side_effect=FileNotFoundError())
+
+    assert read_user_sidecars(tmp_path / "info.rehu") == ([], [])
 
 
 @mark.parametrize(
@@ -263,6 +329,22 @@ def test_a_sidecar_replaces_the_scope_its_record_still_carries() -> None:
     join_user_sidecars(data, [UserSidecar("info.user-ioan.rehuser", "ioan", {"tutorial": {"rating": 4}}, "")], "ioan")
 
     assert data == {"tutorial": {"users": {"ioan": {"rating": 4}, "bob": {"rating": 2}}}}
+
+
+def test_joining_leaves_out_the_scope_of_a_sidecar_that_could_not_be_read() -> None:
+    """The record's own copy of that scope goes too -- left in, the next save would split it back out over the file
+    that could not be read. Other scopes, and slugs that only fold alike, are judged by slug.
+
+    **Test steps:**
+
+    * join into a record still carrying Bob's, ``BOB``'s and Ioan's maps, with Bob's sidecar unreadable
+    * verify only Ioan's scope is left
+    """
+    data: dict[str, Any] = {"tutorial": {"users": {"bob": {"rating": 2}, "BOB": {"rating": 3}, "ioan": {"rating": 1}}}}
+
+    join_user_sidecars(data, [], "ioan", [UnreadableSidecar("info.user-bob.rehuser", "bob", "bad")])
+
+    assert data == {"tutorial": {"users": {"ioan": {"rating": 1}}}}
 
 
 def test_joining_makes_the_block_a_sidecar_names_and_skips_a_malformed_one() -> None:
@@ -484,21 +566,48 @@ def test_a_sidecar_a_newer_build_wrote_is_never_written_over(tmp_path: Path) -> 
     assert path.read_text(encoding="utf-8") == newer
 
 
-def test_a_sidecar_that_is_no_longer_json_is_written_over(tmp_path: Path) -> None:
-    """A broken sidecar holds nothing to keep, as a broken record does: the write restores it.
+@mark.parametrize(
+    "text",
+    ["{broken", "[1, 2]", json.dumps({"format_version": CURRENT_REHUSER_VERSION + 1, "tutorial": {"future": 1}})],
+)
+def test_a_sidecar_that_cannot_be_read_is_left_alone_when_nothing_is_written_for_it(tmp_path: Path, text: str) -> None:
+    """Its scope was left out of the record when it was read, so the save holds nothing for it -- and an emptied stamp
+    written over it would destroy what a hand-fix or a newer build can still read.
+
+    **Test steps:**
+
+    * put a sidecar that is not JSON, no object, or from a newer build beside a record
+    * write another user's sidecar, holding nothing for it
+    * verify the unreadable file is byte-identical and the other user's was written
+    """
+    path = tmp_path / "info.user-bob.rehuser"
+    path.write_text(text, encoding="utf-8")
+
+    write_user_sidecars(tmp_path / "info.rehu", {"ioan": {"tutorial": {"rating": 4}}})
+
+    assert path.read_text(encoding="utf-8") == text
+    assert (tmp_path / "info.user-ioan.rehuser").read_text(encoding="utf-8") == sidecar_text(
+        {"tutorial": {"rating": 4}}
+    )
+
+
+def test_a_sidecar_that_is_no_longer_json_is_never_written_over(tmp_path: Path) -> None:
+    """Fields for a scope that was never read -- a write that reached it past the load -- are refused, not written over
+    the file.
 
     **Test steps:**
 
     * put a sidecar that is not JSON beside a record
     * write that user's sidecar
-    * verify the file holds the fields written
+    * verify a ``UserSidecarError`` naming the file, and the file unchanged
     """
     path = tmp_path / "info.user-ioan.rehuser"
     path.write_text("{broken", encoding="utf-8")
 
-    write_user_sidecars(tmp_path / "info.rehu", {"ioan": {"tutorial": {"rating": 4}}})
+    with raises(UserSidecarError, match=r"info\.user-ioan\.rehuser: invalid JSON"):
+        write_user_sidecars(tmp_path / "info.rehu", {"ioan": {"tutorial": {"rating": 4}}})
 
-    assert path.read_text(encoding="utf-8") == sidecar_text({"tutorial": {"rating": 4}})
+    assert path.read_text(encoding="utf-8") == "{broken"
 
 
 # endregion

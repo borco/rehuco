@@ -102,6 +102,11 @@ and one whose *visible* set spans several identities (this one's own entries, it
 reserved ``public`` scope), so it resolves through :attr:`~RehuDocument.learning_paths` rather than the
 single-identity accessors this set routes through."""
 
+USER_STATE_FIELD_NAMES: Final = USER_FIELD_NAMES | {"learning_paths"}
+"""Every field that holds the current user's own state: :data:`USER_FIELD_NAMES` and ``learning_paths``. What goes
+read-only while the user's own sidecar cannot be read ([[data-model#single-file]], #568) -- the record's details do
+not."""
+
 RECORD_LIST_FIELD_NAMES: Final = ("collections", "learning_paths")
 """The active block's two **record-list** fields ([[field-schema#sources]],
 [[field-schema#learning-path-ownership]]), wired to :meth:`RehuDocumentModel.__on_record_list_changed`.
@@ -468,6 +473,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     back to a locked state). ``DocumentSubDocks`` disables its editor docks while this is non-empty; the
     inline notice (#94) and `DocumentsDock`'s tab marker bind to `lock_reasons_changed`."""
 
+    unreadable_sidecars = SimpleProperty[list[str]](default_factory=list)
+    """Why each per-user sidecar beside the record could not be read, mirrored from :attr:`document`'s
+    :attr:`~RehuDocument.unreadable_sidecars` ([[data-model#single-file]], #568). Not a lock: the record stays editable
+    and only the unreadable scope is left out. Set at the seams :attr:`lock_reasons` is; the inline notice binds to
+    `unreadable_sidecars_changed`."""
+
+    user_state_locked = SimpleProperty(False)
+    """Whether the current user's own sidecar is among those :attr:`unreadable_sidecars` names -- what makes
+    :data:`USER_STATE_FIELD_NAMES` read-only while the details stay editable (#568). Set with
+    :attr:`unreadable_sidecars`."""
+
     upgradable = SimpleProperty(False)
     """Whether this document can be brought current by a plain save (#89, [[data-model#schema-version]]):
     the file on disk is older -- at the file-wide :data:`~rehuco_core.CURRENT_FORMAT_VERSION`, at the
@@ -541,7 +557,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         it."""
 
         self.__seed_from_document()
-        self.lock_reasons = list(self.__document.lock_reasons)
+        self.__mirror_locks()
         self.image_scanner = self.__make_image_scanner()
         self.__recompute_upgradable()
         self.__log_document_state()
@@ -997,7 +1013,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 dirty and on_disk is not None and (payload.base is None or on_disk.file_hash != payload.base.file_hash)
             )
             self.rename_error = ""
-            self.lock_reasons = list(self.__document.lock_reasons)
+            self.__mirror_locks()
         finally:
             self.__loading = False
         self.image_scanner = self.__make_image_scanner()
@@ -1294,7 +1310,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.__seed_from_document(description=False)
             self.dirty = False
             self.rename_error = ""
-            self.lock_reasons = list(self.__document.lock_reasons)
+            self.__mirror_locks()
         finally:
             self.__loading = False
         self.image_scanner = self.__make_image_scanner()
@@ -1390,7 +1406,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__seed_from_document()
         self.dirty = False
         self.rename_error = ""
-        self.lock_reasons = list(self.__document.lock_reasons)
+        self.__mirror_locks()
         self.image_scanner = self.__make_image_scanner()
         self.unknown_fields_changed.emit()
         self.reloaded.emit()
@@ -1754,6 +1770,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             yield
         finally:
             self.__seeding = False
+
+    def __mirror_locks(self) -> None:
+        """Mirror what keeps the document from being edited, whole or in part, from :attr:`document`: its lock reasons
+        and, as notices of a part (#568), the sidecars that could not be read."""
+        self.unreadable_sidecars = [sidecar.reason for sidecar in self.__document.unreadable_sidecars]
+        self.user_state_locked = self.__document.own_sidecar_unreadable
+        self.lock_reasons = list(self.__document.lock_reasons)
 
     def __seed_from_document(self, *, description: bool = True) -> None:
         """Set every field from :attr:`document`'s current in-memory state (construction,
