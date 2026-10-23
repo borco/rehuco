@@ -72,7 +72,7 @@ from .image_downloads import ImageDownloads
 from .name_suggestion_model import NameSuggestionModel
 from .pending_saves import PendingSaves
 from .rehu_document_image_organizer import RehuDocumentImageOrganizer
-from .rehu_document_model import RehuDocumentModel
+from .rehu_document_model import USER_STATE_FIELD_NAMES, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .scrape_actions import ScrapeActions
 from .source_views import OnDiskView, SavePreviewView
@@ -147,6 +147,16 @@ CONFLICT_MESSAGE: Final = (
     "<i>Save</i> again to compare the two and choose; <i>Revert</i> loads the file as it is now."
 )
 """The notice for a document whose last save was refused as a conflict (#416)."""
+
+UNREADABLE_SIDECAR_REMEDY: Final = (
+    " That user's state is left out here and the file is never written over; fix or remove it, then <i>Revert</i>."
+)
+"""What follows the reason a per-user sidecar could not be read (#568, [[data-model#single-file]])."""
+
+OWN_SIDECAR_MESSAGE: Final = (
+    "Your own state — rating, flags and learning paths — is read-only until that file is fixed."
+)
+"""The notice added when the unreadable sidecar is the current user's own: the details stay editable (#568)."""
 
 SAVING_MESSAGE: Final = "Saving…"
 """The notice for a document whose save has been handed to a job and has not come back yet (#497)."""
@@ -808,6 +818,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
         self.__connect(model.lock_reasons_changed, self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
+        self.__connect(model.unreadable_sidecars_changed, self.__on_sidecars_changed)  # type: ignore[attr-defined]
+        self.__connect(model.user_state_locked_changed, self.__on_sidecars_changed)  # type: ignore[attr-defined]
         self.__connect(model.reading_changed, self.__on_reading_changed)  # type: ignore[attr-defined]
         self.__connect(model.upgradable_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.changed_on_disk_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
@@ -1296,6 +1308,16 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
 
+    def __on_sidecars_changed(self) -> None:
+        """Make the user's own state read-only, or editable again, and rebuild the inline notice strip as the sidecars
+        that cannot be read change (#568).
+
+        Not a lock reason, so :meth:`__on_lock_reasons_changed` never hears of it: the record stays editable, and
+        only the part of the form that holds the user's own state follows it.
+        """
+        self.__set_editors_locked(self.__editors_locked())
+        self.__banner.set_rows(self.__banner_rows())
+
     def __on_reading_changed(self) -> None:
         """Lock the editors, disable Save and Revert, and say so while the document waits for its file to be read --
         and undo all three once it arrives (#564): nothing it shows meanwhile is what an edit or a save would be based
@@ -1608,7 +1630,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         unsafe, while this describes an action that already went wrong
         (`MessageBannerSeverity`) and left the document as it was.
 
-        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then a reading row while
+        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then one per
+            :attr:`~RehuDocumentModel.unreadable_sidecars` entry and a row saying so while the user's own state is
+            read-only (#568), then a reading row while
             the document waits for its file (:attr:`~RehuDocumentModel.reading`, #564), then an error row while
             the document's file or folder is :attr:`~RehuDocumentModel.gone` (#497), then a refused-save
             row while :attr:`~RehuDocumentModel.conflict` stands (#416), or else a changed-on-disk row while
@@ -1622,6 +1646,12 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             its last failure (#73).
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
+        rows.extend(
+            MessageBannerRow(MessageBannerSeverity.WARNING, reason + UNREADABLE_SIDECAR_REMEDY)
+            for reason in self.__model.unreadable_sidecars
+        )
+        if self.__model.user_state_locked:
+            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, OWN_SIDECAR_MESSAGE))
         if self.__model.reading is not None:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, READING_MESSAGE.format(path=self.__model.reading)))
         if self.__model.gone:
@@ -1671,6 +1701,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         for tab, dock in self.__editor_docks.items():
             dock.widget().setEnabled(not locked or tab in exempt)
         self.__form.set_locked(locked)
+        # a part of the form, not the whole of it (#568): the user's own state while their own sidecar is unreadable
+        self.__form.set_read_only_fields(USER_STATE_FIELD_NAMES if self.__model.user_state_locked else frozenset())
 
     def __update_write_action_visibility(self) -> None:
         """Swap the toolbar's write action for whichever one is actually meaningful right now,

@@ -1,5 +1,6 @@
 """Composes an ordered field list into per-tab viewer or editor 3-column grids ([[plugins#field-toolkit]])."""
 
+import weakref
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Final
@@ -27,6 +28,8 @@ from .widgets import ImageExporter, ImageSelector
 LABEL_COLUMN: Final = 0
 MISC_COLUMN: Final = 1
 CONTENT_COLUMN: Final = 2
+
+type WidgetRefs = tuple[weakref.ref[QWidget], ...]
 
 
 class FieldsForm:
@@ -58,6 +61,12 @@ class FieldsForm:
 
     def __init__(self, fields: Sequence[Field[Any]]) -> None:
         self.__fields: Final = tuple(fields)
+        self.__editor_widgets: dict[int, WidgetRefs] = {}
+        """The widgets of each field's editor row (its misc control and its editor), by the field's index in
+        :attr:`__fields`, as :meth:`make_editor` last built them. Weak: the grids own them, and a reference held here
+        would outlive their teardown."""
+        self.__read_only: WidgetRefs = ()
+        """The widgets :meth:`set_read_only_fields` disabled, so it enables those and no others."""
 
     def clear_external(self) -> None:
         """Disconnect every field's long-lived-signal connections (:meth:`Field.clear_external`).
@@ -183,6 +192,27 @@ class FieldsForm:
             if isinstance(field, LockAware):
                 field.set_locked(locked)
 
+    def set_read_only_fields(self, names: frozenset[str]) -> None:
+        """Disable the editor of every field binding one of ``names``, and enable what an earlier call disabled.
+
+        The part-lock beside :meth:`set_locked`'s whole one: the labels stay as they are. A new :meth:`make_editor`
+        builds fresh widgets, which this is asked about again; the old ones, once deleted, are skipped.
+
+        :param names: the model fields whose editors are read-only; empty for none.
+        """
+        for reference in self.__read_only:
+            if (widget := reference()) is not None:
+                widget.setEnabled(True)
+        self.__read_only = tuple(
+            reference
+            for index, field in enumerate(self.__fields)
+            if names.intersection(field.names)
+            for reference in self.__editor_widgets.get(index, ())
+        )
+        for reference in self.__read_only:
+            if (widget := reference()) is not None:
+                widget.setEnabled(False)
+
     @property
     def lock_aware_editor_tabs(self) -> frozenset[FieldsTab]:
         """The editor surfaces the owner may leave **enabled** while the document is locked (#292).
@@ -238,11 +268,16 @@ class FieldsForm:
             label | misc | editor row per field on that tab.
         """
         by_tab: dict[FieldsTab, list[FieldEditorWidgets]] = {}
-        for field in self.__fields:
+        editor_widgets: dict[int, WidgetRefs] = {}
+        for index, field in enumerate(self.__fields):
             bundle = field.make_editor_row(self.__bindings(field, model))
             if bundle.label is None and bundle.misc is None and bundle.editor is None:
                 continue
+            editor_widgets[index] = tuple(
+                weakref.ref(widget) for widget in (bundle.misc, bundle.editor) if widget is not None
+            )
             by_tab.setdefault(bundle.tab, []).append(bundle)
+        self.__editor_widgets = editor_widgets
 
         grids: dict[FieldsTab, QWidget] = {}
         for tab, bundles in by_tab.items():

@@ -13,9 +13,11 @@ record's own lock (:func:`~rehuco_core.record_file_lock.locked_record`), which g
 """
 
 import json
+import logging
 import os
 import re
 import unicodedata
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -23,10 +25,12 @@ from typing import Any, Final
 from borco_core import atomic_write_text
 
 from .constants import USER_SIDECAR_SUFFIX
-from .migrations import CURRENT_REHUSER_VERSION, migrate_rehuser_data, stamped_version
+from .migrations import CURRENT_REHUSER_VERSION, migrate_rehuser_data
 from .plugins import USERS_KEY
 from .rehu_format import FORMAT_VERSION_KEY
 from .rehu_parse_limits import excessive_entry_reason, excessive_nesting_reason, oversized_file_reason
+
+LOG: Final = logging.getLogger(__name__)
 
 USER_INFIX: Final = ".user-"
 """What separates a sidecar's record stem from its user's name: ``info.user-ioan.rehuser``."""
@@ -56,6 +60,20 @@ class UserSidecar:
     slug: str
     fields: dict[str, Any]
     text: str
+
+
+@dataclass(frozen=True, slots=True)
+class UnreadableSidecar:
+    """One per-user sidecar that could not be read, left out of its record's ``users`` maps and never written over.
+
+    :param name: its file name.
+    :param slug: whose it is: the user name its file name carries (:func:`user_slug`).
+    :param reason: why it could not be read, starting with its file name.
+    """
+
+    name: str
+    slug: str
+    reason: str
 
 
 def user_slug(username: str) -> str:
@@ -128,15 +146,27 @@ def user_sidecar_paths(record: Path) -> dict[str, Path]:
     return found
 
 
-def read_user_sidecars(record: Path) -> list[UserSidecar]:
-    """Read every sidecar beside a record.
+def read_user_sidecars(record: Path) -> tuple[list[UserSidecar], list[UnreadableSidecar]]:
+    """Read every sidecar beside a record. One that cannot be read costs its own scope and nothing else
+    ([[data-model#single-file]]).
 
     :param record: the ``.rehu``.
-    :returns: the sidecars, by name.
-    :raises UserSidecarError: one could not be parsed, trips a sanity cap, or was written by a newer build.
-    :raises OSError: the folder or a sidecar could not be read.
+    :returns: the sidecars read, by name, and the ones that could not be -- unparseable, past a sanity cap, written by
+        a newer build, or unreadable; one gone between the listing and its read is in neither.
+    :raises OSError: the folder could not be listed.
     """
-    return [read_user_sidecar(path, slug) for slug, path in user_sidecar_paths(record).items()]
+    read: list[UserSidecar] = []
+    unreadable: list[UnreadableSidecar] = []
+    for slug, path in user_sidecar_paths(record).items():
+        try:
+            read.append(read_user_sidecar(path, slug))
+        except FileNotFoundError:
+            continue
+        except UserSidecarError as error:
+            unreadable.append(UnreadableSidecar(path.name, slug, str(error)))
+        except OSError as error:
+            unreadable.append(UnreadableSidecar(path.name, slug, f"{path.name}: could not be read — {error}."))
+    return read, unreadable
 
 
 def read_user_sidecar(path: Path, slug: str) -> UserSidecar:
@@ -173,18 +203,32 @@ def read_user_sidecar(path: Path, slug: str) -> UserSidecar:
     return UserSidecar(path.name, slug, data, text)
 
 
-def join_user_sidecars(data: dict[str, Any], sidecars: list[UserSidecar], username: str) -> None:
+def join_user_sidecars(
+    data: dict[str, Any],
+    sidecars: list[UserSidecar],
+    username: str,
+    unreadable: Collection[UnreadableSidecar] = (),
+) -> None:
     """Put each sidecar's fields into the record's ``users`` maps, in place.
 
     The current user's sidecar fills ``username``'s scope; every other one the scope its slug spells, which is what
     ``public`` and ``unknown`` are. A sidecar replaces a scope the record still carries itself: the record's is the
-    state from before the sidecar, which its next save moves out.
+    state from before the sidecar, which its next save moves out. The scope of one that could not be read is left out
+    altogether, the record's own copy of it included, so nothing of it is written back over that file.
 
     :param data: the record's payload.
     :param sidecars: its sidecars (:func:`read_user_sidecars`).
     :param username: the identity the record is opened as.
+    :param unreadable: the sidecars that could not be read.
     """
     own = slug_or_none(username)
+    left_out = {sidecar.slug for sidecar in unreadable}
+    if left_out:
+        for block in data.values():
+            users = block.get(USERS_KEY) if isinstance(block, dict) else None
+            if isinstance(users, dict):
+                for scope in [scope for scope in users if slug_or_none(scope) in left_out]:
+                    del users[scope]
     for sidecar in sidecars:
         scope = username if sidecar.slug == own else sidecar.slug
         for key, fields in sidecar.fields.items():
@@ -239,9 +283,14 @@ def write_user_sidecars(record: Path, sidecars: dict[str, dict[str, Any]]) -> No
     A sidecar beside the record that ``sidecars`` no longer names -- its user's state all removed -- is written
     holding nothing but its stamp, so it never reads back what was removed.
 
+    One that cannot be read (:func:`read_user_sidecar`) is never written over -- unparseable, past a sanity cap, or
+    written by a newer build, whose fields this one has never seen ([[data-model#schema-version]]). Its scope was left
+    out of the record when it was read (:func:`join_user_sidecars`), so ``sidecars`` holds nothing for it and it is
+    skipped; fields for it mean a write reached a scope that was never read, and are refused.
+
     :param record: the ``.rehu`` they sit beside.
     :param sidecars: each sidecar's ``block key -> fields``, by slug (:func:`split_user_sidecars`).
-    :raises UserSidecarError: a sidecar on disk was written by a newer build, which this one must not write over.
+    :raises UserSidecarError: ``sidecars`` holds fields for a sidecar that cannot be read.
     :raises OSError: one could not be read or written.
     """
     existing = user_sidecar_paths(record)
@@ -255,25 +304,14 @@ def write_user_sidecars(record: Path, sidecars: dict[str, dict[str, Any]]) -> No
         if current == text:
             continue
         if current is not None:
-            refuse_newer(path, current)
+            try:
+                read_user_sidecar(path, slug)
+            except UserSidecarError as error:
+                if sidecars.get(slug):
+                    raise
+                LOG.debug("%s is left as it is: %s", path.name, error)
+                continue
         atomic_write_text(path, text)
-
-
-def refuse_newer(path: Path, text: str) -> None:
-    """Refuse to write over a sidecar a newer build wrote: its fields are ones this build has never seen
-    ([[data-model#schema-version]]). One that is not a readable sidecar at all is written over, as a record is.
-
-    :param path: the sidecar.
-    :param text: its text.
-    :raises UserSidecarError: its stamp is newer than this build understands.
-    """
-    try:
-        data = json.loads(text)
-    except ValueError, RecursionError:
-        return
-    version = stamped_version(data) if isinstance(data, dict) else None
-    if version is not None and version > CURRENT_REHUSER_VERSION:
-        raise UserSidecarError(f"{path.name}: format_version {version} is newer than this build understands.")
 
 
 def sidecar_text(fields: dict[str, Any]) -> str:

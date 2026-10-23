@@ -95,7 +95,10 @@ but that user's other device.
 - **A sidecar changed is its record changed**, for every reader: the notifier reports both, and a record's signature
   covers its sidecars, so an open document follows another device's progress as it follows any outside edit.
 - **A sidecar that cannot be read** — unparseable, past a sanity cap, or from a newer build, which a save must never
-  write over — fails the record's load, so the record opens locked; narrowing that to the one scope is #568.
+  write over — locks only its own scope. The record and every other scope open and stay editable; the scope is left
+  out of the joined `users` maps and named in a lock-free notice (which file, and why); a save never writes over the
+  file, and refuses a write that holds fields for it. When it is the current user's own, their per-user fields (rating,
+  flags, learning paths) turn read-only and the details stay editable.
 - **The record's own `users` maps migrate out on save**, one time: a save of a record that still carries them writes
   each user's map into that user's sidecar, through the same lock and merge as any sidecar save
   ([[sync#overview]]), and the record without them. A record never saved again keeps its maps and is read as before.

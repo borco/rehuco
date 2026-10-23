@@ -6,23 +6,23 @@ import json
 from pathlib import Path
 from typing import Any, Final
 
-from pytest import raises
+from pytest import mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_REHUSER_VERSION,
     Changed,
     DirectoryClassifier,
     FileKind,
-    LockReasonKind,
     Records,
     RehuDocument,
-    RehuFormatError,
     ResourceKey,
+    UserSidecarError,
     enumerate_content_files,
     record_progress,
     rename_rehu_resource,
 )
 from rehuco_core.notify import ChangeCoalescer, RawChange, RawChangeKind
+from rehuco_core.user_sidecars import sidecar_text
 
 USERS: Final = "users"
 
@@ -152,25 +152,133 @@ def test_a_details_edit_leaves_every_sidecar_untouched(tmp_path: Path) -> None:
     assert {path.name: path.stat().st_mtime_ns for path in tmp_path.glob("*.rehuser")} == before
 
 
-def test_a_newer_sidecar_fails_the_records_load(tmp_path: Path) -> None:
-    """A sidecar from a newer build cannot be joined, and a save would write over it: the record is refused, naming
-    the sidecar, and opens as a locked stub.
+BAD_SIDECARS: Final = [
+    ("{not json", "invalid JSON"),
+    (json.dumps({"format_version": CURRENT_REHUSER_VERSION + 1, "tutorial": {"future": 1}}), "newer than this build"),
+]
+"""Sidecars this build cannot read, and the words their reason carries."""
+
+
+@mark.parametrize(("text", "message"), BAD_SIDECARS)
+def test_a_bad_sidecar_of_another_user_locks_only_its_own_scope(tmp_path: Path, text: str, message: str) -> None:
+    """The issue's *done when*: a record beside a malformed or newer ``info.user-bob.rehuser`` opens for ``alice`` with
+    its details and her own state editable, says which sidecar it could not read, and a save leaves bob's file
+    byte-identical.
 
     **Test steps:**
 
-    * put a sidecar stamped one version ahead beside a record
-    * load the record directly, and through ``Records``
-    * verify a ``RehuFormatError`` naming the sidecar, and an ``INVALID_FILE`` stub
+    * save a record rated by ``alice``, and put a bad sidecar for ``bob`` beside it
+    * load it as ``alice`` through ``Records``
+    * verify no lock reason, bob's file named with its cause, and bob's scope left out
+    * change the title, rate it and save
+    * verify the title and alice's rating on disk, and bob's file byte-identical
+    """
+    record = tmp_path / "info.rehu"
+    write_record(record, {**RATED, "tutorial": {"format_version": 2, USERS: {"alice": {"rating": 1}}}})
+    RehuDocument.load(record, username="alice").save()
+    bob = tmp_path / "info.user-bob.rehuser"
+    bob.write_text(text, encoding="utf-8")
+    records = Records()
+
+    loaded = records.load(ResourceKey(record), username="alice", unknown_username="unknown")
+
+    assert not loaded.lock_reasons
+    assert not loaded.document.own_sidecar_unreadable
+    assert [(sidecar.name, sidecar.slug) for sidecar in loaded.document.unreadable_sidecars] == [
+        ("info.user-bob.rehuser", "bob")
+    ]
+    assert message in loaded.document.unreadable_sidecars[0].reason
+    assert "bob" not in loaded.document.active_block[USERS]
+    loaded.document.title = "Renamed"
+    loaded.document.set_active_user_field("rating", 5)
+    records.save(ResourceKey(record), loaded.document, loaded.version, username="alice", overwrite=False)
+
+    saved = RehuDocument.load(record, username="alice")
+    assert (saved.title, saved.active_user_field("rating")) == ("Renamed", 5)
+    assert bob.read_text(encoding="utf-8") == text
+
+
+@mark.parametrize("text", [text for text, _ in BAD_SIDECARS])
+def test_a_bad_sidecar_is_not_written_over_by_the_scope_the_record_still_carries(tmp_path: Path, text: str) -> None:
+    """A record saved before the sidecars still carries bob's map; it is left out with his scope, so the one-time move
+    never writes it over his unreadable file.
+
+    **Test steps:**
+
+    * write a record still carrying ``bob``'s map, and a bad sidecar for him
+    * load it as ``alice`` and save
+    * verify bob's file byte-identical and his map gone from the record
+    """
+    record = tmp_path / "info.rehu"
+    write_record(record, {**RATED, "tutorial": {"format_version": 2, USERS: {"bob": {"rating": 2}}}})
+    bob = tmp_path / "info.user-bob.rehuser"
+    bob.write_text(text, encoding="utf-8")
+    document = RehuDocument.load(record, username="alice")
+
+    document.save()
+
+    assert bob.read_text(encoding="utf-8") == text
+    assert USERS not in read_json(record)["tutorial"]
+
+
+@mark.parametrize(("text", "message"), BAD_SIDECARS)
+def test_a_bad_sidecar_of_the_current_user_locks_per_user_editing_only(tmp_path: Path, text: str, message: str) -> None:
+    """The record opens editable, the details save, and the user's own state is refused rather than written over the
+    file -- until the file is fixed and the record reloaded.
+
+    **Test steps:**
+
+    * put a bad sidecar for ``alice`` beside a record, and load it as her
+    * verify no lock reason and ``own_sidecar_unreadable``
+    * save a new title, and write her progress
+    * verify the title saved, the progress refused with her file byte-identical
+    * fix her sidecar and reload
+    * verify the document reads her state and no longer names it
     """
     record = tmp_path / "info.rehu"
     bare_record(record)
-    newer = {"format_version": CURRENT_REHUSER_VERSION + 1, "tutorial": {}}
-    (tmp_path / "info.user-bob.rehuser").write_text(json.dumps(newer), encoding="utf-8")
+    (tmp_path / "a.mp4").write_bytes(b"x" * 10)
+    alice = tmp_path / "info.user-alice.rehuser"
+    alice.write_text(text, encoding="utf-8")
+    document = RehuDocument.load(record, username="alice")
 
-    with raises(RehuFormatError, match=r"info\.user-bob\.rehuser"):
-        RehuDocument.load(record, username="ioan")
-    loaded = Records().load(ResourceKey(record), username="ioan", unknown_username="unknown")
-    assert [reason.kind for reason in loaded.lock_reasons] == [LockReasonKind.INVALID_FILE]
+    assert not document.lock_reasons
+    assert document.own_sidecar_unreadable
+    document.title = "Renamed"
+    document.save()
+    with raises(UserSidecarError, match=message):
+        record_progress(record, "alice", "a.mp4", 3.0, 10.0, current_username="alice")
+
+    assert RehuDocument.load(record, username="alice").title == "Renamed"
+    assert alice.read_text(encoding="utf-8") == text
+    alice.write_text(sidecar_text({"tutorial": {"rating": 3}}), encoding="utf-8")
+    document.reload()
+    assert document.unreadable_sidecars == ()
+    assert not document.own_sidecar_unreadable
+    assert document.active_user_field("rating") == 3
+
+
+def test_a_sidecar_that_turns_readable_changes_the_records_version(tmp_path: Path) -> None:
+    """An unreadable sidecar adds nothing to the version, so fixing it is a change a save merges rather than misses.
+
+    **Test steps:**
+
+    * load a record beside a bad sidecar for ``bob``, and note its version
+    * fix his sidecar and load again
+    * verify the versions differ
+    """
+    record = tmp_path / "info.rehu"
+    bare_record(record)
+    bob = tmp_path / "info.user-bob.rehuser"
+    bob.write_text("{not json", encoding="utf-8")
+    records = Records()
+    before = records.load(ResourceKey(record), username="alice", unknown_username="unknown").version
+
+    bob.write_text(sidecar_text({"tutorial": {"rating": 2}}), encoding="utf-8")
+    after = records.load(ResourceKey(record), username="alice", unknown_username="unknown").version
+
+    assert before is not None and after is not None
+    assert before.file_hash != after.file_hash
 
 
 # endregion
