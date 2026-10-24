@@ -21,6 +21,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_overlap_check import RootOverlapCheck
 from rehuco_core import HardlinkedRecord, RootOverlap, RootScanOutcome, RootScanResult, TaskQueue
 
+from rehuco_agent_tests.mapped_roots import location_at
+
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     OTHER_PATH,
     REHUCO_ID,
@@ -37,7 +39,9 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_catalog,
     fixture_dock,
     fixture_held,
+    fixture_machine,
     fixture_no_open_scan,
+    fixture_on_disk,
     fixture_queue,
     fixture_saves,
     fixture_served,
@@ -80,7 +84,7 @@ def nest(served: dict[str, Any]) -> None:
 
     :param served: the served document.
     """
-    served["roots"][1]["path"] = str(TUTORIALS / "python")
+    served["roots"][1]["location"] = location_at(TUTORIALS / "python")
 
 
 def overlap_check(dock: CatalogDocks) -> RootOverlapCheck:
@@ -141,16 +145,19 @@ def test_editing_or_reopening_the_catalog_follows_it_again_keeping_what_its_scan
     follow = mocker.spy(dock.catalog.overlaps, "follow")
 
     assert dock.catalog.remove_root(1)
-    file = dock.catalog.file
-    assert file is not None
-    file.add_root(REFS)
-    assert dock.catalog.commit_roots()
+    assert dock.catalog.add_root(Path(REFS)) is not None
     dock.catalog.open_rehuco(REHUCO_PATH)
-    reopened = dock.catalog.file
     dock.catalog.close_rehuco()
 
     assert [call.kwargs.get("keep_scans") for call in follow.call_args_list] == [True, True, True, None]
-    assert [call.args[0] for call in follow.call_args_list] == [file, file, reopened, None]
+    assert [
+        None if call.args[0] is None else [root.label for root in call.args[0]] for call in follow.call_args_list
+    ] == [
+        ["tutorials"],
+        ["tutorials", "refs"],
+        ["tutorials", "refs"],
+        None,
+    ]
 
 
 @mark.usefixtures("served")
@@ -204,7 +211,7 @@ def test_the_comparison_among_the_roots_skips_the_unreachable_ones(
       third one
     * verify each comparison was asked over the file's roots, skipping the first root once it was unreachable
     """
-    served["roots"].append({"id": THIRD_ID, "path": REFS, "label": "refs"})
+    served["roots"].append({"id": THIRD_ID, "location": location_at(REFS), "label": "refs"})
     among = mocker.patch.object(RootOverlap, "among_resolved", return_value=())
     if change == "opened":
         catalog.mark_reachable(TUTORIALS_ID, False)
@@ -218,10 +225,8 @@ def test_the_comparison_among_the_roots_skips_the_unreachable_ones(
     skips = [frozenset({TUTORIALS_ID})] if change == "opened" else [frozenset(), frozenset({TUTORIALS_ID})]
 
     qtbot.waitUntil(lambda: among.call_count == len(skips), timeout=WAIT_TIMEOUT_MS)
-    file = dock.catalog.file
-    assert file is not None
     assert [call.args[1] for call in among.call_args_list] == skips
-    assert among.call_args.args[0] == tuple(file.roots)
+    assert among.call_args.args[0] == dock.catalog.mapped_roots()
 
 
 @mark.usefixtures("served")
@@ -262,9 +267,8 @@ def test_add_root_refuses_a_folder_inside_a_root_through_a_link(
     answer_add_root(mocker, dock, REFS)
     warning = mocker.patch("rehuco_agent.rehuco.roots_panel.QMessageBox.warning")
     dock.catalog.open_rehuco(REHUCO_PATH)
-    file = dock.catalog.file
-    assert file is not None
-    overlap = RootOverlap(file.roots[0], Path(REFS), encloses=True)
+    roots = dock.catalog.mapped_roots()
+    overlap = RootOverlap(roots[0], Path(REFS), encloses=True)
     find = mocker.patch.object(RootOverlap, "find_resolved", return_value=overlap)
 
     add_root(qtbot, dock)
@@ -273,7 +277,7 @@ def test_add_root_refuses_a_folder_inside_a_root_through_a_link(
     saves.assert_not_called()
     assert dock.roots.roots_model.rowCount() == 2
     assert dock.roots.add_root_action.isEnabled()
-    assert find.call_args.args == (REFS, file.roots, frozenset())
+    assert find.call_args.args == (REFS, roots, frozenset())
 
 
 @mark.usefixtures("served", "saves")
@@ -291,9 +295,7 @@ def test_add_root_skips_the_unreachable_roots(
     """
     answer_add_root(mocker, dock, REFS)
     dock.catalog.open_rehuco(REHUCO_PATH)
-    file = dock.catalog.file
-    assert file is not None
-    roots = tuple(file.roots)
+    roots = dock.catalog.mapped_roots()
     catalog.mark_reachable(TUTORIALS_ID, False)
     find = mocker.patch.object(RootOverlap, "find_resolved", return_value=None)
 

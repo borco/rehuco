@@ -8,7 +8,7 @@ import threading
 from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 from uuid import UUID
 
 from borco_core.logging import LogScope
@@ -16,21 +16,29 @@ from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
+    ROOT_MAPPINGS_FILE_NAME,
     CatalogQuery,
     CatalogRow,
     JobStatus,
+    MappedRoot,
     RecordCheck,
     RecordsChecked,
+    RehucoChangedError,
     RehucoFile,
     RehucoFileError,
     RehucoRoot,
     RemoveCatalogRootJob,
     RenameCoordinator,
+    RootMappings,
+    RootMappingsError,
+    RootOverlap,
     ScanCatalogRootJob,
     TaskJob,
     TaskQueue,
     check_records,
+    location_of,
     rehudb_path,
+    resolve_location,
 )
 from rehuco_core.access import (
     Catalog,
@@ -43,7 +51,7 @@ from rehuco_core.access import (
 from rehuco_core.notify import RootNotifiers
 
 from ..resource_events import ResourceEvents
-from ..settings.persistent_settings import cache_folder
+from ..settings.persistent_settings import cache_folder, config_folder
 from .root_overlaps import RootOverlaps
 
 LOG: Final = logging.getLogger(__name__)
@@ -70,6 +78,11 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     **What changes on disk arrives from the roots' file notifiers** ([[mounts-and-storage#out-of-band]], #511), which
     this starts and stops with the roots: a file changed is checked against its row on the pool and its row brought in
     line, a root gone stale is scanned again, a root's reachability is written into the cache.
+
+    **A root is mapped on each machine, not in the file** (#514): the ``.rehuco`` names a root by its location, and
+    this machine's :class:`~rehuco_core.RootMappings` says which folder that is here. Only the mapped roots are
+    scanned, watched, listed in the browsers and compared for overlap; an unmapped one stays in the file and in the
+    Roots view until it is mapped (:meth:`map_root`) or its skip is taken back.
 
     **A file newer than this build opens read-only**: its :attr:`~rehuco_core.RehucoFile.lock_reason` says why,
     and no edit of the roots is made. Scanning stays on, since it writes only the disposable cache.
@@ -155,6 +168,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__notifiers: Final = notifiers
         self.__listening_to_events = resource_events is not None
         self.__file: RehucoFile | None = None
+        self.__mappings: RootMappings | None = None
         self.__load_error = ""
         self.__save_error = ""
 
@@ -224,17 +238,20 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :returns: whether it was created and opened; ``False`` leaves the open file as it was, with
             :attr:`load_error` saying why.
         """
+        mappings = self.__load_mappings()
+        if mappings is None:
+            return False
         file = RehucoFile.new()
         # the cache first: a file written and then reported as not created would be a stray on disk that
         # the next New prompts to overwrite
-        session = self.__open_cache(file)
+        session = self.__open_cache(file, mappings)
         if session is None:
             return False
         try:
             file.save(path)
         except (OSError, ValueError) as error:
             return self.__fail(f"Could not create {path}: {error}")
-        return self.__adopt(file, session)
+        return self.__adopt(file, session, mappings)
 
     def open_rehuco(self, path: Path) -> bool:
         """Open the ``.rehuco`` at ``path``, replacing the open one, and bring its cache in line with it.
@@ -247,8 +264,12 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             file = RehucoFile.load(path)
         except (OSError, RehucoFileError) as error:
             return self.__fail(f"Could not open {path}: {error}")
-        session = self.__open_cache(file)
-        return session is not None and self.__adopt(file, session)
+        mappings = self.__load_mappings()
+        if mappings is None:
+            return False
+        self.__map_known(file, mappings)
+        session = self.__open_cache(file, mappings)
+        return session is not None and self.__adopt(file, session, mappings)
 
     def close_rehuco(self) -> None:
         """Close the open ``.rehuco`` and its cache. A no-op when none is open."""
@@ -285,20 +306,53 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__load_error = message
         return False
 
-    def __open_cache(self, file: RehucoFile) -> CatalogSession | None:
-        """Open ``file``'s cache, named by its rehuco id, and bring its roots in line with the file's -- without
-        making it current, so a file that then fails to open leaves the current one as it was.
+    def __load_mappings(self) -> RootMappings | None:
+        """Read this machine's mappings of every catalog's roots.
+
+        :returns: them, or ``None`` with :attr:`load_error` saying why they could not be read.
+        """
+        path = config_folder() / ROOT_MAPPINGS_FILE_NAME
+        try:
+            return RootMappings.load(path)
+        except (OSError, RootMappingsError) as error:
+            self.__fail(f"Could not read the root mappings {path}: {error}")
+            return None
+
+    @staticmethod
+    def __map_known(file: RehucoFile, mappings: RootMappings) -> None:
+        """Map the roots of ``file`` this machine can find without being asked -- a share it has mounted, a folder
+        on its own disks -- except those the user chose to skip.
+
+        :param file: the catalog.
+        :param mappings: this machine's mappings, saved when this added to them.
+        """
+        found = False
+        for root in mappings.unmapped(file):
+            folder = None if mappings.skipped(file.rehuco_id, root.root_id) else resolve_location(root.location)
+            if folder is not None:
+                mappings.map(file.rehuco_id, root.root_id, folder)
+                found = True
+        if found:
+            try:
+                mappings.save()
+            except OSError as error:
+                LOG.error("Could not save the root mappings: %s", error)
+
+    def __open_cache(self, file: RehucoFile, mappings: RootMappings) -> CatalogSession | None:
+        """Open ``file``'s cache, named by its rehuco id, and bring its roots in line with the roots this machine
+        reaches -- without making it current, so a file that then fails to open leaves the current one as it was.
 
         :param file: the file whose cache to open.
+        :param mappings: this machine's mappings.
         :returns: what the catalog is to read, or ``None`` with :attr:`load_error` saying why.
         """
         try:
-            return self.__catalog.prepare(rehudb_path(cache_folder(), file.rehuco_id), file.roots)
+            return self.__catalog.prepare(rehudb_path(cache_folder(), file.rehuco_id), mappings.mapped(file))
         except CatalogUnreadable as error:
             self.__fail(str(error))
             return None
 
-    def __adopt(self, file: RehucoFile, session: CatalogSession) -> bool:
+    def __adopt(self, file: RehucoFile, session: CatalogSession, mappings: RootMappings) -> bool:
         """Make ``file`` and its cache's ``session`` the current ones, releasing the previous pair.
 
         The jobs still tracked are kept when the new file is the same catalog -- the same rehuco id, so the
@@ -307,14 +361,16 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
         :param file: the file to show.
         :param session: its cache, reconciled.
+        :param mappings: this machine's mappings.
         :returns: ``True``, for the callers that return this.
         """
         same_catalog = self.__file is not None and self.__file.rehuco_id == file.rehuco_id
         self.__release_session(keep_jobs=same_catalog)
         self.__file = file
+        self.__mappings = mappings
         self.__catalog.attach(session)
         self.__follow_roots()
-        self.__overlaps.follow(file, self.unreachable_roots(), keep_scans=same_catalog)
+        self.__follow_overlaps(keep_scans=same_catalog)
         self.opened.emit(file)
         self.roots_changed.emit()
         self.rehuco_path_changed.emit(file.path)
@@ -333,6 +389,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__notifiers.stop()
         self.__catalog.detach()
         self.__file = None
+        self.__mappings = None
         if not keep_jobs:
             with self.__lock:
                 self.__serials.clear()
@@ -340,10 +397,18 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__overlaps.follow(None, ())
 
     def __follow_roots(self) -> None:
-        """Watch exactly the open file's roots."""
-        file, cache_path = self.__file, self.__catalog.cache_path
-        if self.__notifiers is not None and file is not None and cache_path is not None:
-            self.__notifiers.follow({root.root_id: root.path for root in file.roots}, cache_path)
+        """Watch exactly the roots of the open file this machine reaches."""
+        cache_path = self.__catalog.cache_path
+        if self.__notifiers is not None and self.__file is not None and cache_path is not None:
+            self.__notifiers.follow(self.root_paths(), cache_path)
+
+    def __follow_overlaps(self, *, keep_scans: bool) -> None:
+        """Describe the overlaps of the roots this machine reaches from now on.
+
+        :param keep_scans: whether what the scans reported still holds -- the same catalog, its roots edited.
+        """
+        roots = None if self.__file is None else self.mapped_roots()
+        self.__overlaps.follow(roots, self.unreachable_roots(), keep_scans=keep_scans)
 
     # endregion
 
@@ -373,9 +438,30 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             LOG.error("%s", error)
             return frozenset()
 
+    def mapped_roots(self) -> tuple[MappedRoot, ...]:
+        """The roots of the open file this machine reaches, in the file's order; none while none is open."""
+        if self.__file is None or self.__mappings is None:
+            return ()
+        return self.__mappings.mapped(self.__file)
+
+    def unmapped_root_ids(self) -> frozenset[UUID]:
+        """The roots of the open file this machine does not reach -- not yet mapped, or skipped."""
+        if self.__file is None or self.__mappings is None:
+            return frozenset()
+        return frozenset(root.root_id for root in self.__mappings.unmapped(self.__file))
+
+    def unmapped_roots(self) -> tuple[RehucoRoot, ...]:
+        """The roots of the open file nobody has said where to find on this machine -- what the mapping wizard asks
+        about; those the user skipped are left out."""
+        if self.__file is None or self.__mappings is None:
+            return ()
+        file, mappings = self.__file, self.__mappings
+        return tuple(root for root in mappings.unmapped(file) if not mappings.skipped(file.rehuco_id, root.root_id))
+
     def root_paths(self) -> dict[UUID, Path]:
-        """Where each root of the open file is, by id; empty while none is open."""
-        return {} if self.__file is None else {root.root_id: root.path for root in self.__file.roots}
+        """Where each root of the open file is on this machine, by id; empty while none is open. A root not mapped
+        here is not in it."""
+        return {root.root_id: root.path for root in self.mapped_roots()}
 
     def resource_key(self, root_id: UUID, relative: str) -> ResourceKey | None:
         """What a resource is reached by: the **one place** a catalog row's ``(root_id, relative)`` becomes a
@@ -429,7 +515,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         except ValueError:  # a relative path is no record of any root
             return None
 
-    def resource_count(self, root: RehucoRoot) -> int:
+    def resource_count(self, root: MappedRoot) -> int:
         """How many resources the cache lists under ``root``; ``0`` when that cannot be read.
 
         :param root: one of the open file's roots.
@@ -440,6 +526,93 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     # endregion
 
     # region editing the roots
+
+    def add_root(self, folder: Path, label: str | None = None) -> int | None:
+        """Add a folder as a root of the open file, mapped here, and save at once.
+
+        The root is named by the folder's location (:func:`~rehuco_core.location_of`) and mapped to the folder on this
+        machine; its storage is detected. The comparison through links is the caller's, off the GUI thread.
+
+        :param folder: an absolute folder.
+        :param label: the root's label; ``None`` or empty takes the default, the folder's name.
+        :returns: the new root's row; ``None`` with :attr:`save_error` saying why it was not added -- no editable
+            file open, the location already a root, the folder inside or containing a root, or the save failed.
+        """
+        file, mappings = self.__file, self.__mappings
+        if file is None or mappings is None or file.lock_reason is not None:
+            return None
+        overlap = RootOverlap.find(folder, self.mapped_roots())
+        if overlap is not None:
+            self.__save_error = overlap.message
+            return None
+        try:
+            row = file.add_root(location_of(folder), label)
+        except ValueError as error:
+            self.__save_error = str(error)
+            return None
+        mappings.map(file.rehuco_id, file.roots[row].root_id, folder)
+        self.__save_mappings(mappings)
+        # the mapping is kept even when the file is not saved: an entry for a root the file lacks is never read
+        return row if self.commit_roots() else None
+
+    def map_root(self, root_id: UUID, folder: Path) -> bool:
+        """Say where this machine finds a root of the open file, and bring the cache and the watches in line.
+
+        The ``.rehuco`` is not touched, so this works on a file newer than this build too.
+
+        :param root_id: the root.
+        :param folder: its folder on this machine.
+        :returns: whether it was mapped; ``False`` with :attr:`save_error` saying why -- the root is not in the file,
+            the folder is inside or contains a mapped root, or the mappings could not be saved.
+        """
+        file, mappings = self.__file, self.__mappings
+        if file is None or mappings is None or all(root.root_id != root_id for root in file.roots):
+            return False
+        others = tuple(root for root in self.mapped_roots() if root.root_id != root_id)
+        overlap = RootOverlap.find(folder, others)
+        if overlap is not None:
+            self.__save_error = overlap.message
+            return False
+        mappings.map(file.rehuco_id, root_id, folder)
+        if not self.__save_mappings(mappings):
+            return False
+        self.__after_mapping_change()
+        self.scan_root(root_id)
+        return True
+
+    def skip_roots(self, root_ids: Iterable[UUID]) -> bool:
+        """Remember that the user chose not to map these roots on this machine, so opening the file does not ask again.
+
+        :param root_ids: the roots.
+        :returns: whether the mappings were saved; ``False`` with :attr:`save_error` saying why.
+        """
+        file, mappings = self.__file, self.__mappings
+        if file is None or mappings is None:
+            return False
+        for root_id in root_ids:
+            mappings.skip(file.rehuco_id, root_id)
+        return self.__save_mappings(mappings)
+
+    def __save_mappings(self, mappings: RootMappings) -> bool:
+        """Write this machine's mappings.
+
+        :param mappings: the open file's mappings.
+        :returns: whether they were saved; ``False`` with :attr:`save_error` saying why.
+        """
+        try:
+            mappings.save()
+        except OSError as error:
+            LOG.error("Could not save the root mappings: %s", error)
+            self.__save_error = f"Could not save the root mappings: {error}"
+            return False
+        return True
+
+    def __after_mapping_change(self) -> None:
+        """Bring the cache, the watches and the overlaps in line with a changed mapping, and say so."""
+        self.__reconcile_cache()
+        self.__follow_roots()
+        self.__follow_overlaps(keep_scans=True)
+        self.roots_changed.emit()
 
     def commit_roots(self) -> bool:
         """Save an edit made to :attr:`file`'s roots, bring the cache's copy of them in line, watch them, and say the
@@ -455,7 +628,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__reconcile_cache()
         if self.__file is not None:
             self.__follow_roots()
-            self.__overlaps.follow(self.__file, self.unreachable_roots(), keep_scans=True)
+            self.__follow_overlaps(keep_scans=True)
             self.roots_changed.emit()
         return saved
 
@@ -465,17 +638,23 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :param row: the root's place in the file.
         :returns: whether it was saved; ``False`` with :attr:`save_error` saying why.
         """
-        file, cache_path = self.__file, self.__catalog.cache_path
-        if file is None or cache_path is None or file.lock_reason is not None:
+        file, mappings, cache_path = self.__file, self.__mappings, self.__catalog.cache_path
+        if file is None or mappings is None or cache_path is None or file.lock_reason is not None:
             return False
         removed = file.remove_root(row)
+        mapping = mappings.mapping(file.rehuco_id, removed.root_id)
         saved = self.__save_file()
         if saved:
+            mappings.forget(file.rehuco_id, removed.root_id)
+            self.__save_mappings(mappings)
             self.__catalog.hide(removed.root_id)
-            self.__enqueue(RemoveCatalogRootJob(cache_path, removed.root_id, root_label=removed.label), removed.path)
+            where = removed.location if mapping is None else str(mapping.path)
+            self.__enqueue(
+                RemoveCatalogRootJob(cache_path, removed.root_id, root_label=removed.label or where), Path(where)
+            )
         if self.__file is not None:
             self.__follow_roots()
-            self.__overlaps.follow(self.__file, self.unreachable_roots(), keep_scans=True)
+            self.__follow_overlaps(keep_scans=True)
             self.roots_changed.emit()
         return saved
 
@@ -489,6 +668,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             return False
         try:
             file.save()
+        except RehucoChangedError:
+            LOG.warning("%s was changed on disk since it was opened; it was read again.", file.path)
+            self.__save_error = (
+                f"{file.path} was changed on disk since it was opened, by another machine perhaps. "
+                "It has been read again: make the edit again."
+            )
+            self.__reload_from_disk(file)
+            return False
         except OSError as error:
             LOG.error("Could not save %s: %s", file.path, error)
             self.__save_error = f"Could not save {file.path}: {error}"
@@ -510,12 +697,15 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         except (OSError, RehucoFileError) as error:
             LOG.error("Could not read %s back: %s", path, error)
             self.close_rehuco()
+            return
+        # an open file always has its mappings
+        self.__map_known(self.__file, cast(RootMappings, self.__mappings))
 
     def __reconcile_cache(self) -> None:
         """Bring the cache's roots in line with the file's after an edit, and show those roots; a failure is
         logged, since the next scan rebuilds the cache anyway."""
         if self.__file is not None:
-            self.__catalog.reconcile(self.__file.roots)
+            self.__catalog.reconcile(self.mapped_roots())
 
     # endregion
 
@@ -523,10 +713,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
     def scan(self) -> None:
         """Enqueue one scan job per root, skipping a root whose scan is already waiting."""
-        file = self.__file
-        if file is not None:
-            for root in file.roots:
-                self.scan_root(root.root_id)
+        for root in self.mapped_roots():
+            self.scan_root(root.root_id)
 
     def scan_unscanned_roots(self) -> None:
         """Enqueue a scan of every root of the open file whose cache row was never scanned (#541) -- what opening a
@@ -548,16 +736,19 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """Enqueue a scan of one root of the open file -- what a root whose notifier lost events gets (#511) --
         unless its scan is already waiting.
 
-        :param root_id: the root; one the open file does not list is ignored.
+        :param root_id: the root; one the open file does not list, or this machine does not reach, is ignored.
         """
-        file = self.__file
         cache_path = self.__catalog.cache_path
-        root = None if file is None else next((root for root in file.roots if root.root_id == root_id), None)
+        root = next((root for root in self.mapped_roots() if root.root_id == root_id), None)
         if root is None or cache_path is None:
             return
         self.__enqueue(
             ScanCatalogRootJob(
-                cache_path, root.root_id, root.path, root_label=root.label, coordinator=self.__rename_coordinator
+                cache_path,
+                root.root_id,
+                root.path,
+                root_label=root.label or str(root.path),
+                coordinator=self.__rename_coordinator,
             ),
             root.path,
         )

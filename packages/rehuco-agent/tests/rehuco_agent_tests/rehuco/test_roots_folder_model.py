@@ -5,6 +5,7 @@ and a faked directory would only restate the fake.
 """
 
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
 from uuid import UUID, uuid4
@@ -15,16 +16,12 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_ICONS
-from rehuco_agent.rehuco.roots_folder_model import (
-    LOADING_ROW,
-    ROOT_MIME_TYPE,
-    NodeListing,
-    RootsFolderModel,
-    RootsNodeKind,
-)
-from rehuco_core import RehucoRoot, Relocation, RenameCoordinator, RootFolderLister, RootStorage
+from rehuco_agent.rehuco.roots_folder_model import LOADING_ROW, ROOT_MIME_TYPE, RootsFolderModel
+from rehuco_agent.rehuco.roots_node import NodeListing, RootsNodeKind
+from rehuco_core import MappedRoot, Relocation, RenameCoordinator, RootFolderLister, RootStorage
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+from rehuco_agent_tests.mapped_roots import location_at, mapped_root
 
 WAIT_TIMEOUT_MS: Final = 10_000
 
@@ -63,7 +60,7 @@ def library_fixture(tmp_path: Path) -> Path:
     return root
 
 
-def make_root(path: Path, label: str = "lib", storage: RootStorage = RootStorage.LOCAL) -> RehucoRoot:
+def make_root(path: Path, label: str = "lib", storage: RootStorage = RootStorage.LOCAL) -> MappedRoot:
     """A root over ``path``.
 
     :param path: its folder.
@@ -71,13 +68,13 @@ def make_root(path: Path, label: str = "lib", storage: RootStorage = RootStorage
     :param storage: what it lives on.
     :returns: the root.
     """
-    return RehucoRoot(uuid4(), path, label, storage)
+    return mapped_root(path, label, storage)
 
 
 def make_model(
     delete_at_teardown: DeleteAtTeardown,
     qtbot: QtBot,
-    roots: list[RehucoRoot],
+    roots: list[MappedRoot],
     coordinator: RenameCoordinator | None = None,
 ) -> RootsFolderModel:
     """A model showing ``roots``, each already listed.
@@ -479,8 +476,8 @@ def test_changing_the_roots_inserts_moves_updates_and_removes_without_a_reset(
     lister = RootFolderLister([first, second, third])
     recorder = Recorder(model)
 
-    relabelled = RehucoRoot(first.root_id, first.path, "A", first.storage)
-    reshaped = RehucoRoot(second.root_id, second.path, second.label, RootStorage.NETWORK)
+    relabelled = replace(first, label="A")
+    reshaped = replace(second, storage=RootStorage.NETWORK)
     model.set_roots([third, relabelled, reshaped], lister)
 
     assert names(model) == ["c", "A", "b"]
@@ -511,7 +508,7 @@ def test_a_root_pointed_at_another_folder_lists_it_afresh(
     model = make_model(delete_at_teardown, qtbot, [root])
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
-    moved = RehucoRoot(root.root_id, elsewhere, root.label, root.storage)
+    moved = replace(root, path=elsewhere, location=location_at(elsewhere))
 
     model.set_roots([moved], RootFolderLister([moved]))
 
@@ -701,7 +698,7 @@ def test_the_coordinators_own_rename_of_a_listed_folder_succeeds_and_the_model_f
 
 def three_roots(
     delete_at_teardown: DeleteAtTeardown, qtbot: QtBot, tmp_path: Path
-) -> tuple[RootsFolderModel, list[RehucoRoot]]:
+) -> tuple[RootsFolderModel, list[MappedRoot]]:
     """A model over three reachable roots, reorderable.
 
     :param delete_at_teardown: deletes the model when the test ends.

@@ -14,12 +14,12 @@ are clean takes the banner down, and a late answer about the previous file is dr
 an edit: the remedy is removing one of the two roots, and the scans keep a record to one row meanwhile.
 """
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from typing import Final
 from uuid import UUID
 
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import HardlinkedRecord, RehucoFile, RootOverlap, root_path_key
+from rehuco_core import HardlinkedRecord, MappedRoot, RootOverlap, root_path_key
 
 from .root_overlap_check import RootOverlapCheck
 
@@ -37,7 +37,7 @@ class RootOverlaps(QObject):
         super().__init__(parent)
         self.__check: Final = RootOverlapCheck(self)
         self.__check.answered.connect(self.__on_checked)
-        self.__file: RehucoFile | None = None
+        self.__roots: tuple[MappedRoot, ...] | None = None
         self.__serial = 0
         self.__spelled: tuple[RootOverlap, ...] = ()
         self.__resolved: tuple[RootOverlap, ...] = ()
@@ -64,35 +64,37 @@ class RootOverlaps(QObject):
     def duplicates(self) -> frozenset[UUID]:
         """The roots that duplicate an earlier one -- the later root of each overlapping pair, the one Add Root would
         refuse now -- which the Roots view draws in red."""
-        if self.__file is None:
+        if self.__roots is None:
             return frozenset()
-        by_key = {root_path_key(root.path): root.root_id for root in self.__file.roots}
+        by_key = {root_path_key(root.path): root.root_id for root in self.__roots}
         found = (by_key.get(root_path_key(overlap.other)) for overlap in self.__overlaps())
         return frozenset(root_id for root_id in found if root_id is not None)
 
-    def follow(self, file: RehucoFile | None, unreachable: Collection[UUID], *, keep_scans: bool = False) -> None:
-        """Describe ``file`` from now on: its roots as spelled at once, through their links a moment later.
+    def follow(
+        self, roots: Sequence[MappedRoot] | None, unreachable: Collection[UUID], *, keep_scans: bool = False
+    ) -> None:
+        """Describe the open file's roots from now on: as spelled at once, through their links a moment later.
 
-        :param file: the open file, or ``None`` once none is.
+        :param roots: the roots of the open file this machine reaches, or ``None`` once no file is open.
         :param unreachable: the roots not to resolve -- those the cache holds unreachable.
         :param keep_scans: whether what the scans reported still holds -- the same catalog, its roots edited; then
             only what concerns roots still in it is kept.
         """
-        self.__file = file
+        self.__roots = None if roots is None else tuple(roots)
         self.__serial = 0
         self.__resolved = ()
-        if not keep_scans or file is None:
+        if not keep_scans or self.__roots is None:
             self.__met.clear()
             self.__hardlinked.clear()
         else:
-            ids = {root.root_id for root in file.roots}
+            ids = {root.root_id for root in self.__roots}
             self.__met = {pair for pair in self.__met if pair[0] in ids and pair[1] in ids}
             self.__hardlinked = [
                 pair for pair in self.__hardlinked if pair.kept_root in ids and pair.dropped_root in ids
             ]
-        self.__spelled = () if file is None else file.overlaps
-        if file is not None and file.count > 1:
-            self.__serial = self.__check.among(file.roots, unreachable)
+        self.__spelled = () if self.__roots is None else RootOverlap.among(self.__roots)
+        if self.__roots is not None and len(self.__roots) > 1:
+            self.__serial = self.__check.among(self.__roots, unreachable)
         self.changed.emit()
 
     def scan_finished(
@@ -131,9 +133,9 @@ class RootOverlaps(QObject):
 
     def __met_overlaps(self) -> list[RootOverlap]:
         """The scans' pairs as overlaps, the root earlier in the file first -- the way the spelled check words them."""
-        if self.__file is None:
+        if self.__roots is None:
             return []
-        roots = {root.root_id: (at, root) for at, root in enumerate(self.__file.roots)}
+        roots = {root.root_id: (at, root) for at, root in enumerate(self.__roots)}
         overlaps: list[RootOverlap] = []
         for outer, inner in self.__met:
             if outer not in roots or inner not in roots:

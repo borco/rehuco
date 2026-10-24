@@ -9,9 +9,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from pytest_mock import MockerFixture
-from rehuco_core import CatalogCache, HardlinkedRecord, RehucoRoot, RootScanEffects
+from rehuco_core import CatalogCache, HardlinkedRecord, MappedRoot, RootScanEffects
 from rehuco_core.migrations.rehudb import CHAIN, CURRENT_VERSION
 
+from rehuco_core_tests.mapped_roots import mapped
 from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unused-import
     MemoryDatabase,
     fixture_cache,
@@ -37,7 +38,7 @@ def file_ids(database: MemoryDatabase) -> dict[str, str | None]:
 
 
 def test_a_scan_writes_the_identities_it_was_handed_and_clears_the_rest(
-    database: MemoryDatabase, filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]
+    database: MemoryDatabase, filled: tuple[CatalogCache, MappedRoot, MappedRoot]
 ) -> None:
     """A record read or found unchanged keeps the identity the scan gives it; one given none -- its file down to one
     name -- loses the one it had, and another root's rows are left alone.
@@ -73,7 +74,7 @@ def test_a_scan_writes_the_identities_it_was_handed_and_clears_the_rest(
 
 
 def test_the_later_roots_row_goes_when_the_earlier_root_finds_the_file(
-    database: MemoryDatabase, filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]
+    database: MemoryDatabase, filled: tuple[CatalogCache, MappedRoot, MappedRoot]
 ) -> None:
     """The earlier root in the ``.rehuco`` keeps the row, so its scan deletes the later root's -- and says so, the
     deleted row among the touched ones.
@@ -96,7 +97,7 @@ def test_the_later_roots_row_goes_when_the_earlier_root_finds_the_file(
 
 
 def test_the_later_roots_name_is_not_written_when_the_earlier_root_holds_the_file(
-    database: MemoryDatabase, filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]
+    database: MemoryDatabase, filled: tuple[CatalogCache, MappedRoot, MappedRoot]
 ) -> None:
     """Scanned the other way round, the later root's name loses: neither read nor kept unchanged, and a row it had
     from before is swept.
@@ -122,7 +123,7 @@ def test_the_later_roots_name_is_not_written_when_the_earlier_root_holds_the_fil
 
 
 def test_a_scan_with_no_identities_settles_nothing(
-    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
+    filled: tuple[CatalogCache, MappedRoot, MappedRoot],
 ) -> None:
     """A file with one name has no identity, so another root's row for a hardlinked record is no business of it.
 
@@ -164,7 +165,7 @@ def test_a_version_6_cache_upgrades_with_a_file_identity_column_and_its_index(
     cache_path = tmp_path / "catalog.rehudb"
     rehuco, first, _ = two_roots()
     with CatalogCache.open(cache_path, chain=CHAIN[:6]) as old:
-        old.reconcile_roots(rehuco.roots)
+        old.reconcile_roots(mapped(rehuco))
         database.keeper.execute(
             "INSERT INTO resources (root_id, path, path_key, kind, title, mtime_ns, size, content_hash, scanned_at) "
             "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'T', 42, 7, 'abc', 0)",

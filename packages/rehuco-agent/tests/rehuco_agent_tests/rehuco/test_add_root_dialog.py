@@ -1,4 +1,4 @@
-"""Tests for the Add Root dialog and the storage combo it shares with the root card (#378)."""
+"""Tests for the Add Root dialog and the storage words the Roots view shares (#378)."""
 
 from pathlib import Path
 
@@ -13,9 +13,6 @@ from rehuco_agent.rehuco.root_storage import (
     ROOT_STORAGE_LABELS,
     ROOT_STORAGE_OFFLINE_ROWS,
     ROOT_STORAGE_OFFLINE_TOOLTIPS,
-    fill_root_storage_combo,
-    select_root_storage,
-    selected_root_storage,
 )
 from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_core import RootStorage
@@ -35,81 +32,19 @@ def test_every_storage_has_a_glyph_a_label_and_two_offline_texts() -> None:
         assert set(mapping) == set(RootStorage)
 
 
-def test_the_combo_lists_every_storage_with_its_glyph_and_hands_the_enum_back(qtbot: QtBot) -> None:
-    """Filling the combo adds one row per storage, in order, each with an icon, and reading it returns the enum --
-    item data comes back from Qt as the plain string.
-
-    **Test steps:**
-
-    * fill a combo twice, so a second fill replaces the first
-    * verify the rows, their icons, and what each selection reads back as
-    """
-    combo = QComboBox()
-    qtbot.addWidget(combo)
-
-    fill_root_storage_combo(combo)
-    fill_root_storage_combo(combo)
-
-    assert [combo.itemText(row) for row in range(combo.count())] == list(ROOT_STORAGE_LABELS.values())
-    assert not any(combo.itemIcon(row).isNull() for row in range(combo.count()))
-    for row, storage in enumerate(RootStorage):
-        combo.setCurrentIndex(row)
-        assert selected_root_storage(combo) is storage
-
-
-def test_selecting_a_storage_does_not_tell_anyone(qtbot: QtBot) -> None:
-    """Showing a storage is not choosing one: the combo's signals are blocked meanwhile, and restored after.
-
-    **Test steps:**
-
-    * select a storage on a combo whose ``activated`` and ``currentIndexChanged`` are watched
-    * verify it shows the storage, nothing was emitted, and signals are on again
-    """
-    combo = QComboBox()
-    qtbot.addWidget(combo)
-    fill_root_storage_combo(combo)
-    emitted: list[int] = []
-    combo.currentIndexChanged.connect(emitted.append)
-
-    select_root_storage(combo, RootStorage.COMPACT_DISK)
-
-    assert selected_root_storage(combo) is RootStorage.COMPACT_DISK
-    assert not emitted
-    assert not combo.signalsBlocked()
-
-
-def test_an_empty_combo_reads_as_local(qtbot: QtBot) -> None:
-    """Nothing chosen is the default storage, never an error.
-
-    **Test steps:**
-
-    * read the storage of a combo that was never filled
-    * verify local
-    """
-    combo = QComboBox()
-    qtbot.addWidget(combo)
-
-    assert selected_root_storage(combo) is RootStorage.LOCAL
-
-
-def test_the_dialog_asks_for_the_storage_first_and_defaults_to_local(qtbot: QtBot) -> None:
-    """The storage is the first row of the form, ahead of the folder, because it will decide what the folder is picked
-    from.
+def test_the_dialog_asks_only_for_the_folder(qtbot: QtBot) -> None:
+    """What the folder lives on is detected when it is mapped, so the dialog has a folder field and no storage choice.
 
     **Test steps:**
 
     * open the dialog
-    * verify the storage combo sits above the folder field, offers every storage, and starts on Local folder
+    * verify it has a folder field and no combo box
     """
     dialog = AddRootDialog()
     qtbot.addWidget(dialog)
-    dialog.show()
 
-    assert dialog.storage_combo.count() == len(RootStorage)
-    assert dialog.storage is RootStorage.LOCAL
-    folder_edit = dialog.findChild(QLineEdit, "folder_edit")
-    assert folder_edit is not None
-    assert dialog.storage_combo.geometry().top() < folder_edit.geometry().top()
+    assert dialog.findChild(QLineEdit, "folder_edit") is not None
+    assert dialog.findChild(QComboBox) is None
 
 
 def test_ok_needs_an_absolute_folder(qtbot: QtBot) -> None:
@@ -135,22 +70,20 @@ def test_ok_needs_an_absolute_folder(qtbot: QtBot) -> None:
     assert not dialog.ok_button.isEnabled()
 
 
-def test_the_dialog_reads_back_the_folder_and_the_storage_chosen(qtbot: QtBot) -> None:
-    """What the dock is handed: the folder trimmed, and the storage the combo shows.
+def test_the_dialog_reads_back_the_folder_trimmed(qtbot: QtBot) -> None:
+    """What the dock is handed: the folder, trimmed.
 
     **Test steps:**
 
-    * type a folder with blanks around it and choose Network share
-    * verify the folder and the storage
+    * type a folder with blanks around it
+    * verify the folder is read back without them
     """
     dialog = AddRootDialog()
     qtbot.addWidget(dialog)
 
     dialog.folder = "  /fake/refs  "
-    dialog.storage_combo.setCurrentIndex(dialog.storage_combo.findData(RootStorage.NETWORK))
 
     assert dialog.folder == "/fake/refs"
-    assert dialog.storage is RootStorage.NETWORK
 
 
 @mark.parametrize("picked", ["/picked/folder", ""])
@@ -173,6 +106,137 @@ def test_browse_fills_the_folder_unless_cancelled(qtbot: QtBot, mocker: MockerFi
 
     chooser.assert_called_once()
     assert dialog.folder == (picked or "/typed/folder")
+
+
+def browse_to(mocker: MockerFixture, dialog: AddRootDialog, folder: Path) -> None:
+    """Press Browse with the system's folder dialog answering ``folder``.
+
+    :param mocker: pytest-mock fixture.
+    :param dialog: the dialog.
+    :param folder: what the system dialog answers.
+    """
+    mocker.patch("rehuco_agent.rehuco.add_root_dialog.QFileDialog.getExistingDirectory", return_value=str(folder))
+    browse = dialog.findChild(QPushButton, "browse_button")
+    assert browse is not None
+    browse.click()
+
+
+def test_choosing_the_first_folder_names_the_root_after_it(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The name field is filled with the folder's name once a folder is browsed to, and the name is also its
+    placeholder.
+
+    **Test steps:**
+
+    * open the dialog and verify the field and its placeholder are empty
+    * browse to a folder
+    * verify the field and the placeholder hold the folder's name
+    """
+    dialog = AddRootDialog()
+    qtbot.addWidget(dialog)
+    assert not dialog.name_edit.text()
+    assert not dialog.name_edit.placeholderText()
+
+    browse_to(mocker, dialog, Path.cwd() / "Tutorials")
+
+    assert dialog.name_edit.text() == "Tutorials"
+    assert dialog.name_edit.placeholderText() == "Tutorials"
+
+
+def test_choosing_another_folder_leaves_a_name_that_is_there(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A name already in the field -- typed, or filled by the first folder -- is not replaced by a later folder's, but
+    the placeholder follows; an emptied field is filled again.
+
+    **Test steps:**
+
+    * browse to a folder and then to another
+    * verify the name is the first folder's and the placeholder the second's
+    * clear the name and browse to a third folder
+    * verify the name is the third folder's
+    """
+    dialog = AddRootDialog()
+    qtbot.addWidget(dialog)
+    browse_to(mocker, dialog, Path.cwd() / "first")
+
+    browse_to(mocker, dialog, Path.cwd() / "second")
+
+    assert dialog.name_edit.text() == "first"
+    assert dialog.name_edit.placeholderText() == "second"
+    dialog.name_edit.setText("")
+    browse_to(mocker, dialog, Path.cwd() / "third")
+    assert dialog.name_edit.text() == "third"
+
+
+def test_a_typed_folder_names_the_root_once_it_is_left(qtbot: QtBot) -> None:
+    """Typing a folder does not fill the name on each keystroke, which would stop at its first letters; leaving the
+    folder field does, and the folder setter never does.
+
+    **Test steps:**
+
+    * set a folder through the setter and verify the name is empty
+    * type letters one by one and verify the name stays empty, then leave the field
+    * verify the name is the folder's
+    """
+    dialog = AddRootDialog()
+    qtbot.addWidget(dialog)
+    dialog.folder = str(Path.cwd() / "set")
+    assert not dialog.name_edit.text()
+
+    folder_edit = dialog.findChild(QLineEdit, "folder_edit")
+    assert folder_edit is not None
+    folder_edit.setText("")
+    for text in ("a", "ab", "abc"):
+        folder_edit.setText(text)
+        assert not dialog.name_edit.text()
+    folder_edit.setText(str(Path.cwd() / "typed"))
+    folder_edit.editingFinished.emit()
+
+    assert dialog.name_edit.text() == "typed"
+
+
+def test_the_default_name_button_puts_the_current_folders_name_back(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The button is for the folder now named: it is off while there is no folder or the field already holds its name,
+    and sets the field to it otherwise.
+
+    **Test steps:**
+
+    * verify the action is disabled with no folder
+    * browse to a folder, then another, and type a name
+    * verify the action is enabled, and that triggering it sets the field to the current folder's name and disables it
+    """
+    dialog = AddRootDialog()
+    qtbot.addWidget(dialog)
+    assert not dialog.default_name_action.isEnabled()
+
+    browse_to(mocker, dialog, Path.cwd() / "first")
+    assert not dialog.default_name_action.isEnabled()
+    browse_to(mocker, dialog, Path.cwd() / "second")
+    assert dialog.default_name_action.isEnabled()
+    dialog.name_edit.setText("mine")
+
+    dialog.default_name_action.trigger()
+
+    assert dialog.name_edit.text() == "second"
+    assert not dialog.default_name_action.isEnabled()
+
+
+def test_the_name_read_back_is_the_one_typed_or_else_the_default(qtbot: QtBot) -> None:
+    """What the dock is handed: the typed name trimmed, or the folder's name when nothing is typed -- empty only while
+    there is no folder.
+
+    **Test steps:**
+
+    * read the name with no folder, then with a folder and nothing typed, then with a name typed with blanks
+    * verify empty, the folder's name, the trimmed name
+    """
+    dialog = AddRootDialog()
+    qtbot.addWidget(dialog)
+    assert dialog.name == ""
+
+    dialog.folder = str(Path.cwd() / "refs")
+    assert dialog.name == "refs"
+
+    dialog.name_edit.setText("  mine  ")
+    assert dialog.name == "mine"
 
 
 @fixture(name="stored")

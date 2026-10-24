@@ -6,8 +6,9 @@ The cache is :mod:`test_rehudb`'s, over a shared-cache in-memory database; its f
 
 from pathlib import Path
 
-from rehuco_core import CatalogCache, CatalogRecord, RecordKind, RehucoRoot, RootScanEffects
+from rehuco_core import CatalogCache, CatalogRecord, MappedRoot, RecordKind, RootScanEffects
 
+from rehuco_core_tests.mapped_roots import mapped
 from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unused-import
     TUTORIALS,
     fixture_cache,
@@ -23,7 +24,7 @@ from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unu
 
 
 def test_a_scan_reports_the_rows_it_read_and_removed_but_not_those_it_kept(
-    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
+    filled: tuple[CatalogCache, MappedRoot, MappedRoot],
 ) -> None:
     """``effects.touched`` collects every row the scan read -- found again or new -- and every row it removed; a record
     an incremental scan found unchanged, and every other root's row, are no part of it.
@@ -51,7 +52,7 @@ def test_a_scan_reports_the_rows_it_read_and_removed_but_not_those_it_kept(
     assert not effects.hardlinked
 
 
-def test_a_scan_of_a_removed_root_touches_nothing(filled: tuple[CatalogCache, RehucoRoot, RehucoRoot]) -> None:
+def test_a_scan_of_a_removed_root_touches_nothing(filled: tuple[CatalogCache, MappedRoot, MappedRoot]) -> None:
     """A scan dropped because its root went meanwhile changed no row, so it reports none.
 
     **Test steps:**
@@ -73,7 +74,7 @@ def test_a_scan_of_a_removed_root_touches_nothing(filled: tuple[CatalogCache, Re
 
 
 def test_a_roots_reachability_follows_each_mark_and_its_rows_stay(
-    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
+    filled: tuple[CatalogCache, MappedRoot, MappedRoot],
 ) -> None:
     """``mark_root_reachable`` records what the root's notifier saw, either way, and touches nothing else -- not its
     rows, not when it was scanned, not the other root; ``mark_root_unreachable`` is the same mark, ``False``.
@@ -107,7 +108,7 @@ def test_a_roots_reachability_follows_each_mark_and_its_rows_stay(
 
 
 def test_the_records_at_or_beneath_a_path_are_spelled_from_their_root(
-    filled: tuple[CatalogCache, RehucoRoot, RehucoRoot],
+    filled: tuple[CatalogCache, MappedRoot, MappedRoot],
 ) -> None:
     """A record answers itself, a folder every record beneath it, as absolute paths under the root's folder; a root's
     own folder, a sibling that merely starts alike, and a path under no root add nothing.
@@ -138,8 +139,8 @@ def test_a_record_held_by_nested_roots_or_asked_twice_is_answered_once(cache: Ca
     * verify the record, asked for directly, twice, and with its folder, is answered once
     """
     rehuco = nesting(TUTORIALS, TUTORIALS / "pack")
-    outer, inner = rehuco.roots
-    cache.reconcile_roots(rehuco.roots)
+    outer, inner = mapped(rehuco)
+    cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(outer.root_id, [CatalogRecord("pack/x/info.rehu", RecordKind.REHU)])
     cache.apply_root_scan(inner.root_id, [CatalogRecord("x/info.rehu", RecordKind.REHU)])
     path = TUTORIALS / "pack" / "x" / "info.rehu"

@@ -32,7 +32,8 @@ from rehuco_core import (
     is_record_name,
 )
 
-from .roots_folder_model import RootsFolderModel, RootsNodeKind
+from .roots_folder_model import RootsFolderModel
+from .roots_node import RootsNodeKind
 
 MANAGED_KINDS: Final = frozenset(
     {

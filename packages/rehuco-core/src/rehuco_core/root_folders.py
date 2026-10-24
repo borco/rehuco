@@ -29,9 +29,9 @@ from .checksum_record import (
 from .checksum_trust import ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
 from .rehu_file_kinds import CoveredFile, DirectoryClassifier, DirectoryListing, FileKind
-from .rehuco_file import RehucoRoot
 from .rename_coordination import RenameCoordinator
 from .resource_scoping import is_directory_scoped_name, is_record_name
+from .root_mappings import MappedRoot
 
 BROWSING_RECORD: Final = Path("browsing.rehu")
 """The record path a listing is classified from. It names no resource: its parent is ``.``, which no directory a
@@ -62,7 +62,7 @@ class RootFolderLister:
 
     def __init__(
         self,
-        roots: Iterable[RehucoRoot],
+        roots: Iterable[MappedRoot],
         *,
         coordinator: RenameCoordinator | None = None,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,

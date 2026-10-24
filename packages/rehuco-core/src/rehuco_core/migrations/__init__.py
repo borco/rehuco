@@ -15,8 +15,8 @@ vocabulary, because a migration is a frozen historical record).
   chain drops the ``viewed``/``todo`` progress flags).
 - :mod:`~rehuco_core.migrations.checksum` -- the ``.checksum`` record's chain (empty today: v1 is the
   first shape), stamped under the record's own ``version`` key (#203).
-- :mod:`~rehuco_core.migrations.rehuco` -- the ``.rehuco`` roots file's chain (empty today: v1 is the first
-  shape), stamped under ``format_version`` (#371).
+- :mod:`~rehuco_core.migrations.rehuco` -- the ``.rehuco`` roots file's chain (v1 -> v2: a storage per root; v2 -> v3
+  refuses, a root now carrying a location), stamped under ``format_version`` (#371, #514).
 - :mod:`~rehuco_core.migrations.rehuser` -- the ``.rehuser`` per-user sidecar's chain (empty today: v1 is the first
   shape), stamped under ``format_version`` (#513).
 - :mod:`~rehuco_core.migrations.rehudb` -- the ``.rehudb`` cache's schema chain, whose steps take a database
@@ -29,6 +29,7 @@ a plugin knows nothing about its own history. Every chain is validated at import
 from typing import Final, Protocol
 
 from . import checksum, reference_images, rehu, rehuco, rehudb, rehuser, tutorial
+from .rehuco import RehucoTooOldError
 from .runner import Chain, Step, run, stamped_version, validate_chain
 
 
@@ -169,6 +170,7 @@ __all__ = [
     "CURRENT_REHUSER_VERSION",
     "Chain",
     "MigrationTarget",
+    "RehucoTooOldError",
     "Step",
     "current_block_version",
     "migrate_block_data",

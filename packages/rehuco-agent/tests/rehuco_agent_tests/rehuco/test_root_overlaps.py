@@ -16,33 +16,28 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_overlap_check import RootOverlapCheck
 from rehuco_agent.rehuco.root_overlaps import RootOverlaps
-from rehuco_core import CURRENT_REHUCO_VERSION, HardlinkedRecord, RehucoFile, RehucoRoot, RootOverlap
+from rehuco_core import HardlinkedRecord, MappedRoot, RootOverlap
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+from rehuco_agent_tests.mapped_roots import mapped_root
 
 BASE: Final = Path.cwd() / "fake"
-OUTER: Final = RehucoRoot(uuid4(), BASE / "lib", "lib")
-INNER: Final = RehucoRoot(uuid4(), BASE / "lib" / "inner", "inner")
-OTHER: Final = RehucoRoot(uuid4(), BASE / "other", "other")
-LINKED: Final = RehucoRoot(uuid4(), BASE / "link", "link")
+OUTER: Final = mapped_root(BASE / "lib", "lib")
+INNER: Final = mapped_root(BASE / "lib" / "inner", "inner")
+OTHER: Final = mapped_root(BASE / "other", "other")
+LINKED: Final = mapped_root(BASE / "link", "link")
 """A root no spelling relates to :data:`OUTER`, which a link puts inside it."""
 
 HARDLINK: Final = HardlinkedRecord(OUTER.root_id, "a/info.rehu", OUTER.root_id, "b/info.rehu")
 
 
-def rehuco(*roots: RehucoRoot) -> RehucoFile:
-    """A ``.rehuco`` in memory, under a fresh rehuco id.
+def roots_of(*roots: MappedRoot) -> tuple[MappedRoot, ...]:
+    """The roots of an open file, in order.
 
-    :param roots: its roots, in order.
-    :returns: the file.
+    :param roots: the roots.
+    :returns: them, as the catalog hands them over.
     """
-    return RehucoFile(
-        {
-            "format_version": CURRENT_REHUCO_VERSION,
-            "id": str(uuid4()),
-            "roots": [{"id": str(root.root_id), "path": str(root.path), "label": root.label} for root in roots],
-        }
-    )
+    return roots
 
 
 def line(overlap: RootOverlap) -> str:
@@ -115,13 +110,13 @@ def test_a_nesting_file_is_flagged_at_once_and_its_links_checked(
     * follow a file whose second root is inside its first, one root unreachable
     * verify one line naming the pair, one change said, and the check started over the roots and the unreachable root
     """
-    file = rehuco(OUTER, INNER)
+    roots = roots_of(OUTER, INNER)
 
-    overlaps.follow(file, {INNER.root_id})
+    overlaps.follow(roots, {INNER.root_id})
 
     assert overlaps.messages == [line(RootOverlap(OUTER, INNER.path, encloses=True))]
     changed.assert_called_once_with()
-    check.among.assert_called_once_with(file.roots, {INNER.root_id})
+    check.among.assert_called_once_with(roots, {INNER.root_id})
 
 
 def test_the_check_through_links_adds_what_only_links_reveal(
@@ -136,7 +131,7 @@ def test_the_check_through_links_adds_what_only_links_reveal(
     * answer the check with an overlap
     * verify its line, and a second change said
     """
-    overlaps.follow(rehuco(OUTER, LINKED), ())
+    overlaps.follow(roots_of(OUTER, LINKED), ())
     assert overlaps.messages == []
 
     answer(check, 1, RootOverlap(OUTER, LINKED.path, encloses=True))
@@ -156,8 +151,8 @@ def test_an_answer_about_a_file_no_longer_followed_is_dropped(
     * answer the first file's check with an overlap, then the second's with nothing
     * verify nothing to say, and only the two follows said a change
     """
-    overlaps.follow(rehuco(OUTER, LINKED), ())
-    overlaps.follow(rehuco(OUTER, LINKED), ())
+    overlaps.follow(roots_of(OUTER, LINKED), ())
+    overlaps.follow(roots_of(OUTER, LINKED), ())
 
     answer(check, 1, RootOverlap(OUTER, LINKED.path, encloses=True))
     answer(check, 2)
@@ -177,17 +172,17 @@ def test_following_a_clean_file_or_none_takes_the_flags_down(overlaps: RootOverl
     * follow a file of one root
     * verify the check was started for the two files of two roots only
     """
-    overlaps.follow(rehuco(OUTER, INNER), ())
+    overlaps.follow(roots_of(OUTER, INNER), ())
     assert len(overlaps.messages) == 1
-    overlaps.follow(rehuco(OUTER, OTHER), ())
+    overlaps.follow(roots_of(OUTER, OTHER), ())
     assert overlaps.messages == []
 
-    overlaps.follow(rehuco(OUTER, INNER), ())
+    overlaps.follow(roots_of(OUTER, INNER), ())
     overlaps.follow(None, ())
     assert overlaps.messages == []
     assert overlaps.duplicates == frozenset()
 
-    overlaps.follow(rehuco(OUTER), ())
+    overlaps.follow(roots_of(OUTER), ())
     assert check.among.call_count == 3
 
 
@@ -204,7 +199,7 @@ def test_a_scan_that_met_a_root_flags_the_pair_until_a_clean_scan_of_it(
     * finish a clean scan of the same root
     * verify nothing to say, and a change said for each scan
     """
-    overlaps.follow(rehuco(OUTER, OTHER), ())
+    overlaps.follow(roots_of(OUTER, OTHER), ())
 
     overlaps.scan_finished(OUTER.root_id, {OTHER.root_id}, [HARDLINK])
     assert overlaps.messages == [
@@ -226,7 +221,7 @@ def test_a_scan_that_reports_what_was_already_known_says_no_change(overlaps: Roo
     * follow a file, and finish the same scan twice
     * verify the follow and the first scan said a change, the second did not
     """
-    overlaps.follow(rehuco(OUTER, OTHER), ())
+    overlaps.follow(roots_of(OUTER, OTHER), ())
 
     overlaps.scan_finished(OUTER.root_id, {OTHER.root_id}, [HARDLINK, HARDLINK])
     overlaps.scan_finished(OUTER.root_id, {OTHER.root_id}, [HARDLINK])
@@ -243,7 +238,7 @@ def test_a_scan_of_the_later_root_words_the_pair_from_the_earlier_one(overlaps: 
     * follow a file, and finish a scan of its second root that met the first and a root the file does not hold
     * verify one line: the second root containing the first
     """
-    overlaps.follow(rehuco(OUTER, OTHER), ())
+    overlaps.follow(roots_of(OUTER, OTHER), ())
 
     overlaps.scan_finished(OTHER.root_id, {OUTER.root_id, uuid4()}, ())
 
@@ -258,7 +253,7 @@ def test_a_pair_seen_spelled_and_met_by_a_scan_is_said_once(overlaps: RootOverla
     * follow a nesting file, and finish a scan of the outer root that met the inner one
     * verify one line
     """
-    overlaps.follow(rehuco(OUTER, INNER), ())
+    overlaps.follow(roots_of(OUTER, INNER), ())
 
     overlaps.scan_finished(OUTER.root_id, {INNER.root_id}, ())
 
@@ -280,16 +275,16 @@ def test_editing_the_roots_keeps_what_the_scans_said_of_the_roots_still_there(
     * follow it without its second root too, keeping the scans
     * verify nothing to say
     """
-    third = RehucoRoot(uuid4(), BASE / "third", "third")
-    overlaps.follow(rehuco(OUTER, OTHER, third), ())
+    third = mapped_root(BASE / "third", "third")
+    overlaps.follow(roots_of(OUTER, OTHER, third), ())
     overlaps.scan_finished(
         OUTER.root_id, {OTHER.root_id}, [HardlinkedRecord(OUTER.root_id, "a.rehu", third.root_id, "b.rehu")]
     )
 
-    overlaps.follow(rehuco(OUTER, OTHER), (), keep_scans=keep_scans)
+    overlaps.follow(roots_of(OUTER, OTHER), (), keep_scans=keep_scans)
     assert overlaps.messages == ([line(RootOverlap(OUTER, OTHER.path, encloses=True))] if keep_scans else [])
 
-    overlaps.follow(rehuco(OUTER), (), keep_scans=True)
+    overlaps.follow(roots_of(OUTER), (), keep_scans=True)
     assert overlaps.messages == []
 
 
@@ -302,7 +297,7 @@ def test_the_duplicates_are_the_later_root_of_each_pair(overlaps: RootOverlaps, 
     * answer the check with the link's overlap, and finish a scan of the fourth root that met the first
     * verify the second, third and fourth roots are the duplicates, and the first is not
     """
-    overlaps.follow(rehuco(OUTER, INNER, LINKED, OTHER), ())
+    overlaps.follow(roots_of(OUTER, INNER, LINKED, OTHER), ())
     answer(check, 1, RootOverlap(OUTER, LINKED.path, encloses=True))
     overlaps.scan_finished(OTHER.root_id, {OUTER.root_id}, ())
 
@@ -317,7 +312,7 @@ def test_records_with_a_second_name_are_counted_in_one_line(overlaps: RootOverla
     * follow a file, and finish a scan that found two records under a second name
     * verify the plural line
     """
-    overlaps.follow(rehuco(OUTER), ())
+    overlaps.follow(roots_of(OUTER), ())
 
     overlaps.scan_finished(
         OUTER.root_id, (), [HARDLINK, HardlinkedRecord(OUTER.root_id, "c/info.rehu", OUTER.root_id, "d/info.rehu")]

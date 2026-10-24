@@ -249,7 +249,7 @@ from .rehu_screenshot_ordering import (
     renumber_screenshots,
 )
 from .rehu_screenshots import scan_rehu_screenshot_files
-from .rehuco_file import RehucoFile, RehucoFileError, RehucoRoot, RootStorage
+from .rehuco_file import RehucoChangedError, RehucoFile, RehucoFileError, RehucoRoot, RootStorage
 from .rehudb import (
     TYPE_FIELD_COLUMNS,
     CatalogCache,
@@ -295,6 +295,14 @@ from .resource_scoping import (
     resource_name,
 )
 from .root_folders import RootFolderLister
+from .root_location import location_of, machine_name, resolve_location, storage_of
+from .root_mappings import (
+    ROOT_MAPPINGS_FILE_NAME,
+    MappedRoot,
+    RootMapping,
+    RootMappings,
+    RootMappingsError,
+)
 from .root_overlap import RootOverlap, root_path_key
 from .save_record_job import SAVE_RECORD_KIND, SaveOutcome, SavePayload, SaveRecordJob, rebase_payload
 from .staged_images import (
@@ -570,12 +578,14 @@ __all__ = [
     "MAX_SCREENSHOT_SLOT",
     "MAX_STRING_LENGTH",
     "MOVABLE_JOB_STATES",
+    "MappedRoot",
     "MediaInfoDurationProbe",
     "MetadataDifference",
     "MissingFile",
     "Moved",
     "NoTrashBinError",
     "ORGANIZATION_FOLDER_NAME",
+    "ROOT_MAPPINGS_FILE_NAME",
     "OverridableDeleter",
     "PROGRESS_UNIT_BYTES",
     "PROGRESS_UNIT_RESOURCES",
@@ -612,6 +622,7 @@ __all__ = [
     "RehuDocument",
     "RehuFormatError",
     "RehuRenamer",
+    "RehucoChangedError",
     "RehucoFile",
     "RehucoFileError",
     "RehucoRoot",
@@ -625,6 +636,9 @@ __all__ = [
     "ResourceLocation",
     "RetireLegacyManifestJob",
     "RootFolderLister",
+    "RootMapping",
+    "RootMappings",
+    "RootMappingsError",
     "RootOverlap",
     "RootReachable",
     "RootScanEffects",
@@ -748,8 +762,10 @@ __all__ = [
     "load_checksum_record",
     "load_tc",
     "lock_path_for",
+    "location_of",
     "locked_record",
     "log_legacy_seed",
+    "machine_name",
     "merge_checksum_entries",
     "merge_users",
     "merge_write",
@@ -798,6 +814,7 @@ __all__ = [
     "restore_backup",
     "retire_legacy_manifests",
     "rewrite_description_images",
+    "resolve_location",
     "root_path_key",
     "save_screenshot",
     "scan_conversion_backups",
@@ -814,6 +831,7 @@ __all__ = [
     "stage_image",
     "staged_name",
     "staging_origin",
+    "storage_of",
     "sweep_summary",
     "take_enclosing_claims",
     "tc_to_rehu_data",

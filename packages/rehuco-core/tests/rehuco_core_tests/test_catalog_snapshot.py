@@ -22,9 +22,11 @@ from rehuco_core import (
     CatalogRow,
     CatalogSearchKey,
     CatalogSnapshot,
+    MappedRoot,
     RecordKind,
-    RehucoRoot,
 )
+
+from rehuco_core_tests.mapped_roots import location_at
 
 WORDS: Final = (
     "Café",
@@ -112,7 +114,10 @@ def fixture_catalog(tmp_path_factory: TempPathFactory) -> Generator[Catalog]:
     """
     path = tmp_path_factory.mktemp("snapshot") / "catalog.rehudb"
     folder = path.parent
-    roots = [RehucoRoot(uuid4(), folder / f"root{number}", label) for number, label in enumerate(LABELS)]
+    roots = [
+        MappedRoot(uuid4(), label, location_at(folder / f"root{number}"), folder / f"root{number}")
+        for number, label in enumerate(LABELS)
+    ]
     rng = random.Random(4)
     with CatalogCache.open(path) as cache:
         cache.reconcile_roots(roots)

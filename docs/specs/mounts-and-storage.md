@@ -31,14 +31,16 @@ and is refused with the reason, not guessed at. There is no cross-machine rename
 
 [[[mounts-and-storage#rehuco-scope]]]
 
+- [#514: feat: a shareable .rehuco — a location per root, per-machine mappings, detected storage](https://github.com/borco/rehuco/issues/514)
+
 A **`.rehuco`** file names the folder roots to catalog, and is **shareable across machines**: it may sit on the share
 and be opened from every box, or be copied around. **By default it is a local file** — *New* proposes the app folder
 and *Open* starts there; putting one on the share is the user's choice, and nothing else changes. It declares:
 
 - the **roots**, each with a stable **id** the cache keys its rows on, a **label** (defaulting to the folder's name,
   made unique with a suffix on a clash; what the browser shows and what a folder filter addresses,
-  `folder="<label>/<relative path>"`, [[plugins#browsers]]), a machine-independent **location**, and a **mappings**
-  table (below);
+  `folder="<label>/<relative path>"`, [[plugins#browsers]]) and a machine-independent **location** (below) — nothing
+  that is a fact about one machine; where each machine finds a root is that machine's **mapping**, kept apart;
 - which plugins ([[plugins#overview]]) to load;
 - a **home** for each kind of grouping-entity document — creators, collections, learning paths
   ([[plugins#grouping-entities]]) — as `homes: {"creator": {"root": <root id>, "path": <relative path>}, "collection":
@@ -52,37 +54,54 @@ and *Open* starts there; putting one on the share is the user's choice, and noth
 **A root's identity is its location; what differs per machine is its mapping.** The location is the same on every box:
 for a share, the server and share path (`//nas/data/Tutorials`), read from this machine's mount table when the root is
 added (`WNetGetConnection` on Windows, the mount table on macOS and Linux); for a folder on one machine's own disk, that
-machine's name and path (`//ryzen-5600/d/Downloads/FOO`). The mappings table says where each machine finds it, and
-carries what is a fact about that machine rather than about the root:
+machine's name and path (`//ryzen-5600/d/Downloads/FOO`). The host is lower-cased, and a server spelled by name on one
+machine and by address on another is two locations.
 
 ```json
 {
+  "format_version": 3,
   "id": "…",
-  "label": "Tutorials",
-  "location": "//nas/data/Tutorials",
-  "mappings": {
-    "ryzen-5600": { "path": "U:\\Tutorials", "storage": "network" },
-    "macmini":    { "path": "/System/Volumes/Data/mount/DATA/Tutorials", "storage": "network" }
-  }
+  "roots": [ { "id": "…", "label": "Tutorials", "location": "//nas/data/Tutorials" } ]
 }
 ```
 
+**A mapping is kept per machine, in that machine's data folder, never in the `.rehuco`.** It says where this machine
+finds a root and carries what is a fact about this machine rather than about the root — the folder and the storage —
+plus whether the user chose to skip the root:
+
+```json
+{
+  "format_version": 1,
+  "rehucos": { "<rehuco id>": {
+    "<root id>": { "path": "U:\\Tutorials", "storage": "network" },
+    "<root id>": { "skipped": true }
+  } }
+}
+```
+
+One machine writes it, so it takes no lock. The agent and the node of one machine read the same file
+([[nodes#node-actions]]), so a root mapped in the agent is served by the node. A mapping is keyed by the rehuco id and
+the root id, so moving or renaming the `.rehuco` keeps it; a machine that is renamed loses nothing, since nothing in the
+shared file names it.
+
 - **The storage kind is detected, not declared** — local disk, network share, removable drive or disc — from the drive
-  type on Windows and the mount table elsewhere, per mapping; the notifier picks its backend from it
+  type on Windows and the mount table elsewhere, when the mapping is written; the notifier picks its backend from it
   ([[mounts-and-storage#out-of-band]]) and retention takes its default from it
   ([[mounts-and-storage#durable-retention]]). There is no user override: the system marks them.
-- **Opening the file on a machine with no mapping resolves what it can and asks for the rest.** A share root whose
-  server and share this machine mounts gets its path proposed from the mount table; the rest are listed in a wizard with
-  Browse and Skip per row. A skipped root stays **visible but disabled** — not scanned, not browsed, not served by the
-  node — with a *Map…* action in the Roots view for later, once the share is mounted or the folder shared. A root a
-  machine cannot reach by nature (another box's local disk, not shared) sits there the same way.
-- **Each machine writes only its own mapping**, so two machines saving the same `.rehuco` never fight over content; the
-  save goes through the same lock and compare as a `.rehu` ([[sync#overview]]). A copied `.rehuco` carries every
-  machine's mapping along.
-- **Renamed machines**: the wizard offers *this is the same machine as X* rather than silently orphaning a mapping.
-- Today's `.rehuco` (format 2) holds plain paths and a user-declared storage; the version bump migrates each root to a
-  location computed on the machine that opens it plus that machine's mapping, through the file's own migration chain
-  (#371).
+- **Opening the file on a machine with no mapping resolves what it can and asks for the rest.** A root whose server and
+  share this machine mounts, or whose location names this machine, is mapped from the mount table or the drive table
+  without asking; the rest are listed in a wizard with Browse and Skip per row. A skipped root stays **visible but
+  disabled** — not scanned, not browsed, not served by the node — and is not asked about again; a root neither mapped
+  nor skipped (the wizard was cancelled) is asked again at the next open. *Map…* in the Roots view maps a root later,
+  once the share is mounted or the folder shared, and replaces a skip. A root a machine cannot reach by nature (another
+  box's local disk, not shared) sits there the same way.
+- **The `.rehuco` changes only when the roots do** — one added, removed, relabelled or moved — so two machines rarely
+  save it at once, and mapping a root never writes it. The save goes through the same lock as a `.rehu`
+  ([[sync#overview]]) and then compares the file with what this machine last read or wrote: if another machine changed
+  it since, nothing is written, the catalog is read again and the user is told to repeat the edit. There is no merge of
+  structural edits.
+- **Format 2** (plain paths and a user-declared storage) is not migrated: a root's location is computed on the machine
+  that finds the folder, so the file is made again by adding its roots to a new catalog. Opening one says so.
 
 **Per `.rehuco`, not per machine singleton.** A machine may keep several `.rehuco` files — each a set of roots browsed
 together — and the agent opens one at a time ([[data-model#local-file-trio]], #371). Removing a root asks first, states

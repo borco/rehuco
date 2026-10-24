@@ -56,32 +56,40 @@
       </widget>
      </item>
      <item row="0" column="1">
-      <widget class="QLineEdit" name="root_name_edit">
-       <property name="toolTip">
-        <string>What the browser shows for this root and what a folder filter addresses. Nothing on disk changes.</string>
-       </property>
-      </widget>
+      <layout class="QHBoxLayout" name="root_name_layout">
+       <item>
+        <widget class="QLineEdit" name="root_name_edit">
+         <property name="toolTip">
+          <string>What the browser shows for this root and what a folder filter addresses. Nothing on disk changes. Left empty, the root shows where it is.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="default_root_name_button">
+         <property name="toolButtonStyle">
+          <enum>Qt::ToolButtonStyle::ToolButtonIconOnly</enum>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
      <item row="1" column="0">
       <widget class="QLabel" name="root_storage_label">
        <property name="text">
         <string>Storage:</string>
        </property>
-       <property name="buddy">
-        <cstring>root_storage_combo</cstring>
-       </property>
       </widget>
      </item>
      <item row="1" column="1">
-      <widget class="QComboBox" name="root_storage_combo">
-       <property name="sizeAdjustPolicy">
-        <enum>QComboBox::SizeAdjustPolicy::AdjustToMinimumContentsLengthWithIcon</enum>
-       </property>
-       <property name="minimumContentsLength">
-        <number>8</number>
-       </property>
+      <widget class="QLabel" name="root_storage_value">
        <property name="toolTip">
-        <string>What this folder lives on. A removable drive or a disc may be away; its resources stay in the catalog.</string>
+        <string>What this folder lives on, as the system reports it. A removable drive or a disc may be away; its resources stay in the catalog.</string>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
        </property>
       </widget>
      </item>

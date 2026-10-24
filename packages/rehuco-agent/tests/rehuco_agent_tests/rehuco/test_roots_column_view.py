@@ -3,7 +3,6 @@
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Final, NamedTuple
-from uuid import uuid4
 
 from borco_pyside.widgets import RowBandDelegate
 from PySide6.QtCore import QModelIndex, QPoint, QRect
@@ -15,7 +14,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_row_delegate import ROW_PADDING, RootRowDelegate
 from rehuco_agent.rehuco.roots_checksum import BAD_INK
 from rehuco_agent.rehuco.roots_column_view import RootsColumnView
-from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
+from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
 from rehuco_agent.rehuco.roots_item_delegate import (
     ARROW_WIDTH,
     ICON_SIZE,
@@ -23,9 +22,11 @@ from rehuco_agent.rehuco.roots_item_delegate import (
     RootsItemDelegate,
     arrow_height,
 )
-from rehuco_core import RehucoRoot, RootFolderLister, RootStorage
+from rehuco_agent.rehuco.roots_node import NodeListing
+from rehuco_core import RootFolderLister, RootStorage
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+from rehuco_agent_tests.mapped_roots import mapped_root
 
 WAIT_TIMEOUT_MS: Final = 10_000
 
@@ -44,8 +45,8 @@ def fixture_shown(
     (tmp_path / "lib" / "alpha").mkdir(parents=True)
     (tmp_path / "lib" / "clip.mp4").write_bytes(b"x")
     roots = [
-        RehucoRoot(uuid4(), tmp_path / "lib", "lib", RootStorage.LOCAL),
-        RehucoRoot(uuid4(), tmp_path / "away", "away", RootStorage.NETWORK),
+        mapped_root(tmp_path / "lib", "lib", RootStorage.LOCAL),
+        mapped_root(tmp_path / "away", "away", RootStorage.NETWORK),
     ]
     model = delete_at_teardown(RootsFolderModel())
     view = RootsColumnView()

@@ -4,7 +4,6 @@ import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import Final
-from uuid import uuid4
 
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QModelIndex, QUrl
@@ -14,15 +13,17 @@ from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.record_images import RecordImages
-from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
+from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
+from rehuco_agent.rehuco.roots_node import NodeListing
 from rehuco_agent.rehuco.roots_preview import MINIMUM_WIDTH, RootsPreview
 from rehuco_agent.rehuco.scrolling_markdown_view import ScrollingMarkdownView
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
-from rehuco_core import RehucoRoot, RehuDocument, RenameCoordinator, RootFolderLister, RootStorage
+from rehuco_core import RehuDocument, RenameCoordinator, RootFolderLister, RootStorage
 from rehuco_core.access import LoadedRecord, Records, ResourceKey
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+from rehuco_agent_tests.mapped_roots import mapped_root
 
 from .test_roots_preview import WAIT_TIMEOUT_MS, Shown
 
@@ -462,7 +463,7 @@ def test_a_record_is_read_through_the_records_given(
         return replace(read(key, username=username, unknown_username=unknown_username), signature=None)
 
     mocker.patch.object(records, "load", side_effect=unsigned)
-    root = RehucoRoot(uuid4(), library, "lib", RootStorage.LOCAL)
+    root = mapped_root(library, "lib", RootStorage.LOCAL)
     model = delete_at_teardown(RootsFolderModel())
     model.set_roots([root], RootFolderLister([root]))
     preview = RootsPreview(model, RenameCoordinator(), None, lambda _: path, None, records=records)

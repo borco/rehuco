@@ -31,8 +31,8 @@ Consolidated list of requirements established across discussion, checked against
   reachable node's records ([[borrowing#recording-borrows]]).
 - Web UI usable from an iPad as a thin client served by a node — a machine that is on at home, or the machine that
   travels while away ([[borrowing#vacation-topology]]).
-- The same `.rehuco` opens on every machine: each root has a machine-independent location and a per-machine mapping,
-  resolved from the mount table or asked for once; an unmapped root is visible but disabled
+- The same `.rehuco` opens on every machine: each root has a machine-independent location, and each machine keeps its
+  own mapping of it, resolved from the mount table or asked for once; an unmapped root is visible but disabled
   ([[mounts-and-storage#rehuco-scope]]).
 - Tolerating offline mounts without blocking — the agent keeps working, and the node keeps serving what it reaches,
   when a mounted source box (e.g. the TS-230) is powered off ([[mounts-and-storage#offline-mounts]]).

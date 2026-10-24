@@ -26,18 +26,20 @@ from rehuco_core import (
     CatalogRow,
     CatalogUnreadable,
     KeyRelocation,
+    MappedRoot,
     RecordKind,
-    RehucoRoot,
     ResourceKey,
 )
 from rehuco_core.rehudb import CatalogLocation
+
+from rehuco_core_tests.mapped_roots import location_at
 
 ANCHOR: Final = Path(Path.cwd().anchor) / "fake"
 CACHE_PATH: Final = ANCHOR / "catalog.rehudb"
 LIBRARY_ID: Final = UUID("00000000-0000-0000-0000-00000000000a")
 PACKS_ID: Final = UUID("00000000-0000-0000-0000-00000000000b")
-LIBRARY: Final = RehucoRoot(LIBRARY_ID, ANCHOR / "library", "library")
-PACKS: Final = RehucoRoot(PACKS_ID, ANCHOR / "packs", "packs")
+LIBRARY: Final = MappedRoot(LIBRARY_ID, "library", location_at(ANCHOR / "library"), ANCHOR / "library")
+PACKS: Final = MappedRoot(PACKS_ID, "packs", location_at(ANCHOR / "packs"), ANCHOR / "packs")
 
 
 @fixture(name="cache")
@@ -53,7 +55,7 @@ def fixture_cache(mocker: MockerFixture) -> MagicMock:
     return cache
 
 
-def cached_root(root: RehucoRoot, position: int) -> CatalogRoot:
+def cached_root(root: MappedRoot, position: int) -> CatalogRoot:
     """A root as the cache reads it back.
 
     :param root: the ``.rehuco``'s root.
@@ -63,7 +65,7 @@ def cached_root(root: RehucoRoot, position: int) -> CatalogRoot:
     return CatalogRoot(root.root_id, root.label, root.path, position, False, None, None)
 
 
-def cached_row(resource_id: int, root: RehucoRoot, path: str, **fields: Any) -> CatalogRow:
+def cached_row(resource_id: int, root: MappedRoot, path: str, **fields: Any) -> CatalogRow:
     """A row as the cache reads it back.
 
     :param resource_id: its id.
@@ -75,7 +77,7 @@ def cached_row(resource_id: int, root: RehucoRoot, path: str, **fields: Any) -> 
     return CatalogRow(resource_id, root.root_id, root.label, CatalogRecord(path, RecordKind.REHU, **fields), 0.0)
 
 
-def attached(*roots: RehucoRoot) -> Catalog:
+def attached(*roots: MappedRoot) -> Catalog:
     """A catalog attached to a session over the mock cache, viewing ``roots``.
 
     :param roots: the ``.rehuco``'s roots.
@@ -154,7 +156,7 @@ def test_the_roots_and_rows_are_those_of_the_view(cache: MagicMock) -> None:
     * make the cache hold three roots, each with a row, and view two of them
     * verify the view's two roots in order, and their two rows
     """
-    other = RehucoRoot(UUID(int=7), ANCHOR / "other", "other")
+    other = MappedRoot(UUID(int=7), "other", location_at(ANCHOR / "other"), ANCHOR / "other")
     cache.roots.return_value = (cached_root(LIBRARY, 0), cached_root(other, 1), cached_root(PACKS, 2))
     cache.rows.return_value = [
         cached_row(1, LIBRARY, "a/info.rehu"),
@@ -250,8 +252,8 @@ def test_where_roots_nest_a_record_is_the_innermost_roots(cache: MagicMock) -> N
     * verify the record's row is the inner root's; hiding the outer root changes nothing, hiding the inner one leaves
       no row
     """
-    outer = RehucoRoot(LIBRARY_ID, ANCHOR / "library", "library")
-    inner = RehucoRoot(PACKS_ID, ANCHOR / "library" / "sub", "sub")
+    outer = MappedRoot(LIBRARY_ID, "library", location_at(ANCHOR / "library"), ANCHOR / "library")
+    inner = MappedRoot(PACKS_ID, "sub", location_at(ANCHOR / "library" / "sub"), ANCHOR / "library" / "sub")
     key = ResourceKey(inner.path / "x.rehu")
     cache.locate.return_value = CatalogLocation(cached_root(inner, 1), "x.rehu")
     cache.resource_ids.return_value = {1, 2}
@@ -394,7 +396,7 @@ def test_reconciling_follows_an_edit_of_the_roots(cache: MagicMock) -> None:
     * attach over both roots, then reconcile to the second root and a new one
     * verify the cache was reconciled to those two, and only their roots and rows are listed
     """
-    added = RehucoRoot(UUID(int=7), ANCHOR / "added", "added")
+    added = MappedRoot(UUID(int=7), "added", location_at(ANCHOR / "added"), ANCHOR / "added")
     cache.roots.return_value = (cached_root(LIBRARY, 0), cached_root(PACKS, 1), cached_root(added, 2))
     cache.rows.return_value = [cached_row(1, LIBRARY, "a/info.rehu"), cached_row(2, PACKS, "p/info.rehu")]
     catalog = attached(LIBRARY, PACKS)

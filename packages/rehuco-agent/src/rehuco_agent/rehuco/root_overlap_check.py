@@ -17,7 +17,7 @@ from typing import Final
 from uuid import UUID
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
-from rehuco_core import RehucoRoot, RootOverlap
+from rehuco_core import MappedRoot, RootOverlap
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class RootOverlapCheck(QObject):
         # gone: ``set`` is a plain Python bound method, safe to run from here
         self.destroyed.connect(self.__stopped.set)
 
-    def find(self, candidate: Path | str, roots: Sequence[RehucoRoot], skip: Collection[UUID]) -> int:
+    def find(self, candidate: Path | str, roots: Sequence[MappedRoot], skip: Collection[UUID]) -> int:
         """Start comparing a candidate root with the roots, through links.
 
         :param candidate: the folder about to be added.
@@ -61,7 +61,7 @@ class RootOverlapCheck(QObject):
 
         return self.__start(run)
 
-    def among(self, roots: Sequence[RehucoRoot], skip: Collection[UUID]) -> int:
+    def among(self, roots: Sequence[MappedRoot], skip: Collection[UUID]) -> int:
         """Start comparing a file's roots with each other, through links.
 
         :param roots: the file's roots.

@@ -12,12 +12,13 @@ from typing import Final
 
 from PySide6.QtCore import QModelIndex, QObject
 from PySide6.QtGui import QAction, QFont
-from rehuco_core import FileType
+from rehuco_core import FileType, RehucoRoot
 
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .roots_checksum_verbs import RootsChecksumVerbs
-from .roots_folder_model import RootsFolderModel, RootsNodeKind
+from .roots_folder_model import RootsFolderModel
 from .roots_management import companion_found, managing_record
+from .roots_node import RootsNodeKind
 from .roots_opening import RootsOpening
 
 
@@ -57,13 +58,13 @@ class RootsRowActions:
     def context_actions(self, index: QModelIndex) -> list[QAction]:
         """What the Roots view's context menu holds for a row (#469).
 
-        A root: the folder filter and Open in file explorer, then the four moves, then Remove. A folder: **Open
-        associated rehu** if it has one, **Create a rehu** if nothing manages it, the folder filter and Open in file
-        explorer. A rehu record: Open and Open in file explorer. A checksum file: its associated rehu and Open in
-        file explorer. Any other file: Open with its application, then its associated rehu or Create likewise, then
-        Open in file explorer. A placeholder: nothing. **The checksum group comes last, under a separator**, from
-        what manages the row (:meth:`__checksum_group`) -- a checksum file's own two verbs instead. The row's default
-        action, which a double-click runs, is drawn bold.
+        A root: the folder filter and Open in file explorer, then the four moves, then Map for a root this machine does
+        not map, and Remove. A folder: **Open associated rehu** if it has one, **Create a rehu** if nothing manages it,
+        the folder filter and Open in file explorer. A rehu record: Open and Open in file explorer. A checksum file: its
+        associated rehu and Open in file explorer. Any other file: Open with its application, then its associated rehu
+        or Create likewise, then Open in file explorer. A placeholder: nothing. **The checksum group comes last, under
+        a separator**, from what manages the row (:meth:`__checksum_group`) -- a checksum file's own two verbs instead.
+        The row's default action, which a double-click runs, is drawn bold.
 
         :param index: the row the menu is for.
         :returns: the actions in menu order, a separator among them where the groups change.
@@ -80,6 +81,7 @@ class RootsRowActions:
                     ui.move_down_action,
                     ui.move_to_bottom_action,
                     self.__separators[1],
+                    *([ui.map_root_action] if isinstance(self.__model.root_at(index), RehucoRoot) else []),
                     ui.remove_root_action,
                 ]
             case RootsNodeKind.FOLDER:

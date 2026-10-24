@@ -38,9 +38,9 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
 - **App/filesystem coupling** — resolved twice: first the agent as a node client, then #409's local-first agent with
   an access seam for node-owned roots, and now the agent reads and writes every file itself over its mounts; the seam's
   remote half is torn down and its local classes stay ([[nodes#access-seam]]).
-- **Cross-machine storage topology** — a root's machine-independent location and per-machine mappings in the
-  `.rehuco`, resolved through each machine's mount table ([[mounts-and-storage#rehuco-scope]]); fingerprint files and
-  the primary/remote flag are retired.
+- **Cross-machine storage topology** — a root's machine-independent location in the `.rehuco` and each machine's own
+  mappings of it, resolved through the machine's mount table ([[mounts-and-storage#rehuco-scope]]); fingerprint files
+  and the primary/remote flag are retired.
 - **Deletion / tombstone propagation** — a deleted record is a filesystem fact the notifier reports; there are no
   tombstones ([[sync#compare-and-swap]]). Borrow-vs-delete/archive has an explicit resolution on return
   ([[borrowing#borrow-vs-delete]]).
@@ -56,8 +56,8 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
   borrow records ([[discovery-trust-access#cross-swarm-sharing]]).
 - **Access control model** — rules are the node's own, enforced at the node for what it serves, with tag-grants
   evaluated dynamically ([[discovery-trust-access#access-control]]). Remaining work is the concrete representation.
-- **Local file layout** — `.rehuco` (shareable, per-machine mappings), `.rehudb` (disposable cache, per machine), the
-  retention store (durable); no `.rehusw` ([[data-model#local-file-trio]]). Per-user state is a sidecar beside the
+- **Local file layout** — `.rehuco` (shareable), the root mappings (durable, per machine), `.rehudb` (disposable cache,
+  per machine), the retention store (durable); no `.rehusw` ([[data-model#local-file-trio]]). Per-user state is a sidecar beside the
   record ([[data-model#single-file]]).
 - **Single-machine / bootstrap operation** — an agent with the share mounted and no node is a complete rehuco
   ([[multiplicity#single-node-base]]); nothing waits for peers.
@@ -130,8 +130,6 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
 - **Which node runs a job** — permissions are per node and the Benchmark result is stored ([[nodes#node-status]]);
   how delegation weighs a stored benchmark against a root being local to the node, how old a benchmark may be, and
   what a headless node's config holds beyond the `.rehuco` path and machine name, are decided with the web node tracer.
-- **Renamed machines and the `.rehuco` mappings** — the wizard's *this is the same machine as X* is specified, not
-  built ([[mounts-and-storage#rehuco-scope]]).
 - **The macOS own-session and Linux legs of the notifier and lock spikes** (#502, #503) — deferred until a mobile
   macOS or Linux box is in daily use; the design states what they would confirm (stored credentials, polling until
   given) and the Windows and macOS-client measurements already cover the primitives.

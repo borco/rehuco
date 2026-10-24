@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Final
 from uuid import UUID
 
-from ..rehuco_file import RehucoRoot
 from ..rehudb import CatalogCache, CatalogQuery, CatalogRoot, CatalogRow
 from ..rehudb_updates import CatalogRecordUpdater, RecordCheck, RecordFinding
 from ..rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
+from ..root_mappings import MappedRoot
 from .catalog_ops import CatalogSession, CatalogUnreadable
 from .key_relocation import KeyRelocation
 from .keys import ResourceKey
@@ -131,7 +131,7 @@ class Catalog:
         return None if session is None else session.cache_path
 
     @staticmethod
-    def prepare(cache_path: Path, roots: Sequence[RehucoRoot]) -> CatalogSession:
+    def prepare(cache_path: Path, roots: Sequence[MappedRoot]) -> CatalogSession:
         """Open a cache, bring its roots in line with a ``.rehuco``'s, and describe the session over it -- without
         attaching it, so a file that then fails to open leaves the attached one as it was.
 
@@ -162,7 +162,7 @@ class Catalog:
         """Read nothing from now on. A no-op when nothing is attached."""
         self.__session = None
 
-    def reconcile(self, roots: Sequence[RehucoRoot]) -> None:
+    def reconcile(self, roots: Sequence[MappedRoot]) -> None:
         """Bring the cache's roots in line with the ``.rehuco``'s after an edit, and show those roots. A failure is
         logged: the next scan rebuilds the cache anyway.
 

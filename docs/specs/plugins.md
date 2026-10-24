@@ -569,12 +569,20 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   becomes a shadow; the one shadow follows the pointer to where the root would land, the other roots closing up around
   it; leaving the list puts it back at the root's place. The drop is saved at once, like a move. The root
   edits act only while a root row is current, and **Remove Root asks first**, saying the files stay
-  on disk and how many cached entries go. **Add Root** asks for what the folder lives on — its *storage* — ahead of
-  the folder, because a root served by another node will want a different picker below it
-  ([[nodes#access-seam]]); its *Scan after adding* checkbox, on by default and remembered however the dialog closes,
+  on disk and how many cached entries go. **Add Root** asks for the folder and a name: what the folder lives on is
+  detected, the root is named by its location and mapped to the folder on this machine
+  ([[mounts-and-storage#rehuco-scope]]). The name defaults to the folder's: it is the field's placeholder, filled in
+  when the first folder is chosen while the field is empty, left alone when another folder is chosen over a name that
+  is there, put back by a button beside the field, and used when the dialog closes with the field empty; its *Scan after adding* checkbox, on by default and remembered however the dialog closes,
   queues a scan of the new root once the file is saved (#542). When a **root** is current the details pane shows its editors in place of a type line: its **Name** (the
-  label, which nothing on disk follows) and its **Storage**: a local folder, a network share, a removable drive or a
-  CD or DVD, each with its own glyph. `F5` re-lists the visible columns: a
+  label, which nothing on disk follows: saved as typed when the field is left, even empty -- the column then shows where
+  the root is -- and shown in the column while it is typed; a button beside the field gives the root its default
+  name, the one it was added with, which is also the empty field's placeholder) and,
+  read-only, its **Storage** as detected — a local folder, a network share,
+  a removable drive or a CD or DVD, each with its own glyph — and its location. **A root this machine has not mapped**
+  is listed in its place, greyed, with one row saying so, never read; its **Map…** action (the root's menu and its
+  details pane) asks for the folder, and the *Map roots* question opens with the catalog for the roots nobody has
+  answered for ([[mounts-and-storage#rehuco-scope]]). `F5` re-lists the visible columns: a
   folder deleted outside the app disappears, and the selection falls back to its nearest surviving ancestor. A root
   that cannot be listed says so by what it lives on: a **local** folder that is gone is struck through, a share, a
   drive or a disc that is merely away keeps its glyph greyed out, and either way its column holds one row saying

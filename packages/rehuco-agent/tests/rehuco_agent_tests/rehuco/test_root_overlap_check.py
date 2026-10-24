@@ -12,15 +12,15 @@ from pathlib import Path
 from queue import Queue
 from typing import Final
 from unittest.mock import MagicMock
-from uuid import uuid4
 
 from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_overlap_check import RootOverlapCheck
-from rehuco_core import RehucoRoot, RootOverlap
+from rehuco_core import RootOverlap
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+from rehuco_agent_tests.mapped_roots import mapped_root
 
 WAIT_TIMEOUT_MS: Final = 10_000
 """How long a wait gives the GUI thread to receive an answer."""
@@ -30,8 +30,8 @@ GATE_TIMEOUT: Final = 120.0
 
 FOLDER: Final = Path.cwd() / "fake" / "library"
 ROOTS: Final = (
-    RehucoRoot(uuid4(), FOLDER / "tutorials", "tutorials"),
-    RehucoRoot(uuid4(), FOLDER / "packs", "packs"),
+    mapped_root(FOLDER / "tutorials", "tutorials"),
+    mapped_root(FOLDER / "packs", "packs"),
 )
 OVERLAP: Final = RootOverlap(ROOTS[0], FOLDER / "tutorials" / "python", encloses=True)
 

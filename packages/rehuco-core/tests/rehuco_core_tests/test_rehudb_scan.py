@@ -30,6 +30,7 @@ from rehuco_core.rehu_parse_limits import MAX_FILE_BYTES
 
 from rehuco_core_tests.concurrency import SETTLE, running, wait_until
 from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
+from rehuco_core_tests.mapped_roots import location_at, mapped
 
 ROOT: Final = Path("/fake/library")
 
@@ -265,12 +266,12 @@ def test_scanned_type_fields_round_trip_through_the_cache(tree: FakeTree, mocker
     tree.file("a.rehu", tutorial)
     tree.file("b.rehu", pack)
     rehuco = RehucoFile.new()
-    rehuco.add_root(ROOT)
+    rehuco.add_root(location_at(ROOT))
     result = scan()
 
     with CatalogCache.open(Path("/fake/cache/x.rehudb")) as cache:
-        cache.reconcile_roots(rehuco.roots)
-        assert cache.apply_root_scan(rehuco.roots[0].root_id, result.records)
+        cache.reconcile_roots(mapped(rehuco))
+        assert cache.apply_root_scan(mapped(rehuco)[0].root_id, result.records)
         rows = cache.rows()
 
     assert [row.record for row in rows] == list(result.records)

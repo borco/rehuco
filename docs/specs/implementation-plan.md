@@ -138,8 +138,8 @@ the redesign added:
 - **The file notifier** ([[mounts-and-storage#out-of-band]]): `FileNotifier` in core with the native, SMB-session and
   polling backends, publishing on `ChangeFeed`; the agent's views listen to it alone, and `RootCatalog`'s own derived
   signals and the never-announcing writers go. Then every machine follows every other without a scan.
-- **The shareable `.rehuco`** ([[mounts-and-storage#rehuco-scope]]): a location and per-machine mappings per root, the
-  storage kind detected, the mapping wizard, unmapped roots disabled.
+- **The shareable `.rehuco`** ([[mounts-and-storage#rehuco-scope]]): a location per root in the file, each machine's
+  mappings kept apart, the storage kind detected, the mapping wizard, unmapped roots disabled.
 
 Root caching (#449–#451) follows, unchanged by the redesign.
 
