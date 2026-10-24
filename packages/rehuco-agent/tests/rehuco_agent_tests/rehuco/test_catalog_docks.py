@@ -46,11 +46,12 @@ from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel, TableBrow
 from rehuco_agent.rehuco.add_root_dialog import AddRootDialog
 from rehuco_agent.rehuco.browser_presets import browser_presets
 from rehuco_agent.rehuco.catalog_table_model import CatalogColumn
+from rehuco_agent.rehuco.root_name_editor import RootNameEditor
 from rehuco_agent.rehuco.root_overlap_check import RootOverlapCheck
-from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_ICONS
-from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsNodeKind
+from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_LABELS
 from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
 from rehuco_agent.rehuco.roots_management import managing_record
+from rehuco_agent.rehuco.roots_node import NodeListing, RootsNodeKind
 from rehuco_agent.rehuco.roots_preview import RootsPreview
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState, CatalogState
@@ -69,9 +70,9 @@ from rehuco_core import (
     CatalogUnreadable,
     GenerateChecksumsJob,
     JobControl,
+    MappedRoot,
     RecordKind,
     RecordsChecked,
-    RehucoRoot,
     Relocation,
     RootScanEffects,
     RootScanOutcome,
@@ -86,6 +87,7 @@ from rehuco_core.notify import RootNotifiers
 
 from rehuco_agent_tests.conftest import MemoryCatalogStateStore
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+from rehuco_agent_tests.mapped_roots import location_at, mapped_root, resolve_test_location
 
 REAL_READ_TEXT: Final = Path.read_text
 """The real :meth:`Path.read_text`, bound before a fixture patches it."""
@@ -106,11 +108,11 @@ WAIT_TIMEOUT_MS: Final = 10_000
 test may be the spin that drains a deferred-deletion backlog."""
 
 HOME: Final = {
-    "format_version": 1,
+    "format_version": 3,
     "id": REHUCO_ID,
     "roots": [
-        {"id": ROOT_IDS[0], "path": str(TUTORIALS), "label": "tutorials"},
-        {"id": ROOT_IDS[1], "path": str(PACKS), "label": "packs"},
+        {"id": ROOT_IDS[0], "location": location_at(TUTORIALS), "label": "tutorials"},
+        {"id": ROOT_IDS[1], "location": location_at(PACKS), "label": "packs"},
     ],
 }
 
@@ -140,15 +142,15 @@ def hold(catalog: Mock, cache: MagicMock, rows: list[CatalogRow]) -> None:
     :param cache: the mock cache the jobs open.
     :param rows: what the catalog holds, read at each call.
     """
-    file_roots: dict[UUID, RehucoRoot] = {}
+    file_roots: dict[UUID, MappedRoot] = {}
     reachable: dict[UUID, bool] = {}
     ids: dict[tuple[UUID, str], int] = {}
 
-    def take_roots(roots: Sequence[RehucoRoot]) -> None:
+    def take_roots(roots: Sequence[MappedRoot]) -> None:
         file_roots.clear()
         file_roots.update((root.root_id, root) for root in roots)
 
-    def prepare(cache_path: Path, roots: Sequence[RehucoRoot]) -> CatalogSession:
+    def prepare(cache_path: Path, roots: Sequence[MappedRoot]) -> CatalogSession:
         take_roots(roots)
         return CatalogSession(cache_path, frozenset(file_roots))
 
@@ -243,16 +245,35 @@ def mock_catalog(mocker: MockerFixture) -> Mock:
     return catalog
 
 
+@fixture(name="machine")
+def fixture_machine(mocker: MockerFixture, tmp_path: Path) -> Path:
+    """This machine as a test's locations spell it (#514): the root catalog finds a location's folder by taking the
+    ``//test/`` off it, names a folder by putting that back, and reads its mappings from ``tmp_path`` and writes none --
+    no mount table is read and the session's real mappings are never touched.
+
+    :param mocker: pytest-mock fixture.
+    :param tmp_path: pytest's temporary directory.
+    :returns: the folder the mappings are kept in.
+    """
+    mocker.patch("rehuco_agent.rehuco.root_catalog.config_folder", return_value=tmp_path)
+    mocker.patch("rehuco_agent.rehuco.root_catalog.resolve_location", side_effect=resolve_test_location)
+    mocker.patch("rehuco_agent.rehuco.root_catalog.location_of", side_effect=location_at)
+    mocker.patch("rehuco_core.root_mappings.atomic_write_text")
+    return tmp_path
+
+
 @fixture(name="catalog")
-def fixture_catalog(mocker: MockerFixture, cache: MagicMock, cached_rows: list[CatalogRow]) -> Mock:
+def fixture_catalog(mocker: MockerFixture, cache: MagicMock, cached_rows: list[CatalogRow], machine: Path) -> Mock:
     """The mock catalog the docks read through (:func:`mock_catalog`), it and the mock cache the jobs open holding
-    ``cached_rows`` (:func:`hold`).
+    ``cached_rows`` (:func:`hold`), over this machine as the tests spell it (:func:`fixture_machine`).
 
     :param mocker: pytest-mock fixture.
     :param cache: the mock cache the jobs open.
     :param cached_rows: the rows it holds.
+    :param machine: the machine fixture.
     :returns: the mock catalog.
     """
+    del machine
     catalog = mock_catalog(mocker)
     hold(catalog, cache, cached_rows)
     return catalog
@@ -270,43 +291,60 @@ def catalog_row(resource_id: int, root_index: int, record: CatalogRecord) -> Cat
     return CatalogRow(resource_id, UUID(root["id"]), root["label"], record, 0.0)
 
 
+@fixture(name="on_disk")
+def fixture_on_disk() -> dict[Path, str]:
+    """What the tests' writes of a ``.rehuco`` left behind (:func:`mock_rehuco_writes`), by path: what a later read of
+    it answers with, so a file the catalog saved is found by its next save as it left it (#514).
+
+    :returns: the written texts, empty at first.
+    """
+    return {}
+
+
 @fixture(name="served")
-def fixture_served(mocker: MockerFixture) -> dict[str, Any]:
-    """Serve ``HOME`` as the content of every ``.rehuco`` read; the test may edit what is served. **Every other file is
-    read for real** -- a record the catalog verifies on access (#487) must not read as the catalog.
+def fixture_served(mocker: MockerFixture, on_disk: dict[Path, str]) -> dict[str, Any]:
+    """Serve ``HOME`` as the content of every ``.rehuco`` read, unless a save wrote it since; the test may edit what is
+    served. **Every other file is read for real** -- a record the catalog verifies on access (#487) must not read as
+    the catalog.
+
+    The text is in the layout a save writes, so a save that checks the file is as this machine last read it finds it
+    so (#514).
 
     :param mocker: pytest-mock fixture.
+    :param on_disk: what saves left behind.
     :returns: the served document, copied fresh for this test.
     """
     document = json.loads(json.dumps(HOME))
 
     def read_text(self: Path, *args: Any, **kwargs: Any) -> str:
         if self.suffix == ".rehuco":
-            return json.dumps(document)
+            return on_disk.get(self) or json.dumps(document, indent=2, ensure_ascii=False) + "\n"
         return REAL_READ_TEXT(self, *args, **kwargs)
 
     mocker.patch.object(Path, "read_text", read_text)
     return document
 
 
-def mock_rehuco_writes(mocker: MockerFixture) -> MagicMock:
+def mock_rehuco_writes(mocker: MockerFixture, on_disk: dict[Path, str]) -> MagicMock:
     """Capture every write of a ``.rehuco``, taking no lock file: the file is ``/fake``, with no folder to take one in.
 
     :param mocker: pytest-mock fixture.
+    :param on_disk: where each write is left, for the served file to answer with.
     :returns: the mock standing in for ``atomic_write_text``.
     """
     mocker.patch("rehuco_core.rehuco_file.RecordFileLock")
-    return mocker.patch("rehuco_core.rehuco_file.atomic_write_text")
+    return mocker.patch("rehuco_core.rehuco_file.atomic_write_text", side_effect=on_disk.__setitem__)
 
 
 @fixture(name="saves")
-def fixture_saves(mocker: MockerFixture) -> MagicMock:
+def fixture_saves(mocker: MockerFixture, on_disk: dict[Path, str]) -> MagicMock:
     """Capture every write of a ``.rehuco``.
 
     :param mocker: pytest-mock fixture.
+    :param on_disk: where each write is left.
     :returns: the mock standing in for ``atomic_write_text``.
     """
-    return mock_rehuco_writes(mocker)
+    return mock_rehuco_writes(mocker, on_disk)
 
 
 @fixture(name="queue")
@@ -492,20 +530,16 @@ def select_root(dock: CatalogDocks, row: int) -> None:
     dock.roots.roots_view.setCurrentIndex(dock.roots.roots_model.index(row, 0))
 
 
-def answer_add_root(
-    mocker: MockerFixture, dock: CatalogDocks, folder: str | None, storage: RootStorage = RootStorage.LOCAL
-) -> MagicMock:
+def answer_add_root(mocker: MockerFixture, dock: CatalogDocks, folder: str | None, name: str = "") -> MagicMock:
     """Make the Add Root question answer, instead of opening its dialog.
 
     :param mocker: pytest-mock fixture.
     :param dock: the catalog's docks.
     :param folder: the folder to answer with; ``None`` cancels.
-    :param storage: what the answered folder lives on.
+    :param name: the name to answer with; empty takes the folder's.
     :returns: the mock standing in for the question.
     """
-    return mocker.patch.object(
-        dock.roots, "ask_root_to_add", return_value=None if folder is None else (folder, storage)
-    )
+    return mocker.patch.object(dock.roots, "ask_root_to_add", return_value=None if folder is None else (folder, name))
 
 
 def add_root(qtbot: QtBot, dock: CatalogDocks) -> None:
@@ -755,9 +789,9 @@ def test_a_scan_that_is_already_queued_is_not_queued_again(
     wait_for_jobs(qtbot, queue)
 
 
-@mark.usefixtures("served")
+@mark.usefixtures("served", "cache", "machine")
 def test_another_catalogs_waiting_scan_does_not_refuse_this_ones(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue, held: GateJob, cache: MagicMock
+    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue, held: GateJob
 ) -> None:
     """Two catalogs whose roots share a label and folder each get their own scan: the check is among this
     dock's own jobs, not the whole queue's.
@@ -767,7 +801,6 @@ def test_another_catalogs_waiting_scan_does_not_refuse_this_ones(
     * hold the queue; scan from one dock, then from a second dock over the same file
     * verify both scans of each root are queued
     """
-    del cache
     scan_finding(mocker, {})
     first = build_docks(qtbot, queue, catalog=mock_catalog(mocker))
     first.catalog.open_rehuco(REHUCO_PATH)
@@ -869,9 +902,9 @@ def test_reopening_the_open_catalog_keeps_its_running_scans_tracked(
     wait_for_jobs(qtbot, queue)
 
 
-@mark.usefixtures("served")
+# pylint: disable-next=too-many-arguments,too-many-positional-arguments
 def test_opening_another_catalog_forgets_the_old_ones_scans(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, held: GateJob
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, held: GateJob, served: dict[str, Any]
 ) -> None:
     """A scan of the previous catalog ends in a cache no longer shown, so it reads nothing back.
 
@@ -886,7 +919,7 @@ def test_opening_another_catalog_forgets_the_old_ones_scans(
     dock.roots.scan_action.trigger()
     wait_for_rows(qtbot, dock)
     set_rows = mocker.spy(TableBrowser, "set_rows")
-    mocker.patch.object(Path, "read_text", return_value=json.dumps({**HOME, "id": str(uuid4())}))
+    served["id"] = str(uuid4())
     assert dock.catalog.open_rehuco(OTHER_PATH)
     wait_for_rows(qtbot, dock)
     assert set_rows.call_count == 1
@@ -2080,7 +2113,9 @@ def test_a_double_click_on_no_row_opens_nothing(qtbot: QtBot, dock: CatalogDocks
         first_browser(dock).view.doubleClicked.emit(QModelIndex())
 
 
-def test_the_root_edits_do_nothing_with_no_catalog_open(mocker: MockerFixture, dock: CatalogDocks) -> None:
+def test_the_root_edits_do_nothing_with_no_catalog_open(
+    mocker: MockerFixture, dock: CatalogDocks, on_disk: dict[Path, str]
+) -> None:
     """The slots behind the disabled actions refuse on their own too, so a stray trigger cannot edit nothing.
 
     **Test steps:**
@@ -2089,7 +2124,7 @@ def test_the_root_edits_do_nothing_with_no_catalog_open(mocker: MockerFixture, d
     * verify the question never opened and nothing was written
     """
     picker = answer_add_root(mocker, dock, "/fake/refs")
-    saves = mock_rehuco_writes(mocker)
+    saves = mock_rehuco_writes(mocker, on_disk)
 
     dock.roots._RootsPanel__on_add_root()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     dock.roots._RootsPanel__on_remove_root()  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -2837,8 +2872,8 @@ def fixture_folders(served: dict[str, Any], tmp_path: Path) -> Path:
     (tutorials / "my folder").mkdir()
     packs.mkdir()
     (tutorials / "alpha" / "note.txt").write_text("n", encoding="utf-8")
-    served["roots"][0]["path"] = str(tutorials)
-    served["roots"][1]["path"] = str(packs)
+    served["roots"][0]["location"] = location_at(tutorials)
+    served["roots"][1]["location"] = location_at(packs)
     return tutorials
 
 
@@ -2987,16 +3022,15 @@ def test_a_read_only_file_turns_the_root_edits_off_but_not_refresh_or_the_filter
     assert dock.roots.refresh_roots_action.isEnabled()
     assert dock.roots.filter_folder_action.isEnabled()
     assert not dock.roots.root_name_edit.isEnabled()
-    assert not dock.roots.root_storage_combo.isEnabled()
 
 
-def written_storages(saves: MagicMock) -> list[str]:
-    """The root storages of the last ``.rehuco`` written.
+def written_locations(saves: MagicMock) -> list[str]:
+    """The root locations of the last ``.rehuco`` written.
 
     :param saves: the mock standing in for ``atomic_write_text``.
-    :returns: each root's storage, in file order.
+    :returns: each root's location, in file order.
     """
-    return [root["storage"] for root in json.loads(saves.call_args[0][1])["roots"]]
+    return [root["location"] for root in json.loads(saves.call_args[0][1])["roots"]]
 
 
 @mark.usefixtures("served")
@@ -3066,8 +3100,8 @@ def test_a_move_with_no_root_selected_does_nothing(dock: CatalogDocks, served: A
 
 @mark.usefixtures("served")
 def test_the_root_editors_show_for_a_root_row_only(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> None:
-    """The details pane edits a root when the root itself is current: the name and storage show with its values, and
-    are hidden for a folder, a file and no row.
+    """The details pane edits a root when the root itself is current: the name shows with its value beside the
+    detected storage, and both are hidden for a folder, a file and no row.
 
     **Test steps:**
 
@@ -3079,17 +3113,17 @@ def test_the_root_editors_show_for_a_root_row_only(qtbot: QtBot, dock: CatalogDo
     dock.catalog.open_rehuco(REHUCO_PATH)
     dock.roots.show()
     assert dock.roots.root_name_edit.isHidden()
-    assert dock.roots.root_storage_combo.isHidden()
+    assert dock.roots.root_storage_value.isHidden()
 
     select_root(dock, 1)
     assert not dock.roots.root_name_edit.isHidden()
     assert dock.roots.root_name_edit.text() == "packs"
     assert dock.roots.root_name_edit.isEnabled()
-    assert dock.roots.root_storage_combo.currentData() == RootStorage.LOCAL
+    assert dock.roots.root_storage_value.text() == ROOT_STORAGE_LABELS[RootStorage.LOCAL]
 
     open_root_folder(qtbot, dock, "alpha", "sub")
     assert dock.roots.root_name_edit.isHidden()
-    assert dock.roots.root_storage_combo.isHidden()
+    assert dock.roots.root_storage_value.isHidden()
 
 
 @mark.usefixtures("served")
@@ -3135,15 +3169,15 @@ def test_renaming_on_the_card_saves_the_label_and_updates_the_row(
 
 
 @mark.usefixtures("served")
-@mark.parametrize("typed", ["tutorials", "TUTORIALS", ""])
-def test_a_name_another_root_has_or_none_is_refused_and_reverted(
+@mark.parametrize("typed", ["tutorials", "TUTORIALS"])
+def test_a_name_another_root_has_is_refused_and_reverted(
     mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock, typed: str
 ) -> None:
     """The file's own refusal reaches the person, nothing is written, and the field goes back to the label.
 
     **Test steps:**
 
-    * select the second root and type another root's label, in another case, and nothing
+    * select the second root and type another root's label, in another case
     * verify a warning, no write, the old label shown in the field and in the view
     """
     warning = mocker.patch("rehuco_agent.rehuco.roots_panel.QMessageBox.warning")
@@ -3179,56 +3213,6 @@ def test_leaving_the_name_as_it_was_writes_nothing(mocker: MockerFixture, dock: 
 
 
 @mark.usefixtures("served")
-def test_choosing_a_storage_on_the_card_saves_it_and_restyles_the_row_without_a_reset(
-    dock: CatalogDocks, saves: MagicMock, catalog: Mock
-) -> None:
-    """The root's storage is saved at once, the row's glyph changes in place, and the cache is reconciled to it.
-
-    **Test steps:**
-
-    * select the first root and choose Removable drive, then CD or DVD, then Network share
-    * verify the saved storage each time, the row's glyph, the storage the cache was reconciled to, and that the model
-      was not reset
-    """
-    resets: list[int] = []
-    dock.roots.roots_model.modelReset.connect(lambda: resets.append(1))
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    select_root(dock, 0)
-    combo = dock.roots.root_storage_combo
-
-    for storage in (RootStorage.REMOVABLE, RootStorage.COMPACT_DISK, RootStorage.NETWORK):
-        combo.setCurrentIndex(combo.findData(storage))
-        combo.activated.emit(combo.currentIndex())
-        assert written_storages(saves)[0] == storage.value
-        assert (
-            dock.roots.roots_model.index(0, 0).data(dock.roots.roots_model.ICON_PATH_ROLE)
-            == ROOT_STORAGE_ICONS[storage]
-        )
-        # pylint-qt takes a subscript in a module importing QtCore for a signal's, and the root for its template
-        assert catalog.reconcile.call_args.args[0][0].storage is storage  # pylint: disable=no-member
-
-    assert not resets
-    assert dock.roots.roots_view.currentIndex().row() == 0
-
-
-@mark.usefixtures("served")
-def test_choosing_the_storage_it_already_has_writes_nothing(dock: CatalogDocks, saves: MagicMock) -> None:
-    """Re-choosing the current storage is not an edit.
-
-    **Test steps:**
-
-    * select a local root and choose Local folder
-    * verify nothing was written
-    """
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    select_root(dock, 0)
-
-    dock.roots.root_storage_combo.activated.emit(dock.roots.root_storage_combo.currentIndex())
-
-    saves.assert_not_called()
-
-
-@mark.usefixtures("served")
 def test_a_card_edit_whose_save_fails_is_undone_on_screen(
     mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock
 ) -> None:
@@ -3252,30 +3236,33 @@ def test_a_card_edit_whose_save_fails_is_undone_on_screen(
 
 
 @mark.usefixtures("served")
-@mark.parametrize("storage", [RootStorage.LOCAL, RootStorage.REMOVABLE, RootStorage.NETWORK, RootStorage.COMPACT_DISK])
-def test_adding_a_root_saves_its_storage_and_makes_it_current(
-    qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock, storage: RootStorage
+def test_adding_a_root_saves_its_location_and_makes_it_current(
+    qtbot: QtBot, mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock
 ) -> None:
-    """What the dialog answers is what is saved, and the new root is the one selected.
+    """The file holds the folder's location, not its path; the new root is the one selected, and shown with the
+    storage this machine detected for it.
 
     **Test steps:**
 
-    * answer the Add Root question with a folder and each storage
-    * verify the saved storage, the third row, and that it is current and on the card
+    * answer the Add Root question with a folder
+    * verify the saved location, the third row, and that it is current and on the card with a storage line
     """
-    answer_add_root(mocker, dock, "/fake/refs", storage)
+    answer_add_root(mocker, dock, "/fake/refs")
     dock.catalog.open_rehuco(REHUCO_PATH)
 
     add_root(qtbot, dock)
 
-    assert written_storages(saves)[2] == storage.value
+    assert written_locations(saves)[2] == location_at("/fake/refs")
+    assert all("path" not in root and "storage" not in root for root in json.loads(saves.call_args[0][1])["roots"])
     assert dock.roots.roots_view.currentIndex().row() == 2
     assert dock.roots.root_name_edit.text() == "refs"
-    assert dock.roots.root_storage_combo.currentData() == storage
+    assert dock.roots.root_storage_value.text() in ROOT_STORAGE_LABELS.values()
 
 
 @mark.usefixtures("served", "saves")
-def test_declining_the_removal_keeps_the_root(mocker: MockerFixture, dock: CatalogDocks, queue: TaskQueue) -> None:
+def test_declining_the_removal_keeps_the_root(
+    mocker: MockerFixture, dock: CatalogDocks, queue: TaskQueue, on_disk: dict[Path, str]
+) -> None:
     """Remove asks first, and a no leaves the file, the view and the queue alone.
 
     **Test steps:**
@@ -3284,7 +3271,7 @@ def test_declining_the_removal_keeps_the_root(mocker: MockerFixture, dock: Catal
     * verify the question named the root, nothing was written or queued, and both roots remain
     """
     confirm = mocker.patch.object(dock.roots, "confirm_remove_root", return_value=False)
-    saved = mock_rehuco_writes(mocker)
+    saved = mock_rehuco_writes(mocker, on_disk)
     dock.catalog.open_rehuco(REHUCO_PATH)
     select_root(dock, 0)
 
@@ -3337,7 +3324,7 @@ def test_the_removal_question_says_what_goes_and_what_stays(
     * ask the real question with the box patched to answer Yes, then No
     * verify the text names the root and its folder and counts the entries, and the answers map to booleans
     """
-    root = RehucoRoot(UUID(ROOT_IDS[0]), TUTORIALS, "tutorials", RootStorage.LOCAL)
+    root = mapped_root(TUTORIALS, "tutorials", root_id=UUID(ROOT_IDS[0]))
     box = mocker.patch(
         "rehuco_agent.rehuco.roots_panel.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes
     )
@@ -3354,21 +3341,20 @@ def test_the_removal_question_says_what_goes_and_what_stays(
 
 
 def test_the_real_add_root_question_returns_what_the_dialog_holds(mocker: MockerFixture, dock: CatalogDocks) -> None:
-    """The dock opens its dialog and answers its folder and storage; a cancelled dialog answers nothing.
+    """The dock opens its dialog and answers its folder and name; a cancelled dialog answers nothing.
 
     **Test steps:**
 
-    * run the question with the dialog's ``exec`` patched to fill in a folder and a storage, then to cancel
-    * verify the answer and the cancel
+    * run the question with the dialog's ``exec`` patched to fill in a folder, then to cancel
+    * verify the answer -- the folder's own name, as none was typed -- and the cancel
     """
 
     def accept(self: AddRootDialog) -> QDialog.DialogCode:
         self.folder = "/fake/refs"
-        self.storage_combo.setCurrentIndex(self.storage_combo.findData(RootStorage.NETWORK))
         return QDialog.DialogCode.Accepted
 
     mocker.patch.object(AddRootDialog, "exec", new=accept)
-    assert dock.roots.ask_root_to_add() == ("/fake/refs", RootStorage.NETWORK)
+    assert dock.roots.ask_root_to_add() == ("/fake/refs", "refs")
 
     mocker.patch.object(AddRootDialog, "exec", return_value=QDialog.DialogCode.Rejected)
     assert dock.roots.ask_root_to_add() is None
@@ -4090,7 +4076,7 @@ def test_the_root_slots_refuse_without_a_current_root_and_a_move_that_goes_nowhe
 
     **Test steps:**
 
-    * open a catalog with no row current and call the name, storage, move, verify and folder-filter slots
+    * open a catalog with no row current and call the name, move, verify and folder-filter slots
     * select the first root and call the move slot with a move that leaves it where it is
     * verify nothing was written or queued, no filter was asked for, and the file is as it was
     """
@@ -4098,8 +4084,7 @@ def test_the_root_slots_refuse_without_a_current_root_and_a_move_that_goes_nowhe
     panel = dock.roots
 
     with qtbot.assertNotEmitted(panel.filter_requested):
-        panel._RootsPanel__on_root_name_edited()  # type: ignore[attr-defined]  # pylint: disable=protected-access
-        panel._RootsPanel__on_root_storage_chosen()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        panel.findChild(RootNameEditor)._RootNameEditor__on_finished()  # type: ignore[attr-defined,union-attr]  # pylint: disable=protected-access
         panel._RootsPanel__move_root(lambda _file, row: row)  # type: ignore[attr-defined]  # pylint: disable=protected-access
         verbs = panel._RootsPanel__verbs  # type: ignore[attr-defined]  # pylint: disable=protected-access
         verbs._RootsChecksumVerbs__on_verify_checksums(old=False)  # pylint: disable=protected-access
@@ -4157,7 +4142,7 @@ def test_the_roots_context_menu_shows_the_rows_actions_and_makes_it_current(
 
 @mark.parametrize(
     ("format_version", "add_root_enabled"),
-    [param(1, True, id="editable"), param(99, False, id="newer, read-only")],
+    [param(3, True, id="editable"), param(99, False, id="newer, read-only")],
 )
 def test_a_root_rows_menu_ends_with_scan_add_root_and_refresh_under_a_separator(
     mocker: MockerFixture,
@@ -4237,14 +4222,13 @@ def test_removing_a_root_with_no_catalog_open_does_nothing_and_a_save_that_close
     **Test steps:**
 
     * remove a root with nothing open
-    * open a catalog, make the save fail and the file unreadable, and remove the first root
-    * verify both removals report failure, the second closed the file, and no change of roots was announced after
-      the close's own
+    * open a catalog, make the file vanish from under it, and remove the first root
+    * verify both removals report failure, the second closed the file because the file could not be read again, and no
+      change of roots was announced after the close's own
     """
     del served
     assert not dock.catalog.remove_root(0)
     dock.catalog.open_rehuco(REHUCO_PATH)
-    saves.side_effect = PermissionError("read-only folder")
     mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
     roots_changed = mocker.MagicMock()
     dock.catalog.roots_changed.connect(roots_changed)
@@ -4253,7 +4237,8 @@ def test_removing_a_root_with_no_catalog_open_does_nothing_and_a_save_that_close
 
     assert dock.catalog.rehuco_path is None
     roots_changed.assert_called_once_with()
-    assert dock.catalog.save_error.startswith("Could not save")
+    assert "changed on disk" in dock.catalog.save_error
+    saves.assert_not_called()
 
 
 # endregion
@@ -4932,7 +4917,7 @@ def test_a_placeholder_row_has_no_menu_and_no_buttons(
     * point a root at a folder that is not there and open the catalog
     * verify the row's actions and buttons are empty, and that a right-click on it shows no menu
     """
-    served["roots"][1]["path"] = str(folders.parent / "gone")
+    served["roots"][1]["location"] = location_at(folders.parent / "gone")
     dock.catalog.open_rehuco(REHUCO_PATH)
     packs = dock.roots.roots_model.index(1, 0)
     wait_for_root_listing(qtbot, dock, packs)

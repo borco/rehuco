@@ -84,6 +84,42 @@ def test_a_mapped_drive_gives_its_share(mocker: MockerFixture) -> None:
 
 
 @mark.windows
+def test_the_mapped_drives_are_the_remote_letters_with_a_share(mocker: MockerFixture) -> None:
+    """Only a present, remote letter that maps to a share is listed.
+
+    **Test steps:**
+
+    * make letters C, D, E and W present, with D remote and unreadable, E fixed and W remote
+    * replace the types and shares accordingly
+    * verify only ``W:`` is listed, with its share
+    """
+    present = sum(1 << (ord(letter) - ord("A")) for letter in "CDEW")
+    mocker.patch(f"{MODULE}.GET_LOGICAL_DRIVES", return_value=present)
+    types = {
+        "C:\\": drives.DRIVE_FIXED,
+        "D:\\": drives.DRIVE_REMOTE,
+        "E:\\": drives.DRIVE_FIXED,
+        "W:\\": drives.DRIVE_REMOTE,
+    }
+    mocker.patch(f"{MODULE}.drive_type", side_effect=types.__getitem__)
+    mocker.patch(f"{MODULE}.mapped_share", side_effect=lambda letter: SHARE if letter == "W:" else None)
+
+    assert drives.mapped_drives() == {"W:": SHARE}
+
+
+@mark.windows
+def test_the_system_drive_is_never_a_mapped_drive() -> None:
+    """The real drive table lists no fixed disk.
+
+    **Test steps:**
+
+    * ask for the mapped drives of this machine
+    * verify the system drive is not among them
+    """
+    assert os.environ.get("SystemDrive", "C:") not in drives.mapped_drives()
+
+
+@mark.windows
 def test_a_connection_with_no_name_is_no_share(mocker: MockerFixture) -> None:
     """A success that wrote nothing is not a share.
 

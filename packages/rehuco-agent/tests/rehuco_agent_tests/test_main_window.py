@@ -7737,12 +7737,13 @@ def test_file_holds_the_verbs_the_open_list_and_settings_and_quit(qtbot: QtBot) 
 
 
 def test_root_catalog_holds_the_catalog_files_then_the_docks_own_actions(qtbot: QtBot) -> None:
-    """``Root Catalog`` is New, Open, Open Recent, a separator, then the dock's Scan, Add Root and Remove Root (#402).
+    """``Root Catalog`` is New, Open, Open Recent, a separator, then the dock's Scan, Add Root, Remove Root and Map
+    (#402, #514).
 
     **Test steps:**
 
     * construct a real ``MainWindow`` and read the menu's actions
-    * verify the window's three, the separator, and that each of the last three *is* the dock's action object
+    * verify the window's three, the separator, and that each of the last four *is* the dock's action object
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -7753,11 +7754,16 @@ def test_root_catalog_holds_the_catalog_files_then_the_docks_own_actions(qtbot: 
 
     assert actions[:3] == [ui.new_rehuco_action, ui.open_rehuco_action, ui.open_recent_rehucos_menu.menuAction()]
     assert actions[3].isSeparator()
-    assert actions[4:7] == [roots.scan_action, roots.add_root_action, roots.remove_root_action]
+    assert actions[4:8] == [
+        roots.scan_action,
+        roots.add_root_action,
+        roots.remove_root_action,
+        roots.map_root_action,
+    ]
     # then the Roots view's own toggle, set apart (#457)
-    assert actions[7].isSeparator()
-    assert actions[8].isCheckable()
-    assert len(actions) == 9
+    assert actions[8].isSeparator()
+    assert actions[9].isCheckable()
+    assert len(actions) == 10
 
 
 def test_root_catalog_entries_follow_the_dock_and_scan_wakes_once_a_catalog_is_open(qtbot: QtBot) -> None:

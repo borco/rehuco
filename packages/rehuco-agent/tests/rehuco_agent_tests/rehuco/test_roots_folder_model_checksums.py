@@ -15,7 +15,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.files_rows import FileChecksumState
 from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.roots_checksum import RowChecksum
-from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
+from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
+from rehuco_agent.rehuco.roots_node import NodeListing
 from rehuco_core import Relocation
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown

@@ -5,7 +5,6 @@ document closes, and a document's own sub-docks as the preview moves on."""
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Final
-from unittest.mock import MagicMock
 
 import PySide6QtAds as QtAds
 import shiboken6
@@ -28,7 +27,9 @@ from .rehuco.test_catalog_docks import (  # noqa: F401  # pylint: disable=unused
     fixture_cache,
     fixture_cached_rows,
     fixture_catalog,
+    fixture_machine,
     fixture_no_open_scan,
+    fixture_on_disk,
     fixture_saves,
     fixture_served,
 )
@@ -103,8 +104,9 @@ def assert_floating_together(window: MainWindow, docks: list[Any]) -> None:
 
 
 # region the Browsers dock as catalogs change
+@mark.usefixtures("cache", "served", "saves", "machine")
 def test_changing_catalogs_keeps_a_floating_window_holding_the_browsers_dock(
-    cache: MagicMock, served: object, saves: object, mocker: MockerFixture, window: MainWindow
+    mocker: MockerFixture, window: MainWindow
 ) -> None:
     """The reported layout -- the Root Catalog dock floating over the Browsers and Log docks tabbed together --
     survives opening a catalog, switching to another and creating a new one, each of which lets every browser go
@@ -116,7 +118,6 @@ def test_changing_catalogs_keeps_a_floating_window_holding_the_browsers_dock(
     * open a catalog, open another, then create a new one through ``Root Catalog`` > ``New...``
     * verify after each that the three docks live, open, in one floating window, their toggles on the action bar
     """
-    del cache, served, saves
     docks = float_over(window, REHUCO_DOCK_OBJECT_NAME, BROWSERS_DOCK_OBJECT_NAME, LOG_DOCK_OBJECT_NAME)
     mocker.patch("rehuco_agent.main_window.QFileDialog.getSaveFileName", return_value=(str(NEW_PATH), ""))
 

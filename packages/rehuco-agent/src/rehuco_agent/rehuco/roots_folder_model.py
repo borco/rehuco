@@ -16,15 +16,16 @@ position and an open column's subtree survive it; a relocation renames the node 
 derive from its ancestors, so renaming a folder renames a whole loaded subtree by changing one node.
 
 **An unreachable folder says so** (#245): its column holds one row naming what is wrong, never an empty list.
+
+**A root this machine does not map** (#514) is still a row, in the file's order: greyed, with one child row saying so,
+and never listed -- there is no folder to ask for. Moving, renaming and removing it work as for any root.
 """
 
 import itertools
 import time
 from bisect import bisect_left
 from collections.abc import Sequence
-from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from enum import StrEnum
 from os import path as os_path
 from pathlib import Path
 from typing import Any, Final, cast, override
@@ -46,6 +47,7 @@ from rehuco_core import (
     DirectoryEntry,
     DirectoryListing,
     FileType,
+    MappedRoot,
     RehucoRoot,
     Relocation,
     RootFolderLister,
@@ -59,11 +61,21 @@ from ..settings.checksum_settings import shared_checksum_settings
 from .root_folder_loader import RootFolderLoader
 from .root_storage import (
     FOLDER_NOT_FOUND_ROW,
+    NOT_MAPPED_ROW,
     ROOT_STORAGE_ICONS,
     ROOT_STORAGE_OFFLINE_ROWS,
     ROOT_STORAGE_OFFLINE_TOOLTIPS,
 )
-from .roots_checksum import BOOKKEEPING_KINDS, RowChecksum, row_checksum
+from .roots_checksum import BOOKKEEPING_KINDS, row_checksum
+from .roots_node import (
+    LISTABLE_KINDS,
+    PLACEHOLDER_KINDS,
+    NodeListing,
+    RootsNode,
+    RootsNodeKind,
+    ShownRoot,
+    root_where,
+)
 
 ROOT_MIME_TYPE: Final = "application/x-rehuco-root"
 """What a dragged root is carried as: its id. Nothing else is draggable, and nothing from outside is dropped."""
@@ -72,38 +84,6 @@ LOADING_ROW: Final = "Loading..."
 """The one row a folder's column shows while its first listing is out."""
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
-
-
-class RootsNodeKind(StrEnum):
-    """What a node is. The last two are placeholder rows: a column shows one while it loads, or when it could not
-    be listed, and neither can be selected."""
-
-    ROOT = "root"
-    FOLDER = "folder"
-    FILE = "file"
-    LOADING = "loading"
-    UNREACHABLE = "unreachable"
-
-
-class NodeListing(StrEnum):
-    """Where a root's or folder's listing stands."""
-
-    UNLISTED = "unlisted"
-    """Never asked for."""
-
-    PENDING = "pending"
-    """A listing is out. Rows already shown stay until it lands."""
-
-    LISTED = "listed"
-    """Listed, and it was reachable."""
-
-    UNREACHABLE = "unreachable"
-    """Listed, and the folder could not be read."""
-
-
-PLACEHOLDER_KINDS: Final = (RootsNodeKind.LOADING, RootsNodeKind.UNREACHABLE)
-
-LISTABLE_KINDS: Final = (RootsNodeKind.ROOT, RootsNodeKind.FOLDER)
 
 
 # a model is one cohesive surface: the tree, its lazy fetch, its in-place edits and the follow of a rename all turn
@@ -124,9 +104,9 @@ class RootsFolderModel(QAbstractItemModel):
       record that covers it last found it (#457); ``None`` when no record covers the file.
       :attr:`BOOKKEEPING_ROLE`: whether the file is a record, a checksum file or a screenshot, which no record
       checksums.
-    * :attr:`GREYED_ROLE`: whether the row is drawn greyed out -- a placeholder, or an unreachable root whose
-      storage is not local. An unreachable **local** root is struck through instead (``FontRole``): a local folder
-      that will not list has been deleted, where a share or a drive is merely away.
+    * :attr:`GREYED_ROLE`: whether the row is drawn greyed out -- a placeholder, a root this machine does not map,
+      or an unreachable root whose storage is not local. An unreachable **local** root is struck through instead
+      (``FontRole``): a local folder that will not list has been deleted, where a share or a drive is merely away.
 
     Everything is read through the one :class:`~rehuco_core.RootFolderLister` the model was last handed.
 
@@ -150,61 +130,31 @@ class RootsFolderModel(QAbstractItemModel):
     CHECKSUM_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 5
     BOOKKEEPING_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 6
 
-    @dataclass(eq=False)
-    class Node:  # pylint: disable=too-many-instance-attributes
-        """One row. It stores its name only; where it is derives from its ancestors.
-
-        :param name: the row's name -- a root's label, a folder's or file's name, or a placeholder's text.
-        :param kind: what the row is.
-        :param parent: the row above, or ``None`` for the invisible top.
-        :param file_type: what a folder or file is by shape.
-        :param root: the root, for a root row.
-        :param size: a file's size in bytes, when the listing had it.
-        :param modified: a modification time as a POSIX timestamp, when the listing had it.
-        :param checksum: what the record that covers a file says about it, when one does (#457).
-        :param bookkeeping: whether a file is a record, a checksum file or a screenshot.
-        :param listed_at: :func:`time.monotonic` when its listing last landed, reachable or not; ``None`` until one
-            has.
-        """
-
-        name: str
-        kind: RootsNodeKind
-        parent: RootsFolderModel.Node | None
-        file_type: FileType = FileType.GENERIC
-        root: RehucoRoot | None = None
-        size: int | None = None
-        modified: float | None = None
-        checksum: RowChecksum | None = None
-        bookkeeping: bool = False
-        children: list[RootsFolderModel.Node] = field(default_factory=list)
-        row: int = 0
-        listing: NodeListing = NodeListing.UNLISTED
-        request: int = 0
-        listed_at: float | None = None
-
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.__top: Final = RootsFolderModel.Node("", RootsNodeKind.ROOT, None)
+        self.__top: Final = RootsNode("", RootsNodeKind.ROOT, None)
         self.__lister: RootFolderLister | None = None
         self.__loader: Final = RootFolderLoader(self)
         self.__loader.listed.connect(self.__on_listed)
         self.__serials: Final = itertools.count(1)
-        self.__pending: Final[dict[int, RootsFolderModel.Node]] = {}
+        self.__pending: Final[dict[int, RootsNode]] = {}
         self.__reorderable = False
-        self.__retired: list[RootsFolderModel.Node] = []
+        self.__retired: list[RootsNode] = []
         """Rows taken out of the tree. Qt may still hold an index to one for a moment, and ``internalPointer`` does
         not keep its object alive, so they are held until the event loop has turned."""
 
     # region the roots
 
-    def set_roots(self, roots: Sequence[RehucoRoot], lister: RootFolderLister | None) -> None:
+    def set_roots(self, roots: Sequence[ShownRoot], lister: RootFolderLister | None) -> None:
         """Show ``roots``, in this order, changing only what differs from what is shown.
 
         A removed root's rows are removed, a new root is inserted and listed at once -- so an away root reads as
         away without being clicked -- and a root that moved is moved. A root whose label or storage changed is
-        updated in place; one whose folder changed drops what it had listed and lists again. The model is never reset.
+        updated in place; one whose folder changed, or that gained or lost its mapping, drops what it had listed and
+        starts again. The model is never reset.
 
-        :param roots: the ``.rehuco``'s roots, in its order; empty when no catalog is open.
+        :param roots: the ``.rehuco``'s roots, in its order, each as this machine knows it; empty when no catalog is
+            open.
         :param lister: what lists a folder, over these roots.
         """
         self.__lister = lister
@@ -223,14 +173,26 @@ class RootsFolderModel(QAbstractItemModel):
                 None,
             )
             if moved is None:
-                node = RootsFolderModel.Node(root.label, RootsNodeKind.ROOT, top, root=root)
+                node = RootsNode(root.label, RootsNodeKind.ROOT, top, root=root)
                 self.__insert(top, position, [node])
                 self.__request(node)
             else:
                 self.__move(top, moved.row, position)
                 self.__update_root(moved, root)
 
-    def __update_root(self, node: RootsFolderModel.Node, root: RehucoRoot) -> None:
+    def set_root_name(self, root_id: UUID, name: str) -> None:
+        """Change the name a root's row has, in memory only: what is being typed for it, before it is saved, or the
+        saved label again. The row then shows it, or where the root is when it is empty (:attr:`RootsNode.label`).
+
+        :param root_id: the root; one not shown is ignored.
+        :param name: the name.
+        """
+        node = next((node for node in self.__top.children if self.__own_root(node).root_id == root_id), None)
+        if node is not None and node.name != name:
+            node.name = name
+            self.__changed(node)
+
+    def __update_root(self, node: RootsNode, root: ShownRoot) -> None:
         """Bring a shown root up to date with the file.
 
         :param node: the root's row.
@@ -241,20 +203,37 @@ class RootsFolderModel(QAbstractItemModel):
             return
         node.root = root
         node.name = root.label
-        if current.path != root.path:
+        if RootsFolderModel.__folder_of(current) != RootsFolderModel.__folder_of(root):
             self.__remove_children(node)
             node.listing = NodeListing.UNLISTED
             node.listed_at = None
             self.__request(node)
         self.__changed(node)
 
-    def __own_root(self, node: RootsFolderModel.Node) -> RehucoRoot:
+    @staticmethod
+    def __folder_of(root: ShownRoot) -> Path | None:
+        """Where this machine finds a root.
+
+        :param root: a shown root.
+        :returns: its folder; ``None`` when this machine does not map it.
+        """
+        return root.path if isinstance(root, MappedRoot) else None
+
+    def __own_root(self, node: RootsNode) -> ShownRoot:
         """The root a row belongs to.
 
         :param node: a root row.
         :returns: its root.
         """
-        return cast(RehucoRoot, node.root)  # only a root row is asked
+        return cast(ShownRoot, node.root)  # only a root row is asked
+
+    def __mapped_above(self, node: RootsNode) -> MappedRoot:
+        """The mapped root a row is under, for a row that only exists under one.
+
+        :param node: a root or a row under it, other than the one placeholder of an unmapped root.
+        :returns: the root.
+        """
+        return cast(MappedRoot, self.__root_above(node))  # an unmapped root is never listed, so has no such rows
 
     # endregion
 
@@ -263,7 +242,12 @@ class RootsFolderModel(QAbstractItemModel):
     @override
     def canFetchMore(self, parent: ModelIndex) -> bool:  # noqa: N802  (Qt API name)
         node = self.__node(parent)
-        return node.kind in LISTABLE_KINDS and node is not self.__top and node.listing is NodeListing.UNLISTED
+        return (
+            node.kind in LISTABLE_KINDS
+            and node is not self.__top
+            and node.listing is NodeListing.UNLISTED
+            and not isinstance(node.root, RehucoRoot)
+        )
 
     @override
     def fetchMore(self, parent: ModelIndex) -> None:  # noqa: N802  (Qt API name)
@@ -303,7 +287,7 @@ class RootsFolderModel(QAbstractItemModel):
 
         :param index: any row.
         """
-        node: RootsFolderModel.Node | None = self.__node(index)
+        node: RootsNode | None = self.__node(index)
         while node is not None and node is not self.__top:
             self.relist(self.__index_for(node))
             node = node.parent
@@ -330,14 +314,18 @@ class RootsFolderModel(QAbstractItemModel):
         if node is not None:
             self.relist(self.__index_for(node))
 
-    def __request(self, node: RootsFolderModel.Node) -> None:
+    def __request(self, node: RootsNode) -> None:
         """Start listing a root or folder, dropping any earlier request for it.
 
-        A folder with no rows yet gets a *Loading* row, so its column is never blank while the read is out.
+        A folder with no rows yet gets a *Loading* row, so its column is never blank while the read is out. A root this
+        machine does not map is not listed: it gets its one row saying so, instead.
 
         :param node: the root or folder.
         """
         lister = self.__lister
+        if isinstance(node.root, RehucoRoot):
+            self.__insert(node, 0, [RootsNode(NOT_MAPPED_ROW, RootsNodeKind.UNREACHABLE, node)])
+            return
         if lister is None:
             return
         self.__pending.pop(node.request, None)
@@ -346,17 +334,17 @@ class RootsFolderModel(QAbstractItemModel):
         self.__pending[serial] = node  # pylint: disable=unsupported-assignment-operation
         node.listing = NodeListing.PENDING
         if not node.children:
-            self.__insert(node, 0, [RootsFolderModel.Node(LOADING_ROW, RootsNodeKind.LOADING, node)])
+            self.__insert(node, 0, [RootsNode(LOADING_ROW, RootsNodeKind.LOADING, node)])
         self.__loader.start(
             serial, lister, self.__root_above(node).root_id, self.__relative(node), self.__covering(node)
         )
 
-    def __announce_records(self, node: RootsFolderModel.Node) -> None:
+    def __announce_records(self, node: RootsNode) -> None:
         """Say which records a folder bears on: those it shows, and the one above that manages it (#487).
 
         :param node: the root or folder, whose rows are the listing's.
         """
-        folder = self.__root_above(node).path.joinpath(*self.__relative(node))
+        folder = self.__mapped_above(node).path.joinpath(*self.__relative(node))
         records = [
             folder / child.name
             for child in node.children
@@ -364,10 +352,10 @@ class RootsFolderModel(QAbstractItemModel):
         ]
         above = self.__record_above(node)
         if above is not None:
-            records.append(self.__root_above(node).path.joinpath(*above))
+            records.append(self.__mapped_above(node).path.joinpath(*above))
         self.records_listed.emit(folder, tuple(records))
 
-    def __record_above(self, node: RootsFolderModel.Node) -> tuple[str, ...] | None:
+    def __record_above(self, node: RootsNode) -> tuple[str, ...] | None:
         """The directory-scoped record above ``node`` that manages it, as a path under the root.
 
         Read from the listings the model already holds, like :meth:`__covering` -- which also wants a checksum file
@@ -386,7 +374,7 @@ class RootsFolderModel(QAbstractItemModel):
             ancestor = ancestor.parent
         return None
 
-    def __covering(self, node: RootsFolderModel.Node) -> tuple[str, ...] | None:
+    def __covering(self, node: RootsNode) -> tuple[str, ...] | None:
         """The directory-scoped record above ``node`` whose ``info.checksum`` covers it, as a path under the root.
 
         Read from the listings the model already holds, so it costs no disk read: the nearest ancestor with a
@@ -429,11 +417,11 @@ class RootsFolderModel(QAbstractItemModel):
             node.listing = NodeListing.UNREACHABLE
             offline = FOLDER_NOT_FOUND_ROW
             if node.kind is RootsNodeKind.ROOT:
-                offline = ROOT_STORAGE_OFFLINE_ROWS[self.__own_root(node).storage]
-            self.__insert(node, 0, [RootsFolderModel.Node(offline, RootsNodeKind.UNREACHABLE, node)])
+                offline = ROOT_STORAGE_OFFLINE_ROWS[self.__mapped_above(node).storage]
+            self.__insert(node, 0, [RootsNode(offline, RootsNodeKind.UNREACHABLE, node)])
         self.__changed(node)
 
-    def __show_entries(self, node: RootsFolderModel.Node, listing: DirectoryListing) -> None:
+    def __show_entries(self, node: RootsNode, listing: DirectoryListing) -> None:
         """Make ``node``'s rows the listing's, keeping every row it already shows that is still there.
 
         :param node: the listed root or folder.
@@ -448,7 +436,7 @@ class RootsFolderModel(QAbstractItemModel):
             if wanted.get(child.name) is None or wanted[child.name] != (child.kind is RootsNodeKind.FOLDER):
                 self.__remove(node, row)
         position = 0
-        fresh: list[RootsFolderModel.Node] = []
+        fresh: list[RootsNode] = []
         for entry in entries:
             if position < len(node.children) and node.children[position].name == entry.name:  # pylint: disable=no-member
                 if fresh:
@@ -460,7 +448,7 @@ class RootsFolderModel(QAbstractItemModel):
             else:
                 kind = RootsNodeKind.FOLDER if entry.is_directory else RootsNodeKind.FILE
                 fresh.append(
-                    RootsFolderModel.Node(
+                    RootsNode(
                         entry.name,
                         kind,
                         node,
@@ -477,7 +465,7 @@ class RootsFolderModel(QAbstractItemModel):
 
     def __update_row(
         self,
-        child: RootsFolderModel.Node,
+        child: RootsNode,
         entry: DirectoryEntry,
         listing: DirectoryListing,
         stale_after: timedelta,
@@ -526,7 +514,7 @@ class RootsFolderModel(QAbstractItemModel):
                 self.__remove(node.parent, node.row)
                 self.relist_folder(destination.parent)
 
-    def __resort(self, node: RootsFolderModel.Node) -> None:
+    def __resort(self, node: RootsNode) -> None:
         """Move a renamed row to where its new name sorts among its siblings.
 
         :param node: the renamed folder or file.
@@ -541,7 +529,7 @@ class RootsFolderModel(QAbstractItemModel):
         self.__move(parent, node.row, target + placeholders)
 
     @staticmethod
-    def __sort_key(node: RootsFolderModel.Node) -> tuple[bool, tuple[Any, ...]]:
+    def __sort_key(node: RootsNode) -> tuple[bool, tuple[Any, ...]]:
         """What orders folders before files, each in natural order.
 
         :param node: a folder or file.
@@ -549,7 +537,7 @@ class RootsFolderModel(QAbstractItemModel):
         """
         return node.kind is not RootsNodeKind.FOLDER, natural_sort_key(node.name)
 
-    def __find(self, path: Path) -> RootsFolderModel.Node | None:
+    def __find(self, path: Path) -> RootsNode | None:
         """The loaded row for ``path``.
 
         :param path: an absolute path.
@@ -557,10 +545,13 @@ class RootsFolderModel(QAbstractItemModel):
         """
         parts = Relocation.path_parts(path)
         for root_node in self.__top.children:
-            root_parts = Relocation.path_parts(self.__own_root(root_node).path)
+            root = self.__own_root(root_node)
+            if not isinstance(root, MappedRoot):
+                continue
+            root_parts = Relocation.path_parts(root.path)
             if parts[: len(root_parts)] != root_parts:
                 continue
-            node: RootsFolderModel.Node | None = root_node
+            node: RootsNode | None = root_node
             for name in parts[len(root_parts) :]:
                 node = next(
                     (
@@ -587,7 +578,7 @@ class RootsFolderModel(QAbstractItemModel):
         """
         return self.__node(index).kind if index.isValid() else None
 
-    def root_at(self, index: ModelIndex) -> RehucoRoot | None:
+    def root_at(self, index: ModelIndex) -> ShownRoot | None:
         """The root a **root row** stands for.
 
         :param index: any index.
@@ -598,7 +589,7 @@ class RootsFolderModel(QAbstractItemModel):
         node = self.__node(index)
         return node.root if node.kind is RootsNodeKind.ROOT else None
 
-    def root_of(self, index: ModelIndex) -> RehucoRoot | None:
+    def root_of(self, index: ModelIndex) -> ShownRoot | None:
         """The root a row is under, a root row's own included.
 
         :param index: any index.
@@ -680,22 +671,23 @@ class RootsFolderModel(QAbstractItemModel):
         """Where a root, folder or file is on disk.
 
         :param index: any index.
-        :returns: its path, or ``None`` for an invalid index or a placeholder.
+        :returns: its path, or ``None`` for an invalid index, a placeholder or a root this machine does not map.
         """
         if not index.isValid() or self.__node(index).kind in PLACEHOLDER_KINDS:
             return None
         node = self.__node(index)
-        return self.__root_above(node).path.joinpath(*self.__relative(node))
+        root = self.__root_above(node)
+        return root.path.joinpath(*self.__relative(node)) if isinstance(root, MappedRoot) else None
 
-    def __node(self, index: ModelIndex) -> RootsFolderModel.Node:
+    def __node(self, index: ModelIndex) -> RootsNode:
         """The row behind an index.
 
         :param index: any index.
         :returns: its row; the invisible top for an invalid one.
         """
-        return cast(RootsFolderModel.Node, index.internalPointer()) if index.isValid() else self.__top
+        return cast(RootsNode, index.internalPointer()) if index.isValid() else self.__top
 
-    def __index_for(self, node: RootsFolderModel.Node) -> QModelIndex:
+    def __index_for(self, node: RootsNode) -> QModelIndex:
         """The index of a row.
 
         :param node: any row.
@@ -703,7 +695,7 @@ class RootsFolderModel(QAbstractItemModel):
         """
         return QModelIndex() if node is self.__top else self.createIndex(node.row, 0, node)
 
-    def __root_above(self, node: RootsFolderModel.Node) -> RehucoRoot:
+    def __root_above(self, node: RootsNode) -> ShownRoot:
         """The root a row is under.
 
         :param node: any row but the top.
@@ -713,7 +705,7 @@ class RootsFolderModel(QAbstractItemModel):
             node = node.parent
         return self.__own_root(node)
 
-    def __relative(self, node: RootsFolderModel.Node) -> tuple[str, ...]:
+    def __relative(self, node: RootsNode) -> tuple[str, ...]:
         """The names from a row's root down to it.
 
         :param node: any row but the top.
@@ -858,13 +850,13 @@ class RootsFolderModel(QAbstractItemModel):
         unreachable = node.listing is NodeListing.UNREACHABLE
         match role:
             case Qt.ItemDataRole.DisplayRole:
-                return node.name
+                return node.label
             case RootsFolderModel.ICON_PATH_ROLE:
                 if root is not None:
-                    return ROOT_STORAGE_ICONS[root.storage]
+                    return ROOT_STORAGE_ICONS[root.storage if isinstance(root, MappedRoot) else RootStorage.LOCAL]
                 return FILE_TYPE_ICONS[node.file_type] if node.kind not in PLACEHOLDER_KINDS else None
             case RootsFolderModel.PATH_ROLE:
-                return None if root is None else str(root.path)
+                return None if root is None else root_where(root)
             case RootsFolderModel.SIZE_ROLE:
                 return node.size
             case RootsFolderModel.MODIFIED_ROLE:
@@ -874,11 +866,13 @@ class RootsFolderModel(QAbstractItemModel):
             case RootsFolderModel.BOOKKEEPING_ROLE:
                 return node.bookkeeping
             case RootsFolderModel.GREYED_ROLE:
-                return node.kind in PLACEHOLDER_KINDS or (
-                    root is not None and unreachable and root.storage is not RootStorage.LOCAL
+                return (
+                    node.kind in PLACEHOLDER_KINDS
+                    or isinstance(root, RehucoRoot)
+                    or (isinstance(root, MappedRoot) and unreachable and root.storage is not RootStorage.LOCAL)
                 )
             case Qt.ItemDataRole.FontRole:
-                if root is not None and unreachable and root.storage is RootStorage.LOCAL:
+                if isinstance(root, MappedRoot) and unreachable and root.storage is RootStorage.LOCAL:
                     font = QFont()
                     font.setStrikeOut(True)
                     return font
@@ -887,6 +881,8 @@ class RootsFolderModel(QAbstractItemModel):
                 if root is None:
                     checksum = node.checksum
                     return None if checksum is None else checksum_tooltip_for(checksum.state, checksum.untrusted)
+                if isinstance(root, RehucoRoot):
+                    return root.location
                 tooltip = str(root.path)
                 if unreachable:
                     tooltip += "\n" + ROOT_STORAGE_OFFLINE_TOOLTIPS[root.storage]
@@ -897,7 +893,7 @@ class RootsFolderModel(QAbstractItemModel):
 
     # region changing rows
 
-    def __insert(self, parent: RootsFolderModel.Node, row: int, nodes: list[RootsFolderModel.Node]) -> None:
+    def __insert(self, parent: RootsNode, row: int, nodes: list[RootsNode]) -> None:
         """Insert rows.
 
         :param parent: the row to insert under.
@@ -909,7 +905,7 @@ class RootsFolderModel(QAbstractItemModel):
         RootsFolderModel.__renumber(parent, row)
         self.endInsertRows()
 
-    def __remove(self, parent: RootsFolderModel.Node, row: int) -> None:
+    def __remove(self, parent: RootsNode, row: int) -> None:
         """Remove one row, and with it everything under it.
 
         :param parent: the row it is under.
@@ -922,7 +918,7 @@ class RootsFolderModel(QAbstractItemModel):
         self.__retire(gone)
         self.endRemoveRows()
 
-    def __remove_children(self, parent: RootsFolderModel.Node) -> None:
+    def __remove_children(self, parent: RootsNode) -> None:
         """Remove every row under a root or folder.
 
         :param parent: the root or folder.
@@ -936,7 +932,7 @@ class RootsFolderModel(QAbstractItemModel):
             self.__retire(node)
         self.endRemoveRows()
 
-    def __move(self, parent: RootsFolderModel.Node, row: int, target: int) -> None:
+    def __move(self, parent: RootsNode, row: int, target: int) -> None:
         """Move one row to where it will sit in the end.
 
         :param parent: the row they are under.
@@ -953,7 +949,7 @@ class RootsFolderModel(QAbstractItemModel):
         RootsFolderModel.__renumber(parent, min(row, target))
         self.endMoveRows()
 
-    def __changed(self, node: RootsFolderModel.Node) -> None:
+    def __changed(self, node: RootsNode) -> None:
         """Say a row's data changed.
 
         :param node: the row.
@@ -962,7 +958,7 @@ class RootsFolderModel(QAbstractItemModel):
         self.dataChanged.emit(index, index)
 
     @staticmethod
-    def __renumber(parent: RootsFolderModel.Node, start: int) -> None:
+    def __renumber(parent: RootsNode, start: int) -> None:
         """Set the row of every child from ``start`` on.
 
         :param parent: the row whose children changed.
@@ -971,7 +967,7 @@ class RootsFolderModel(QAbstractItemModel):
         for row in range(start, len(parent.children)):
             parent.children[row].row = row
 
-    def __forget(self, node: RootsFolderModel.Node) -> None:
+    def __forget(self, node: RootsNode) -> None:
         """Drop the requests still out for a removed row and everything under it, so their answers are ignored.
 
         :param node: the removed row.
@@ -981,7 +977,7 @@ class RootsFolderModel(QAbstractItemModel):
         for child in node.children:
             self.__forget(child)
 
-    def __retire(self, node: RootsFolderModel.Node) -> None:
+    def __retire(self, node: RootsNode) -> None:
         """Keep a removed row alive until the event loop has turned.
 
         :param node: the removed row.

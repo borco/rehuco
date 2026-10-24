@@ -47,7 +47,9 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_followed,
     fixture_held,
     fixture_listening,
+    fixture_machine,
     fixture_no_open_scan,
+    fixture_on_disk,
     fixture_queue,
     fixture_saves,
     fixture_served,
@@ -110,9 +112,7 @@ def offline_reason(docks: CatalogDocks) -> str:
     :param docks: the catalog's docks, with a catalog open.
     :returns: the reason its storage gives.
     """
-    file = docks.catalog.file
-    assert file is not None
-    first, *_ = file.roots
+    first, *_ = docks.catalog.mapped_roots()
     return ROOT_STORAGE_OFFLINE_TOOLTIPS[first.storage]
 
 

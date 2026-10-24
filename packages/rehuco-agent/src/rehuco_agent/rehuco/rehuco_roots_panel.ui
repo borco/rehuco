@@ -66,6 +66,14 @@
     <string>Remove the selected root from this .rehuco and its resources from the cache.</string>
    </property>
   </action>
+  <action name="map_root_action">
+   <property name="text">
+    <string>Map...</string>
+   </property>
+   <property name="toolTip">
+    <string>Say which folder of this machine is this root. Nothing in the .rehuco changes.</string>
+   </property>
+  </action>
   <action name="refresh_roots_action">
    <property name="text">
     <string>Refresh</string>

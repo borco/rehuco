@@ -27,6 +27,8 @@ from rehuco_core import (
     check_records,
 )
 
+from rehuco_core_tests.mapped_roots import location_at, mapped
+
 ROOT: Final = Path("/fake/library")
 RECORD: Final = ROOT / "course/info.rehu"
 CATALOG_ROOT: Final = CatalogRoot(uuid4(), "library", ROOT, 0, removable=False, reachable=True, scanned_at=1.0)
@@ -315,14 +317,14 @@ def test_a_converted_record_keeps_its_rows_id_whatever_order_its_findings_come_i
     * verify the ``.rehu`` holds the ``.tc``'s row id, the other row is untouched, and only the ``.rehu`` changed
     """
     rehuco = RehucoFile.new()
-    rehuco.add_root(tmp_path / "root")
-    (root,) = rehuco.roots
+    rehuco.add_root(location_at(tmp_path / "root"))
+    (root,) = mapped(rehuco)
     folder = root.path / "Crochet"
     folder.mkdir(parents=True)
     tc_path = folder / "info.tc"
     tc_path.write_text("title: Crochet\ntype: tutorial\n", encoding="utf-8")
     with CatalogCache.open(tmp_path / "cache.rehudb") as cache:
-        cache.reconcile_roots(rehuco.roots)
+        cache.reconcile_roots(mapped(rehuco))
         cache.apply_root_scan(
             root.root_id,
             [CatalogRecord("Crochet/info.tc", RecordKind.TC), CatalogRecord("Other/info.tc", RecordKind.TC)],

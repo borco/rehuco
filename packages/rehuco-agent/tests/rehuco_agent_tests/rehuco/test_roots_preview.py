@@ -12,8 +12,10 @@ from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.rehuco.root_storage import NOT_MAPPED_ROW, ROOT_STORAGE_LABELS
 from rehuco_agent.rehuco.roots_checksum import BAD_INK, OLD_BAD_INK
-from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
+from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
+from rehuco_agent.rehuco.roots_node import NodeListing
 from rehuco_agent.rehuco.roots_preview import (
     EMPTY_FOLDER,
     FILE_TYPE_LABELS,
@@ -28,6 +30,8 @@ from rehuco_agent.rehuco.roots_preview import (
 )
 from rehuco_agent.rehuco.scaled_image import ScaledImage
 from rehuco_core import FileType, RehucoRoot, Relocation, RenameCoordinator, RootFolderLister, RootStorage
+
+from rehuco_agent_tests.mapped_roots import mapped_root
 
 WAIT_TIMEOUT_MS: Final = 10_000
 
@@ -46,7 +50,7 @@ class Shown:
         record_for: RecordForRow | None = None,
         pack_for: PackForRow | None = None,
     ) -> None:
-        root = RehucoRoot(uuid4(), library, "lib", RootStorage.LOCAL)
+        root = mapped_root(library, "lib", RootStorage.LOCAL)
         self.model = RootsFolderModel()
         self.model.set_roots([root], RootFolderLister([root]))
         self.preview = RootsPreview(self.model, RenameCoordinator(), actions_for, record_for, pack_for)
@@ -163,7 +167,7 @@ def test_an_empty_folder_says_so_and_has_no_size(qtbot: QtBot, shown: Shown) -> 
 
 def test_a_listed_root_counts_what_it_holds_and_an_unlisted_folder_says_nothing(shown: Shown) -> None:
     """The count comes from the rows the model already has, so a folder nobody opened has none to give. A root has no
-    type line: its storage is edited, not described.
+    type line: its storage has a line of its own.
 
     **Test steps:**
 
@@ -180,48 +184,73 @@ def test_a_listed_root_counts_what_it_holds_and_an_unlisted_folder_says_nothing(
     assert shown.hidden("contents_label")
 
 
-def test_a_root_shows_its_editors_and_nothing_else_does(shown: Shown) -> None:
-    """The name and storage fields are for a root row: they take its label and storage without telling anyone, and
-    go away for any other row, whose bold name header takes their place.
+def test_a_root_shows_its_name_editor_and_its_detected_storage_and_nothing_else_does(shown: Shown) -> None:
+    """The name field is for a root row: it takes its label without telling anyone, beside the storage the system
+    detected as plain text; both go away for any other row, whose bold name header takes their place.
 
     **Test steps:**
 
-    * show the root, watching the name and storage signals, then a file
-    * verify the root's editors are filled and quiet, its name header is hidden, and a file has the reverse
+    * show the root, watching the name signal, then a file
+    * verify the root's name is filled and quiet, its storage line reads the storage, its name header is hidden, and a
+      file has the reverse
     """
     told: list[object] = []
     shown.preview.root_name_edit.textChanged.connect(told.append)
-    shown.preview.root_storage_combo.currentIndexChanged.connect(told.append)
 
     shown.preview.show_index(shown.root)
 
     assert not shown.preview.root_name_edit.isHidden()
     assert shown.preview.root_name_edit.text() == "lib"
-    assert shown.preview.root_storage_combo.currentData() == RootStorage.LOCAL
+    assert not shown.preview.root_storage_value.isHidden()
+    assert shown.preview.root_storage_value.text() == ROOT_STORAGE_LABELS[RootStorage.LOCAL]
     assert shown.hidden("name_label")
     assert not told
 
     shown.preview.show_index(shown.row("clip.mp4"))
     assert shown.preview.root_name_edit.isHidden()
-    assert shown.preview.root_storage_combo.isHidden()
+    assert shown.preview.root_storage_value.isHidden()
     assert not shown.hidden("name_label")
 
 
+def test_a_root_this_machine_does_not_map_shows_its_location_and_says_so(qtbot: QtBot) -> None:
+    """With no folder to show, the Location line carries the root's location and the Storage line says why there is no
+    storage.
+
+    **Test steps:**
+
+    * show a root of the file that has no mapping
+    * verify its name, its Storage line, and its location (also on the Location line)
+    """
+    away = RehucoRoot(uuid4(), "away", "//nas/data/Tutorials")
+    model = RootsFolderModel()
+    model.set_roots([away], RootFolderLister([]))
+    preview = RootsPreview(model, RenameCoordinator())
+    qtbot.addWidget(preview)
+    model.setParent(preview)  # deleted with the preview qtbot deletes (#529)
+
+    preview.show_index(model.index(0, 0))
+
+    assert preview.root_name_edit.text() == "away"
+    assert preview.root_storage_value.text() == NOT_MAPPED_ROW
+    assert preview.location == "//nas/data/Tutorials"
+    label = preview.findChild(QLabel, "path_label")
+    assert label is not None
+    assert not label.isHidden()
+
+
 def test_editing_can_be_switched_off(shown: Shown) -> None:
-    """A read-only catalog leaves the root's fields visible and unusable.
+    """A read-only catalog leaves the root's name visible and unusable.
 
     **Test steps:**
 
     * switch editing off, then on
-    * verify both fields follow
+    * verify the name follows
     """
     shown.preview.set_editable(False)
     assert not shown.preview.root_name_edit.isEnabled()
-    assert not shown.preview.root_storage_combo.isEnabled()
 
     shown.preview.set_editable(True)
     assert shown.preview.root_name_edit.isEnabled()
-    assert shown.preview.root_storage_combo.isEnabled()
 
 
 def test_each_action_of_a_row_is_a_button_in_order_with_the_default_in_bold(qtbot: QtBot, tmp_path: Path) -> None:
@@ -398,7 +427,7 @@ def test_an_image_gone_before_its_read_shows_no_picture(qtbot: QtBot, tmp_path: 
 
 
 def test_no_row_makes_the_pane_ask_for_more_width_than_it_has(qtbot: QtBot, shown: Shown) -> None:
-    """Selecting rows must not make the pane jump: whatever is shown -- a root with its storage combo, a file with a
+    """Selecting rows must not make the pane jump: whatever is shown -- a root with its storage line, a file with a
     long date and a resolution, a large picture -- what its lines need fits the minimum width the pane always has, the
     pane keeps the width it was given, and the picture is drawn to fit it.
 

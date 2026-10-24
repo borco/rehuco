@@ -774,7 +774,8 @@ Each machine keeps, for every `.rehuco` it opens, files with sharply different r
 
 | File | Holds | Category | Lifecycle |
 | --- | --- | --- | --- |
-| `.rehuco` | The user's roots, each with a machine-independent location and a per-machine mapping ([[mounts-and-storage#rehuco-scope]]); its own `id` (the **rehuco id**); the plugin list ([[plugins#overview]]); retention opt-ins per mapping ([[mounts-and-storage#durable-retention]]) | Shared: opened from any machine, each writing its own mapping | A document; saved under the lock like a record ([[sync#overview]]) |
+| `.rehuco` | The user's roots, each with a label and a machine-independent location ([[mounts-and-storage#rehuco-scope]]); its own `id` (the **rehuco id**); the plugin list ([[plugins#overview]]) | Shared: opened from any machine, holding nothing about one machine | A document; saved under the lock like a record, refusing to overwrite another machine's change ([[sync#overview]]) |
+| the root mappings | Where this machine finds each root of every `.rehuco` it opened, the storage detected there, and the roots the user skipped ([[mounts-and-storage#rehuco-scope]]); retention opt-ins per mapping ([[mounts-and-storage#durable-retention]]) | Durable, per machine; read by the agent and the node of that machine | Written by one machine, replaced atomically, no lock |
 | `.rehudb` | The SQLite catalog cache of one `.rehuco`'s roots as this machine maps them ([[data-model#cache-schema]]) | Derived cache, per machine | Rebuildable within the [[architecture-design#why-distributed]] boundary; disposable |
 | the retention store | Retained metadata of cached roots ([[mounts-and-storage#durable-retention]]) | Durable, per machine | Never regenerated: for a removable root it is the only copy there is |
 

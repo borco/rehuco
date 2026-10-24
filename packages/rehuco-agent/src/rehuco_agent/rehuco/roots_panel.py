@@ -13,19 +13,19 @@ from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
 from PySide6.QtCore import QItemSelectionModel, QModelIndex, QPersistentModelIndex, QPoint, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices
-from PySide6.QtWidgets import QComboBox, QDialog, QLineEdit, QMenu, QMessageBox, QWidget
+from PySide6.QtWidgets import QDialog, QFileDialog, QLabel, QLineEdit, QMenu, QMessageBox, QWidget
 from rehuco_core import (
     CHECKSUM_RECORD_SUFFIX,
     DEFAULT_CHECKSUM_TRUST,
     DEFAULT_RENAME_COORDINATOR,
     CatalogField,
     FileType,
+    MappedRoot,
     RehucoFile,
     RehucoRoot,
     RenameCoordinator,
     RootFolderLister,
     RootOverlap,
-    RootStorage,
     TaskQueue,
 )
 from rehuco_core.access import KeyRelocation, Records, ResourceKey
@@ -35,13 +35,14 @@ from ..settings.root_catalog_settings import shared_root_catalog_settings
 from .add_root_dialog import AddRootDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .root_catalog import RootCatalog
+from .root_name_editor import RootNameEditor
 from .root_overlap_check import RootOverlapCheck
-from .root_storage import selected_root_storage
 from .roots_checksum_verbs import RootsChecksumVerbs
 from .roots_column_view import RootsColumnView
-from .roots_folder_model import NodeListing, RootsFolderModel, RootsNodeKind
+from .roots_folder_model import RootsFolderModel
 from .roots_lightbox import RootsLightbox
 from .roots_management import selected_record
+from .roots_node import NodeListing, RootsNodeKind, ShownRoot, root_title, root_where
 from .roots_opening import RootsOpening
 from .roots_preview import RootsPreview
 from .roots_row_actions import RootsRowActions
@@ -138,9 +139,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__notice = ""
         """What the last thing asked of a row has to say, on the banner until the selection moves."""
         self.__overlap_check: Final = RootOverlapCheck(self)
-        self.__adding: tuple[int, RehucoFile, str, RootStorage] | None = None
-        """The root Add Root is checking through its links: the check's serial, the file it is for, the folder and its
-        storage -- ``None`` while no add is pending."""
+        self.__adding: tuple[int, RehucoFile, str, str] | None = None
+        """The root Add Root is checking through its links: the check's serial, the file it is for, the folder and the
+        name -- ``None`` while no add is pending."""
         self.__fallback: tuple[UUID, tuple[str, ...]] | None = None
         """Where the Roots selection goes once the rows it was in are removed: the folder they were in."""
         # connected before the view's selection model exists, so it runs before that model moves the current row to a
@@ -195,8 +196,10 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.__roots_model.dataChanged,
         ):
             signal.connect(self.__on_roots_current_changed)
-        self.__preview.root_name_edit.editingFinished.connect(self.__on_root_name_edited)
-        self.__preview.root_storage_combo.activated.connect(self.__on_root_storage_chosen)
+        # parented to the panel, which keeps it alive
+        RootNameEditor(
+            catalog, self.__roots_model, self.__preview, self.__current_root_row, self.__commit_root_edit, self
+        )
         self.__follow_the_catalog(catalog)
         self.__update_enablement()
         if resource_events is not None:
@@ -236,9 +239,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         return self.__preview.root_name_edit
 
     @property
-    def root_storage_combo(self) -> QComboBox:
-        """The storage combo the details pane shows for a root."""
-        return self.__preview.root_storage_combo
+    def default_root_name_action(self) -> QAction:
+        """The action beside the name field that gives the root its default name."""
+        return self.__preview.default_root_name_action
+
+    @property
+    def root_storage_value(self) -> QLabel:
+        """The read-only storage line the details pane shows for a root."""
+        return self.__preview.root_storage_value
 
     @property
     def title_bar_actions(self) -> list[QAction]:
@@ -255,6 +263,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def add_root_action(self) -> QAction:
         """Adds a folder as a root."""
         return self.__roots_ui.add_root_action
+
+    @property
+    def map_root_action(self) -> QAction:
+        """Asks for the folder of this machine a root not mapped here is, and maps it (#514)."""
+        return self.__roots_ui.map_root_action
 
     @property
     def remove_root_action(self) -> QAction:
@@ -354,9 +367,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         if file is None:
             self.__roots_model.set_roots((), None)
         else:
-            roots = file.roots
+            mapped = self.__catalog.mapped_roots()
+            by_id = {root.root_id: root for root in mapped}
+            shown: list[ShownRoot] = [by_id.get(root.root_id, root) for root in file.roots]
             self.__roots_model.set_roots(
-                roots, RootFolderLister(roots, coordinator=self.__rename_coordinator, trust=DEFAULT_CHECKSUM_TRUST)
+                shown, RootFolderLister(mapped, coordinator=self.__rename_coordinator, trust=DEFAULT_CHECKSUM_TRUST)
             )
         self.__show_duplicates()
         self.__show_banner()
@@ -412,6 +427,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__overlap_check.answered.connect(self.__on_add_root_checked)
         self.__catalog.overlaps.changed.connect(self.__show_duplicates)
         ui.remove_root_action.triggered.connect(self.__on_remove_root)
+        ui.map_root_action.triggered.connect(self.__on_map_root)
         ui.refresh_roots_action.triggered.connect(self.__on_refresh_roots)
         ui.filter_folder_action.triggered.connect(self.__on_filter_folder)
         ui.open_record_action.triggered.connect(self.__on_open_record)
@@ -431,7 +447,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def __update_enablement(self, *_args: object) -> None:
         """Enable Scan while a file is open, and the root edits only while it can also be saved -- Remove and the moves
         needing a selected **root row** besides, the moves not at the end they move towards. Refresh and the folder
-        filter need a catalog, the filter a root or folder to name."""
+        filter need a catalog, the filter a root or folder to name. Map needs a root this machine does not map, and
+        no save: it writes this machine's mappings, not the file."""
         is_open = self.__catalog.file is not None
         editable = self.__catalog.editable
         ui = self.__roots_ui
@@ -443,6 +460,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui.scan_action.setEnabled(is_open)
         ui.add_root_action.setEnabled(editable and self.__adding is None)
         ui.remove_root_action.setEnabled(editable and row >= 0)
+        ui.map_root_action.setEnabled(isinstance(self.__roots_model.root_at(current), RehucoRoot))
         ui.refresh_roots_action.setEnabled(is_open)
         ui.move_to_top_action.setEnabled(editable and row > 0)
         ui.move_up_action.setEnabled(editable and row > 0)
@@ -501,40 +519,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """
         current = self.__acting_index()
         return current.row() if self.__roots_model.root_at(current) is not None else -1
-
-    def __on_root_name_edited(self) -> None:
-        """Rename the current root to what was typed in the details pane, as its label; nothing on disk changes.
-
-        An empty name, or one another root already has, is refused with a warning and the field goes back to the
-        label the root has.
-        """
-        file, row = self.__catalog.file, self.__current_root_row()
-        if file is None or file.lock_reason is not None or row < 0:
-            return
-        root = file.roots[row]
-        edit = self.__preview.root_name_edit
-        name = edit.text().strip()
-        if name == root.label:
-            edit.setText(root.label)
-            return
-        try:
-            file.relabel_root(row, name)
-        except ValueError as error:
-            QMessageBox.warning(self, "Rename Root", str(error))
-            edit.setText(root.label)
-            return
-        self.__commit_root_edit()
-
-    def __on_root_storage_chosen(self) -> None:
-        """Set the current root to the storage chosen in the details pane; nothing on disk changes."""
-        file, row = self.__catalog.file, self.__current_root_row()
-        if file is None or file.lock_reason is not None or row < 0:
-            return
-        storage = selected_root_storage(self.__preview.root_storage_combo)
-        if file.roots[row].storage is storage:
-            return
-        file.set_storage(row, storage)
-        self.__commit_root_edit()
 
     def __commit_root_edit(self) -> None:
         """Save an edit of a root, bring the cache's copy of it in line, and show it."""
@@ -857,18 +841,28 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
     # region editing the roots
 
-    def ask_root_to_add(self) -> tuple[str, RootStorage] | None:
-        """Ask for a root to add: its storage, then its folder. The one modal behind Add Root, so a test replaces it
-        per instance.
+    def ask_root_to_add(self) -> tuple[str, str] | None:
+        """Ask for the folder of a root to add, and its name. The one modal behind Add Root, so a test replaces it per
+        instance.
 
-        :returns: the folder and what it lives on, or ``None`` if the dialog was cancelled.
+        :returns: the folder and the name -- the folder's own when none was typed -- or ``None`` if the dialog was
+            cancelled.
         """
         dialog = AddRootDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
-        return dialog.folder, dialog.storage
+        return dialog.folder, dialog.name
 
-    def confirm_remove_root(self, root: RehucoRoot, cached: int) -> bool:
+    def ask_root_folder(self, root: RehucoRoot) -> Path | None:
+        """Ask for the folder of this machine a root is. The one modal behind Map, so a test replaces it per instance.
+
+        :param root: the root to map.
+        :returns: the folder, or ``None`` if the dialog was cancelled.
+        """
+        folder = QFileDialog.getExistingDirectory(self, f'Map "{root_title(root)}"', "")
+        return Path(folder) if folder else None
+
+    def confirm_remove_root(self, root: ShownRoot, cached: int) -> bool:
         """Ask whether to remove a root, saying what goes and what stays. The one modal behind Remove Root, so a test
         replaces it per instance.
 
@@ -880,26 +874,26 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         answer = QMessageBox.question(
             self,
             "Remove Root",
-            f'Remove the root "{root.label}" from this catalog?\n\n'
-            f"Its files stay where they are, in {root.path}. {entries} removed from the cache; a scan would bring "
-            "them back if the folder were added again.",
+            f'Remove the root "{root_title(root)}" from this catalog?\n\n'
+            f"Its files stay where they are, in {root_where(root)}. {entries} removed from the cache; a scan would "
+            "bring them back if the folder were added again.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         return answer == QMessageBox.StandardButton.Yes
 
     def __on_add_root(self) -> None:
-        """Ask for a folder and what it lives on, then compare it with the roots through their links -- off the GUI
-        thread, since following a mapped drive can wait out a network timeout (#498) -- before adding it."""
+        """Ask for a folder, then compare it with the roots through their links -- off the GUI thread, since following
+        a mapped drive can wait out a network timeout (#498) -- before adding it."""
         file = self.__catalog.file
         if file is None or file.lock_reason is not None:
             return
         chosen = self.ask_root_to_add()
         if chosen is None:
             return
-        folder, storage = chosen
-        serial = self.__overlap_check.find(folder, file.roots, self.__catalog.unreachable_roots())
-        self.__adding = (serial, file, folder, storage)
+        folder, name = chosen
+        serial = self.__overlap_check.find(folder, self.__catalog.mapped_roots(), self.__catalog.unreachable_roots())
+        self.__adding = (serial, file, folder, name)
         self.__update_enablement()
 
     def __on_add_root_checked(self, serial: int, overlaps: tuple[RootOverlap, ...]) -> None:
@@ -914,19 +908,17 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             return
         self.__adding = None
         self.__update_enablement()
-        _, file, folder, storage = adding
+        _, file, folder, name = adding
         if file is not self.__catalog.file or file.lock_reason is not None:
             return
         if overlaps:
             QMessageBox.warning(self, "Add Root", overlaps[0].message)
             return
-        try:
-            row = file.add_root(folder, storage=storage)
-        except ValueError as error:
-            QMessageBox.warning(self, "Add Root", str(error))
+        row = self.__catalog.add_root(Path(folder), name)
+        if row is None:
+            QMessageBox.warning(self, "Add Root", self.__catalog.save_error)
             return
         root_id = file.roots[row].root_id
-        self.__commit()
         self.__roots_ui.roots_view.setCurrentIndex(self.__roots_model.index_for(root_id, ()))
         if shared_root_catalog_settings().scan_after_adding:
             self.__catalog.scan_root(root_id)
@@ -937,14 +929,24 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         file = self.__catalog.file
         if file is None or file.lock_reason is not None:
             return
-        row = self.__current_root_row()
-        if row < 0:
+        current = self.__acting_index()
+        root = self.__roots_model.root_at(current)
+        if root is None:
             return
-        root = file.roots[row]
-        if not self.confirm_remove_root(root, self.__catalog.resource_count(root)):
+        cached = self.__catalog.resource_count(root) if isinstance(root, MappedRoot) else 0
+        if not self.confirm_remove_root(root, cached):
             return
-        if not self.__catalog.remove_root(row):
+        if not self.__catalog.remove_root(current.row()):
             self.__warn_unsaved()
+
+    def __on_map_root(self) -> None:
+        """Ask for the folder the current root is on this machine and map it; say why if it cannot be."""
+        root = self.__roots_model.root_at(self.__acting_index())
+        if not isinstance(root, RehucoRoot):
+            return
+        folder = self.ask_root_folder(root)
+        if folder is not None and not self.__catalog.map_root(root.root_id, folder):
+            QMessageBox.warning(self, "Map Root", self.__catalog.save_error)
 
     def __commit(self) -> None:
         """Save an edit of the roots through the catalog, which shows it; say so if it could not be saved."""

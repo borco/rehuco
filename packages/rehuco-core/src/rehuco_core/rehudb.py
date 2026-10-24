@@ -15,7 +15,7 @@ unsafe. Which folder is the app's to say -- core reads no settings and knows no 
 another on the GUI thread, and WAL lets the two proceed together. Foreign keys are switched on for every
 connection, because the cascade a root removal relies on is otherwise silently ignored.
 
-**Roots are keyed by their** ``.rehuco`` **id** (:attr:`~rehuco_core.RehucoRoot.root_id`), never by path:
+**Roots are keyed by their** ``.rehuco`` **id** (:attr:`~rehuco_core.MappedRoot.root_id`), never by path:
 relabelling, reordering or re-pointing a root updates its row in place (:meth:`CatalogCache.reconcile_roots`)
 and keeps its resources. A **root is wholly online or wholly offline** ([[mounts-and-storage#offline-mounts]]):
 one that would not list keeps its rows as they were (:meth:`CatalogCache.mark_root_unreachable`), while a scan of
@@ -54,7 +54,7 @@ from .constants import REHUDB_SUFFIX
 from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, SchemaChain
 from .migrations.runner import chain_head
 from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
-from .rehuco_file import RehucoRoot
+from .root_mappings import MappedRoot
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -514,7 +514,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             for root_id, label, path, position, removable, reachable, scanned_at in cursor
         )
 
-    def reconcile_roots(self, roots: Sequence[RehucoRoot]) -> None:
+    def reconcile_roots(self, roots: Sequence[MappedRoot]) -> None:
         """Bring the ``roots`` table in line with a ``.rehuco``'s roots, matched by id.
 
         A root already here keeps its resources whatever changed about it -- label, path, order, the

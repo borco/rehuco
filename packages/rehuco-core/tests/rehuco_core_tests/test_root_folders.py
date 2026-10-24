@@ -12,12 +12,14 @@ from rehuco_core import (
     TRUST_NOT_TRACKED,
     ChecksumTrust,
     FileType,
-    RehucoRoot,
+    MappedRoot,
     RehuDocument,
     RenameCoordinator,
     RootFolderLister,
     RootStorage,
 )
+
+from rehuco_core_tests.mapped_roots import location_at
 
 ROOT_ID: Final = UUID("a41b9c3d-0000-4000-8000-000000000001")
 
@@ -48,7 +50,9 @@ def lister_for(
     :returns: the lister.
     """
     return RootFolderLister(
-        [RehucoRoot(ROOT_ID, root, "library", RootStorage.LOCAL)], coordinator=coordinator, trust=trust
+        [MappedRoot(ROOT_ID, "library", location_at(root), root, RootStorage.LOCAL)],
+        coordinator=coordinator,
+        trust=trust,
     )
 
 

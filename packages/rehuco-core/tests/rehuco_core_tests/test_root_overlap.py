@@ -15,8 +15,9 @@ from uuid import uuid4
 
 from pytest import fixture, mark, param
 from pytest_mock import MockerFixture
-from rehuco_core import RehucoRoot, RootOverlap, root_path_key
+from rehuco_core import MappedRoot, RootOverlap, root_path_key
 
+from rehuco_core_tests.mapped_roots import location_at
 from rehuco_core_tests.real_links import directory_link
 
 RESOLVED: Final = {
@@ -30,14 +31,14 @@ BROKEN: Final = "X:\\broken"
 """A spelling whose resolution raises -- a path ``realpath`` refuses."""
 
 
-def root(path: str, label: str = "") -> RehucoRoot:
+def root(path: str, label: str = "") -> MappedRoot:
     """A root at ``path``, kept exactly as spelled.
 
     :param path: the folder.
     :param label: its label; the folder's name when omitted.
     :returns: the root.
     """
-    return RehucoRoot(uuid4(), Path(path), label or ntpath.basename(path.rstrip("\\")))
+    return MappedRoot(uuid4(), label or ntpath.basename(path.rstrip("\\")), location_at(Path(path)), Path(path))
 
 
 def resolve(path: str) -> str:
@@ -126,7 +127,7 @@ def test_a_case_variant_is_another_folder_where_paths_do_not_fold_case(mocker: M
     * verify the case variant does not overlap, and the true child does
     """
     mocker.patch("rehuco_core.root_overlap.os_path", posixpath)
-    stored = RehucoRoot(uuid4(), Path("/data/tutorials"), "tutorials")
+    stored = MappedRoot(uuid4(), "tutorials", location_at(Path("/data/tutorials")), Path("/data/tutorials"))
     spelled = str(stored.path)  # built from the stored path, which a Windows host spells with backslashes
 
     assert RootOverlap.find(spelled.replace("tutorials", "Tutorials") + "/x", [stored]) is None
@@ -160,7 +161,28 @@ def test_the_message_names_both_folders_as_spelled(encloses: bool, message: str)
     * build an overlap each way
     * verify its message
     """
-    stored = RehucoRoot(uuid4(), Path("T:/lib"), "lib")
+    stored = MappedRoot(uuid4(), "lib", location_at(Path("T:/lib")), Path("T:/lib"))
+    other = Path("T:/lib/sub") if encloses else Path("T:/")
+
+    assert RootOverlap(stored, other, encloses).message == message.format(other=other, root=stored.path)
+
+
+@mark.parametrize(
+    ("encloses", "message"),
+    [
+        param(True, "{other} is inside the root {root}", id="inside"),
+        param(False, "{other} contains the root {root}", id="containing"),
+    ],
+)
+def test_the_message_names_a_root_with_an_empty_label_by_its_folder_alone(encloses: bool, message: str) -> None:
+    """A root whose label is empty is named by its stored path alone, with no empty name before it.
+
+    **Test steps:**
+
+    * build an overlap each way with a root labelled empty
+    * verify its message
+    """
+    stored = MappedRoot(uuid4(), "", location_at(Path("T:/lib")), Path("T:/lib"))
     other = Path("T:/lib/sub") if encloses else Path("T:/")
 
     assert RootOverlap(stored, other, encloses).message == message.format(other=other, root=stored.path)
@@ -298,7 +320,7 @@ def test_a_root_linked_into_another_overlaps_it_once_resolved(tmp_path: Path) ->
     """
     (tmp_path / "lib" / "sub").mkdir(parents=True)
     link = directory_link(tmp_path / "alias", tmp_path / "lib" / "sub")
-    stored = RehucoRoot(uuid4(), tmp_path / "lib", "lib")
+    stored = MappedRoot(uuid4(), "lib", location_at(tmp_path / "lib"), tmp_path / "lib")
 
     assert RootOverlap.find(link, [stored]) is None
     assert RootOverlap.find_resolved(link, [stored]) == RootOverlap(stored, link, True)

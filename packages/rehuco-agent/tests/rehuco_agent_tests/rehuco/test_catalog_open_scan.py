@@ -17,6 +17,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_core import CatalogRoot, RootScanOutcome, TaskQueue
 from rehuco_core.access import CatalogUnreadable
 
+from rehuco_agent_tests.mapped_roots import location_at
+
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     PACKS,
     REHUCO_PATH,
@@ -29,6 +31,8 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_catalog,
     fixture_dock,
     fixture_held,
+    fixture_machine,
+    fixture_on_disk,
     fixture_queue,
     fixture_served,
     scan_finding,
@@ -116,7 +120,7 @@ def test_reopening_scans_only_the_root_the_cache_never_scanned(
     * open the catalog and verify one scan was queued, of the third root
     """
     extra_id = uuid4()
-    served["roots"].append({"id": str(extra_id), "path": str(EXTRA), "label": "extra"})
+    served["roots"].append({"id": str(extra_id), "location": location_at(EXTRA), "label": "extra"})
     cached_roots(
         catalog,
         (UUID(ROOT_IDS[0]), "tutorials", TUTORIALS, True),

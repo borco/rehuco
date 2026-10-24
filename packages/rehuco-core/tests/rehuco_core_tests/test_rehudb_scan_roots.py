@@ -29,6 +29,7 @@ from rehuco_core import (
     enumerate_content_files,
 )
 
+from rehuco_core_tests.mapped_roots import location_at, mapped
 from rehuco_core_tests.real_links import directory_link, hardlink
 from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unused-import
     MemoryDatabase,
@@ -144,8 +145,8 @@ def test_a_root_moved_inside_another_is_left_to_its_own_scan(tmp_path: Path, cac
     write_record(tmp_path / "outer" / "a.rehu")
     write_record(tmp_path / "outer" / "inner" / "b.rehu")
     rehuco = nesting(tmp_path / "outer", tmp_path / "outer" / "inner")
-    outer, inner = rehuco.roots
-    cache.reconcile_roots(rehuco.roots)
+    outer, inner = mapped(rehuco)
+    cache.reconcile_roots(mapped(rehuco))
 
     result, _ = scan_into(cache, outer.root_id)
     scan_into(cache, inner.root_id)
@@ -170,8 +171,8 @@ def test_a_root_inside_another_reached_through_a_link_is_met_by_identity(tmp_pat
     write_record(tmp_path / "real" / "sub" / "b.rehu")
     alias = directory_link(tmp_path / "alias", tmp_path / "real")
     rehuco = nesting(alias, tmp_path / "real" / "sub")
-    outer, inner = rehuco.roots
-    cache.reconcile_roots(rehuco.roots)
+    outer, inner = mapped(rehuco)
+    cache.reconcile_roots(mapped(rehuco))
 
     result, _ = scan_into(cache, outer.root_id)
     scan_into(cache, inner.root_id)
@@ -275,10 +276,10 @@ def test_one_file_under_two_roots_keeps_one_row_under_the_earlier_root_either_or
     (tmp_path / "two").mkdir()
     hardlink(tmp_path / "two" / "b.rehu", first_name)
     rehuco = RehucoFile.new()
-    rehuco.add_root(tmp_path / "one")
-    rehuco.add_root(tmp_path / "two")
-    first, second = rehuco.roots
-    cache.reconcile_roots(rehuco.roots)
+    rehuco.add_root(location_at(tmp_path / "one"))
+    rehuco.add_root(location_at(tmp_path / "two"))
+    first, second = mapped(rehuco)
+    cache.reconcile_roots(mapped(rehuco))
 
     scan_into(cache, second.root_id)
     (lost,) = cache.rows()

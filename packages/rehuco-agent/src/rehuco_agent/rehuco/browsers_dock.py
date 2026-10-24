@@ -312,8 +312,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         :param root_ids: the roots that cannot be reached.
         """
-        file = self.__catalog.file
-        storages = {} if file is None else {root.root_id: root.storage for root in file.roots}
+        storages = {root.root_id: root.storage for root in self.__catalog.mapped_roots()}
         self.__offline = {
             root_id: ROOT_STORAGE_OFFLINE_TOOLTIPS[storages[root_id]] for root_id in root_ids if root_id in storages
         }

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 if TYPE_CHECKING:
-    from .rehuco_file import RehucoRoot
+    from .root_mappings import MappedRoot
 
 
 def root_path_key(path: Path | str) -> str:
@@ -42,19 +42,21 @@ class RootOverlap:
     :param encloses: whether :attr:`root` contains :attr:`other`; ``False`` when :attr:`other` contains :attr:`root`.
     """
 
-    root: RehucoRoot
+    root: MappedRoot
     other: Path
     encloses: bool
 
     @property
     def message(self) -> str:
-        """The overlap in a sentence naming both folders as spelled, never a resolved form."""
+        """The overlap in a sentence naming both folders as spelled, never a resolved form -- the root by its label
+        too, unless that is empty."""
+        root = f"{self.root.label} ({self.root.path})" if self.root.label else str(self.root.path)
         if self.encloses:
-            return f"{self.other} is inside the root {self.root.label} ({self.root.path})"
-        return f"{self.other} contains the root {self.root.label} ({self.root.path})"
+            return f"{self.other} is inside the root {root}"
+        return f"{self.other} contains the root {root}"
 
     @staticmethod
-    def find(candidate: Path | str, roots: Sequence[RehucoRoot]) -> RootOverlap | None:
+    def find(candidate: Path | str, roots: Sequence[MappedRoot]) -> RootOverlap | None:
         """The first root a candidate folder overlaps, compared as spelled -- pure, touching no disk.
 
         The same folder is not an overlap: that is a duplicate, which :meth:`RehucoFile.add_root
@@ -73,7 +75,7 @@ class RootOverlap:
 
     @staticmethod
     def find_resolved(
-        candidate: Path | str, roots: Sequence[RehucoRoot], skip: Collection[UUID] = ()
+        candidate: Path | str, roots: Sequence[MappedRoot], skip: Collection[UUID] = ()
     ) -> RootOverlap | None:
         """The first root a candidate folder overlaps once links are followed -- **may block**, so never on a GUI
         thread.
@@ -102,7 +104,7 @@ class RootOverlap:
         return None
 
     @staticmethod
-    def among(roots: Sequence[RehucoRoot]) -> tuple[RootOverlap, ...]:
+    def among(roots: Sequence[MappedRoot]) -> tuple[RootOverlap, ...]:
         """Every pair of roots that already overlap, compared as spelled -- a file opened nesting.
 
         :param roots: the roots, in display order.
@@ -111,7 +113,7 @@ class RootOverlap:
         return tuple(RootOverlap.__pairs(roots, RootOverlap.find))
 
     @staticmethod
-    def among_resolved(roots: Sequence[RehucoRoot], skip: Collection[UUID] = ()) -> tuple[RootOverlap, ...]:
+    def among_resolved(roots: Sequence[MappedRoot], skip: Collection[UUID] = ()) -> tuple[RootOverlap, ...]:
         """Every pair of roots that overlap once links are followed -- **may block**, like :meth:`find_resolved`.
 
         :param roots: the roots, in display order.
@@ -123,7 +125,7 @@ class RootOverlap:
 
     @staticmethod
     def __pairs(
-        roots: Sequence[RehucoRoot], find: Callable[[Path, Sequence[RehucoRoot]], RootOverlap | None]
+        roots: Sequence[MappedRoot], find: Callable[[Path, Sequence[MappedRoot]], RootOverlap | None]
     ) -> Iterator[RootOverlap]:
         """Each root against every earlier one, one overlap per pair.
 

@@ -38,6 +38,12 @@ WNET_GET_CONNECTION: Final = MPR.WNetGetConnectionW
 WNET_GET_CONNECTION.argtypes = (wintypes.LPCWSTR, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD))
 WNET_GET_CONNECTION.restype = wintypes.DWORD
 
+GET_LOGICAL_DRIVES: Final = KERNEL32.GetLogicalDrives
+GET_LOGICAL_DRIVES.argtypes = ()
+GET_LOGICAL_DRIVES.restype = wintypes.DWORD
+
+LETTER_COUNT: Final = 26
+
 NO_ERROR: Final = 0
 MAXIMUM_SHARE_NAME_LENGTH: Final = 1024
 """Characters reserved for the share a drive maps to -- ``MAX_PATH`` plus room for a long host name."""
@@ -63,3 +69,22 @@ def mapped_share(drive: str) -> str | None:
     if WNET_GET_CONNECTION(drive, buffer, ctypes.byref(length)) != NO_ERROR:
         return None
     return buffer.value or None
+
+
+def mapped_drives() -> dict[str, str]:
+    """Every drive letter mapped to a network share, from local state only.
+
+    :returns: the share (``\\\\host\\share``) of each mapped letter (``"W:"``), in letter order.
+    """
+    present = int(GET_LOGICAL_DRIVES())
+    drives: dict[str, str] = {}
+    for index in range(LETTER_COUNT):
+        if not present >> index & 1:
+            continue
+        letter = f"{chr(ord('A') + index)}:"
+        if drive_type(f"{letter}\\") != DRIVE_REMOTE:
+            continue
+        share = mapped_share(letter)
+        if share is not None:
+            drives[letter] = share
+    return drives

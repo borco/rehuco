@@ -11,6 +11,7 @@ from typing import Final
 from uuid import UUID
 
 import humanize
+from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import (
     QDateTime,
     QLocale,
@@ -24,12 +25,14 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QPalette, QPixmap
-from PySide6.QtWidgets import QComboBox, QFrame, QLabel, QLineEdit, QSizePolicy, QToolButton, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QSizePolicy, QToolButton, QWidget
 from rehuco_core import (
     DEFAULT_CURRENT_USERNAME,
     DEFAULT_UNKNOWN_USERNAME,
     ArchiveFacts,
     FileType,
+    MappedRoot,
+    RehucoFile,
     RehucoRoot,
     RenameCoordinator,
     read_archive_facts,
@@ -44,10 +47,11 @@ from ..settings.markdown_rendering_settings import shared_markdown_rendering_set
 from ..settings.reference_images_settings import shared_reference_images_settings
 from ..svg_icon_cache import SvgIconCache
 from .record_images import RecordImages
-from .root_storage import fill_root_storage_combo, select_root_storage
+from .root_storage import NOT_MAPPED_ROW, ROOT_STORAGE_LABELS
 from .roots_checksum import BAD_INK, OLD_BAD_INK, RowChecksum, checksum_lines, warning_ink
-from .roots_folder_model import NodeListing, RootsFolderModel, RootsNodeKind
+from .roots_folder_model import RootsFolderModel
 from .roots_management import PackInfo, PackState
+from .roots_node import NodeListing, RootsNodeKind, ShownRoot
 from .roots_preview_ui import Ui_RootsPreview
 
 LOG: Final = logging.getLogger(__name__)
@@ -110,6 +114,9 @@ MINIMUM_WIDTH: Final = 300
 """The least width the pane is given, in pixels -- above what any row's lines ask for, so what is shown never changes
 the width the pane needs and the splitter beside it never has to move when another row is selected."""
 
+DEFAULT_NAME_ICON: Final = ":/icons/settings_reset_to_defaults.svg"
+"""The icon of the settings pages' *defaults* button, on the button that puts a root's default name back."""
+
 TITLE_ICON_SIZE: Final = 16
 """The state icon beside the title is as big as the one in the column."""
 
@@ -136,9 +143,11 @@ class RootsPreview(QWidget):
     """The pane beside the Roots view's columns, showing the current row whatever it is: name, type, size, when it was
     changed, how much a folder holds, where it is, and the picture itself for an image.
 
-    **A root is edited here**: its **Name** and **Storage** replace the name header and the type, and are shown for a
-    root row only. The owner reads them through :attr:`root_name_edit` and :attr:`root_storage_combo`, and says
-    whether they may be used with :meth:`set_editable`.
+    **A root is edited here**: its **Name** replaces the name header and the type, and is shown for a root row only,
+    with a button to its right that gives the root its default name, the one it was added with
+    (:attr:`default_root_name_action`), also shown as the field's placeholder -- beside its **Storage** -- detected, so
+    read-only text (#514), or *Not mapped on this machine*. The owner reads the name through :attr:`root_name_edit`,
+    and says whether it may be used with :meth:`set_editable`.
 
     **Below the details is a button for each action the row's context menu holds**, in its order, the default one in
     bold -- the owner supplies them through ``actions_for``. They are tool buttons set to the shared actions, so their
@@ -214,8 +223,10 @@ class RootsPreview(QWidget):
         """The record the pane reads what it shows from, while it shows one."""
         self.__checksum_lines: tuple[str, str] | None = None
         self.__shown_root: UUID | None = None
+        self.__default_name = ""
         self.__images: Final = RecordImages()
-        fill_root_storage_combo(self.__ui.root_storage_combo)
+        self.__default_name_action: Final = QAction("Use Default Name", self)
+        self.__setup_default_name()
         self.__setup_checksum_rows()
         self.image_ready.connect(self.__on_image, Qt.ConnectionType.QueuedConnection)
         self.record_ready.connect(self.__on_record, Qt.ConnectionType.QueuedConnection)
@@ -231,9 +242,34 @@ class RootsPreview(QWidget):
         return self.__ui.root_name_edit
 
     @property
-    def root_storage_combo(self) -> QComboBox:
-        """The storage combo of a root row."""
-        return self.__ui.root_storage_combo
+    def default_root_name_action(self) -> QAction:
+        """Gives the root its default name; enabled while the field differs from it."""
+        return self.__default_name_action
+
+    @property
+    def default_root_name(self) -> str:
+        """The default name of the root shown: the last segment of its location, which it was added with."""
+        return self.__default_name
+
+    def __setup_default_name(self) -> None:
+        """Give the button beside the name field its action and icon, and keep it enabled only while the field differs
+        from the default name."""
+        action = self.__default_name_action
+        action.setToolTip("Use the default name: the one the root was added with")
+        ActionIconThemeHandler(action, DEFAULT_NAME_ICON)
+        self.__ui.default_root_name_button.setDefaultAction(action)
+        self.__ui.root_name_edit.textChanged.connect(self.__update_default_name)
+        self.__update_default_name()
+
+    def __update_default_name(self) -> None:
+        """Enable the button while the name field is usable and not the default name."""
+        edit = self.__ui.root_name_edit
+        self.__default_name_action.setEnabled(edit.isEnabled() and edit.text().strip() != self.__default_name)
+
+    @property
+    def root_storage_value(self) -> QLabel:
+        """The read-only storage line of a root row."""
+        return self.__ui.root_storage_value
 
     @property
     def image(self) -> QImage | None:
@@ -286,16 +322,18 @@ class RootsPreview(QWidget):
     @property
     def buttons(self) -> tuple[QToolButton, ...]:
         """The row's buttons, in the order of its context menu."""
-        return tuple(button for button in self.findChildren(QToolButton) if not button.isHidden())
+        beside_name = self.__ui.default_root_name_button
+        return tuple(
+            button for button in self.findChildren(QToolButton) if not button.isHidden() and button is not beside_name
+        )
 
     def set_editable(self, editable: bool) -> None:
-        """Say whether a root's name and storage may be changed -- they may not while the file is read-only or none is
-        open.
+        """Say whether a root's name may be changed -- it may not while the file is read-only or none is open.
 
-        :param editable: whether they may.
+        :param editable: whether it may.
         """
         self.__ui.root_name_edit.setEnabled(editable)
-        self.__ui.root_storage_combo.setEnabled(editable)
+        self.__update_default_name()
 
     def __image_token(self, point: QPoint) -> object | None:
         """What a press on the picture would drag: the row shown, while it is an image whose picture is up (#395).
@@ -402,7 +440,7 @@ class RootsPreview(QWidget):
             value.setVisible(bool(text))
         self.__show_archive(None)
         self.__show_pack(index)
-        self.__location = "" if path is None else str(path)
+        self.__location = RootsPreview.__where(path, root)
         ui.path_value.set_text(self.__location)
         ui.path_label.setVisible(bool(self.__location))
         ui.path_value.setVisible(bool(self.__location))
@@ -463,27 +501,51 @@ class RootsPreview(QWidget):
         else:
             self.__checksum_lines = None
 
-    def __show_root_editors(self, root: RehucoRoot | None) -> None:
+    @staticmethod
+    def __where(path: Path | None, root: ShownRoot | None) -> str:
+        """Where a row is, as the Location line says it: its folder or file, or a root's location when this machine
+        has no folder for it.
+
+        :param path: the row's path on this machine, if it has one.
+        :param root: the root of a root row, or ``None`` for any other.
+        :returns: the text; empty when there is nothing to say.
+        """
+        if path is not None:
+            return str(path)
+        return root.location if isinstance(root, RehucoRoot) else ""
+
+    def __show_root_editors(self, root: ShownRoot | None) -> None:
         """Show a root's name and storage, or hide them for any other row.
 
         A name being typed is left alone while the same root is still shown, so a listing that lands meanwhile does not
-        eat it. Filling the editors never tells anyone.
+        eat it. Filling the editor never tells anyone.
 
         :param root: the root of a root row, or ``None`` for any other.
         """
         ui = self.__ui
-        for widget in (ui.root_name_label, ui.root_name_edit, ui.root_storage_label, ui.root_storage_combo):
+        for widget in (
+            ui.root_name_label,
+            ui.root_name_edit,
+            ui.default_root_name_button,
+            ui.root_storage_label,
+            ui.root_storage_value,
+        ):
             widget.setVisible(root is not None)
         if root is None:
             self.__shown_root = None
             return
+        self.__default_name = RehucoFile.default_label(root.location)
+        ui.root_name_edit.setPlaceholderText(self.__default_name)
         retyping = self.__shown_root == root.root_id and ui.root_name_edit.hasFocus()
         self.__shown_root = root.root_id
         if not retyping:
             blocked = ui.root_name_edit.blockSignals(True)
             ui.root_name_edit.setText(root.label)
             ui.root_name_edit.blockSignals(blocked)
-        select_root_storage(ui.root_storage_combo, root.storage)
+        self.__update_default_name()
+        ui.root_storage_value.setText(
+            ROOT_STORAGE_LABELS[root.storage] if isinstance(root, MappedRoot) else NOT_MAPPED_ROW
+        )
 
     def __rebuild_buttons(self, index: QModelIndex) -> None:
         """Make one button for each action the row's context menu holds.

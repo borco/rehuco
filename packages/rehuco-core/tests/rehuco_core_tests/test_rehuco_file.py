@@ -1,8 +1,7 @@
-"""Tests for the ``.rehuco`` file: format, round-trip, and root operations (#371)."""
+"""Tests for the ``.rehuco`` file: format, round-trip, root operations and the save's changed-on-disk check (#371,
+#514)."""
 
 import json
-import ntpath
-import posixpath
 from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
@@ -13,10 +12,10 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_REHUCO_VERSION,
     LockReasonKind,
+    RehucoChangedError,
     RehucoFile,
     RehucoFileError,
     RehucoRoot,
-    RootStorage,
 )
 
 FAKE_PATH: Final = Path("/fake/home.rehuco")
@@ -30,25 +29,26 @@ ROOT_IDS: Final = (
 )
 
 HOME: Final = {
-    "format_version": 2,
+    "format_version": 3,
     "id": REHUCO_ID,
     "some_future_key": {"nested": [1, 2, 3]},
     "roots": [
-        {"id": ROOT_IDS[0], "path": "D:/tutorials", "label": "tutorials", "storage": "local"},
-        {"id": ROOT_IDS[1], "path": "E:/discs", "label": "discs", "storage": "removable", "some_future_root_key": 7},
-        {"id": ROOT_IDS[2], "path": "F:/refs", "label": "refs"},
+        {"id": ROOT_IDS[0], "label": "tutorials", "location": "//nas/data/tutorials"},
+        {"id": ROOT_IDS[1], "label": "discs", "location": "//ryzen-5600/e/discs", "some_future_root_key": 7},
+        {"id": ROOT_IDS[2], "label": "refs", "location": "//nas/data/refs"},
     ],
 }
 
 V1_HOME: Final = {
     "format_version": 1,
     "id": REHUCO_ID,
-    "some_future_key": {"nested": [1, 2, 3]},
-    "roots": [
-        {"id": ROOT_IDS[0], "path": "D:/tutorials", "label": "tutorials", "removable": False},
-        {"id": ROOT_IDS[1], "path": "E:/discs", "label": "discs", "removable": True, "some_future_root_key": 7},
-        {"id": ROOT_IDS[2], "path": "F:/refs", "label": "refs"},
-    ],
+    "roots": [{"id": ROOT_IDS[0], "path": "D:/tutorials", "label": "tutorials", "removable": False}],
+}
+
+V2_HOME: Final = {
+    "format_version": 2,
+    "id": REHUCO_ID,
+    "roots": [{"id": ROOT_IDS[0], "path": "D:/tutorials", "label": "tutorials", "storage": "local"}],
 }
 
 
@@ -122,17 +122,17 @@ def test_load_reads_the_rehuco_id_and_roots(home: RehucoFile) -> None:
     **Test steps:**
 
     * load ``HOME``
-    * verify the id, path, version, count and every root's parsed view, ``storage`` defaulting to local
+    * verify the id, path, version, count and every root's parsed view
     """
     assert home.rehuco_id == UUID(REHUCO_ID)
     assert home.path == FAKE_PATH
-    assert home.format_version == CURRENT_REHUCO_VERSION
+    assert home.format_version == CURRENT_REHUCO_VERSION == 3
     assert home.lock_reason is None
     assert home.count == 3
     assert home.roots == (
-        RehucoRoot(UUID(ROOT_IDS[0]), Path("D:/tutorials"), "tutorials", RootStorage.LOCAL),
-        RehucoRoot(UUID(ROOT_IDS[1]), Path("E:/discs"), "discs", RootStorage.REMOVABLE),
-        RehucoRoot(UUID(ROOT_IDS[2]), Path("F:/refs"), "refs", RootStorage.LOCAL),
+        RehucoRoot(UUID(ROOT_IDS[0]), "tutorials", "//nas/data/tutorials"),
+        RehucoRoot(UUID(ROOT_IDS[1]), "discs", "//ryzen-5600/e/discs"),
+        RehucoRoot(UUID(ROOT_IDS[2]), "refs", "//nas/data/refs"),
     )
 
 
@@ -142,8 +142,7 @@ def test_round_trip_is_lossless_and_canonical(mocker: MockerFixture, home: Rehuc
     **Test steps:**
 
     * load ``HOME`` and save it through a mocked ``atomic_write_text``
-    * verify the payload equals ``HOME``: the unknown top-level key, the unknown root key and the absent
-      ``storage`` all carried as found
+    * verify the payload equals ``HOME``: the unknown top-level key and the unknown root key carried as found
     * verify the key order: ``format_version``, ``id``, the unknown key, ``roots`` last
     """
     payload = saved_payload(mocker, home)
@@ -201,19 +200,28 @@ def test_save_without_a_path_is_refused(mocker: MockerFixture) -> None:
     mock_write.assert_not_called()
 
 
-def test_unstamped_file_reads_as_version_one(mocker: MockerFixture) -> None:
-    """A file with no ``format_version`` is read as v1, migrated and saved stamped.
+@mark.parametrize(
+    "data",
+    [
+        param(V1_HOME, id="v1"),
+        param({key: value for key, value in V1_HOME.items() if key != "format_version"}, id="unstamped"),
+        param(V2_HOME, id="v2"),
+        param({**V1_HOME, "roots": {}}, id="v1-roots-not-a-list"),
+        param({**V1_HOME, "roots": ["D:/x"]}, id="v1-root-not-an-object"),
+    ],
+)
+def test_an_older_file_is_refused_with_its_path(mocker: MockerFixture, data: dict[str, Any]) -> None:
+    """A file whose roots hold paths is not carried forward, whatever else is wrong with it: it says to make the
+    catalog again.
 
     **Test steps:**
 
-    * load ``V1_HOME`` without its stamp
-    * verify it was migrated -- the removable root reads as removable -- and the saved stamp is the current one
+    * load a v1, an unstamped and a v2 file, and v1 files whose roots are not a list or not objects
+    * verify ``RehucoFileError`` saying an older build made it, ending in the file's path
     """
-    data = {key: value for key, value in V1_HOME.items() if key != "format_version"}
-    rehuco = load_rehuco(mocker, data)
-    assert rehuco.format_version == CURRENT_REHUCO_VERSION
-    assert rehuco.roots[1].storage is RootStorage.REMOVABLE
-    assert saved_payload(mocker, rehuco)["format_version"] == CURRENT_REHUCO_VERSION
+    with pytest.raises(RehucoFileError, match="older build") as raised:
+        load_rehuco(mocker, data)
+    assert str(raised.value).endswith(str(FAKE_PATH))
 
 
 def test_missing_roots_reads_as_none(mocker: MockerFixture) -> None:
@@ -224,7 +232,7 @@ def test_missing_roots_reads_as_none(mocker: MockerFixture) -> None:
     * load a file holding only a stamp and an id
     * verify no roots, and ``roots: []`` in the saved payload
     """
-    rehuco = load_rehuco(mocker, {"format_version": 1, "id": REHUCO_ID})
+    rehuco = load_rehuco(mocker, {"format_version": 3, "id": REHUCO_ID})
     assert rehuco.count == 0
     assert saved_payload(mocker, rehuco)["roots"] == []
 
@@ -308,56 +316,38 @@ def test_missing_file_propagates(mocker: MockerFixture) -> None:
     ("data", "match"),
     [
         param([], "Not a JSON object", id="not-an-object"),
-        param({"format_version": 1}, "Missing the rehuco id", id="no-id"),
-        param({"format_version": 1, "id": 42}, "Missing the rehuco id", id="id-not-a-string"),
-        param({"format_version": 1, "id": "not-a-uuid"}, "Not a UUID: the rehuco id", id="id-not-a-uuid"),
-        param({"format_version": 1, "id": REHUCO_ID, "roots": {}}, "'roots' is not a list", id="roots-not-a-list"),
-        param({"format_version": 1, "id": REHUCO_ID, "roots": ["D:/x"]}, "not an object", id="root-not-an-object"),
+        param({"format_version": 3}, "Missing the rehuco id", id="no-id"),
+        param({"format_version": 3, "id": 42}, "Missing the rehuco id", id="id-not-a-string"),
+        param({"format_version": 3, "id": "not-a-uuid"}, "Not a UUID: the rehuco id", id="id-not-a-uuid"),
+        param({"format_version": 3, "id": REHUCO_ID, "roots": {}}, "'roots' is not a list", id="roots-not-a-list"),
+        param({"format_version": 3, "id": REHUCO_ID, "roots": ["x"]}, "not an object", id="root-not-an-object"),
         param(
-            {"format_version": 1, "id": REHUCO_ID, "roots": [{"id": ROOT_IDS[0], "label": "x"}]},
-            "has no 'path'",
-            id="root-no-path",
+            {"format_version": 3, "id": REHUCO_ID, "roots": [{"id": ROOT_IDS[0], "label": "x"}]},
+            "has no 'location'",
+            id="root-no-location",
         ),
         param(
-            {"format_version": 1, "id": REHUCO_ID, "roots": [{"id": ROOT_IDS[0], "path": "D:/x", "label": ""}]},
+            {"format_version": 3, "id": REHUCO_ID, "roots": [{"id": ROOT_IDS[0], "location": "//m/x", "label": 7}]},
             "has no 'label'",
-            id="root-empty-label",
+            id="root-label-not-a-string",
         ),
         param(
-            {"format_version": 1, "id": REHUCO_ID, "roots": [{"path": "D:/x", "label": "x"}]},
-            "Missing the root 'D:/x'",
+            {"format_version": 3, "id": REHUCO_ID, "roots": [{"location": "//m/x", "label": "x"}]},
+            "Missing the root '//m/x'",
             id="root-no-id",
         ),
         param(
-            {"format_version": 1, "id": REHUCO_ID, "roots": [{"id": "nope", "path": "D:/x", "label": "x"}]},
-            "Not a UUID: the root 'D:/x'",
+            {"format_version": 3, "id": REHUCO_ID, "roots": [{"id": "nope", "location": "//m/x", "label": "x"}]},
+            "Not a UUID: the root '//m/x'",
             id="root-id-not-a-uuid",
         ),
         param(
             {
-                "format_version": 2,
-                "id": REHUCO_ID,
-                "roots": [{"id": ROOT_IDS[0], "path": "D:/x", "label": "x", "storage": "floppy"}],
-            },
-            "unknown 'storage': 'floppy'",
-            id="storage-not-a-known-one",
-        ),
-        param(
-            {
-                "format_version": 2,
-                "id": REHUCO_ID,
-                "roots": [{"id": ROOT_IDS[0], "path": "D:/x", "label": "x", "storage": []}],
-            },
-            "unknown 'storage': \\[\\]",
-            id="storage-not-a-string",
-        ),
-        param(
-            {
-                "format_version": 1,
+                "format_version": 3,
                 "id": REHUCO_ID,
                 "roots": [
-                    {"id": ROOT_IDS[0], "path": "D:/x", "label": "x"},
-                    {"id": ROOT_IDS[0], "path": "D:/y", "label": "y"},
+                    {"id": ROOT_IDS[0], "location": "//m/x", "label": "x"},
+                    {"id": ROOT_IDS[0], "location": "//m/y", "label": "y"},
                 ],
             },
             "Two roots share the id",
@@ -387,7 +377,7 @@ def test_shape_error_without_a_path_names_no_path() -> None:
     * verify the message is the problem only
     """
     with pytest.raises(RehucoFileError) as raised:
-        RehucoFile({"format_version": 1})
+        RehucoFile({"format_version": 3})
     assert str(raised.value) == "Missing the rehuco id"
 
 
@@ -398,32 +388,30 @@ def test_shape_error_without_a_path_names_no_path() -> None:
 
 
 def test_add_root_appends_under_a_fresh_id(mocker: MockerFixture) -> None:
-    """``add_root`` appends a root with a fresh uuid4 id, the folder's name as label, and the storage.
+    """``add_root`` appends a root with a fresh uuid4 id and the location's last segment as label.
 
     **Test steps:**
 
-    * add two roots to a new file, the second on a removable drive
-    * verify the returned rows, distinct uuid4 ids, labels and storages, and the derived ``removable``
+    * add two roots to a new file
+    * verify the returned rows, distinct uuid4 ids and labels
     * verify the saved root objects spell every key
     """
     rehuco = RehucoFile.new()
-    assert rehuco.add_root(Path("D:/tutorials")) == 0
-    assert rehuco.add_root("E:/discs", storage=RootStorage.REMOVABLE) == 1
+    assert rehuco.add_root("//nas/data/tutorials") == 0
+    assert rehuco.add_root("//ryzen-5600/e/discs") == 1
     first, second = rehuco.roots
     assert first.root_id.version == 4
     assert first.root_id != second.root_id
-    assert (first.label, first.storage, first.removable) == ("tutorials", RootStorage.LOCAL, False)
-    assert (second.label, second.storage, second.removable) == ("discs", RootStorage.REMOVABLE, True)
+    assert (first.label, second.label) == ("tutorials", "discs")
     assert saved_payload(mocker, rehuco)["roots"][1] == {
         "id": str(second.root_id),
-        "path": "E:/discs",
         "label": "discs",
-        "storage": "removable",
+        "location": "//ryzen-5600/e/discs",
     }
 
 
 def test_add_root_takes_an_explicit_label() -> None:
-    """A label given to ``add_root`` is used in place of the folder's name.
+    """A label given to ``add_root`` is used in place of the location's name.
 
     **Test steps:**
 
@@ -431,21 +419,21 @@ def test_add_root_takes_an_explicit_label() -> None:
     * verify the label
     """
     rehuco = RehucoFile.new()
-    rehuco.add_root("D:/tutorials", "Courses")
+    rehuco.add_root("//nas/data/tutorials", "Courses")
     assert labels(rehuco) == ["Courses"]
 
 
 @mark.parametrize(
-    ("path", "label"),
+    ("location", "label"),
     [
-        param("D:/tutorials", "tutorials", id="folder"),
-        param("D:/tutorials/", "tutorials", id="trailing-separator"),
-        param("D:\\", "D:", id="drive-root"),
-        param("/", "/", id="posix-root"),
+        param("//nas/data/tutorials", "tutorials", id="folder"),
+        param("//nas/data/tutorials/", "tutorials", id="trailing-separator"),
+        param("//nas", "nas", id="server"),
+        param("//", "//", id="nothing-else"),
     ],
 )
-def test_default_label_is_the_folder_name(path: str, label: str) -> None:
-    """With no label given, the folder's name is used; a folder with no name falls back to its path.
+def test_default_label_is_the_locations_last_segment(location: str, label: str) -> None:
+    """With no label given, the location's last segment is used; a location with none falls back to itself.
 
     **Test steps:**
 
@@ -453,7 +441,7 @@ def test_default_label_is_the_folder_name(path: str, label: str) -> None:
     * verify the label
     """
     rehuco = RehucoFile.new()
-    rehuco.add_root(path)
+    rehuco.add_root(location)
     assert labels(rehuco) == [label]
 
 
@@ -462,133 +450,31 @@ def test_clashing_labels_get_a_suffix() -> None:
 
     **Test steps:**
 
-    * add three roots whose folders share a name, differing in case
+    * add three roots whose locations end alike, differing in case
     * add a fourth with an explicit label that clashes
     * verify the suffixed labels
     """
     rehuco = RehucoFile.new()
-    rehuco.add_root("D:/tutorials")
-    rehuco.add_root("E:/Tutorials")
-    rehuco.add_root("F:/TUTORIALS")
-    rehuco.add_root("G:/other", "Tutorials")
+    rehuco.add_root("//nas/a/tutorials")
+    rehuco.add_root("//nas/b/Tutorials")
+    rehuco.add_root("//nas/c/TUTORIALS")
+    rehuco.add_root("//nas/d/other", "Tutorials")
     assert labels(rehuco) == ["tutorials", "Tutorials (2)", "TUTORIALS (3)", "Tutorials (4)"]
 
 
-@mark.parametrize(
-    "duplicate",
-    [
-        param("D:/Tutorials", id="case"),
-        param("D:/tutorials/", id="trailing-separator"),
-        param("D:\\tutorials", id="backslash"),
-        param("D:/x/../tutorials", id="dot-dot"),
-    ],
-)
-def test_duplicate_root_is_refused_where_paths_fold_case(mocker: MockerFixture, duplicate: str) -> None:
-    """On Windows paths, a folder already a root is refused however it is spelled.
+def test_a_location_already_a_root_is_refused() -> None:
+    """The same place is one root, however the host and share are cased.
 
     **Test steps:**
 
-    * compare paths the way ``ntpath`` does
-    * add a root, then the same folder spelled differently
+    * add a root, then the same location in another case
     * verify ``ValueError`` and that only one root remains
     """
-    mocker.patch("rehuco_core.root_overlap.os_path", ntpath)
     rehuco = RehucoFile.new()
-    rehuco.add_root("D:/tutorials")
+    rehuco.add_root("//nas/data/tutorials")
     with pytest.raises(ValueError, match="Already a root"):
-        rehuco.add_root(duplicate)
+        rehuco.add_root("//NAS/Data/Tutorials")
     assert rehuco.count == 1
-
-
-def test_case_variant_is_another_root_where_paths_do_not_fold_case(mocker: MockerFixture) -> None:
-    """On POSIX paths, a case variant is a different folder, but a trailing separator is not.
-
-    **Test steps:**
-
-    * compare paths the way ``posixpath`` does
-    * add ``/data/tutorials`` and ``/data/Tutorials`` and verify both are kept
-    * add ``/data/tutorials/`` and verify ``ValueError``
-    """
-    mocker.patch("rehuco_core.root_overlap.os_path", posixpath)
-    rehuco = RehucoFile.new()
-    rehuco.add_root("/data/tutorials")
-    rehuco.add_root("/data/Tutorials")
-    assert rehuco.count == 2
-    with pytest.raises(ValueError, match="Already a root"):
-        rehuco.add_root("/data/tutorials/")
-
-
-@mark.parametrize(
-    ("existing", "candidate", "message"),
-    [
-        param("D:/tutorials", "D:/tutorials/blender", "{candidate} is inside the root tutorials", id="inside"),
-        param("D:/tutorials/blender", "D:/tutorials", "{candidate} contains the root blender", id="containing"),
-        param("D:/Tutorials", "d:/TUTORIALS/blender", "{candidate} is inside the root Tutorials", id="case"),
-        param("D:\\x", "D:\\", "{candidate} contains the root x", id="drive-root"),
-        param("\\\\nas\\share", "\\\\nas\\share\\lib", "{candidate} is inside the root share", id="unc"),
-    ],
-)
-def test_a_root_inside_another_or_containing_one_is_refused(
-    mocker: MockerFixture, existing: str, candidate: str, message: str
-) -> None:
-    """A record must have one root, so a folder overlapping a root either way is refused, compared as Windows does --
-    and the refusal names both folders as spelled (#498).
-
-    **Test steps:**
-
-    * compare paths the way ``ntpath`` does
-    * add a root, then a folder inside it or containing it
-    * verify ``ValueError`` naming both, and only the first root kept
-    """
-    mocker.patch("rehuco_core.root_overlap.os_path", ntpath)
-    rehuco = RehucoFile.new()
-    rehuco.add_root(existing)
-    expected = f"{message.format(candidate=Path(candidate))} ({Path(existing)})"
-
-    with pytest.raises(ValueError) as refused:
-        rehuco.add_root(candidate)
-
-    assert str(refused.value) == expected
-    assert rehuco.count == 1
-
-
-def test_a_sibling_sharing_a_prefix_is_another_root(mocker: MockerFixture) -> None:
-    """``lib2`` is beside ``lib``, not inside it: components are compared whole.
-
-    **Test steps:**
-
-    * compare paths the way ``ntpath`` does
-    * add ``D:/lib`` then ``D:/lib2``; verify both are kept
-    """
-    mocker.patch("rehuco_core.root_overlap.os_path", ntpath)
-    rehuco = RehucoFile.new()
-    rehuco.add_root("D:/lib")
-    rehuco.add_root("D:/lib2")
-    assert rehuco.count == 2
-    assert not rehuco.overlaps
-
-
-def test_a_file_opened_nesting_loads_and_reports_its_overlap() -> None:
-    """A file an older build or a hand edit left nesting is opened as it is -- neither refused nor rewritten -- and
-    its overlap is reported.
-
-    **Test steps:**
-
-    * build a file of three roots and a fourth inside its first
-    * verify it holds all four roots, and one overlap, the outer root's, naming the inner folder
-    """
-    data = json.loads(json.dumps(HOME))
-    data["roots"].append({"id": str(UUID(int=7)), "path": "D:/tutorials/blender", "label": "blender"})
-
-    rehuco = RehucoFile(data)
-
-    assert rehuco.count == 4
-    (overlap,) = rehuco.overlaps
-    assert (overlap.root.root_id, overlap.other, overlap.encloses) == (
-        UUID(ROOT_IDS[0]),
-        Path("D:/tutorials/blender"),
-        True,
-    )
 
 
 def test_remove_root_returns_it_and_keeps_the_rest(home: RehucoFile) -> None:
@@ -616,13 +502,13 @@ def test_relabel_root_keeps_its_id(home: RehucoFile) -> None:
     **Test steps:**
 
     * relabel the first root
-    * verify the label, id and path
+    * verify the label, id and location
     """
     home.relabel_root(0, "Courses")
     root = home.roots[0]
     assert root.label == "Courses"
     assert root.root_id == UUID(ROOT_IDS[0])
-    assert root.path == Path("D:/tutorials")
+    assert root.location == "//nas/data/tutorials"
 
 
 def test_relabel_root_to_its_own_label_in_another_case_is_accepted(home: RehucoFile) -> None:
@@ -637,24 +523,37 @@ def test_relabel_root_to_its_own_label_in_another_case_is_accepted(home: RehucoF
     assert labels(home)[0] == "Tutorials"
 
 
-@mark.parametrize(
-    ("label", "match"),
-    [
-        param("", "cannot be empty", id="empty"),
-        param("DISCS", "already labeled", id="clash"),
-    ],
-)
-def test_relabel_root_refuses_an_empty_or_clashing_label(home: RehucoFile, label: str, match: str) -> None:
-    """An explicit relabel is refused, never suffixed, when it is empty or another root uses it.
+def test_relabel_root_refuses_a_clashing_label(home: RehucoFile) -> None:
+    """An explicit relabel is refused, never suffixed, when another root uses it.
 
     **Test steps:**
 
-    * relabel the first root
+    * relabel the first root to another root's label in another case
     * verify ``ValueError`` and the label unchanged
     """
-    with pytest.raises(ValueError, match=match):
-        home.relabel_root(0, label)
+    with pytest.raises(ValueError, match="already labeled"):
+        home.relabel_root(0, "DISCS")
     assert labels(home)[0] == "tutorials"
+
+
+def test_relabel_root_keeps_an_empty_label_and_lets_any_number_be_empty(
+    mocker: MockerFixture, home: RehucoFile
+) -> None:
+    """An empty label is kept as typed, is never a clash, and survives a save and a load.
+
+    **Test steps:**
+
+    * relabel two roots to the empty string
+    * verify both are empty, with no refusal, and that the saved payload holds empty labels
+    * load that payload and verify the labels are still empty
+    """
+    home.relabel_root(0, "")
+    home.relabel_root(1, "")
+
+    assert labels(home) == ["", "", "refs"]
+    payload = saved_payload(mocker, home)
+    assert [root["label"] for root in payload["roots"]] == ["", "", "refs"]
+    assert labels(load_rehuco(mocker, payload)) == ["", "", "refs"]
 
 
 def test_move_puts_a_root_at_any_row(mocker: MockerFixture, home: RehucoFile) -> None:
@@ -687,60 +586,11 @@ def test_move_refuses_a_row_outside_the_file(home: RehucoFile, at: int, to: int)
     assert [root.label for root in home.roots] == ["tutorials", "discs", "refs"]
 
 
-def test_set_storage_round_trips(mocker: MockerFixture, home: RehucoFile) -> None:
-    """``set_storage`` changes what a root lives on, and the saved file carries it.
-
-    **Test steps:**
-
-    * put the third root on a compact disk and the second on a network share
-    * verify the parsed storages, the derived ``removable`` and the saved root objects
-    """
-    home.set_storage(2, RootStorage.COMPACT_DISK)
-    home.set_storage(1, RootStorage.NETWORK)
-    assert [root.storage for root in home.roots] == [RootStorage.LOCAL, RootStorage.NETWORK, RootStorage.COMPACT_DISK]
-    assert [root.removable for root in home.roots] == [False, False, True]
-    roots = saved_payload(mocker, home)["roots"]
-    assert [root["storage"] for root in roots] == ["local", "network", "compact_disk"]
-    assert roots[1]["some_future_root_key"] == 7
-
-
-def test_a_v1_file_comes_up_with_a_storage_per_root(mocker: MockerFixture) -> None:
-    """A v1 ``.rehuco`` loads as v2: ``removable`` becomes a storage, and everything else is carried.
-
-    **Test steps:**
-
-    * load ``V1_HOME``, whose roots are not removable, removable and unmarked
-    * verify the storages are local, removable and local
-    * verify the saved payload keeps the unknown keys and leaves no ``removable`` behind
-    """
-    rehuco = load_rehuco(mocker, V1_HOME)
-    assert rehuco.format_version == CURRENT_REHUCO_VERSION == 2
-    assert [root.storage for root in rehuco.roots] == [RootStorage.LOCAL, RootStorage.REMOVABLE, RootStorage.LOCAL]
-    payload = saved_payload(mocker, rehuco)
-    assert payload["roots"][:2] == HOME["roots"][:2]
-    assert "removable" not in payload["roots"][2]
-    assert payload["some_future_key"] == HOME["some_future_key"]
-
-
-def test_a_newer_than_v2_file_is_read_only_and_keeps_its_storage(mocker: MockerFixture) -> None:
-    """A file stamped past v2 loads, read-only, with the storage it names.
-
-    **Test steps:**
-
-    * load ``HOME`` stamped 3
-    * verify it is locked and the second root's storage is read as stored
-    """
-    rehuco = load_rehuco(mocker, {**HOME, "format_version": 3})
-    assert rehuco.lock_reason is not None
-    assert rehuco.roots[1].storage is RootStorage.REMOVABLE
-
-
 @mark.parametrize(
     "operation",
     [
         param(lambda rehuco: rehuco.remove_root(3), id="remove"),
         param(lambda rehuco: rehuco.relabel_root(-1, "x"), id="relabel"),
-        param(lambda rehuco: rehuco.set_storage(3, RootStorage.NETWORK), id="set-storage"),
         param(lambda rehuco: rehuco.move_to_top(3), id="move-to-top"),
         param(lambda rehuco: rehuco.move_up(-1), id="move-up"),
         param(lambda rehuco: rehuco.move_down(3), id="move-down"),
@@ -757,40 +607,120 @@ def test_out_of_range_row_is_an_index_error(home: RehucoFile, operation: Any) ->
     """
     with pytest.raises(IndexError):
         operation(home)
-    assert labels(home) == ["tutorials", "discs", "refs"]
 
 
 # endregion
 
 
-# region Ordering
+# region A save never overwrites another machine's change
 
 
-@mark.parametrize(
-    ("method", "at", "row", "order"),
-    [
-        param("move_to_top", 2, 0, ["refs", "tutorials", "discs"], id="top-from-bottom"),
-        param("move_to_top", 0, 0, ["tutorials", "discs", "refs"], id="top-at-top"),
-        param("move_up", 1, 0, ["discs", "tutorials", "refs"], id="up-from-middle"),
-        param("move_up", 0, 0, ["tutorials", "discs", "refs"], id="up-at-top"),
-        param("move_down", 1, 2, ["tutorials", "refs", "discs"], id="down-from-middle"),
-        param("move_down", 2, 2, ["tutorials", "discs", "refs"], id="down-at-bottom"),
-        param("move_to_bottom", 0, 2, ["discs", "refs", "tutorials"], id="bottom-from-top"),
-        param("move_to_bottom", 2, 2, ["tutorials", "discs", "refs"], id="bottom-at-bottom"),
-    ],
-)
-def test_ordering_moves(home: RehucoFile, method: str, at: int, row: int, order: list[str]) -> None:
-    """Each ordering move returns the row the root ends up at and reorders the roots, ids travelling with them.
+def write_home(folder: Path) -> Path:
+    """Write ``HOME`` into ``folder``.
+
+    :param folder: where to write it.
+    :returns: the file.
+    """
+    path = folder / "home.rehuco"
+    path.write_text(json.dumps(HOME), encoding="utf-8")
+    return path
+
+
+def test_a_save_after_another_machine_changed_the_file_is_refused(tmp_path: Path) -> None:
+    """A file edited on disk since it was read is not overwritten.
 
     **Test steps:**
 
-    * run the move on ``HOME``
-    * verify the returned row, the label order, and that the moved root kept its id
+    * load a real file, then change it on disk as another machine would
+    * edit and save here
+    * verify ``RehucoChangedError`` and that the file on disk is the other machine's
     """
-    moved_id = home.roots[at].root_id
-    assert getattr(home, method)(at) == row
-    assert labels(home) == order
-    assert home.roots[row].root_id == moved_id
+    path = write_home(tmp_path)
+    rehuco = RehucoFile.load(path)
+    other = path.read_text(encoding="utf-8").replace("refs", "pictures")
+    path.write_text(other, encoding="utf-8")
+
+    rehuco.relabel_root(0, "Courses")
+    with pytest.raises(RehucoChangedError, match="changed on disk"):
+        rehuco.save()
+
+    assert path.read_text(encoding="utf-8") == other
+
+
+def test_a_save_after_the_file_was_removed_is_refused(tmp_path: Path) -> None:
+    """A file deleted since it was read is not silently brought back.
+
+    **Test steps:**
+
+    * load a real file and delete it
+    * save
+    * verify ``RehucoChangedError`` and that nothing was written
+    """
+    path = write_home(tmp_path)
+    rehuco = RehucoFile.load(path)
+    path.unlink()
+
+    with pytest.raises(RehucoChangedError):
+        rehuco.save()
+
+    assert not path.exists()
+
+
+def test_a_save_after_the_file_became_binary_is_refused(tmp_path: Path) -> None:
+    """A file that no longer decodes as text counts as changed.
+
+    **Test steps:**
+
+    * load a real file and overwrite it with bytes that are not UTF-8
+    * save
+    * verify ``RehucoChangedError``
+    """
+    path = write_home(tmp_path)
+    rehuco = RehucoFile.load(path)
+    path.write_bytes(b"\xff\xfe")
+
+    with pytest.raises(RehucoChangedError):
+        rehuco.save()
+
+
+def test_saving_twice_in_a_row_is_not_a_conflict(tmp_path: Path) -> None:
+    """A save records what it wrote, so the next one compares with that.
+
+    **Test steps:**
+
+    * load a real file, relabel and save, relabel again and save
+    * verify both saves succeeded and the file holds the second label
+    """
+    path = write_home(tmp_path)
+    rehuco = RehucoFile.load(path)
+
+    rehuco.relabel_root(0, "One")
+    rehuco.save()
+    rehuco.relabel_root(0, "Two")
+    rehuco.save()
+
+    assert RehucoFile.load(path).roots[0].label == "Two"
+
+
+def test_a_new_file_and_a_save_as_have_nothing_to_compare_with(tmp_path: Path) -> None:
+    """The check applies to the file this one was read from, not to a new file or another path.
+
+    **Test steps:**
+
+    * save a new file over a path that already holds something
+    * save a loaded file to another path
+    * verify both are written
+    """
+    taken = tmp_path / "taken.rehuco"
+    taken.write_text("not a rehuco", encoding="utf-8")
+    fresh = RehucoFile.new()
+    fresh.save(taken)
+    assert RehucoFile.load(taken).rehuco_id == fresh.rehuco_id
+
+    loaded = RehucoFile.load(write_home(tmp_path))
+    elsewhere = tmp_path / "elsewhere.rehuco"
+    loaded.save(elsewhere)
+    assert RehucoFile.load(elsewhere).rehuco_id == loaded.rehuco_id
 
 
 # endregion

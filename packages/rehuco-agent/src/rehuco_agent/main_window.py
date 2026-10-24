@@ -11,6 +11,7 @@ from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 from typing import Final, cast, override
+from uuid import UUID
 
 import PySide6QtAds as QtAds
 from borco_core import absolute_path
@@ -27,7 +28,7 @@ from borco_pyside.qtads import (
 from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from borco_pyside.widgets import MessageBannerRow, MessageBannerSeverity, ToolBarStretch
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QByteArray, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QIcon, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -50,6 +51,7 @@ from rehuco_core import (
     SAVE_RECORD_KIND,
     CatalogField,
     JobState,
+    RehucoRoot,
     SweepChecksumsJob,
     TaskQueue,
     is_directory_scoped,
@@ -97,6 +99,7 @@ from .node_status_indicator import NodeStatusIndicator
 from .recycle_bin_deleter import configured_deleter
 from .rehuco import BrowsersDock, RootCatalog, RootsPanel
 from .rehuco.catalog_table_model import RowKey
+from .rehuco.map_roots_dialog import MapRootsDialog
 from .rehuco.selection_preview import SelectionPreview
 from .rehuco.table_browser import TableBrowser
 from .remembered_paths import RememberedPaths
@@ -527,6 +530,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__remembered.rehuco_arrived.connect(self.__on_rehuco_arrived)
         self.__remembered.layout_due.connect(self.__on_late_layout_due)
         self.__root_catalog.rehuco_path_changed.connect(self.__remembered.clear_deferred_rehuco)
+        # a catalog reopened at start is asked about once the event loop runs, never from inside the start
+        self.__mapping_timer: Final = QTimer(self)
+        self.__mapping_timer.setSingleShot(True)
+        self.__mapping_timer.timeout.connect(self.__ask_unmapped_roots)
+        self.__asking_mappings = False
         self.__restore_session_if_enabled()
         # whether or not the session was restored: the setting that kept them is about quitting, not the session
         self.__unsaved_changes.reopen()
@@ -855,6 +863,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         menu.addAction(roots.scan_action)
         menu.addAction(roots.add_root_action)
         menu.addAction(roots.remove_root_action)
+        menu.addAction(roots.map_root_action)
         menu.addSeparator()
         menu.addAction(self.__make_auto_preview_action())
         browsers_menu = self.__ui.browsers_menu
@@ -1013,6 +1022,43 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """What an open ``.rehuco`` leaves behind: both its docks shown, the file remembered."""
         self.__reveal_catalog_docks()
         self.__rehuco_settings.record(path)
+        self.__ask_unmapped_roots()
+
+    def ask_root_mappings(self, roots: tuple[RehucoRoot, ...]) -> tuple[dict[UUID, Path], list[UUID]] | None:
+        """Ask where this machine finds roots of the open catalog it has no mapping for (#514).
+
+        A public method rather than an inline dialog, so a test replaces the question on the instance.
+
+        :param roots: the roots to ask about.
+        :returns: the folder given to each root and the roots skipped; ``None`` when the dialog was cancelled.
+        """
+        dialog = MapRootsDialog(roots, self)
+        if dialog.exec() != MapRootsDialog.DialogCode.Accepted:
+            return None
+        return dialog.mapped, dialog.skipped
+
+    def __ask_unmapped_roots(self) -> None:
+        """Ask about the open catalog's unmapped roots, if it has any, and apply the answer (#514).
+
+        Nothing is asked while an earlier question is still open: its dialog runs an event loop of its own.
+        """
+        if self.__asking_mappings:
+            return
+        roots = self.__root_catalog.unmapped_roots()
+        if not roots:
+            return
+        self.__asking_mappings = True
+        try:
+            answer = self.ask_root_mappings(roots)
+        finally:
+            self.__asking_mappings = False
+        if answer is None:
+            return
+        mapped, skipped = answer
+        self.__root_catalog.skip_roots(skipped)
+        for root_id, folder in mapped.items():
+            if not self.__root_catalog.map_root(root_id, folder):
+                QMessageBox.warning(self, "Map Roots", self.__root_catalog.save_error)
 
     def __reveal_catalog_docks(self) -> None:
         """Show both docks of a catalog just opened (#461): the Browsers dock, then the Root Catalog dock, which
@@ -1973,6 +2019,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
         if self.__root_catalog.open_rehuco(path):
             self.__reveal_catalog_docks()
+            self.__mapping_timer.start(0)
         else:
             self.__rehuco_settings.current_path = None
 
@@ -1982,6 +2029,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
         if self.__root_catalog.open_rehuco(path):
             self.__reveal_catalog_docks()
+            self.__mapping_timer.start(0)
         else:
             self.__rehuco_settings.current_path = None
 

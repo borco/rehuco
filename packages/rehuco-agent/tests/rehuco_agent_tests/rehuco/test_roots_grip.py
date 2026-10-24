@@ -4,7 +4,6 @@ import gc
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Final
-from uuid import uuid4
 
 import shiboken6
 from borco_pyside.widgets import ReorderDrag
@@ -27,12 +26,14 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_row_delegate import RootRowDelegate
 from rehuco_agent.rehuco.roots_column_view import RootsColumnView
-from rehuco_agent.rehuco.roots_folder_model import NodeListing, RootsFolderModel
+from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
 from rehuco_agent.rehuco.roots_grip import GRIP_TOOLTIP, GRIP_WIDTH, RootsGripFilter, paint_grip
 from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
-from rehuco_core import RehucoRoot, RootFolderLister, RootStorage
+from rehuco_agent.rehuco.roots_node import NodeListing
+from rehuco_core import RootFolderLister, RootStorage
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+from rehuco_agent_tests.mapped_roots import mapped_root
 
 WAIT_TIMEOUT_MS: Final = 10_000
 
@@ -54,7 +55,7 @@ def fixture_roots(
     (tmp_path / "a" / "sub").mkdir(parents=True)
     (tmp_path / "b").mkdir()
     (tmp_path / "c").mkdir()
-    roots = [RehucoRoot(uuid4(), tmp_path / name, name, RootStorage.LOCAL) for name in ("a", "b", "c")]
+    roots = [mapped_root(tmp_path / name, name, RootStorage.LOCAL) for name in ("a", "b", "c")]
     model = delete_at_teardown(RootsFolderModel())
     view = RootsColumnView()
     view.setModel(model)
@@ -476,7 +477,7 @@ def test_the_roots_changing_under_a_drag_abandons_it(
     (tmp_path / "d").mkdir()
     more = [
         *(model.root_at(model.index(row, 0)) for row in range(3)),
-        RehucoRoot(uuid4(), tmp_path / "d", "d", RootStorage.LOCAL),
+        mapped_root(tmp_path / "d", "d", RootStorage.LOCAL),
     ]
     model.set_roots(
         [root for root in more if root is not None], RootFolderLister([root for root in more if root is not None])
