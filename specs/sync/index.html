@@ -1,0 +1,3031 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/sync/">
+      
+      
+        <link rel="prev" href="../discovery-trust-access/">
+      
+      
+        <link rel="next" href="../multiplicity/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Sync & Conflicts - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#7-saves-locks-and-conflicts" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Sync & Conflicts
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../external-tools/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  External Tools
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#71-the-lock-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.1 The lock file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#72-compare-and-swap-and-the-per-field-merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.2 Compare-and-swap, and the per-field merge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#73-saves-are-jobs-apply-a-payload-to-a-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.3 Saves are jobs: apply a payload to a record
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§7.3 Saves are jobs: apply a payload to a record">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#731-a-save-not-landed-is-a-borrowed-copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.3.1 A save not landed is a borrowed copy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#74-pending-saves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.4 Pending saves
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#75-library-wide-rename" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.5 Library-wide rename
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../external-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#71-the-lock-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.1 The lock file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#72-compare-and-swap-and-the-per-field-merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.2 Compare-and-swap, and the per-field merge
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#73-saves-are-jobs-apply-a-payload-to-a-record" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.3 Saves are jobs: apply a payload to a record
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§7.3 Saves are jobs: apply a payload to a record">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#731-a-save-not-landed-is-a-borrowed-copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.3.1 A save not landed is a borrowed copy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#74-pending-saves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.4 Pending saves
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#75-library-wide-rename" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §7.5 Library-wide rename
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="7-saves-locks-and-conflicts">§7. Saves, Locks and Conflicts</h1>
+<p><span class="slug-ref">[[[sync]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[sync#overview]]]</span></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Implement the save path with Opus, not the auto-switched Sonnet.</strong> The lock's stale rule, the compare-and-swap, the
+per-field merge and the apply-payload job's coalescing are reasoning-dense — a subtle error here silently loses or
+resurrects data. Override <code>opusplan</code> to <code>/model opus</code> while implementing this file, and verify each case against the
+rules below and the measurements of <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/503" title="GitHub Issue: borco/rehuco #503">#503</a>.</p>
+</div>
+<p>There is <strong>no sync engine</strong>. Until 2026-10-16 this file specified version vectors, an append-only activity log,
+tombstones and a verdict queue, all resting on one node being a resource's sole writer. With the files on a share that
+anyone may mount, nothing can be the sole writer, so convergence is settled where the files are: on the filesystem,
+with the primitives every SMB client honours.</p>
+<p>Two different kinds of data live beside a resource, with different natural owners:</p>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Where</th>
+<th>Writers</th>
+<th>Conflict risk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Resource metadata</td>
+<td><code>info.rehu</code></td>
+<td>Anyone who edits the resource</td>
+<td>Real but rare: two people editing the same record's details apart</td>
+</tr>
+<tr>
+<td>Per-user state</td>
+<td><code>info.user-&lt;name&gt;.rehuser</code> (<span class="slug-ref">[[data-model#single-file]]</span>)</td>
+<td>That user, from any of their devices</td>
+<td>Only between one user's devices; merges by field</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Metadata is edited only while the file is reachable, or while a save of it has not landed.</strong> A record whose share is
+offline shows its cached details read-only (<span class="slug-ref">[[offline-editing#overview]]</span>); what remains writable offline is per-user
+state, through the queued jobs below, and a record whose save is still pending, which is a borrowed copy
+(<span class="slug-ref">[[sync#unlanded-save]]</span>). The two statements that were v1's hardest promise — a single writer, and offline edits that converge — are no
+longer needed: a save that cannot reach the file waits, and a save that finds the file changed is a conflict shown to
+the user.</p>
+<h2 id="71-the-lock-file">§7.1 The lock file</h2>
+<p><span class="slug-ref">[[[sync#lock-file]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/512">#512: feat(core): the lock file and compare-and-swap in every record write</a></li>
+</ul>
+<p>Every write to a record takes <code>&lt;record&gt;.lock</code> beside it — the record's own name with <code>.lock</code> added, <code>info.rehu.lock</code>
+beside <code>info.rehu</code>, <code>catalog.rehuco.lock</code> beside a <code>.rehuco</code> — created with exclusive-create (<code>O_CREAT | O_EXCL</code>),
+which on SMB2 is a server-side atomic create and the one locking primitive Windows, macOS and Linux clients all
+honour; OS byte-range and <code>fcntl</code> locks are not that (<span class="slug-ref">[[appendices.post-mortem#architecture]]</span>). Measured on the TS-230
+(<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/503" title="GitHub Issue: borco/rehuco #503">#503</a>):
+two Windows processes and a Mac racing 1500 attempts each, every holder reading its own id back after the hold —
+1443 holds, <strong>0 clobbered</strong>.</p>
+<ul>
+<li><strong>The lock is the directory entry, never an open handle.</strong> It is created, written (<code>user@host pid app time</code>) and
+  closed in one go; its content is read back, never kept open. The reason is measured: a lock <em>held open</em> by another
+  client survives its holder's exit by a minute or more on the macOS client's deferred close, a second delete of it is
+  denied meanwhile, and a Windows holder blocks every delete and replace outright. The same goes for a contender
+  <em>reading</em> it: a plain Windows open denies the holder's delete, which then fails and leaves every writer waiting out
+  the TTL (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/512" title="GitHub Issue: borco/rehuco #512">#512</a>, measured: 128 of 300 saves timed out), so the content is read with delete shared, and a release
+  refused for a moment is retried.</li>
+<li><strong>Held for milliseconds</strong>: the re-read → compare → atomic-replace window of one save. Create and unlink cost about
+  4 ms from Windows and 13 ms from macOS over the LAN.</li>
+<li><strong>Retried with jitter, never spun.</strong> A busy answer may be stale — the Windows client's directory cache answered
+  "exists" 12–24 times per 1500 attempts for a lock that was already gone — and a hot contender starves the others
+  (one Mac won 1400 of 1500 against two Windows processes). A failed create backs off a random few tens of
+  milliseconds and tries again, for a bounded time, then the save waits in the queue and says so.</li>
+<li><strong>Stale by age.</strong> A lock older than the TTL (2 minutes to start) whose content names a time that far back is broken:
+  deleted, then <strong>verified gone</strong> — a name that lingers is treated as held and backed off from, not spun on. There is
+  no heartbeat on the lock, since that would mean reopening it. A lock whose content names no time — its holder died
+  between the create and the write — is aged by its modification time instead, which the 2 minutes leave far behind
+  the client's cache.</li>
+<li><strong>Busy past the bound is a typed failure</strong> naming the holder (<code>RecordLockedError</code>), which a save job turns into a
+  wait: its row names the holder and tries again ten seconds later (<span class="slug-ref">[[sync#apply-payload]]</span>). The back-off runs on the
+  job's worker, so the lock's bound is never time the window spends frozen.</li>
+<li><strong>Excluded from scans, checksums, the Files listing, the notifier and renames</strong>, like the staged temp files — only a
+  <code>.lock</code> beside a record's name, so a tutorial's own <code>yarn.lock</code> stays content. A rename refuses while another
+  process's fresh lock sits beside the record, naming the holder, and breaks a stale one.</li>
+</ul>
+<p><strong>A <code>.checksum</code> takes the same lock</strong> (<code>info.checksum.lock</code>), by every writer — a verify, a generate, a Forget, a claim
+moved in or out (<span class="slug-ref">[[data-model#checksums]]</span>). A run reads the record when it starts and hashes for minutes, so it never
+writes back its own copy: under the lock it re-reads the record and merges entry by entry. What it did not change is
+the file's (a claim moved in or an entry forgotten meanwhile survives), what it changed is its own, and where both
+changed one entry the later <code>verified</code> date wins.</p>
+<p><strong>The lock narrows the window; the compare is the safety.</strong> A client that ignores the lock file still cannot silently
+lose anyone's edit, because of the next section — it can only lose its own, which the conflict dock then shows.</p>
+<h2 id="72-compare-and-swap-and-the-per-field-merge">§7.2 Compare-and-swap, and the per-field merge</h2>
+<p><span class="slug-ref">[[[sync#compare-and-swap]]]</span></p>
+<p>Under the lock, the save re-reads the file and compares its <strong>content hash</strong> with the <code>RecordVersion</code> the edit was
+based on (<span class="slug-ref">[[nodes#access-seam]]</span>): never its modification time or size, which the Windows SMB client caches for about
+ten seconds. Then:</p>
+<ul>
+<li><strong>Unchanged</strong> → write the merged payload with an atomic replace (<span class="slug-ref">[[data-model#write-integrity]]</span>), release.</li>
+<li><strong>Changed in per-user fields only</strong> → merge <strong>field by field</strong> and write. The rules, kept from the earlier design:
+  watched segments are a union; bookmarks a union by position; a video's and the tutorial's <em>viewed</em> flags a logical OR
+  (<em>watched to the end at least once</em> only becomes true), except a <em>viewed</em> the user cleared by hand, which is a
+  deliberate action and wins over an older true; a resume position takes the later action
+  (<span class="slug-ref">[[field-schema#watch-progress]]</span>); free-text notes that genuinely collide keep both and say so. Data is never
+  silently lost.</li>
+<li><strong>Changed in the details</strong> → the save is a <strong>conflict</strong>: the job fails with the conflict kept on it, and the document
+  stays dirty under the conflict banner. No dialog pops while the user is elsewhere; the <strong>next Save</strong> first shows every
+  value the two versions disagree on, the file's side as the failed save read it, with its original, the user's (the
+  live document, edits made since the failed save included) and the file's; the user picks per row and saves, or
+  discards their edits (<span class="slug-ref">[[nodes#access-seam]]</span>). That save is checked like any other, so a file changed once more
+  meanwhile fails it again. A Save on a document whose file changed on disk under its edits is a save like any other:
+  its own check merges the change by field, or fails as a conflict.</li>
+</ul>
+<p><strong>Deletion is a filesystem fact.</strong> A record deleted on the share is gone for everyone: the notifier reports it, the
+cache drops the row, a queued save for it fails and says the file is gone. <strong>A save never recreates a folder, or the
+file of a record that was read</strong>: the folder going is the resource going, and writing it back would resurrect what
+someone removed. An open document with no edits reverts, becoming the locked <em>missing</em> stub a reopen would give
+(<span class="slug-ref">[[data-model#lock-vocabulary]]</span>); one with edits keeps them and says <em>The file is gone</em> or <em>The resource's folder is
+gone</em>, and saves nothing until it is reverted, closed or the record is back — with another signature than it was read
+at, the changed-on-disk rule then applies. A never-saved document says so only when its folder is gone. There are no
+tombstones and nothing to resurrect; a record re-created at the same path is a new file with its own id.</p>
+<h2 id="73-saves-are-jobs-apply-a-payload-to-a-record">§7.3 Saves are jobs: apply a payload to a record</h2>
+<p><span class="slug-ref">[[[sync#apply-payload]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/497">#497: feat(agent): saves as jobs — apply a payload to a record, off the GUI thread, persisted, Pending saves</a></li>
+</ul>
+<p>A save is not a call that blocks the window; it is a job on the task queue (<span class="slug-ref">[[appendices.task-queue]]</span>),
+<code>SaveRecordJob</code>. Save hands it a <strong>snapshot</strong> of the document — the record's path, whose it is, the payload to write,
+the payload and <code>RecordVersion</code> it was based on, the blocks it discards, whether it is the record's first save — and the
+document stays editable while it runs. Saves to one server or drive take turns in a chain of their own, saves to
+another land beside them, and none waits behind a checksum run (<span class="slug-ref">[[appendices.task-queue#serial]]</span>). The job:</p>
+<ol>
+<li>Asks whether the share answers before touching it. One that does not makes the job <strong>wait</strong>
+   (<span class="slug-ref">[[appendices.task-queue#waiting]]</span>): the row says <em>Waiting for the share</em> and tries again thirty seconds later.</li>
+<li>Fails, naming it, when the folder is gone or a record that was read is no longer there — it never recreates
+   either (<span class="slug-ref">[[sync#compare-and-swap]]</span>).</li>
+<li>Takes the lock (<span class="slug-ref">[[sync#lock-file]]</span>), re-reads, compares and merges (<span class="slug-ref">[[sync#compare-and-swap]]</span>). A lock held
+   elsewhere past its bound is a wait too, retried ten seconds later, and so is a write that failed because the share
+   went away under it.</li>
+<li>
+<p>Writes atomically, releases and lets the notifier announce the change; then logs the blocks the save discarded, and a
+   first save takes over the enclosing record's checksums (<span class="slug-ref">[[data-model#checksums]]</span>).</p>
+</li>
+<li>
+<p><strong>One pending save per record.</strong> A later Save hands a save that has not landed — queued, waiting, paused or failed —
+  the newer data rather than queueing a second write behind it, so edits made while it waits land as one write. One
+  made while the save is writing is written by the same job right after, against the version that write left, so it
+  never conflicts with it. A save that landed, or was cancelled, is history: the next Save is a job of its own.</p>
+</li>
+<li><strong>What the save changed comes back.</strong> A save changes things on its way to disk — the stamps, the per-user fields
+  merged from the file, a block only the file had. When it lands they are put onto the live document <strong>except where
+  the user edited since the last Save</strong>, so the document stays dirty exactly when it was edited since.</li>
+<li><strong>A failure never pops a dialog.</strong> A conflict fails the job with the conflict kept on it; the document shows the
+  conflict banner, and the next Save shows the differences first (<span class="slug-ref">[[sync#compare-and-swap]]</span>). A record whose file or
+  folder went fails the job too, which keeps its payload: putting the file or folder back and pressing Retry writes it.</li>
+<li><strong>Persisted</strong>: the payload is written with the queue's state, so a save made while the NAS was off survives quitting
+  and lands when the share is back. A waiting save comes back waiting and is tried at once.</li>
+<li><strong>An interactive save is one such job.</strong> Returning from a vacation is <strong>N of them enqueued at once</strong> — for every
+  borrowed resource, the user's sidecar and any details edited away are payloads whose base version is the version
+  borrowed (<span class="slug-ref">[[borrowing]]</span>). Every clean one applies unattended; every conflicting one parks with its diff. The sidecar
+  makes the common case automatic: it has one writer per user, so it only ever conflicts with that user's other device.</li>
+</ol>
+<h3 id="731-a-save-not-landed-is-a-borrowed-copy">§7.3.1 A save not landed is a borrowed copy</h3>
+<p><span class="slug-ref">[[[sync#unlanded-save]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/497">#497: feat(agent): saves as jobs — apply a payload to a record, off the GUI thread, persisted, Pending saves</a></li>
+</ul>
+<p><strong>Until it lands, a save is a modified borrowed copy of one record</strong> (<span class="slug-ref">[[borrowing#another-instance-role]]</span>): its payload,
+not the file, is the record on this machine, and landing is its Return. For a borrow the copy itself holds that state;
+for a save the queued payload does. Every rule below is the borrow's.</p>
+<ul>
+<li><strong>The pending payload is the saved state.</strong> Pressing Save hands the edits to it and leaves the document clean; an
+  edit after that makes it dirty again. <strong>Revert</strong> goes back to the pending payload, <strong>opening</strong> the record — again, or
+  after a restart, since the payload is written down with the queue — shows it, clean, under the pending-save banner,
+  at once and editable whether or not the share answers (<span class="slug-ref">[[offline-editing#overview]]</span>). The file is still read, in the
+  background, so a document whose share answers knows what it is based on: the read fills in the file's signature and
+  format version, and never what the document shows or anything edited meanwhile.</li>
+<li><strong>Closing loses only what was not saved.</strong> Discard when closing drops the edits since the last Save; the pending
+  save stays and lands later, exactly as closing a borrowed document leaves the copy.</li>
+<li><strong>Nothing drops a pending save on its own.</strong> It leaves only by landing or by <strong>Drop</strong> — <em>Discard Save</em> in the Tasks
+  dock, which asks first (<span class="slug-ref">[[borrowing#borrow-vs-delete]]</span>). Drop returns an open document to the file, edits made since
+  the last Save included, as Revert did before any save was pending. Cancelling or clearing a save row is a Drop, and a
+  sweep of the dock's finished or failed rows, or a restart's, leaves failed saves alone: each still holds the edits it
+  could not land.</li>
+<li><strong>The file changing meanwhile is the save's to judge.</strong> While a save is pending, a change on disk reloads nothing: the
+  save's own check finds it when it runs — merged by field, or failed as a conflict for the user to settle
+  (<span class="slug-ref">[[sync#compare-and-swap]]</span>).</li>
+<li><strong>A failed save is still the saved state.</strong> A conflict, or a file or folder that went, keeps its payload as the
+  record until it is settled; Save stays available on the clean document so the user can settle it, and <em>Inspect
+  Save</em> does the same from the dock.</li>
+<li><strong>It follows renames.</strong> A save of a record renamed in the app — its own folder, or a collection folder above it —
+  writes where the record went. A rename made outside the app looks like a deletion, and undoing it and pressing Retry
+  is the recovery.</li>
+<li><strong>A first save checks too.</strong> A record saved for the first time that someone else created meanwhile fails as a
+  conflict, its Original side empty, rather than being written over unseen.</li>
+</ul>
+<h2 id="74-pending-saves">§7.4 Pending saves</h2>
+<p><span class="slug-ref">[[[sync#pending-saves]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/497">#497: feat(agent): saves as jobs — apply a payload to a record, off the GUI thread, persisted, Pending saves</a></li>
+</ul>
+<p>The status bar counts the saves not yet landed — <em>N pending saves</em>, hidden at zero — and a click on it opens the Tasks
+dock on its <strong>Pending Saves</strong> filter, the save rows neither done nor cancelled: waiting for the share, waiting for a
+lock, paused, or <strong>failed on a conflict</strong> with its payload kept. <em>Inspect Save</em> on one failed or waiting save opens its
+document — showing the row's edits, as every open of a record with a pending save does (<span class="slug-ref">[[sync#unlanded-save]]</span>) — and,
+if the file changed since, the differences, then saves again; <em>Discard Save…</em> asks once, drops the rows, and returns
+an open document of each to its file. A document's banner says <em>Save pending</em>, <em>Save waiting</em>, <em>Save paused</em> or <em>Save
+failed</em>, with the reason, for a save that has not landed — except while the conflict banner shows, which says more —
+and <em>Saving…</em> while it writes. Nothing is retried behind the user's back after a conflict: the file changed under
+them, and the decision is theirs. A wait is different: a root that becomes reachable again tries its waiting saves at
+once.</p>
+<p><strong>Closing waits for the save.</strong> Closing a dirty document, Save All and quitting save and then wait for the write behind
+a modal progress dialog, since what they gate must not go ahead of the edits; Cancel stops waiting and leaves the row.
+A conflict there shows the differences; a save that cannot land asks <strong>Try Again</strong>, <strong>Leave It Pending</strong> — go ahead,
+the row lands later — or <strong>Cancel</strong>.</p>
+<p><strong>Unsaved changes can outlive a quit.</strong> With the Session setting <em>Keep unsaved changes when quitting</em> on, quitting asks
+nothing about dirty documents: their edits, and each one's dock layout, are kept in <code>unsaved-changes.json</code> in the
+config folder, and the next start reopens those documents dirty with those edits, whether or not the session is
+restored — at once on a local drive, once the share answers otherwise, and one whose share does not answer stays kept
+for the start after. A never-saved document comes back new, bound to its path; one whose file changed meanwhile shows
+the changed-on-disk banner, and its save is checked against the file; one whose file or folder is gone reopens with its edits
+and the <em>gone</em> banner rather than being dropped. With the setting off, quitting asks as before; closing one document by
+hand always asks Save / Discard / Cancel. What was saved is never in question at a quit: a save not landed is written
+down with the queue, and comes back as the record's saved state (<span class="slug-ref">[[sync#unlanded-save]]</span>).</p>
+<h2 id="75-library-wide-rename">§7.5 Library-wide rename</h2>
+<p><span class="slug-ref">[[[sync#value-rename]]]</span></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Opus, like the rest of this file.</strong> A rename writes every record naming a value, some of them open with unsaved
+edits; the rebase below is what keeps those edits and keeps the next save from conflicting, and a subtle error in it
+loses either the edit or the rename.</p>
+</div>
+<p>Renaming a value from the Tag Browser (<span class="slug-ref">[[plugins#tag-browser]]</span>) — an author, a publisher, a tag, a collection or a
+learning path — rewrites every record that names it. It is a <strong>job on the task queue</strong> (<span class="slug-ref">[[appendices.task-queue]]</span>),
+not a loop in the window, and not a save: it carries no base version, because it changes one value and nothing else.</p>
+<p><strong>What changes in a record.</strong> One pure rewrite per kind, the same function wherever it runs, matching the old value
+<strong>by folded name</strong> (<code>fold</code>, the cache's rule — the Tag Browser lists one row per folded name, so every spelling of it is
+renamed):</p>
+<ul>
+<li>an author — the name of every <code>authors</code> entry, plain string or <code>{name, url}</code> record;</li>
+<li>a tag — every entry of <code>advertised_tags</code> and <code>extra_tags</code>;</li>
+<li>a publisher — the <code>publisher</code> of every source;</li>
+<li>a collection — the <code>title</code> of every <code>collections[]</code> entry;</li>
+<li>a learning path — the <code>title</code> of every <strong>owned</strong> entry in the current identity's scope and in the reserved <code>public</code>
+  scope, and in no other user's (<span class="slug-ref">[[field-schema#learning-path-ownership]]</span>); a subscription is a bare <code>{ref}</code> and
+  follows by itself.</li>
+</ul>
+<p>When the new value is already there, the list is <strong>deduplicated by folded name, keeping the first</strong> — which is the
+whole of a tag merge and the member side of an entity merge (<span class="slug-ref">[[plugins#entity-merge]]</span>). A record that names neither
+value is not written.</p>
+<p><strong>The job.</strong> Its input is the list of records the cache says name the value (authors, tags and publishers through their
+value tables; collections and learning paths through theirs, <span class="slug-ref">[[data-model#cache-schema]]</span>). Each record is rewritten
+under its lock (<span class="slug-ref">[[sync#lock-file]]</span>) — take, re-read, rewrite, write atomically, re-read, release — and the job keeps
+the version before and the version after. It <strong>checkpoints after every record</strong>, so a job stopped by quitting, a
+pause or a share going away resumes with the records it has not done. <strong>A record it cannot write is skipped and
+named, never fatal</strong>: locked by another writer, unreachable, unreadable or locked as a document (a newer format, an
+unparseable file), or a legacy <code>.tc</code>, which is converted first. A run with skips ends failed, saying how many records
+were not renamed and listing them with the reason; <strong>Retry</strong> runs only those — safe, because a record already renamed
+reads as one with nothing to change. The cache follows each write through the notifier, so the Tag Browser's counts
+move as the job runs rather than all at once.</p>
+<p><strong>An open document follows, and keeps its edits.</strong> A document open in the app may hold unsaved edits made on top of the
+file the job is about to rewrite. It must end with the rename <em>and</em> the edits, still dirty, with no "changed on disk"
+banner and no conflict on its next save. So the file is written first, and the document is <strong>rebased</strong> onto it, on the
+GUI thread, from what the job hands back for that record:</p>
+<ol>
+<li><strong>Only if it was based on exactly those bytes.</strong> The document's base version must have the content hash of the
+   version the job read before writing. Otherwise the file changed for some other reason as well, and the ordinary
+   rules apply — a clean document reloads, a dirty one says the file changed, its save is compared as any save is.</li>
+<li><strong>The same rewrite runs on the document's values and on its base</strong>, the bound editors follow without marking the
+   document dirty or clean — <strong>its dirty state is untouched</strong> — and its base version becomes the version the job read
+   after writing. Its next save re-reads a file whose hash is that version: nothing to compare, no conflict, and the
+   per-user merge (<span class="slug-ref">[[sync#compare-and-swap]]</span>) sees exactly the user's own edits as theirs.</li>
+<li><strong>The notifier's report of the same write is absorbed.</strong> The change event may reach the document before the rebase
+   or after it. A dirty document remembers the signature of the change it last saw; the rebase clears "changed on disk"
+   when that signature is the job's own write, and a report arriving after the rebase matches the base already. A
+   report of any other change keeps the banner.</li>
+</ol>
+<p>A save pressed between the job's write and the rebase is an honest conflict showing the old value against the new, which
+is rare and correct. A document whose file was rewritten before it was opened simply reads the renamed file. A rebase
+missed (two writes with one signature) leaves the ordinary banner, never a wrong merge: the guard is the content hash.
+A save payload waiting in the queue (<span class="slug-ref">[[sync#apply-payload]]</span>) is rebased by the same rule before it is applied, or it
+would conflict with the rename.</p>
+<p><strong>Merging two entity documents</strong> is a second job, run before the member rewrite when both A and B have documents
+(<span class="slug-ref">[[plugins#entity-merge]]</span>): it moves A's files beside B, writes B under B's lock, and deletes A last, checkpointing
+after each step. It waits while either document is open with unsaved edits — those are whole documents changing shape,
+not one value, and are not rebased.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../discovery-trust-access/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Discovery &amp; Trust">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Discovery & Trust
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../multiplicity/" class="md-footer__link md-footer__link--next" aria-label="Next: Multiplicity">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Multiplicity
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
