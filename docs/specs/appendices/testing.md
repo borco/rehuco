@@ -140,7 +140,11 @@ when qa runs on macOS/Linux:
   `useless-suppression`; check with `uv run pylint --enable=useless-suppression <paths>`. Messages can also flicker
   between identical runs (#343); a pragma for one of those names `useless-suppression` too.
 - **`pylint_qt` reads any `obj.attr[i]` as a subscripted signal** in a module importing PySide (#376, #457, #485):
-  bind to a local or unpack (`(mime,) = call.args`, never `call.args[0].urls()`).
+  bind to a local or unpack (`(mime,) = call.args`, never `call.args[0].urls()`). The same misreading makes item
+  assignment on a dict attribute E1137 — build a local dict and rebind (#568, #505) — and a widget read out of one
+  memberless, which `cast` does not cure: read its state through a typed helper instead (#505).
+- **`duplicate-code` trips on a contiguous re-export run, two identical tests** (#413, #506) **and a second copy of a
+  ctypes binding** — import the first (#505).
 - **Pyright's PySide stubs lack some members**: `QKeySequence.__getitem__`, `QObject.staticMetaObject`,
   `CDockAreaWidget.currentDockWidget` (use `dockWidget(currentIndex())`). The QtAds stub is hand-kept: add a member the
   code or a test newly uses (#491: `createAndSetupAutoHideContainer`, `AutoHideFeatureEnabled`).
@@ -213,6 +217,9 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
 - **A hung `make` or pytest keeps running after it is stopped** (#459). Find its `uv`/`pytest`/`python` children by
   command line (`Get-CimInstance Win32_Process`) and stop only those; never `taskkill /IM python.exe` (#102), and never
   `git stash` across such a run. A clean second worktree, detached at master, runs master's suite beside a branch.
+- **A silent parallel run at 0 CPU may be a deadlock** (#529): `uvx py-spy dump --pid N --native`, then `taskkill /T
+  /F`. Repo-wide pylint is silent for minutes, and runs from the repo root (#498). An xdist "node down":
+  `-p no:xdist --timeout=20` (#512).
 - **A parallel `cov` failure is rarely the newest diff.** Re-run on master, reproduce deterministically, and fix a race
   with a gate job occupying the worker ([[appendices.testing#races]]), never a longer wait.
 
@@ -234,7 +241,15 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   ([[nodes#single-instance]], #460), so the window on screen can be another checkout's: "primary already running …
   forwarded argv" in the run log says so, and each run's `argv` there says which build it was.
 - **A flash is invisible to the suite** (#306): probe with a watchdog thread that writes its findings and calls
-  `os._exit`.
+  `os._exit`. A probe that hangs takes the same watchdog printing the step it is stuck in, run unbuffered (`-u`, #505).
+- **Measure before guessing** (#455, #500, #498, #546): the GUI half of a speed-up (a 10 ms `QTimer` heartbeat),
+  `gc.get_objects()`, a per-directory `stat` on the share (+32 %), a Windows file fact (a `FILE_SHARE_DELETE` reader
+  still blocks a replace). A machine-dependent test asks the system's own list (#501: `GetLogicalDrives`,
+  `HKCU\Network`).
+- **A bug the tests do not show, drive the real window** (#514): a scratchpad script outside pytest (the suite's
+  conftest mocks `Path.stat`) builds `MainWindow` over temporary settings folders, `toggleView(True)` on the dock,
+  `QTest` clicks, and `panel.grab().save(...)` for the owner to see. A new dialog gets a scratchpad demo before it is
+  wired (#416, #498).
 
 ## 9. Races and background work
 
@@ -257,6 +272,15 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   worker that lingers after `super().run()`.
 - **A native crash in pytest-qt's `_process_events` is an earlier test's deferred work** (#102): run the file 8–12
   times, narrow it with targeted `sendPostedEvents(obj, DeferredDelete)`, and fix the source.
+- **Reading a native crash** (#491, #529): `primary.run` has faulthandler's stacks, `crashdumps\` the minidump (`uvx
+  --with pefile --from minidump`); `0xc0000374` is page heap (`GlobalFlag=0x02000000`, `PageHeapFlags=3`, IFEO
+  `rehuco-agent-dev.exe`). cdb on pytest: the base interpreter, a script adding the venv's `site-packages`, `-cf` with
+  `sxe -c "kn 40; q" av`.
+- **Two processes in a test act in an order the test fixes** (#547): a `spawn` worker pauses on flag files; the test
+  sees its own side reach a point (a patched `time.sleep` = the lock's back-off) before releasing it, and releases it
+  in a `finally` so a failure reports at once. Never two workers raced from one start instant. **A child's pid is the
+  launcher's** (#505): a venv's or uv's `python.exe` starts the real interpreter, so a child prints `os.getpid()`
+  itself.
 - **Stale connections are countable** (#380): `obj.receivers("2" + signature)` around a build and teardown, plus
   `sendPostedEvents(None, DeferredDelete)`.
 - **Gating a lightbox decode** (#479): gate `ArchiveImageSource.load` only when `max_height is not None` (the main
@@ -344,6 +368,30 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   invalid ones of the same length; blank the `PK\x01\x02` signature to leave the end record intact over a corrupt
   directory. Both packages keep a copy of `crafted_zips.py`.
 - **`make check-slugs` reads `[[x.y]]` in test code** (#485): `== [[widget.action]]`, a list of lists, trips it.
+- **No `clock=`/`sleep=` seams only tests pass** (#546): patch `time.time`/`time.sleep`. **One helper per mechanism**
+  — grep first (`borco_core.retry_refused`, `shared_read_open`); time-dependent data per test, not at import.
+- **A class patched in its own module is `self.Nested`** (#512); **a module overrides an autouse fixture** by defining
+  one of its name (#564).
+- **Real links** come from `tests/rehuco_core_tests/real_links.py`; `FakeDirEntry` takes `junction=` / `link=`.
+- **A record's save also reads and writes its `.rehuser` sidecars** (#513): a mocked `Path.read_text` answers per path,
+  and an agent test that saves for real takes `real_path_stat`.
+- **Coverage globs**: `*` stops at `/`, use `**`; check one with `coverage.files.globs_to_regex` (#508).
+- **Parallel `--cov` runs need a `COVERAGE_FILE` each** (#414), and one per agent working at once.
+
+## 13. Proving a test
+
+[[[appendices.testing#proving]]]
+
+A test is proven by watching it fail on the break it guards ([[appendices.code-conventions#testing]] has its format).
+
+- **Each new test goes red on its break**, the file restored from a copy afterwards (#500, #512, #546, #547). Many at
+  once by a script over a list of breaks (#564): a break nothing catches is dead code or a missing test (#505: a
+  redundant `rstrip`).
+- **A flake's cause** is found with a scratch `-p` plugin (#511, #545), then made red every run by holding the step it
+  races (#565, [[appendices.testing#races]]). **A crash** is bisected by a scratch module parametrised on the steps
+  run (#529).
+- **Agents proving in parallel see each other's breaks** for a second: rerun the whole gate after (#497).
+- **`pytest-randomly` is not installed**: `uv run --with pytest-randomly`.
 
 ## 12. Finding what only the cyclic collector frees
 

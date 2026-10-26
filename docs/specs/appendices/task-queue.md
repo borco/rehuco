@@ -230,7 +230,9 @@ Rehuco itself, or, when nothing can be found, a hint about an Explorer window sh
 holding its files come from the Restart Manager; for a folder, so do the ones holding the folder itself or
 anything in it — a shell standing in it holds no file — found by walking every handle on the system, as
 File Locksmith does. The question is asked only on that click: listing the files over a share and walking
-the handles take seconds. A step refused over a transient lock (a scanner reading a freshly scraped file)
+the handles take seconds. **Rehuco never stands in its own rename's way**: a file it still holds, or its working
+directory inside the folder, is a bug — the dialog says so and the find is logged at error level, never offered
+as a state to inspect. A step refused over a transient lock (a scanner reading a freshly scraped file)
 is retried for under a second before anything is reported.
 
 ### 3.3 One pause concept, and requests kept apart from states

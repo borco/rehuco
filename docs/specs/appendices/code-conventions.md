@@ -124,8 +124,58 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   job as its first argument; a page reuses one `PersonaAction`; a measurement's runner is its row's child.
 - **A daemon thread holds no Qt object and delivers nothing after `stop()`.** Its callback runs on its own thread and
   only emits a signal, which Qt queues to the GUI thread; the owner stops it first thing when the window closes.
+- **Building many objects on a worker pauses the cyclic collector** (#455, #500) — and only for that build, never
+  `gc.freeze()`.
 - First users: the task queue's worker ([[appendices.task-queue#teardown]], daemon for the same reason) and
   `borco_core.PresenceScan` (#464).
+
+### Qt and PySide behaviour
+
+[[[appendices.code-conventions#qt-behaviour]]]
+
+Facts about Qt and PySide that cost time to find, beyond the thread rules above. QtAds' own are in
+[[appendices.qt-ads]]; driving these in tests, in [[appendices.testing#offscreen-qt]].
+
+- **Never keep the wrapper of an object Qt owns when its parent can hand it back** (#459, #488): read it per use; delete
+  a child menu in a `finally` around `exec`; walk a widget's own descendants, not `nextInFocusChain()` (#487).
+- **Deletion** (#529, #479): a queued signal to a Python callable posts to PySide's receiver — make the sender its own
+  (`LogBridge.Marshaller`); a deleted `QObject`'s signals and methods raise `RuntimeError`; a `QObject` kept alive only
+  by its children's closures deletes itself mid-destruction; `destroyed` fires parent first — closures hold a token. A
+  form keeping strong references to the widgets its grids own leaves the model's receivers doubled after a teardown
+  (`test_a_teardown_lets_go_of_every_model_connection`): hold `weakref.ref` (#568). A host-parented `QAction` a
+  document's sub-docks make is deleted in their `teardown`, or a preview leaks one per document switch (#505).
+- **Signals**: a signal-blocked `setText` hides the clear button, which emits `textEdited` — a debounce connects
+  `textChanged` (#406); pressing a `QToolButton` in a QtAds dock moves the focus to the dock's scroll area, so a field's
+  `editingFinished` fires before the button's action — a test patching `hasFocus` hides it (#514); trace real
+  connection order (#376); state kept by a signal is as reliable as its quietest listener — compute at paint time
+  (#304, #457); a `focusChanged` connection outlives its widget (#387).
+- **Rows**: filtering the current row out of a proxy drops the current index (#344); Qt moves it inside
+  `rowsAboutToBeRemoved` — defer with `QTimer.singleShot(0, self, ...)` (#387).
+- **Sizing**: never from geometry before the first layout — `sizeHint()` (#377); a pane's minimum width must not follow
+  its content (#457); `isHidden()` is the widget's own flag — `isVisibleTo(ancestor)` (#458); a widget made after its
+  parent was shown stays hidden until `show()`; an unshown `ElidedLabel` reads `…` (#378).
+- **Widgets**: `QColumnView` — `createColumn` for a delegate, `setFixedWidth(0)` for the preview (#378); a `QToolButton`
+  mirrors its action but not its font; a `StrEnum` item comes back `str`; `applicationDisplayName()` falls back to
+  `applicationName()` (#412); `QStatusBar.addPermanentWidget` appends rightwards; `QTimer.singleShot(ms, receiver,
+  callable)` did not fire in tests — use a member `QTimer` (#506); `CDockManager` works under a plain widget (#498). A
+  row removed from a layout and `deleteLater`-ed is gone by the next wait — test `shiboken6.isValid`, not
+  `isVisible` (#505).
+- **Menus**: a `QWidgetAction` row owns its columns — raise `maxIconWidth` (#465); an `aboutToShow` tail keeps one
+  `QActionGroup` (#402); a card list marks its current card by its buttons alone (#463).
+- **Drag routing** (#387, #461, #485): a drag belongs to the widget that accepted its enter; a disabled widget gets
+  none; an *ignored* enter hands the drag to the nearest accepting ancestor, so a filter that ignores a link passes it
+  on and forwarding by hand delivers it twice (#567); a test link carries its `text/plain` too, or a `QLineEdit`
+  declines it anyway; browsers end UTF-16 `text/x-moz-url` with a NUL; a `QListView` reorder
+  ([[appendices.testing#offscreen-qt]]).
+- **A custom delegate on Windows** (#383): editor on `option.rect`; nothing painted under it; `HighlightedText`.
+- **`SimpleProperty` keeps `name` as `_Class__name`** (#497): a private method `__name` on the same class silently
+  takes its place — the banner read a bound method as its text.
+- **Settings blocks** (#508): exact `QFrame` direct children in child order; a platform's blocks are `QObject`
+  controllers `setParent`ed before `setupUi`, then `insertWidget`ed first.
+- **Dialog traps** (#416): `.ui` `QTableWidget` headers fail pyright; `QDialogButtonBox` orders by role; `ScintillaEdit`
+  eats Esc and shadows `setFocus`. A floating QtAds container ignores close — quit on an accepted close (#507).
+- **Glyphs**: the Phosphor fonts name their glyphs `uniXXXX` only — render a codepoint to check it (#505: `\ue30c` is
+  the magnifier).
 
 ## 3. Markdown
 
@@ -137,6 +187,9 @@ Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line le
   not a truly blank line.
 - Spaced table delimiter rows — `| --- | --- |` — and single-space-padded cells.
 - No emphasis-as-heading (MD036) — use real `###` headings.
+- **By hand**: no wrapped line starts with `#NNN` — markdownlint reads it as a heading (MD018); `awk 'length>120'`
+  over-counts lines with em dashes, so measure in characters; compare markdownlint's findings with `git show
+  HEAD:file` first, so only new ones are yours.
 - Under a spec section heading, list its GitHub issue(s) as plain list items — `- [#N: title](url)` —
   regardless of whether the issue is open or closed. Deliberately **not** a `- [ ]`/`- [x]` task list:
   a checkbox has to be ticked in a commit every time an issue closes, which is churn in the specs for
