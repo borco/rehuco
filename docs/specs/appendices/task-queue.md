@@ -223,10 +223,15 @@ because only an in-app rename can ask a reader to let go. Explorer, a second hos
 node cannot. So the archive cache closes its handles a couple of seconds after the last read, and at
 once when the dock is hidden. The same goes for the process's **working directory**, which is a handle
 too: Explorer starts the app inside the folder it opens. So the app leaves that directory at startup, and
-a rename steps out of any directory it is about to move. When a rename is still refused, the banner says
-who holds the resource — a program found through the Restart Manager, Rehuco itself, or, when nothing can
-be found, a hint about an Explorer window showing the folder. A step refused over a transient lock (a
-scanner reading a freshly scraped file) is retried for under a second before anything is reported.
+a rename steps out of any directory it is about to move. When a rename is still refused over an open
+handle, the banner's magnifier opens a dialog that asks who holds the resource
+([#505](https://github.com/borco/rehuco/issues/505)): each program found with *Show App* and *End Task*,
+Rehuco itself, or, when nothing can be found, a hint about an Explorer window showing the folder. Programs
+holding its files come from the Restart Manager; for a folder, so do the ones holding the folder itself or
+anything in it — a shell standing in it holds no file — found by walking every handle on the system, as
+File Locksmith does. The question is asked only on that click: listing the files over a share and walking
+the handles take seconds. A step refused over a transient lock (a scanner reading a freshly scraped file)
+is retried for under a second before anything is reported.
 
 ### 3.3 One pause concept, and requests kept apart from states
 

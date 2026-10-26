@@ -17,7 +17,7 @@ import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsFocusTracker, QtAdsLayout, QtAdsMaximizeHandler
-from borco_pyside.theming import ActionIconThemeHandler
+from borco_pyside.theming import ActionIconThemeHandler, GlyphActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QEvent, QMimeData, QObject, Qt, Signal, SignalInstance
 from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon
@@ -35,6 +35,7 @@ from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_b
 from ..asking_deleter import AskingDeleter
 from ..commands import SAVE_DOCUMENT, shared_command_registry
 from ..delete_confirmation import confirm_delete
+from ..dialogs.rename_holders_dialog import RenameHoldersDialog
 from ..fields import FieldsTab, StatefulWidget
 from ..fields.type_field import type_label
 from ..fields.widgets import (
@@ -50,6 +51,7 @@ from ..fields.widgets import (
     viewer_mode_for,
 )
 from ..fields.widgets.image_export import ORIGINAL_FILE_MIME
+from ..glyphs import FIND_HOLDERS_GLYPH
 from ..recycle_bin_deleter import configured_deleter
 from ..resource_events import ResourceEvents
 from ..scraping.image_pipeline import MIME_EXTENSIONS, ImageBytes
@@ -166,6 +168,9 @@ READING_MESSAGE: Final = "Reading {path}…"
 
 GONE_REMEDY: Final = " Nothing is saved until it is back; <i>Revert</i> or closing the document discards the edits."
 """What follows the sentence naming a document's missing file or folder (#497)."""
+
+FIND_HOLDERS_TOOLTIP: Final = "Find what is holding its files"
+"""The magnifier on a rename refused over an open handle (#505)."""
 
 UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Upgrade</i> button to bring it up to date."
 """The upgrade offer's inline banner message (#89, [[data-model#schema-version]]); names the toolbar
@@ -814,6 +819,13 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__image_drop_filter: Final = ImageDropFilter(self.__image_downloads, model, self)
         images_dock.installEventFilter(self.__image_drop_filter)  # pylint: disable=no-member
 
+        # the same action on every rebuild of a refused rename's row, as `MessageBannerRow` asks (#505). Built
+        # before the first __banner_rows call below, which offers it
+        self.__find_holders_action: Final = QAction(FIND_HOLDERS_TOOLTIP, host.widget)
+        self.__find_holders_action.setToolTip(FIND_HOLDERS_TOOLTIP)
+        GlyphActionIconThemeHandler(self.__find_holders_action, FIND_HOLDERS_GLYPH.codepoint, FIND_HOLDERS_GLYPH.family)
+        self.__find_holders_action.triggered.connect(self.__on_find_holders)
+
         self.__set_editors_locked(self.__editors_locked())
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
@@ -825,6 +837,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__connect(model.changed_on_disk_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.conflict_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.rename_error_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
+        self.__connect(model.rename_held_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         # a save handed to a job, its row's state and a record gone are notices only, like a failed rename (#497)
         self.__connect(model.saving_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         self.__connect(model.pending_save_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
@@ -1043,6 +1056,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             action.deleteLater()
         self.__save_default_layout_action.deleteLater()
         self.__reset_default_layout_action.deleteLater()
+        self.__find_holders_action.deleteLater()
         self.__toolbar.deleteLater()
         self.__default_layout_menu.deleteLater()
         self.__conversion_backups.deleteLater()
@@ -1418,6 +1432,19 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         self.__banner.set_rows(self.__banner_rows())
 
+    def __on_find_holders(self) -> None:
+        """Open the dialog listing what holds the files of the record whose rename was refused (#505).
+
+        Not modal and deleted on close: the user may well switch to a program it names, and a second click opens a
+        second, freshly asked list.
+        """
+        record = self.__model.rename_held
+        if record is None:
+            return
+        dialog = RenameHoldersDialog(record, self.__host.widget)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        dialog.show()
+
     def __rebuild_field_docks(self) -> None:
         """Re-resolve the document's field composition into the existing viewer/editor docks after a
         type switch (:attr:`~RehuDocumentModel.active_block_changed`, #83).
@@ -1640,7 +1667,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             :attr:`~RehuDocumentModel.pending_save` says something and no conflict row shows, or else a saving row
             while :attr:`~RehuDocumentModel.saving`, then an upgrade row when
             :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
-            :attr:`~RehuDocumentModel.rename_error` is non-empty, then the checksum and conversion-backup
+            :attr:`~RehuDocumentModel.rename_error` is non-empty -- with the magnifier while
+            :attr:`~RehuDocumentModel.rename_held` names the record (#505) -- then the checksum and conversion-backup
             rows, then whatever `.ScrapeActions.notice` says about the current or last dropped scrape
             (#272), then whatever `.ImageDownloads.notice` says about an image acquisition in flight or
             its last failure (#73).
@@ -1669,7 +1697,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if self.__model.upgradable:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, UPGRADE_MESSAGE))
         if self.__model.rename_error:
-            rows.append(MessageBannerRow(MessageBannerSeverity.ERROR, self.__model.rename_error))
+            find_holders = self.__find_holders_action if self.__model.rename_held is not None else None
+            rows.append(MessageBannerRow(MessageBannerSeverity.ERROR, self.__model.rename_error, find_holders))
         if self.__checksums is not None and self.__checksums.finding:
             severity = MessageBannerSeverity.INFO if self.__checksums.finding_clean else MessageBannerSeverity.WARNING
             rows.append(MessageBannerRow(severity, self.__checksums.finding))

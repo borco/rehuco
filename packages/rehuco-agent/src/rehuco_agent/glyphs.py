@@ -13,6 +13,10 @@ CALENDAR_ACTION_GLYPH: Final = Glyph("\ue108", "Phosphor-Bold")
 COPY_ACTION_GLYPH: Final = Glyph("", "Phosphor-Bold")
 """Copy an image out of the app, on the Content Images toolbar (#395): Phosphor's ``copy``."""
 
+FIND_HOLDERS_GLYPH: Final = Glyph("", "Phosphor-Bold")
+"""Find what holds a refused rename's files, on its banner row (`RenameHoldersDialog`, #505): Phosphor's
+``magnifying-glass``."""
+
 FILTER_PROBLEM_GLYPH: Final = Glyph("\ue4e0", "Phosphor-Bold")
 """A table browser's filter line, while part of it could not be applied (`TableBrowser`, #398): Phosphor's
 ``warning``, its tooltip saying what."""

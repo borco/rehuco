@@ -281,6 +281,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     row away -- and at the file seams, :meth:`revert` and :meth:`convert`, since a revert is defined to
     leave the model exactly as a fresh open would, and a fresh open carries no failed attempt."""
 
+    rename_held = SimpleProperty[Path | None](None)
+    """The record whose last rename was refused because a program had one of its files open, or ``None`` (#505):
+    what the banner's magnifier asks about, through `.RenameHoldersDialog`. Set with :attr:`rename_error` and
+    cleared with it -- set first, so the banner row that error builds already carries the button. Who the holders
+    are is not asked here: that question is slow, and only worth its wait to someone who clicks."""
+
     resource_type = SimpleProperty("")
     """The document's resource type ([[field-schema#resource-types]]) -- the key of its **active**
     plugin block ([[plugins#plugin-blocks]]). Editing it is a **type switch** (#83): the write-through
@@ -1012,7 +1018,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.changed_on_disk = (
                 dirty and on_disk is not None and (payload.base is None or on_disk.file_hash != payload.base.file_hash)
             )
-            self.rename_error = ""
+            self.__clear_rename_failure()
             self.__mirror_locks()
         finally:
             self.__loading = False
@@ -1156,7 +1162,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # now, including the failure ones, and the sink for the new path only exists once the move landed
         with LogScope.open(self.path):
             LOG.info("Attempting to rename %r to %r", self.current_name, new_name)
-            self.rename_error = ""
+            self.__clear_rename_failure()
             if self.path is None:
                 return self.__rename_failed(f'Cannot rename to "{new_name}": this document has no location yet.')
             if self.__pending_save_for(cast(ResourceKey, self.key)) is not None:
@@ -1309,7 +1315,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.__adopt(record)
             self.__seed_from_document(description=False)
             self.dirty = False
-            self.rename_error = ""
+            self.__clear_rename_failure()
             self.__mirror_locks()
         finally:
             self.__loading = False
@@ -1405,7 +1411,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__adopt(record)
         self.__seed_from_document()
         self.dirty = False
-        self.rename_error = ""
+        self.__clear_rename_failure()
         self.__mirror_locks()
         self.image_scanner = self.__make_image_scanner()
         self.unknown_fields_changed.emit()
@@ -1894,11 +1900,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         try:
             new_path = self.__renamed(path, new_name)
         except (OSError, ValueError) as error:
-            # a refusal over an open handle also says whose handle it is, when that can be found (#355)
-            holders = RenameHolderReport.describe(path, error)
+            # a refusal over an open handle offers to find whose handle it is (#355, #505)
+            if RenameHolderReport.is_lock_refusal(error):
+                self.rename_held = path
             return self.__rename_failed(
                 f'Could not rename "{current_name}" to "{new_name}": {self.__failure_reason(error)}'
-                + (f" {holders}" if holders else "")
             )
         # already adopted when the coordinator's announcement reached this model through its holder (#376)
         self.__adopt_path(new_path)
@@ -1943,6 +1949,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__rename_coordinator is None:
             return rename_rehu_resource(path, new_name)
         return self.__rename_coordinator.rename(path, new_name)
+
+    def __clear_rename_failure(self) -> None:
+        """Forget the last rename's failure: its banner row, and the record it offered to find the holders of."""
+        self.rename_error = ""
+        self.rename_held = None
 
     def __rename_failed(self, message: str) -> bool:
         """Record a failed rename attempt: log it, and hand ``message`` to the banner channel.
