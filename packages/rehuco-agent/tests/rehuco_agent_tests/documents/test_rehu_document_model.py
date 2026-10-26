@@ -552,8 +552,8 @@ def test_rename_location_reports_a_failed_move_without_touching_the_document(moc
 
     * make the core rename raise ``PermissionError`` on a file-scoped document
     * call ``rename_location``
-    * verify it returned ``False``, path/location are unchanged, and ``rename_error`` names both names
-      and the OS reason
+    * verify it returned ``False``, path/location are unchanged, ``rename_error`` names both names
+      and the OS reason, and no holders are offered for a refusal that is not over an open handle
     """
     path = TUTORIALS / "old_file.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
@@ -567,34 +567,64 @@ def test_rename_location_reports_a_failed_move_without_touching_the_document(moc
     assert model.path == path
     assert model.location == (TUTORIALS / "old_file.rehu").as_posix()
     assert model.rename_error == 'Could not rename "old_file" to "new_name": Permission denied.'
+    assert model.rename_held is None
 
 
-def test_rename_location_says_who_holds_a_refused_resource(mocker: MockerFixture) -> None:
-    """A refusal over an open handle ends by naming whoever holds the resource, so the user has
-    something to act on (#355).
+def sharing_violation() -> PermissionError:
+    """A rename refused over an open handle, carrying its Windows code whatever platform the suite runs on.
+
+    :returns: the error.
+    """
+    error = PermissionError(13, "The process cannot access the file because it is being used by another process")
+    setattr(error, "winerror", 32)
+    return error
+
+
+def test_rename_location_offers_to_find_who_holds_a_refused_resource(mocker: MockerFixture) -> None:
+    """A refusal over an open handle names the record to find the holders of, without asking who they are -- that
+    question is slow, and waits for a click on the banner's magnifier (#505).
 
     **Test steps:**
 
-    * make the core rename raise a sharing violation, and the holder report name a program
+    * make the core rename raise a sharing violation
     * call ``rename_location``
-    * verify the report was asked about the resource and that failure, and its sentence ends the banner
+    * verify the banner says the operating system's reason, the record is offered, and nobody was asked
     """
     path = TUTORIALS / "old_file.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
-    refusal = PermissionError(13, "The process cannot access the file because it is being used by another process")
-    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=refusal)
-    describe = mocker.patch(
-        "rehuco_agent.documents.rehu_document_model.RenameHolderReport.describe",
-        return_value="It is open in Windows Explorer.",
-    )
+    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=sharing_violation())
+    holders = mocker.patch("rehuco_agent.documents.rename_holders.file_holders")
 
     assert model.rename_location("new_name") is False
 
-    describe.assert_called_once_with(path, refusal)
+    assert model.rename_held == path
     assert model.rename_error == (
         'Could not rename "old_file" to "new_name": The process cannot access the file because it is being used '
-        "by another process. It is open in Windows Explorer."
+        "by another process."
     )
+    holders.assert_not_called()
+
+
+def test_rename_location_forgets_the_holders_offer_when_a_retry_succeeds(mocker: MockerFixture) -> None:
+    """The offer belongs to the failed attempt: the next attempt takes it away with the banner row.
+
+    **Test steps:**
+
+    * fail one rename over an open handle, then succeed the next
+    * verify the record is offered after the first and not after the second
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
+        side_effect=[sharing_violation(), TUTORIALS / "free.rehu"],
+    )
+
+    model.rename_location("free")
+    assert model.rename_held is not None
+
+    model.rename_location("free")
+
+    assert model.rename_held is None
 
 
 def test_rename_location_reports_a_refused_name(mocker: MockerFixture) -> None:
