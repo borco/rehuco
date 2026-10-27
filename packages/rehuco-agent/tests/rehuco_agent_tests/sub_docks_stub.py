@@ -61,6 +61,9 @@ class StubSubDocks(QObject):
     def detach(self) -> None:
         """Nothing attached."""
 
+    def stop_playback(self) -> None:
+        """Nothing playing."""
+
     def teardown(self) -> None:
         """Nothing built."""
 

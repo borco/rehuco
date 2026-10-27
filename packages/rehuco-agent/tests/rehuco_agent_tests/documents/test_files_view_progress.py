@@ -354,11 +354,13 @@ def test_a_missing_video_is_listed_in_its_folder_and_forgotten_by_hand(
     **Test steps:**
 
     * keep progress for a video that is not on disk, and look at the top folder
-    * verify it is listed as *missing*, double-clicking it opens nothing, and *Forget* is hidden until it is selected
+    * verify it is listed as *missing*, double-clicking it plays and opens nothing, *Forget* hidden until selected
     * select it and forget it
     * verify the row and the entry are gone, and *Forget* is hidden again
     """
     opened = mocker.patch.object(QDesktopServices, "openUrl")
+    played: list[object] = []
+    view.video_activated.connect(lambda *args: played.append(args))
     model.record_progress("gone.mp4", 10.0, 100.0)
     assert "gone.mp4" in names(view)
     row = names(view).index("gone.mp4")
@@ -367,6 +369,7 @@ def test_a_missing_video_is_listed_in_its_folder_and_forgotten_by_hand(
 
     view.activate(row)
     assert opened.call_count == 0
+    assert not played
 
     table = view.findChild(QTableView, "file_view")
     assert table is not None

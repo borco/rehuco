@@ -79,6 +79,7 @@ from rehuco_agent.documents.document_sub_docks import (
     IMAGES_DOCK_MIN_HEIGHT,
     LOG_DOCK_MIN_HEIGHT,
     ON_DISK_ICON_RESOURCE,
+    PLAYER_DOCK_NAME,
     RENDERER_TAINT_FORMAT,
     RESET_DEFAULT_LAYOUT_LABEL,
     SAVE_DEFAULT_LAYOUT_LABEL,
@@ -5201,7 +5202,8 @@ def test_the_content_images_dock_is_a_reference_packs_alone(
     qtbot: QtBot, widget: DocumentWidget, refimages_widget: DocumentWidget
 ) -> None:
     """The dock set is the common shell plus what the type declares (#320): a reference pack has
-    Content Images, a tutorial and a collection have neither the dock nor its toolbar toggle.
+    Content Images, a tutorial has its player (#317), and a collection has neither: a tutorial and a collection have
+    no Content Images dock nor its toolbar toggle.
 
     **Test steps:**
 
@@ -5210,7 +5212,7 @@ def test_the_content_images_dock_is_a_reference_packs_alone(
     * verify no toggle on the tutorial's or the collection's toolbar carries the dock's title
     """
     assert type_dock_names(REFERENCE_IMAGES_PLUGIN.key) == {CONTENT_IMAGES_DOCK_NAME}
-    assert type_dock_names(TUTORIAL_PLUGIN.key) == frozenset()
+    assert type_dock_names(TUTORIAL_PLUGIN.key) == {PLAYER_DOCK_NAME}
     assert type_dock_names(COLLECTION_PLUGIN.key) == frozenset()
     assert type_dock_names("") == frozenset()
     assert type_dock_names("daz3d") == frozenset()

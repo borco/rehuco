@@ -51,6 +51,8 @@ class ProgressWriter(QObject):
         self.__queue: Final[dict[Hashable, tuple[int, Work, Hashable | None]]] = {}
         """The writes not started yet, oldest first, by key: each with its ticket, its work and its log scope."""
         self.__lock: Final = threading.Lock()
+        self.__stopped: Final = threading.Condition(self.__lock)
+        """Notified, under the lock, each time the thread ends: what :meth:`wait_until_idle` waits on."""
         self.__running = False
         """Whether the thread is alive: set and cleared under the lock, so a write submitted as it ends starts a new
         one."""
@@ -60,6 +62,18 @@ class ProgressWriter(QObject):
     def busy(self) -> bool:
         """Whether a write is waiting or running."""
         return bool(self.__waiting)
+
+    def wait_until_idle(self, timeout: float) -> bool:
+        """Wait for every write handed to the thread to have run -- what quitting does, since a daemon thread is
+        left behind and a write it was in the middle of would be lost.
+
+        The answers are not waited for: they are delivered by the event loop, which has nothing left to run.
+
+        :param timeout: the longest to wait, in seconds.
+        :returns: whether the thread had nothing left to run in time.
+        """
+        with self.__stopped:
+            return self.__stopped.wait_for(lambda: not self.__running, timeout)
 
     def submit(self, key: Hashable, work: Work, answer: Answer, scope: Hashable | None = None) -> None:
         """Queue ``work`` to run on the writer's thread, replacing a write of the same ``key`` still waiting.
@@ -86,6 +100,7 @@ class ProgressWriter(QObject):
             with self.__lock:
                 if not self.__queue:
                     self.__running = False
+                    self.__stopped.notify_all()
                     return
                 key = next(iter(self.__queue))
                 ticket, work, scope = self.__queue.pop(key)

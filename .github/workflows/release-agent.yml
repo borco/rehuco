@@ -86,6 +86,13 @@ jobs:
       - name: Smoke check -- the built exe starts and parses its arguments
         run: ./packages/rehuco-agent/build/rehuco-agent/windows/app/src/Rehuco.exe --version
 
+      # The Makefile prunes PySide6-Addons to what playback needs before it packages, and a bundle pruned too far
+      # builds, installs and starts: it fails only when a reader opens a video. This plays one clip through the built
+      # exe's own Qt Multimedia, offscreen, and exits 0 only if a picture arrived and the position moved (#317,
+      # [[packaging-deployment#qt-multimedia]]). Exit code only, for the reason above.
+      - name: Smoke check -- the built exe plays a clip
+        run: ./packages/rehuco-agent/build/rehuco-agent/windows/app/src/Rehuco.exe --check-playback ci/playback-check.mp4
+
       - uses: actions/upload-artifact@v7
         with:
           name: rehuco-agent-windows-${{ needs.version.outputs.version }}
@@ -123,6 +130,10 @@ jobs:
       - name: Smoke check -- the built app starts and reports its version
         run: ./packages/rehuco-agent/build/rehuco-agent/macos/app/Rehuco.app/Contents/MacOS/Rehuco --version
 
+      # The same playback check as the Windows exe's, on the pruned bundle: see there.
+      - name: Smoke check -- the built app plays a clip
+        run: ./packages/rehuco-agent/build/rehuco-agent/macos/app/Rehuco.app/Contents/MacOS/Rehuco --check-playback ci/playback-check.mp4
+
       - uses: actions/upload-artifact@v7
         with:
           name: rehuco-agent-macos-${{ needs.version.outputs.version }}
@@ -146,7 +157,7 @@ jobs:
       - name: Install Linux system dependencies (ImageMagick, Qt runtime libs)
         run: |
           sudo apt-get update
-          sudo apt-get install -y imagemagick libgl1 libegl1 libxkbcommon0
+          sudo apt-get install -y imagemagick libgl1 libegl1 libxkbcommon0 libpulse0
           command -v magick || sudo ln -s "$(command -v convert)" /usr/local/bin/magick
 
       - name: Install dependencies
@@ -161,6 +172,11 @@ jobs:
 
       - name: Smoke check -- --version
         run: ./.dist/appimage/rehuco-agent-x86_64.AppImage --appimage-extract-and-run --version
+
+      # Plays one clip through the AppImage's own Qt Multimedia, offscreen (#317). Not pruned like the Windows and
+      # macOS bundles: python-appimage installs and squashes in one step, so this one carries all of PySide6-Addons.
+      - name: Smoke check -- plays a clip
+        run: ./.dist/appimage/rehuco-agent-x86_64.AppImage --appimage-extract-and-run --check-playback ci/playback-check.mp4
 
       # The issue's real acceptance criterion: does PySide6 actually start under
       # QT_QPA_PLATFORM=offscreen on a system carrying nothing but the proven headless-Qt baseline --

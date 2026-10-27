@@ -113,6 +113,7 @@ or from the app — and it appears as a set of dockable panels you can rearrange
 | **Images** | Which screenshots the strip shows: every sibling image, checkable, beside a preview; screenshots can be moved, deleted (to the Recycle Bin) or converted to the numbered naming from here. |
 | **Files** | The resource's own folder as a file browser, with Reveal in the system's file manager. On a tutorial each video's row ends with how much of it you have watched and each folder's with the share of the videos beneath it; a video is ticked *viewed*, or a gone video's progress forgotten, from the row's context menu or the toolbar. |
 | **Checksums** | Each content file's last check, its date and result, with generate and verify. |
+| **Player** | On a tutorial only, hidden by default: a video double-clicked in **Files** plays here, one player per document, with a seek bar, a speed choice, the keyboard, and previous and next through the whole tutorial's videos. Shown, it loads the video you watched last, paused where you stopped; previous and next load their video paused too. It holds a video's file open only while that video plays, so an open dock never blocks a rename. It records your position every few seconds in your own `.rehuser` with no save asked for, and marks the video *viewed* when it ends. A video Qt shows badly — AV1 on a machine with nothing to decode it, interlaced footage — gets a notice saying why. |
 | **Log** | The app's log, narrowed to this resource. |
 | **Save Preview** / **On Disk** | Hidden by default: exactly what a save would write, and the file as it is on disk right now. The pair is how you see a migration or a preserved unknown field with your own eyes. |
 | **Content Images** | On a reference pack only, hidden by default: the pack's own images — inside its archives and loose in its folders — in rows justified to the panel's width and in natural order, each folder of images — loose, or inside an archive — opening with a banner naming its path under the pack (`/`, `foo/`, `foo.zip/`, `foo.zip/bar/`) and counting its images; a banner click folds its group away, and the banner of the group being scrolled through stays pinned at the top. Read-only — those images are checksummed content and the app never touches them. A click selects one and a status line names it; a double-click fills the window with it, like a screenshot, where `I` shows its name, pixel size and file size. Dragging an image out, or Ctrl+C, hands another app an unchanged copy named after the resource and the image's path in it, along with its pixels — from the grid and from any image filling the window. |
@@ -238,9 +239,8 @@ included — and stops it when it quits; the node writes a heartbeat file and a 
 all it does: no REST
 API, no discovery, no sync between machines, no accounts or access rules, no web or tablet interface.
 
-**No playback.** rehuco describes a tutorial; it does not play one. What you have watched is kept all the
-same — a video ticked *viewed* in the **Files** panel goes to your own `.rehuser` the moment it is ticked,
-with no save asked for — but the player that would record where you stopped as you watch does not exist yet.
+**One player.** A tutorial's videos play in the app's own player. Handing a video to VLC, which the design
+allows for, does not exist yet.
 
 Past what runs, the design reaches toward machines sharing a catalog; whether that is worth building is a question
 the editor and the browser have to answer first.

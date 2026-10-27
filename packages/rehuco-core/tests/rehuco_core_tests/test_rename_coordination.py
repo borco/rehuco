@@ -665,3 +665,67 @@ def test_failing_to_step_out_is_logged_and_the_rename_still_runs(
 
 
 # endregion
+
+
+# region before-rename listeners
+def test_a_before_rename_listener_is_told_which_resource_before_the_flag_goes_up(
+    coordinator: RenameCoordinator, filesystem: Any
+) -> None:
+    """A holder that must let go of one resource's files only is told which resource is about to move, ahead of the
+    yield flag and of any wait.
+
+    **Test steps:**
+
+    * attach a before-rename listener recording the path and whether the flag was up
+    * rename
+    * verify it was called once with the record's path, with the flag still down
+    """
+    del filesystem
+    heard: list[tuple[Path, bool]] = []
+    coordinator.add_before_rename_listener(lambda path: heard.append((path, coordinator.yield_wanted)))
+
+    coordinator.rename(INFO_PATH, NEW_NAME)
+
+    assert heard == [(INFO_PATH, False)]
+
+
+def test_a_failing_before_rename_listener_does_not_stop_the_rename(
+    coordinator: RenameCoordinator, filesystem: Any
+) -> None:
+    """**Test steps:**
+
+    * attach a listener that raises and one after it
+    * rename
+    * verify the rename completed and the second listener was still called
+    """
+    del filesystem
+    calls: list[Path] = []
+
+    def raising(_path: Path) -> None:
+        raise RuntimeError("boom")
+
+    coordinator.add_before_rename_listener(raising)
+    coordinator.add_before_rename_listener(calls.append)
+
+    assert coordinator.rename(INFO_PATH, NEW_NAME) == RENAMED / "info.rehu"
+    assert calls == [INFO_PATH]
+
+
+def test_a_removed_before_rename_listener_is_not_called(coordinator: RenameCoordinator, filesystem: Any) -> None:
+    """**Test steps:**
+
+    * attach a before-rename listener, remove it twice, rename
+    * verify it was never called
+    """
+    del filesystem
+    calls: list[Path] = []
+    coordinator.add_before_rename_listener(calls.append)
+    coordinator.remove_before_rename_listener(calls.append)
+    coordinator.remove_before_rename_listener(calls.append)
+
+    coordinator.rename(INFO_PATH, NEW_NAME)
+
+    assert not calls
+
+
+# endregion

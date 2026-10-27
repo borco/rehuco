@@ -411,6 +411,22 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             return None
         return self.__document_docks[current]
 
+    def stop_playback(self, timeout: float) -> None:
+        """Stop every open document's player, and wait for the progress it recorded to be written (#317).
+
+        What quitting does: a player is stopped so it records where it stopped, and then the writes are waited for,
+        since the thread that makes them is a daemon the process does not wait for. The wait is bounded across all
+        of them together, so a share that has gone silent cannot hold up quitting.
+
+        :param timeout: the longest to wait for the writes, in seconds.
+        """
+        widgets = self.open_document_widgets()
+        for widget in widgets:
+            widget.stop_playback()
+        deadline = time.monotonic() + timeout
+        for widget in widgets:
+            widget.model.wait_for_progress_writes(max(deadline - time.monotonic(), 0.0))
+
     def open_document_models(self) -> list[RehuDocumentModel]:
         """The models of every currently open document, in no particular order.
 
@@ -663,6 +679,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         started = time.perf_counter()
         self.__capture_preview_layout()
         widget = preview.document_widget
+        # before the record moves on: a player still going would record the old record's video into the new one (#317)
+        widget.stop_playback()
         layout_type: str | None = widget.sub_docks.layout_type
         if self.__registry.find(key) is None:
             # the preview's own model loads the next record into the widgets already built (#381): nothing is

@@ -44,3 +44,21 @@ tab is maximized."""
 
 TAB_RESTORE_GLYPH: Final = Glyph("\ue09a", "Phosphor-Bold")
 """The same toggle while its tab is maximized: Phosphor's ``arrows-in``, the way back."""
+
+PLAYER_PLAY_GLYPH: Final = Glyph("\ue3d0", "Phosphor-Bold")
+"""Play, on the in-app player's transport bar (`PlayerView`, #317): Phosphor's ``play``."""
+
+PLAYER_PAUSE_GLYPH: Final = Glyph("\ue39e", "Phosphor-Bold")
+"""Pause, in the same place as :data:`PLAYER_PLAY_GLYPH`: Phosphor's ``pause``."""
+
+PLAYER_PREVIOUS_GLYPH: Final = Glyph("\ue5a4", "Phosphor-Bold")
+"""The previous video of the player's playlist: Phosphor's ``skip-back``."""
+
+PLAYER_NEXT_GLYPH: Final = Glyph("\ue5a6", "Phosphor-Bold")
+"""The next video of the player's playlist: Phosphor's ``skip-forward``."""
+
+PLAYER_BACK_GLYPH: Final = Glyph("\ue6a8", "Phosphor-Bold")
+"""Five seconds back in the playing video: Phosphor's ``rewind``."""
+
+PLAYER_FORWARD_GLYPH: Final = Glyph("\ue6a6", "Phosphor-Bold")
+"""Five seconds forward in the playing video: Phosphor's ``fast-forward``."""

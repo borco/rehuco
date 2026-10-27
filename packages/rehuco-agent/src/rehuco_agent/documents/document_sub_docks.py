@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QToolBar, QWidge
 from rehuco_core import (
     IMAGE_EXTENSIONS,
     REFERENCE_IMAGES_PLUGIN,
+    TUTORIAL_PLUGIN,
     TaskQueue,
     backup_path,
     originals_to_back_up,
@@ -73,6 +74,7 @@ from .files_view import FilesView
 from .image_downloads import ImageDownloads
 from .name_suggestion_model import NameSuggestionModel
 from .pending_saves import PendingSaves
+from .player_view import PlayerView
 from .rehu_document_image_organizer import RehuDocumentImageOrganizer
 from .rehu_document_model import USER_STATE_FIELD_NAMES, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
@@ -107,6 +109,7 @@ ON_DISK_ICON_RESOURCE: Final = ":/icons/document_on_disk.svg"
 CHECKSUM_ICON_RESOURCE: Final = ":/icons/document_checksum.svg"
 FILES_ICON_RESOURCE: Final = ":/icons/document_file_browser.svg"
 CONTENT_IMAGES_ICON_RESOURCE: Final = ":/icons/document_content_reference_images.svg"
+PLAYER_ICON_RESOURCE: Final = ":/icons/document_content_tutorials.svg"
 DEFAULT_LAYOUT_ICON_RESOURCE: Final = ":/icons/document_default_layout.svg"
 
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
@@ -115,8 +118,9 @@ LOG_DOCK_NAME: Final = "log"
 CHECKSUM_DOCK_NAME: Final = "checksums"
 FILES_DOCK_NAME: Final = "files"
 CONTENT_IMAGES_DOCK_NAME: Final = "content_images"
+PLAYER_DOCK_NAME: Final = "player"
 """Object names of the read-only inspection docks (#111), this resource's own log (#200), its
-per-file checksum table (#244), its own folder (#266) and its content images (#221);
+per-file checksum table (#244), its own folder (#266), its content images (#221) and a tutorial's player (#317);
 namespaced apart from the ``viewer:``/``editor:`` docks, and the keys `restore_state` restores their
 hidden-by-default visibility under."""
 
@@ -126,14 +130,16 @@ LOG_DOCK_TITLE: Final = "Log"
 CHECKSUM_DOCK_TITLE: Final = "Checksums"
 FILES_DOCK_TITLE: Final = "Files"
 CONTENT_IMAGES_DOCK_TITLE: Final = "Content Images"
+PLAYER_DOCK_TITLE: Final = "Player"
 """Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
-write) and the verbatim on-disk file -- of this resource's own log (#200), of its own folder (#266), and
-of its content images (#221, #392)."""
+write) and the verbatim on-disk file -- of this resource's own log (#200), of its own folder (#266), of
+its content images (#221, #392) and of a tutorial's player (#317)."""
 
 LOG_DOCK_MIN_HEIGHT: Final = 120
 CHECKSUM_DOCK_MIN_HEIGHT: Final = 90
 FILES_DOCK_MIN_HEIGHT: Final = 140
 CONTENT_IMAGES_DOCK_MIN_HEIGHT: Final = 160
+PLAYER_DOCK_MIN_HEIGHT: Final = 220
 IMAGES_DOCK_MIN_HEIGHT: Final = 200
 """Size floors a splitter drag can't cross, chosen by eye against a real layout so each dock keeps its
 header and summary readable rather than being squeezed to a sliver."""
@@ -189,12 +195,15 @@ TOOLBAR_TITLE: Final = "View"
 """The document toolbar's title -- what a host's own toolbar context menu lists it under."""
 
 TYPE_DOCK_NAMES: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
-    {REFERENCE_IMAGES_PLUGIN.key: frozenset({CONTENT_IMAGES_DOCK_NAME})}
+    {
+        REFERENCE_IMAGES_PLUGIN.key: frozenset({CONTENT_IMAGES_DOCK_NAME}),
+        TUTORIAL_PLUGIN.key: frozenset({PLAYER_DOCK_NAME}),
+    }
 )
 """The sub-docks each resource type adds to the common shell ([[plugins#dock-shell]], #320), keyed by
-the type's main key: a reference pack's Content Images (#221); a tutorial's player once it exists
-(#317); a collection nothing. [[plugins#core-vs-plugin]] applied to docks -- the viewers, the editors
-and the inspection set are every document's, and the rest is the type's own."""
+the type's main key: a reference pack's Content Images (#221); a tutorial's player (#317); a collection
+nothing. [[plugins#core-vs-plugin]] applied to docks -- the viewers, the editors and the inspection set
+are every document's, and the rest is the type's own."""
 
 
 def type_dock_names(layout_type: str) -> frozenset[str]:
@@ -766,6 +775,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             # surface for enqueuing runs, and a document built with no queue has nothing to enqueue onto
             self.__checksum_dock = self.__add_checksum_dock(model, self.__checksums)
 
+        # built before the Files dock and the type's docks, which a tutorial's player records through (#317)
+        self.__watch_progress: Final = WatchProgressRecorder(model, self)
+
         # unlike the checksum dock, this one exists whatever the document was built with: a folder is a
         # folder with no queue in sight, and only the one row that enqueues a verify goes quiet (#266)
         self.__files_dock: Final = self.__add_files_dock(model, self.__checksums)
@@ -779,6 +791,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__content_images_read_in_load = False
         self.__content_images_view: ContentImagesView | None = None
         self.__content_images_dock: QtAds.CDockWidget | None = None
+        self.__player_view: PlayerView | None = None
+        self.__player_dock: QtAds.CDockWidget | None = None
         self.__awaiting_type = model.pending
         self.__type_docks: dict[str, QtAds.CDockWidget] = self.__add_type_docks(type_dock_names(self.layout_type))
         # the archives are found relative to the path, so a path change re-enumerates them; connected
@@ -806,7 +820,6 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # its result as an ordinary dirty edit ([[acquisition-tooling#drag-drop-aids]], #272). Built
         # before the first __banner_rows call below, which asks what it found.
         self.__scrapes: Final = ScrapeActions(model, self.__image_downloads, parent=self)
-        self.__watch_progress: Final = WatchProgressRecorder(model, self)
         self.__scrapes.changed.connect(self.__on_scrape_notice_changed)
         main_editor_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_MAIN_TAB]
         main_editor_dock.setAcceptDrops(True)  # pylint: disable=no-member
@@ -1022,7 +1035,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         cancel a checksum run already enqueued (its row stays in the Tasks dock) or a scrape already
         dispatched; each simply stops mattering to this document once it lands.
         """
-        self.__watch_progress.flush()
+        self.stop_playback()
         if self.__checksums is not None:
             self.__checksums.detach()
         self.__scrapes.detach()
@@ -1030,6 +1043,16 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         files_view = self.__files_dock.widget()
         if isinstance(files_view, FilesView):  # pragma: no branch -- the Files dock always holds one
             files_view.detach()
+
+    def stop_playback(self) -> None:
+        """Stop the player, so it records where it stopped, and write at once what the recorder then holds (#317).
+
+        What a document does before it closes, before the record it shows is swapped for another's, and before the
+        app quits: nothing plays on, and no position is left waiting for a timer that will not come.
+        """
+        if self.__player_view is not None:
+            self.__player_view.stop()
+        self.__watch_progress.flush()
 
     def teardown(self) -> None:
         """Take this document's sub-docks back out of the host and let go of the model, so the same
@@ -1425,8 +1448,18 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     def __on_reloaded(self) -> None:
         """Rebuild the inline notice strip once a load settles -- see where this is connected -- and read the content
         images again: a reload is how a changed zip is picked up, and the dock should not wait for its own Refresh.
-        A load that moved the path has just read them (:meth:`__on_content_images_path_changed`), and does not again."""
+        A load that moved the path has just read them (:meth:`__on_content_images_path_changed`), and does not again.
+
+        A player dock that is already shown loads the video watched last of the record just loaded (#317): a record
+        opened into a preview, or a deferred load that settles after the layout showed the dock, is no toggle of it.
+        """
         self.__banner.set_rows(self.__banner_rows())
+        if (
+            self.__player_view is not None
+            and self.__player_dock is not None
+            and self.__player_dock.toggleViewAction().isChecked()
+        ):
+            self.__player_view.load_last()
         if self.__content_images_read_in_load:
             self.__content_images_read_in_load = False
         else:
@@ -1578,6 +1611,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             dock = self.__type_docks.pop(name, None)
             if dock is None:
                 continue
+            if name == PLAYER_DOCK_NAME and self.__player_view is not None:
+                self.__player_view.stop()
             self.__hide_dock(dock)
             self.__toolbar.removeAction(dock.toggleViewAction())
             self.__dock_manager.removeDockWidget(dock)
@@ -1589,6 +1624,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
                 self.__content_images_model = None
                 self.__content_images_view = None
                 self.__content_images_dock = None
+            if name == PLAYER_DOCK_NAME:
+                self.__player_view = None
+                self.__player_dock = None
 
     def __add_type_docks(self, names: frozenset[str]) -> dict[str, QtAds.CDockWidget]:
         """Build the docks ``names`` asks for, each hidden and stacked with the inspection set (#320).
@@ -1606,6 +1644,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__content_images_view = self.__build_content_images_view(self.__content_images_model)
             self.__content_images_dock = self.__add_content_images_dock(self.__content_images_view)
             docks[CONTENT_IMAGES_DOCK_NAME] = self.__content_images_dock
+        if PLAYER_DOCK_NAME in names:
+            self.__player_view = PlayerView(self.__model, self.__watch_progress, self.__host.widget)
+            self.__player_dock = self.__add_player_dock(self.__player_view)
+            docks[PLAYER_DOCK_NAME] = self.__player_dock
         return docks
 
     @staticmethod
@@ -1933,6 +1975,39 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if isinstance(images, list) and isinstance(clicked, Path) and clicked in images:
             self.__viewer_follows_curation = False
             self.__open_image_viewer(self.__path_source(images), images.index(clicked))
+
+    def __on_video_activated(self, key: str) -> None:
+        """Play a video double-clicked in the Files sub-dock, in this document's one player (#317).
+
+        It jumps to that video of the whole tutorial, whichever folder the browser is in, and plays it from where it
+        was left. Told first, so the dock that shows next finds the player already asked and does not load another; the
+        dock is then shown and made current, so a video started from the browser is seen playing. A second double-click
+        while one plays points the same player at the other video rather than opening another.
+
+        :param key: the content key of the video to play.
+        """
+        if self.__player_view is None or self.__player_dock is None:
+            return
+        self.__player_view.jump(key)
+        self.__player_dock.toggleView(True)
+        self.__player_dock.setAsCurrentTab()
+
+    def __on_player_toggled(self, visible: bool) -> None:
+        """Load the video watched last as the player's dock is shown, and stop the player as it is closed (#317).
+
+        **Shown:** the player loads, paused, the video the reader watched last, where they left it -- nothing plays
+        until they press play. **Closed:** nothing plays on out of sight and the file is let go, so the folder can be
+        renamed: the OS refuses to rename a folder with a video open in it, and a closed dock is the moment the Content
+        Images dock lets go of its archives for the same reason (#355). Where it stopped is recorded.
+
+        :param visible: whether the dock is now shown.
+        """
+        if self.__player_view is None:  # pragma: no cover  (only the player's own dock reports it, and it has a view)
+            return
+        if visible:
+            self.__player_view.load_last()
+        else:
+            self.__player_view.stop()
 
     def __on_content_image_activated(self, index: int) -> None:
         """Open a content image double-clicked in the Content Images dock, against the whole pack (#221).
@@ -2483,6 +2558,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         )
         view.record_activated.connect(self.record_activated)
         view.images_activated.connect(self.__on_folder_images_activated)
+        view.video_activated.connect(self.__on_video_activated)
         return self.__add_hidden_inspection_dock(
             FILES_DOCK_NAME,
             FILES_DOCK_TITLE,
@@ -2542,6 +2618,27 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             min_content_height=CONTENT_IMAGES_DOCK_MIN_HEIGHT,
         )
         dock.viewToggled.connect(self.__on_content_images_toggled)
+        return dock
+
+    def __add_player_dock(self, view: PlayerView) -> QtAds.CDockWidget:
+        """Build a tutorial's player dock, stacked with the inspection docks and hidden (#317) -- the tutorial's
+        own dock (#320), not every document's.
+
+        The same shape and the same place as the #111 pair: hidden by default, its toggle on this document's own
+        toolbar. It opens when a video is double-clicked in the Files sub-dock, and stops when it is closed.
+
+        :param view: the player.
+        :returns: the dock, hidden.
+        """
+        dock = self.__add_hidden_inspection_dock(
+            PLAYER_DOCK_NAME,
+            PLAYER_DOCK_TITLE,
+            PLAYER_ICON_RESOURCE,
+            view,
+            insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
+            min_content_height=PLAYER_DOCK_MIN_HEIGHT,
+        )
+        dock.viewToggled.connect(self.__on_player_toggled)
         return dock
 
     def __on_content_images_toggled(self, visible: bool) -> None:

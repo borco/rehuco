@@ -34,7 +34,7 @@ The `.rehu` format is still moving, so keep backups of anything you point it at.
 
 A personal media catalog for the things you collect to learn from and work with — video tutorials,
 online courses, archives of reference images. Today it is a desktop editor
-for a resource's **details** and a browser over the folders that hold them, not for the media itself.
+for a resource's **details**, a browser over the folders that hold them, and a player for a tutorial's videos.
 
 Those details live in a small JSON file — a `.rehu` — sitting in the folder next to the resource it
 describes, one per resource. That's the whole storage model, and the name is its stem.
@@ -56,6 +56,10 @@ the rules that keep it trustworthy, the app's panels, and what isn't built.
 - **Shows its screenshots.** A thumbnail strip beside the fields — double-click one to fill the window,
   arrow keys or the wheel to move through the set, and pick which of them the strip shows. A reference
   pack also shows its own images, inside its archives and loose in its folders.
+- **Plays a tutorial's videos.** Double-click a video in a tutorial's Files panel and it plays in a dock of its
+  own: a seek bar, a speed choice, the keyboard, and previous and next through the whole tutorial. Opening the dock
+  loads the video you watched last, paused where you left it; it marks a video watched when it ends, and says so
+  when a video will not show well here — AV1 on a machine with nothing to decode it, or interlaced footage.
 - **Checks its files.** Generates and verifies checksums for one resource or a whole folder, remembering
   when each file was last checked so a re-run skips what is still fresh.
 - **Converts legacy `.tc` catalogs.** One file or a whole folder tree at once: reads the older format,
@@ -87,12 +91,11 @@ What's left of the editor is small: a page image picker (a scraping helper, not 
 
 What's left of the catalog is filed in the [implementation plan](docs/specs/implementation-plan.md).
 
-Past that the design reaches further — a video player that records where you stopped, web pages and long jobs served
-by the node, offline borrowing between machines, multi-user access, a browser interface, Daz3D library
-migration. None of it is implemented, none of it is scheduled, and some of it may never
-be: it is what the architecture is shaped to allow, and each piece has to earn its place when its
-turn comes. The [design specs](docs/specs/README.md) explore that territory in depth — as intent, not
-as a description of the current build.
+Past that the design reaches further — web pages and long jobs served by the node, offline borrowing between
+machines, multi-user access, a browser interface, Daz3D library migration. None of it is implemented, none of
+it is scheduled, and some of it may never be: it is what the architecture is shaped to allow, and each piece has
+to earn its place when its turn comes. The [design specs](docs/specs/README.md) explore that territory in depth —
+as intent, not as a description of the current build.
 
 Maintenance is tracked separately under the **`audit`** label — it collects the issues found during a
 codebase audit, one sweep at a time.

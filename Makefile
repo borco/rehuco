@@ -272,17 +272,34 @@ agent-dev-unregister: agent-dev-build
 BRIEFCASE := uv run --group packaging --directory packages/rehuco-agent --project ../.. briefcase
 BRIEFCASE_ARGS :=
 
+# Where Briefcase leaves the wheels it pip-installs into the bundle: what the prune below works on. Windows and macOS
+# only, like every agent-dist-* target.
+ifeq ($(OS),Windows_NT)
+AGENT_APP_PACKAGES := packages/rehuco-agent/build/rehuco-agent/windows/app/src/app_packages
+else
+AGENT_APP_PACKAGES := packages/rehuco-agent/build/rehuco-agent/macos/app/Rehuco.app/Contents/Resources/app_packages
+endif
+# The agent depends on PySide6-Addons only for Qt Multimedia, the in-app player's, and the whole wheel is 100-440 MB. The
+# prune keeps the ~20 MB playback needs ([[packaging-deployment#qt-multimedia]]); it runs between `build`, which installs
+# the wheel, and `package`, which wraps the bundle -- never after, or the installer would carry what was removed.
+AGENT_PRUNE := uv run python tools/prune_pyside_addons.py $(AGENT_APP_PACKAGES)
+
 # `uis` first: Briefcase copies src/rehuco_agent verbatim into the bundle, so the gitignored
 # *_ui.py/*_rc.py must already exist -- a bundle built without them dies on the first import.
 agent-dist-build: uis $(ICON_FILES) $(INSTALLER_IMAGES)
 	$(BRIEFCASE) build $(BRIEFCASE_ARGS)
+	$(AGENT_PRUNE)
 
 # Seconds, not minutes: re-syncs the sources into the bundle built above, without reinstalling the
 # dependency tree ([[appendices.briefcase-packaging#build-and-iterate]]).
 agent-dist-update: uis
 	$(BRIEFCASE) update $(BRIEFCASE_ARGS)
 
+# Builds first, with no BRIEFCASE_ARGS (they are `package`'s, such as --adhoc-sign), so the prune can sit before the
+# packaging: `briefcase package` alone would build and package in one go, with nothing in between.
 agent-dist-package: uis $(ICON_FILES) $(INSTALLER_IMAGES)
+	$(BRIEFCASE) build
+	$(AGENT_PRUNE)
 	$(BRIEFCASE) package $(BRIEFCASE_ARGS)
 
 agent-dist-clean:

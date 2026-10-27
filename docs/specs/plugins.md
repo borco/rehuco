@@ -271,12 +271,11 @@ existing dock** rather than opening a second. Each document dock is itself a nes
 and description view; the main editor, the description and the images editors; plus the hidden-by-default
 inspection set — save preview, on disk, log, checksums, files ([[plugins#files-subdock]]) — and then **the type's
 own**: a reference pack adds content images (the browse over its archived and loose images,
-[[reference-images#modes]]), a tutorial
-will add its player, a collection adds nothing. The images sub-dock doubles as the drop target of
-[[acquisition-tooling#drag-drop-aids]]. The surfaces are the viewer/editor pair ([[plugins#viewer-editor-both]]).
-This replaces the LocalEdit1 per-file window (#7) and is the same shell the catalog browser later opens viewers
-into ([[plugins#browsers]]). See [[sequence-open-document]] and [[activity-open-document]] for this flow traced
-end-to-end.
+[[reference-images#modes]]), a tutorial adds its player ([[plugins#in-app-player]]), a collection adds nothing. The
+images sub-dock doubles as the drop target of [[acquisition-tooling#drag-drop-aids]]. The surfaces are the
+viewer/editor pair ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and is the same
+shell the catalog browser later opens viewers into ([[plugins#browsers]]). See [[sequence-open-document]] and
+[[activity-open-document]] for this flow traced end-to-end.
 
 A layout follows the type: the **default layout** is saved per type with no inheritance across types, and a
 document opened with no stored layout of its own gets its type's — a session-restored document gets **what was
@@ -370,8 +369,12 @@ a file **is** and none of what to do about it:
   ([[plugins#tutorial-plugin]]), but against **every image in the browsed folder**, curated or not: this is a view of
   the folder rather than of the lightbox's set, and a screenshot someone curated out is exactly the one they may want
   to look at here ([[data-model#image-meanings]]).
+- **a video of a tutorial** — played in the document's player ([[plugins#in-app-player]], #317): the player dock is
+  shown and made current, and **jumps to the clicked video** in the tutorial's whole playlist, whichever folder the table
+  is in, and plays it from where it was left. The table reports the video's key alone. A second double-click points the
+  one player at the other video rather than opening another.
 
-Anything else is handed to the system's default handler.
+Anything else is handed to the system's default handler — a video of a resource that records no progress included.
 
 **A tutorial's rows end with what its user has watched** ([[field-schema#watch-progress]], #316). A video's row ends
 with its percentage — `100%` once viewed, else its position over its length, nothing for a video never opened or whose
@@ -1032,7 +1035,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 [[[plugins#in-app-player]]]
 
 - [#315: spike: libvlc surface inside a QtAds dock — float/re-dock survival and keyboard ownership](https://github.com/borco/rehuco/issues/315)
-- [#317: feat: in-app video player dock — libvlc surface, transport bar, keyboard, folder playlist, resume](https://github.com/borco/rehuco/issues/317)
+- [#317: feat: in-app video player dock — Qt Multimedia surface, transport bar, keyboard, folder playlist, resume](https://github.com/borco/rehuco/issues/317)
 - [#318: feat: Videos settings — player choice (in-app / external VLC), VLC path, SHIFT+double-click override](https://github.com/borco/rehuco/issues/318)
 - [#521: feat: Tools settings page — optional external tools (ffprobe, VLC, ffmpeg): detect, browse, version gates, install instructions](https://github.com/borco/rehuco/issues/521)
 
@@ -1126,12 +1129,73 @@ same way and played both AV1 clips at full rate. Its `PySide6-Addons` installs t
 the playback keep list to 21.6 MB. So the FFmpeg the Tools page accepts for playback is whichever major the shipped
 PySide6 bundles, read from its own DLL names, never a version written into the code.
 
-**Qt Multimedia costs a second wheel, pruned to 20 MB.** The agent depends on `PySide6-Essentials`; Qt Multimedia is
-in `PySide6-Addons`, a 437 MB wheel. Playback needs 20.5 MB of it: `QtMultimedia` and `QtMultimediaWidgets` (module
-and DLL each), `plugins/multimedia/ffmpegmediaplugin.dll` and FFmpeg's five DLLs, `avcodec` alone 13 MB. A PySide6
-folder holding Essentials and only those files played the whole codec matrix. The build keeps that list and removes
-every other file the Addons wheel's `RECORD` names, so a module a later Addons release adds is never shipped;
-Briefcase's own `cleanup_paths` can only name what to remove, which would let it in.
+**The dock as built** (#317). It is the tutorial's own sub-dock ([[plugins#dock-shell]]), hidden by default like the
+inspection set, and opens when a video is double-clicked in the Files sub-dock ([[plugins#files-subdock]]) or its
+toggle is pressed. **One player per document**: a `QMediaPlayer` and its `QAudioOutput` drawing into a `QVideoWidget`, built on the first
+video, so opening a tutorial never loads FFmpeg. Its transport bar is previous, back, play/pause, forward, next, a
+seek slider that follows the position and seeks on release or a click, and a speed combo from 0.5 to 2. Its keys are
+commands in the catalog, armed while focus is anywhere inside the player and nowhere else — Space plays and pauses,
+Left and Right jump five seconds, Ctrl+Left and Ctrl+Right load the previous and next video, Ctrl+Home plays from the
+start and Ctrl+End goes to the end -- which finishes the video and loads the next -- Up and Down change the volume, and Ctrl+Up and Ctrl+Down, or `]` and `[`, change the speed — and the slider, the combo and the buttons take
+no focus, so an arrow is never theirs.
+
+**The playlist is the whole tutorial's videos, every folder, in natural path order.** Showing the dock loads the
+video this user watched last (`last_video`, [[field-schema#watch-progress]]), the first when none was or it is gone,
+**paused** where it was left: the seek bar and the clock show that position at once, before anything plays. Previous
+and next stop at both ends, as the image lightbox does, and load their video **paused** by the same rule. A video
+starts from where it was left, or from the beginning when it was watched to the end -- viewed, or left within a
+second or so of its length -- so it can be watched again without dragging the bar back. A double-click is the only
+thing that plays at once. Reaching the end records the video's whole length, which is what marks it viewed when the
+setting is on, and loads the next paused; after the last video the player stops and shows nothing. Ctrl+End does the
+same for a video that is not at its end, and Ctrl+Home moves to 0, playing or paused.
+
+**A video that is only loaded records nothing.** Progress, the video watched last and the Files dock's percentages
+change only once a video has played, so looking through the videos leaves the record as it was.
+
+**What it records goes through the document's one recorder**, which writes about every five seconds
+([[mounts-and-storage#node-handoff]]) and is flushed at the moments that matter: pause, a seek, switching video,
+stopping, closing the document, the preview moving on to another record — before it does, or the old record's video
+would be recorded into the new one — and quitting, which waits a moment for the write itself since the thread that
+makes it is a daemon.
+
+**A video's file is open only while it plays.** The OS refuses to rename a folder with a video open in it, and even a
+stopped player holds its source until it is cleared (measured on Windows, where it is an *access denied*), while
+renaming a resource's folder is something the app does from the editor's path row. So *paused* and *loaded* are the
+view's own states -- the video, the position and a still frame on screen -- with the player's source cleared: pausing
+records the position, keeps the frame on screen and lets go; a video loaded without playing is opened for as long as
+it takes to buffer and give one frame at its position, then let go (with a three-second limit for a video that gives
+none); playing opens it again and seeks to the position once it buffers. An open Player dock therefore never blocks a
+rename. Closing the dock stops the player and lets go the same way, as does the last video's end. It is the reason the
+Content Images dock lets go of its archives when it is hidden (#355).
+
+**A rename that starts while a video plays pauses it first.** The player asks the rename coordinator to be told, ahead
+of any wait, which resource is about to be renamed; for its own resource it pauses into the released state, and the
+rename proceeds with the video paused where it was. Every surface that renames goes through the one coordinator, so
+this covers them all. Pressing play afterwards opens the video at the new path.
+
+Behaviours of Qt Multimedia found by playing real clips, each in a test: `stop()` reports the position it resets to,
+0, **ahead of** the state it ends in, so a position reported while the player still says *playing* is no progress;
+replacing a source reports `LoadedMedia` from inside `setSource`, for the video it replaces, so a video is *ready* at
+its own first `BufferedMedia`, and a resume seek made earlier is lost; a source as long as the one before it reports
+no `durationChanged`, so the length is read as the video buffers; and the sink reports an empty frame whenever it is
+cleared, and the last frame of a video being replaced can arrive after the new one is opened, so only a valid frame of
+a ready video counts as a picture.
+
+**What the dock says about a video Qt shows badly** ([[plugins#in-app-player]]'s two gaps) is decided from the file,
+not from Qt: its codec and scan type are read through MediaInfo off the GUI thread (`rehuco_core.read_video_format`,
+kept out of the `videos` map, since they are about the file as it is now). An **interlaced** video is noted at once;
+an **AV1** one when it has played for a second and a half and shown no frame, since whether the hardware decodes it
+cannot be asked beforehand. A banner in the dock carries the notice, and an error from the player. *Open in VLC* is
+not offered yet: VLC is set up through the Tools page (#521) and launched by #319.
+
+**The build keeps 20 MB of a 105 MB to 460 MB wheel.** The agent depends on `PySide6-Essentials`; Qt Multimedia is in
+`PySide6-Addons`, which is named again for it. Playback needs about 20 MB of that wheel: `QtMultimedia` and
+`QtMultimediaWidgets` (module and library each), the FFmpeg plugin and FFmpeg's five libraries, `avcodec` alone 13 MB.
+A PySide6 folder holding Essentials and only those files played the whole codec matrix. Between `briefcase build` and
+`briefcase package` the build removes every other file the Addons wheel's `RECORD` names — bar what Essentials owns
+too — so a module a later Addons release adds is never shipped, which Briefcase's own `cleanup_paths`, able only to
+name what to remove, could not promise. How, and what it was measured to cost on each platform, is
+[[packaging-deployment#qt-multimedia]].
 
 ## §13.7 Reference images plugin
 

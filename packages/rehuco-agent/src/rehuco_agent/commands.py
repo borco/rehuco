@@ -114,6 +114,88 @@ COMPLETE_IMAGES: Final = Command(
     WIDGET,
     "markdown_edit",
 )
+PLAYER_FOCUS_GROUP: Final = "player"
+"""The player's own keys (#317): armed on the player dock's subtree, so its arrows never reach a field."""
+PLAYER_SCOPE: Final = (CommandScope.DOCUMENT_FOCUSED,)
+"""Focused-only on purpose: app-wide, the arrows and Space would be taken from every text field and table."""
+PLAYER_PLAY_PAUSE: Final = Command(
+    "document.player.play_pause",
+    "Play or pause",
+    "Play or pause the video",
+    ("Space",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_BACK: Final = Command(
+    "document.player.back",
+    "Back 5 seconds",
+    "Jump 5 seconds back in the video",
+    ("Left",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_FORWARD: Final = Command(
+    "document.player.forward",
+    "Forward 5 seconds",
+    "Jump 5 seconds forward in the video",
+    ("Right",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_PREVIOUS: Final = Command(
+    "document.player.previous",
+    "Previous video",
+    "Play the previous video of the folder, from where it was left",
+    ("Ctrl+Left",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_NEXT: Final = Command(
+    "document.player.next",
+    "Next video",
+    "Play the next video of the folder, from where it was left",
+    ("Ctrl+Right",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_TO_START: Final = Command(
+    "document.player.to_start",
+    "To the start",
+    "Move to the start of the video",
+    ("Ctrl+Home",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_TO_END: Final = Command(
+    "document.player.to_end",
+    "To the end",
+    "Finish the video: mark it watched and load the next one",
+    ("Ctrl+End",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_VOLUME_UP: Final = Command(
+    "document.player.volume_up", "Volume up", "Raise the volume", ("Up",), PLAYER_SCOPE, PLAYER_FOCUS_GROUP
+)
+PLAYER_VOLUME_DOWN: Final = Command(
+    "document.player.volume_down", "Volume down", "Lower the volume", ("Down",), PLAYER_SCOPE, PLAYER_FOCUS_GROUP
+)
+PLAYER_SPEED_UP: Final = Command(
+    "document.player.speed_up",
+    "Faster",
+    "Play at the next higher speed",
+    ("Ctrl+Up", "]"),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_SPEED_DOWN: Final = Command(
+    "document.player.speed_down",
+    "Slower",
+    "Play at the next lower speed",
+    ("Ctrl+Down", "["),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
 CONVERT_SCREENSHOT: Final = Command(
     "document.screenshots.convert",
     "Convert screenshot",
@@ -153,6 +235,17 @@ COMMANDS: Final = (
     REFRESH_FILES,
     REFRESH_CONTENT_IMAGES,
     COPY_IMAGE,
+    PLAYER_PLAY_PAUSE,
+    PLAYER_BACK,
+    PLAYER_FORWARD,
+    PLAYER_PREVIOUS,
+    PLAYER_NEXT,
+    PLAYER_TO_START,
+    PLAYER_TO_END,
+    PLAYER_VOLUME_UP,
+    PLAYER_VOLUME_DOWN,
+    PLAYER_SPEED_UP,
+    PLAYER_SPEED_DOWN,
     COMPLETE_IMAGES,
     CONVERT_SCREENSHOT,
     TOGGLE_SCREENSHOT_VISIBILITY,

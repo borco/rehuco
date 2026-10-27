@@ -2,7 +2,8 @@
 (register/unregister: Windows and Linux); ``rehuco-agent --scrape URL [--scrapers-folder DIR]
 [--output PATH]`` and ``rehuco-agent --scrape-schema PATH`` run a scrape from the console, no GUI
 ([[acquisition-tooling#scraper-registry]]); ``rehuco-agent --node [--settings-dir DIR]`` runs the local node
-(#506)."""
+(#506); ``rehuco-agent --check-playback CLIP`` plays one clip through Qt Multimedia and exits 0 only if it was seen --
+the release workflow's smoke test of a built bundle (#317)."""
 
 import argparse
 import ctypes
@@ -61,6 +62,20 @@ def print_registration_info(exe_path: Path) -> None:
             print(f"registered: {command}")
     else:
         print("registration is declared by the app bundle on macOS; there is no runtime state to query")
+
+
+def run_playback_check(clip: Path) -> int:
+    """Play ``clip`` through Qt Multimedia and report whether it was seen (#317).
+
+    Imported here, not at module scope: it pulls in Qt Multimedia, which no other flag needs.
+
+    :param clip: the video to play.
+    :returns: the exit code: 0 when it played, 1 when it did not.
+    """
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_agent.playback_check import check_playback
+
+    return check_playback(clip)
 
 
 def resolve_settings_dir(flag: Path | None, environment: str | None) -> Path | None:
@@ -224,6 +239,8 @@ def main() -> int:
         help=f"keep this run's settings, data and cache in DIR, with its own running instance (default: "
         f"${SETTINGS_DIR_ENVIRONMENT_VARIABLE}, else the platform's locations)",
     )
+    # not in --help: the release workflow's smoke check of a built bundle, not something a user runs
+    parser.add_argument("--check-playback", metavar="CLIP", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.scrape is None and (args.scrapers_folder is not None or args.output is not None):
         parser.error("--scrapers-folder and --output only apply with --scrape")
@@ -236,6 +253,8 @@ def main() -> int:
     # pylint: disable-next=import-outside-toplevel
     from rehuco_agent.scraping import cli as scraping_cli  # noqa: PLC0415
 
+    if args.check_playback is not None:
+        return run_playback_check(args.check_playback)
     if args.scrape_schema is not None:
         return scraping_cli.write_scrape_schema(args.scrape_schema)
     if args.scrape is not None:

@@ -160,6 +160,46 @@ def test_scrape_flag_dispatches_to_the_scraping_cli_and_never_launches_the_gui(
     run.assert_not_called()
 
 
+def test_check_playback_plays_the_clip_and_never_launches_the_gui(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """``--check-playback CLIP`` is the release workflow's smoke test of a built bundle: it plays the clip and
+    returns the check's status without ``run()`` (#317).
+
+    **Test steps:**
+
+    * set ``sys.argv`` to argv[0] plus ``--check-playback CLIP``
+    * mock ``check_playback`` to fail and ``run``
+    * verify ``main()`` returns the failure, the check was given the clip, and ``run()`` is never called
+    """
+    clip = tmp_path / "clip.mp4"
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--check-playback", str(clip)])
+    check = mocker.patch("rehuco_agent.playback_check.check_playback", return_value=1)
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
+
+    assert main() == 1
+    check.assert_called_once_with(clip)
+    run.assert_not_called()
+
+
+def test_check_playback_is_not_advertised_in_the_help(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The flag is for the build's smoke check, not for a user to find.
+
+    **Test steps:**
+
+    * ask for ``--help``
+    * verify the usage does not mention ``--check-playback``
+    """
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--help"])
+
+    with pytest.raises(SystemExit):
+        main()
+
+    assert "check-playback" not in capsys.readouterr().out
+
+
 def test_a_gui_launch_exception_is_logged_and_reraised(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
     """An exception from ``run()`` itself -- rather than from ``app.exec()``, which ``run()`` already
     logs on its own way out -- would otherwise reach here having never been logged at all (#362).
