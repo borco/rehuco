@@ -26,6 +26,7 @@ from rehuco_core import (
     VIDEO_EXTENSIONS,
     DurationProbe,
     FfprobeDurationProbe,
+    WatchRules,
 )
 
 from .extension_lists import normalize_extensions as normalize_extension_list
@@ -35,6 +36,9 @@ GROUP: Final = "videos"
 ENGINE_KEY: Final = "engine"
 FFPROBE_EXECUTABLE_KEY: Final = "ffprobe_executable"
 EXTENSIONS_KEY: Final = "extensions"
+MARK_FILE_VIEWED_KEY: Final = "mark_file_viewed_at_end"
+MARK_TUTORIAL_VIEWED_KEY: Final = "mark_tutorial_viewed_on_last_file"
+MATCH_RENAMED_BY_SIZE_KEY: Final = "match_renamed_by_size"
 
 
 def normalize_extensions(values: object) -> tuple[str, ...]:
@@ -81,7 +85,8 @@ def read_engine(value: object) -> str:
 
 @dataclass
 class VideosSettings:
-    """How a tutorial's videos are measured: which backend reads a duration, and over which files.
+    """How a tutorial's videos are measured -- which backend reads a duration, and over which files -- and how
+    watching them is tracked ([[field-schema#watch-progress]], #316).
 
     :attr:`engine` and :attr:`extensions` are stored as the page left them; what a scan consumes is
     :meth:`create_probe` and :attr:`video_extensions`, the values they resolve to.
@@ -98,12 +103,27 @@ class VideosSettings:
     """The recognized video extensions as stored -- empty on a fresh install, where the effective set is
     the shipped one rather than nothing."""
 
+    mark_file_viewed_at_end: bool = True
+    """Reaching the end of a video marks it viewed ([[field-schema#watch-progress]])."""
+
+    mark_tutorial_viewed_on_last_file: bool = True
+    """A video becoming viewed marks the tutorial viewed when every video now is."""
+
+    match_renamed_by_size: bool = True
+    """A renamed video takes its progress by size alone when no checksum is recorded for it."""
+
     @property
     def video_extensions(self) -> tuple[str, ...]:
         """The effective extension set the duration scan is handed ([[field-schema#duration-size]]):
         :attr:`extensions` normalized, falling back to :data:`~rehuco_core.VIDEO_EXTENSIONS` when it
         names nothing usable (:func:`normalize_extensions`)."""
         return normalize_extensions(self.extensions)
+
+    @property
+    def watch_rules(self) -> WatchRules:
+        """The two auto-viewed rules core's watch-progress write takes as parameters
+        ([[field-schema#watch-progress]], #316)."""
+        return WatchRules(self.mark_file_viewed_at_end, self.mark_tutorial_viewed_on_last_file)
 
     def create_probe(self) -> DurationProbe:
         """Build the selected backend, with its own settings.
@@ -134,6 +154,9 @@ class VideosSettings:
         self.engine = read_engine(settings.value(ENGINE_KEY))
         self.ffprobe_executable = cast(str, settings.value(FFPROBE_EXECUTABLE_KEY, "", type=str))
         self.extensions = read_extensions(settings.value(EXTENSIONS_KEY))
+        self.mark_file_viewed_at_end = cast(bool, settings.value(MARK_FILE_VIEWED_KEY, True, type=bool))
+        self.mark_tutorial_viewed_on_last_file = cast(bool, settings.value(MARK_TUTORIAL_VIEWED_KEY, True, type=bool))
+        self.match_renamed_by_size = cast(bool, settings.value(MATCH_RENAMED_BY_SIZE_KEY, True, type=bool))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -145,6 +168,9 @@ class VideosSettings:
         settings.setValue(ENGINE_KEY, self.engine)
         settings.setValue(FFPROBE_EXECUTABLE_KEY, self.ffprobe_executable)
         settings.setValue(EXTENSIONS_KEY, list(self.extensions))
+        settings.setValue(MARK_FILE_VIEWED_KEY, self.mark_file_viewed_at_end)
+        settings.setValue(MARK_TUTORIAL_VIEWED_KEY, self.mark_tutorial_viewed_on_last_file)
+        settings.setValue(MATCH_RENAMED_BY_SIZE_KEY, self.match_renamed_by_size)
         settings.endGroup()
 
 

@@ -660,6 +660,15 @@ read against:
   progress by hand for that case.
 - **Writes never bump `updated`** ([[field-schema#record-timestamps]]): that stamp describes the resource, not one
   person's viewing.
+- **Neither a progress write nor a Measure is an edit.** Progress is the user's own state, written to their sidecar the
+  moment it is recorded; the lengths of a Measure -- the main editor's duration Compute, which probes every video once
+  and fills the total as an ordinary edit -- are written into the record the moment it finishes, under the record's
+  lock, again without stamping `updated`. A player records the file's own length with its progress, so a video is
+  known by being measured or by being played. An open document takes both in without a reload and without becoming dirty:
+  its unsaved edits, its dirty flag and its form are left alone, and the next save is based on what was written.
+  Nothing here asks the user to save, because progress is written when the record is not open at all — on the web, or
+  by another node. Where a write cannot land — no file, a lock, an unreadable sidecar of the user's own, a share that
+  does not answer — what was recorded is kept for the session and the document's banner says it is not being saved.
 - **A source that can never be written** — a CD/DVD, a read-only share — records progress on its retained copy
   ([[mounts-and-storage#durable-retention]]), which is writable for per-user data only.
 - **Sync.** Every connected node holding the resource — the owner and each borrower — gets a change immediately; a

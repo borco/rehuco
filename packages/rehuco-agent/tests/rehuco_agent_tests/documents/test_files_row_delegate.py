@@ -26,6 +26,7 @@ from PySide6.QtGui import QColor, QFontMetricsF, QImage, QPainter, QPalette
 from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
+from rehuco_agent.documents.file_row import PARENT_ROW_NAME, FileChecksumState, FileRow
 from rehuco_agent.documents.files_row_delegate import (
     CHECKSUM_COLUMN_WIDTH,
     ICON_SIZE,
@@ -37,10 +38,7 @@ from rehuco_agent.documents.files_rows import (
     KIND_COLUMN,
     MODIFIED_COLUMN,
     NAME_COLUMN,
-    PARENT_ROW_NAME,
     SIZE_COLUMN,
-    FileChecksumState,
-    FileRow,
     FilesTableModel,
     ModelIndex,
 )

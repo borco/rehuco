@@ -29,6 +29,7 @@ from rehuco_core import (
     content_duration,
     content_video_files,
     content_videos,
+    total_duration,
 )
 
 DIRECTORY: Final = Path("/fake/tutorial")
@@ -741,6 +742,19 @@ def test_an_unavailable_probe_refuses_the_videos_map_too(mocker: MockerFixture) 
     with raises(DurationProbeError, match="Nothing to run."):
         content_videos(REHU_PATH, probe)
     assert not probe.probed
+
+
+def test_the_total_is_summed_natively_and_rounded_once() -> None:
+    """Three clips of 0.4 s are a second, not the zero that rounding each would give
+    ([[field-schema#ms-leak-history]]); no video is zero.
+
+    **Test steps:**
+
+    * total three 0.4 s videos, and none
+    * verify 1 and 0
+    """
+    assert total_duration({key: VideoFacts(0.4) for key in ("a", "b", "c")}) == 1
+    assert total_duration({}) == 0
 
 
 # endregion

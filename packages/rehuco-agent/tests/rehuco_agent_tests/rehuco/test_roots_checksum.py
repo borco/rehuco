@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Final
 
 from pytest import mark
-from rehuco_agent.documents.files_rows import FileChecksumState
+from rehuco_agent.documents.file_row import FileChecksumState
 from rehuco_agent.rehuco.roots_checksum import (
     BAD_INK,
     NEVER_CHECKED,

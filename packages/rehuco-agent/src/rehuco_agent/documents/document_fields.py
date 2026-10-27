@@ -15,9 +15,10 @@ from rehuco_core import (
     ContentUnreachableError,
     DurationProbeError,
     PluginRegistry,
-    content_duration,
     content_size_on_disk,
+    content_videos,
     enumerate_content_images,
+    total_duration,
 )
 
 from ..fields import (
@@ -434,7 +435,8 @@ def build_document_form(
             return None
 
     def measure_duration() -> int | None:
-        """Sum how long this resource's videos run ([[field-schema#duration-size]], #224).
+        """Sum how long this resource's videos run ([[field-schema#duration-size]], #224), and keep each video's own
+        length in the record (#316): one probe pass answers both, so the Files dock's shares need no second one.
 
         Reads the same excluded-name list the size scan does, so the two measure one content set (#226).
         The probe backend and the video-extension list are the Videos settings page's (#225), read here
@@ -443,6 +445,10 @@ def build_document_form(
 
         Runs on a worker thread (`~rehuco_agent.fields.background_measurement.BackgroundMeasurement`), so
         it touches nothing but plain Python state, the filesystem, and the probe.
+
+        The lengths are handed to the model (:meth:`~.RehuDocumentModel.post_measured_videos`), which writes them into
+        the record straight -- not as an edit to save -- when the document is a tutorial it can write; the total is the
+        form field's, filled as before.
 
         :returns: the total in whole seconds, or ``None`` when there is nothing to measure -- a document
             with no local path, a probe backend that cannot run here at all, or a resource part of which
@@ -454,15 +460,17 @@ def build_document_form(
         if path is None:
             return None
         try:
-            videos = shared_videos_settings()
-            return content_duration(
+            settings = shared_videos_settings()
+            measured = content_videos(
                 path,
-                videos.create_probe(),
-                video_extensions=videos.video_extensions,
+                settings.create_probe(),
+                video_extensions=settings.video_extensions,
                 excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
             )
         except DurationProbeError, ContentUnreachableError:
             return None
+        model.post_measured_videos(model.key, measured)
+        return total_duration(measured)
 
     description_field = DescriptionField(
         "description",

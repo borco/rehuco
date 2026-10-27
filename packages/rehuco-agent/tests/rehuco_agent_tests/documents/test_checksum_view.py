@@ -24,7 +24,7 @@ from rehuco_agent.documents.checksum_view import (
     UNREACHABLE_SUMMARY,
     ChecksumView,
 )
-from rehuco_agent.documents.files_rows import FileChecksumState
+from rehuco_agent.documents.file_row import FileChecksumState
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import ChecksumReport, RehuDocument, TaskQueue
 

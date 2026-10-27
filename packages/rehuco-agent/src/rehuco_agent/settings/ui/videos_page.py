@@ -1,4 +1,5 @@
-"""Videos settings page: which backend measures a duration, and over which files (#225)."""
+"""Videos settings page: which backend measures a duration, over which files, and how watching is tracked
+(#225, #316)."""
 
 import sys
 from typing import Final
@@ -23,13 +24,15 @@ AVAILABLE_TEMPLATE: Final = "{label} is ready."
 class VideosPage(QWidget):
     """Configure how a tutorial's videos are measured (#224's parameters, made the user's).
 
-    Two blocks, one per parameter `rehuco_core.rehu_content_duration.content_duration` takes:
+    Three blocks, the first two one per parameter `rehuco_core.rehu_content_duration.content_duration` takes:
 
     - **Duration probe** -- which backend reads a container, plus the ``ffprobe`` executable's location,
       which is only meaningful while that backend is selected. Both are kept, so switching to MediaInfo
       and back does not lose a path that was typed ([[appendices.settings-pages#persisting-changes]]).
     - **Video extensions** -- which files a scan measures, a `StringListEditor` (#231) wearing this app's
       icons, exactly as the reference-images list on `ImagesFilesPage` is.
+    - **Watch progress** -- the two auto-viewed rules and the size match for renamed files, which core's
+      progress write takes as parameters ([[field-schema#watch-progress]], #316).
 
     **The selected backend reports whether it can actually run**, before anyone presses Compute: an
     ``ffprobe`` path pointing at nothing is the realistic misconfiguration, and a scan under one raises
@@ -71,6 +74,9 @@ class VideosPage(QWidget):
             # normalized before the comparison, so a row saving would drop anyway is not yet a change
             # and auto-apply does not tear a fresh insert out from under its open cell (#53)
             or normalize_extensions(self.__ui.extensions_editor.values) != settings.video_extensions
+            or self.__ui.mark_file_viewed_check_box.isChecked() != settings.mark_file_viewed_at_end
+            or self.__ui.mark_tutorial_viewed_check_box.isChecked() != settings.mark_tutorial_viewed_on_last_file
+            or self.__ui.match_renamed_by_size_check_box.isChecked() != settings.match_renamed_by_size
         )
 
     def save_changes(self) -> None:
@@ -85,6 +91,9 @@ class VideosPage(QWidget):
         settings.engine = self.__staged_engine()
         settings.ffprobe_executable = self.__ui.ffprobe_executable_edit.text()
         settings.extensions = normalize_extensions(self.__ui.extensions_editor.values)
+        settings.mark_file_viewed_at_end = self.__ui.mark_file_viewed_check_box.isChecked()
+        settings.mark_tutorial_viewed_on_last_file = self.__ui.mark_tutorial_viewed_check_box.isChecked()
+        settings.match_renamed_by_size = self.__ui.match_renamed_by_size_check_box.isChecked()
         settings.save(persistent_settings())
         self.drop_changes()
 
@@ -107,6 +116,9 @@ class VideosPage(QWidget):
             self.__ui.mediainfo_probe_radio_button.setChecked(True)
         self.__ui.ffprobe_executable_edit.setText(settings.ffprobe_executable)
         self.__ui.extensions_editor.values = settings.video_extensions
+        self.__ui.mark_file_viewed_check_box.setChecked(settings.mark_file_viewed_at_end)
+        self.__ui.mark_tutorial_viewed_check_box.setChecked(settings.mark_tutorial_viewed_on_last_file)
+        self.__ui.match_renamed_by_size_check_box.setChecked(settings.match_renamed_by_size)
         self.__update_probe_controls()
 
     def __staged_engine(self) -> str:

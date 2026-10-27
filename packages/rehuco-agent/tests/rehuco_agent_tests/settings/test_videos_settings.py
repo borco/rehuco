@@ -21,6 +21,7 @@ from rehuco_core import (
     VIDEO_EXTENSIONS,
     FfprobeDurationProbe,
     MediaInfoDurationProbe,
+    WatchRules,
 )
 
 MISSING_FFPROBE = "/nowhere/ffprobe"
@@ -354,6 +355,69 @@ def test_the_shared_instance_is_loaded_once(mocker: MockerFixture, settings: Fak
 
     assert first is second
     assert first.video_extensions == (".mp4",)
+
+
+# endregion
+
+
+# region watch progress (#316)
+
+
+def test_the_watch_settings_are_all_on_by_default() -> None:
+    """A fresh install tracks watching the way [[field-schema#watch-progress]] describes: both auto-viewed rules and
+    the size match on.
+
+    **Test steps:**
+
+    * build a settings object without loading anything
+    * verify the three are on and the rules core takes carry the first two
+    """
+    settings = VideosSettings()
+
+    assert settings.mark_file_viewed_at_end is True
+    assert settings.mark_tutorial_viewed_on_last_file is True
+    assert settings.match_renamed_by_size is True
+    assert settings.watch_rules == WatchRules(True, True)
+
+
+def test_the_watch_settings_round_trip_and_reach_core_as_its_rules(settings: FakeSettings) -> None:
+    """What was switched off is off after a reload, and the rules handed to core say so.
+
+    **Test steps:**
+
+    * save a settings object with all three switched off
+    * load a second object from the same storage
+    * verify all three are off and ``watch_rules`` holds the first two as core takes them
+    """
+    VideosSettings(
+        mark_file_viewed_at_end=False, mark_tutorial_viewed_on_last_file=False, match_renamed_by_size=False
+    ).save(settings)  # type: ignore[arg-type]
+
+    loaded = VideosSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.mark_file_viewed_at_end is False
+    assert loaded.mark_tutorial_viewed_on_last_file is False
+    assert loaded.match_renamed_by_size is False
+    assert loaded.watch_rules == WatchRules(False, False)
+
+
+def test_the_watch_settings_load_on_when_nothing_is_stored(settings: FakeSettings) -> None:
+    """Storage written before these existed loads them on, not off.
+
+    **Test steps:**
+
+    * load from storage holding only the engine
+    * verify the three are on
+    """
+    settings.setValue("videos/engine", MediaInfoDurationProbe.NAME)
+
+    loaded = VideosSettings(mark_file_viewed_at_end=False, match_renamed_by_size=False)
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.mark_file_viewed_at_end is True
+    assert loaded.mark_tutorial_viewed_on_last_file is True
+    assert loaded.match_renamed_by_size is True
 
 
 # endregion

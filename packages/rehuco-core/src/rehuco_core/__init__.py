@@ -189,6 +189,7 @@ from .rehu_content_duration import (
     content_duration,
     content_video_files,
     content_videos,
+    total_duration,
 )
 from .rehu_content_files import (
     ContentEnumeration,
@@ -421,6 +422,7 @@ from .watch_progress import (
     read_progress,
     read_videos,
     record_progress,
+    record_videos,
     set_progress_entry,
     set_videos,
     watch_totals,
@@ -805,6 +807,7 @@ __all__ = [
     "record_differences",
     "record_progress",
     "record_version",
+    "record_videos",
     "rehu_rename_conflict",
     "rehudb_path",
     "remediate_legacy_manifest",
@@ -836,6 +839,7 @@ __all__ = [
     "take_enclosing_claims",
     "tc_to_rehu_data",
     "titled_index",
+    "total_duration",
     "update_checksum_record",
     "user_differences",
     "user_sidecar_path",

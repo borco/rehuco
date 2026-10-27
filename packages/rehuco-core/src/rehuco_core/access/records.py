@@ -2,12 +2,14 @@
 against a :class:`~rehuco_core.RecordVersion`, the text as stored, legacy conversion. Reverting is loading again."""
 
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Final
 
+from ..progress_renames import reattach_renamed_progress
 from ..record_file_lock import locked_record
 from ..record_versions import RecordVersion, merge_users, record_version, same_details
+from ..rehu_content_duration import VideoFacts
 from ..rehu_document import RehuDocument, RehuFormatError
 from ..rehu_screenshot_ordering import Deleter
 from ..rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
@@ -15,6 +17,7 @@ from ..tc_conversion import convert_tc
 from ..tc_document import load_tc
 from ..tc_screenshots import ScreenshotNamePattern
 from ..user_sidecars import user_sidecar_paths
+from ..watch_progress import WatchRules, forget_progress, record_progress, record_videos
 from .keys import ResourceKey
 from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
 
@@ -152,6 +155,118 @@ class Records:
         if theirs_version.metadata_hash != base.metadata_hash and not overwrite:
             raise RecordConflict(theirs_document, theirs_version)
         return merge_users(document.data, theirs_document.data, base, username, dropped=dropped)
+
+    def record_progress(  # pylint: disable=too-many-arguments
+        self,
+        key: ResourceKey,
+        *,
+        username: str,
+        relative: str,
+        position: float,
+        duration: float | None,
+        viewed: bool | None,
+        rules: WatchRules,
+        video_extensions: tuple[str, ...],
+        excluded_patterns: tuple[str, ...],
+    ) -> LoadedRecord:
+        """Record where ``username`` stopped in one file, and read the record as it is after
+        ([[field-schema#watch-progress]], #316): :func:`~rehuco_core.record_progress` under the record's lock, so no
+        writer interleaves, and without stamping ``updated``.
+
+        :param key: the tutorial's record.
+        :param username: whose progress, and the identity the record is opened as.
+        :param relative: the file's content key.
+        :param position: where playback stopped, in seconds.
+        :param duration: the length the player saw, or ``None`` to keep the stored one.
+        :param viewed: the file's flag set by hand, or ``None`` to let ``rules`` decide.
+        :param rules: the auto-viewed settings.
+        :param video_extensions: what counts as a video.
+        :param excluded_patterns: filename globs the tutorial rule's walk leaves out.
+        :returns: the record as read after the write.
+        :raises ValueError: ``relative`` is not a content key, ``position`` or ``duration`` is out of range, the
+            record is not a tutorial, or it is locked against saving.
+        :raises RecordLockedError: someone else held the record's lock for longer than a write waits.
+        :raises OSError: the record could not be read or written.
+        :raises RehuFormatError: the record is not readable.
+        """
+        record_progress(
+            key.path,
+            username,
+            relative,
+            position,
+            duration,
+            viewed=viewed,
+            rules=rules,
+            current_username=username,
+            video_extensions=video_extensions,
+            excluded_patterns=excluded_patterns,
+        )
+        return self.load(key, username=username, unknown_username=username)
+
+    def forget_progress(self, key: ResourceKey, *, username: str, relative: str) -> LoadedRecord:
+        """Remove one of ``username``'s progress entries, and read the record as it is after (#316).
+
+        :param key: the tutorial's record.
+        :param username: whose progress, and the identity the record is opened as.
+        :param relative: the entry's key as stored.
+        :returns: the record as read after the write.
+        :raises ValueError: the record is locked against saving.
+        :raises RecordLockedError: someone else held the record's lock for longer than a write waits.
+        :raises OSError: the record could not be read or written.
+        :raises RehuFormatError: the record is not readable.
+        """
+        forget_progress(key.path, username, relative, current_username=username)
+        return self.load(key, username=username, unknown_username=username)
+
+    def reattach_renamed_progress(
+        self,
+        key: ResourceKey,
+        *,
+        username: str,
+        match_by_size: bool,
+        video_extensions: tuple[str, ...],
+        excluded_patterns: tuple[str, ...],
+    ) -> LoadedRecord | None:
+        """Move ``username``'s progress onto the files that were renamed, and read the record as it is after (#316).
+
+        :param key: the tutorial's record.
+        :param username: whose progress, and the identity the record is opened as.
+        :param match_by_size: the setting *match renamed files by size when no checksum is recorded*.
+        :param video_extensions: what counts as a video.
+        :param excluded_patterns: filename globs the walk leaves out.
+        :returns: the record as read after the moves; ``None`` when none was written.
+        :raises ValueError: the record is not a tutorial, or is locked against saving.
+        :raises RecordLockedError: someone else held the record's lock for longer than a write waits.
+        :raises OSError: the record could not be read or written.
+        :raises RehuFormatError: the record is not readable.
+        :raises ContentUnreachableError: some directory under the resource would not list.
+        """
+        moved = reattach_renamed_progress(
+            key.path,
+            username,
+            match_by_size=match_by_size,
+            current_username=username,
+            video_extensions=video_extensions,
+            excluded_patterns=excluded_patterns,
+        )
+        if not moved:
+            return None
+        return self.load(key, username=username, unknown_username=username)
+
+    def record_videos(self, key: ResourceKey, measured: Mapping[str, VideoFacts], *, username: str) -> LoadedRecord:
+        """Write a Measure's result into the record's ``videos`` map, and read the record as it is after (#316).
+
+        :param key: the tutorial's record.
+        :param measured: the facts by content key.
+        :param username: the identity the record is opened as.
+        :returns: the record as read after the write.
+        :raises ValueError: the record is not a tutorial, or is locked against saving.
+        :raises RecordLockedError: someone else held the record's lock for longer than a write waits.
+        :raises OSError: the record could not be read or written.
+        :raises RehuFormatError: the record is not readable.
+        """
+        record_videos(key.path, measured, current_username=username)
+        return self.load(key, username=username, unknown_username=username)
 
     def stored_files(self, key: ResourceKey) -> list[tuple[str, str]]:
         """A record's files as stored: the record, then each of its per-user sidecars ([[data-model#single-file]]) --

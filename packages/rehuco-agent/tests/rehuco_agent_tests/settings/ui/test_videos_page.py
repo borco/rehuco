@@ -653,3 +653,66 @@ def test_frame_filter_discovers_both_frames_independently(qtbot: QtBot) -> None:
 
 
 # endregion
+
+
+# region watch progress (#316)
+
+
+def test_the_watch_checkboxes_start_on_and_a_save_reaches_the_shared_settings(qtbot: QtBot) -> None:
+    """The three watch settings show their defaults, and Save puts what is ticked into the settings core's rules and
+    size match are read from.
+
+    **Test steps:**
+
+    * build the page against empty storage and verify the three boxes are ticked and the page is clean
+    * clear all three, verify the page is dirty, and save
+    * verify the shared settings hold all three off and the page is clean again
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    boxes = (ui.mark_file_viewed_check_box, ui.mark_tutorial_viewed_check_box, ui.match_renamed_by_size_check_box)
+
+    assert all(box.isChecked() for box in boxes)
+    assert page.is_dirty() is False
+
+    for box in boxes:
+        box.setChecked(False)
+    assert page.is_dirty() is True
+    page.save_changes()
+
+    settings = shared_videos_settings()
+    assert settings.mark_file_viewed_at_end is False
+    assert settings.mark_tutorial_viewed_on_last_file is False
+    assert settings.match_renamed_by_size is False
+    assert page.is_dirty() is False
+
+
+def test_dropping_changes_and_seeding_defaults_move_the_watch_checkboxes(qtbot: QtBot) -> None:
+    """Drop restores what is saved, and the factory defaults stage all three on.
+
+    **Test steps:**
+
+    * save the three off, then tick one by hand and drop the change
+    * verify the box is cleared again
+    * seed the defaults and verify all three are ticked, and dirty against the saved values
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    for box in (ui.mark_file_viewed_check_box, ui.mark_tutorial_viewed_check_box, ui.match_renamed_by_size_check_box):
+        box.setChecked(False)
+    page.save_changes()
+
+    ui.mark_file_viewed_check_box.setChecked(True)
+    page.drop_changes()
+    assert ui.mark_file_viewed_check_box.isChecked() is False
+
+    page.seed_defaults()
+    assert ui.mark_file_viewed_check_box.isChecked() is True
+    assert ui.mark_tutorial_viewed_check_box.isChecked() is True
+    assert ui.match_renamed_by_size_check_box.isChecked() is True
+    assert page.is_dirty() is True
+
+
+# endregion

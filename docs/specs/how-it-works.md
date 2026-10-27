@@ -111,7 +111,7 @@ or from the app — and it appears as a set of dockable panels you can rearrange
 | **Main Editor** | The same fields, editable, plus the type selector that decides which block is active. Its path row offers names built from the record — title, publisher, authors, year — and picking one renames the resource on disk: the folder for a directory-scoped resource, and for a standalone one every file named after it, archives and screenshots alike. |
 | **Description** | The Markdown description in its own panel, so prose can be written with room. |
 | **Images** | Which screenshots the strip shows: every sibling image, checkable, beside a preview; screenshots can be moved, deleted (to the Recycle Bin) or converted to the numbered naming from here. |
-| **Files** | The resource's own folder as a file browser, with Reveal in the system's file manager. |
+| **Files** | The resource's own folder as a file browser, with Reveal in the system's file manager. On a tutorial each video's row ends with how much of it you have watched and each folder's with the share of the videos beneath it; a video is ticked *viewed*, or a gone video's progress forgotten, from the row's context menu or the toolbar. |
 | **Checksums** | Each content file's last check, its date and result, with generate and verify. |
 | **Log** | The app's log, narrowed to this resource. |
 | **Save Preview** / **On Disk** | Hidden by default: exactly what a save would write, and the file as it is on disk right now. The pair is how you see a migration or a preserved unknown field with your own eyes. |
@@ -130,7 +130,8 @@ add up how long its videos run, and a reference pack's image count opens its arc
 found *beside* the stored value rather than instead of it, so a disagreement — content deleted as it was
 watched, an archive refreshed behind the app's back — is something you read before deciding, and a second
 click is what stores it. Reading a video's length needs a media library the app carries, or an `ffprobe`
-you already have; which one is a setting.
+you already have; which one is a setting. The duration Compute also writes each video's length into the
+record as it goes, without a save: that is what the **Files** panel's percentages are measured against.
 
 Which panels you had open, how you'd arranged them, and which file was in front are remembered per
 resource and restored when you open it again. The documents open at quit are reopened on the next start, under the
@@ -237,7 +238,9 @@ included — and stops it when it quits; the node writes a heartbeat file and a 
 all it does: no REST
 API, no discovery, no sync between machines, no accounts or access rules, no web or tablet interface.
 
-**No playback and no progress tracking.** rehuco describes a tutorial; it does not play one.
+**No playback.** rehuco describes a tutorial; it does not play one. What you have watched is kept all the
+same — a video ticked *viewed* in the **Files** panel goes to your own `.rehuser` the moment it is ticked,
+with no save asked for — but the player that would record where you stopped as you watch does not exist yet.
 
 Past what runs, the design reaches toward machines sharing a catalog; whether that is worth building is a question
 the editor and the browser have to answer first.

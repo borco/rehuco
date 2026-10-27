@@ -272,6 +272,42 @@ def record_progress(  # pylint: disable=too-many-arguments
     return written[0]
 
 
+def record_videos(
+    path: Path,
+    measured: Mapping[str, VideoFacts],
+    *,
+    current_username: str = DEFAULT_CURRENT_USERNAME,
+    plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+) -> None:
+    """Write a Measure's result into the record's ``videos`` map ([[field-schema#watch-progress]]).
+
+    A :func:`~rehuco_core.record_merge.merge_write` like :func:`record_progress`, without stamping ``updated``: the
+    lengths are measured facts about the files, not an edit of the resource, and a Measure is not something the user
+    saves.
+
+    :param path: the tutorial's record.
+    :param measured: the facts by key, as :func:`~rehuco_core.rehu_content_duration.content_videos` returns them; empty
+        removes the map.
+    :param current_username: the identity the record is opened as (:func:`record_progress`'s).
+    :param plugins: the plugin registry to load with.
+    :raises ValueError: the record is not a tutorial, or it is locked against saving.
+    :raises OSError: the record could not be read or written.
+    :raises RehuFormatError: the record is not readable.
+    """
+
+    def mutate(document: RehuDocument) -> None:
+        """Replace the map in the freshly read record.
+
+        :param document: the record as it is on disk now.
+        :raises ValueError: the record is not a tutorial.
+        """
+        if document.active_block_key != TUTORIAL_PLUGIN.key:
+            raise ValueError(f"Video lengths are recorded on tutorials only, not on {path}.")
+        set_videos(document, measured)
+
+    merge_write(path, mutate, username=current_username, plugins=plugins, touch_updated=False)
+
+
 def forget_progress(
     path: Path,
     username: str,

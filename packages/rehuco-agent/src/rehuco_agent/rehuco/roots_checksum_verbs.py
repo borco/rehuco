@@ -22,7 +22,7 @@ from rehuco_core import (
     resource_name,
 )
 
-from ..documents.files_rows import FileChecksumState
+from ..documents.file_row import FileChecksumState
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..tasks.already_queued import job_already_queued

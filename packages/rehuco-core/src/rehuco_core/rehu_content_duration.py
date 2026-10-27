@@ -22,6 +22,7 @@ import json
 import math
 import subprocess  # nosec B404  # only ever runs the ffprobe executable the caller named, with fixed flags
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
@@ -399,6 +400,17 @@ def content_videos(
     return videos
 
 
+def total_duration(videos: Mapping[str, VideoFacts]) -> int:
+    """Sum the lengths :func:`content_videos` measured: a resource's duration ([[field-schema#duration-size]]).
+
+    **Summed in native precision and rounded once, at the end** ([[field-schema#ms-leak-history]]).
+
+    :param videos: each probed video's facts, by content key.
+    :returns: the total in whole seconds; ``0`` for no video.
+    """
+    return round(sum(facts.duration for facts in videos.values()))
+
+
 def content_video_files(
     rehu_path: Path,
     *,
@@ -455,4 +467,4 @@ def content_duration(
         is not this resource's runtime.
     """
     videos = content_videos(rehu_path, probe, video_extensions=video_extensions, excluded_patterns=excluded_patterns)
-    return round(sum(facts.duration for facts in videos.values()))
+    return total_duration(videos)
