@@ -587,7 +587,7 @@ read against:
 ```json
 "tutorial": {
   "videos": { "01 Basics/03 Brushes.mp4": { "duration": 640.0, "width": 1920, "height": 1080 } },
-  "users": { "admin": { "viewed": false, "progress": {
+  "users": { "admin": { "viewed": false, "last_video": "01 Basics/03 Brushes.mp4", "progress": {
     "01 Basics/03 Brushes.mp4": { "position": 512.3, "duration": 640.0, "size": 183500800, "viewed": true }
   } } }
 }
@@ -599,6 +599,10 @@ read against:
   video still resumes where the review stopped. Reaching the end — scrubbed there or not, within a second of the
   file's length, since a player stops a frame or two short — sets `viewed` **when a setting says so** (on by default); `viewed` is also a checkbox, so the user can set or clear it by hand. The common
   path needs no hands; the setting and the checkbox are the flexibility.
+- **`last_video` is the video the player was last playing**, a key like the ones above, per user. Only the in-app
+  player's own writes set it -- ticking *Viewed* by hand does not -- in the same write as the position, so the player
+  opens on it ([[plugins#in-app-player]]). A video renamed or forgotten leaves it naming nothing, which reads as no
+  last video: the player opens on the first.
 - **The tutorial's `viewed` is the user's verdict** ([[field-schema#boolean-flags]]) that the tutorial is fully
   watched, which can be true with some files never opened, because the ones that mattered were. Setting it changes
   none of the files' flags. A **second setting** (on by default) checks it automatically **at the moment its last

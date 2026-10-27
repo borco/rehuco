@@ -11,7 +11,10 @@
 # ubuntu-latest runner only because its much larger preinstalled image already carries glib/fontconfig/
 # dbus/krb5 as some other package's transitive dependency, which a genuinely bare container does not.
 # Four more libraries were missing here, one import at a time: libglib-2.0.so.0 (QtCore itself),
-# libfontconfig.so.1 and libdbus-1.so.3 (both from QtGui), libgssapi_krb5.so.2 (from pyside6-qtads).
+# libfontconfig.so.1 and libdbus-1.so.3 (both from QtGui), libgssapi_krb5.so.2 (from pyside6-qtads). A fifth came with
+# the in-app player (#317): libpulse.so.0, which Qt6Multimedia links, so `import PySide6.QtMultimedia` -- at start-up,
+# since the document's player dock imports it -- fails without it. Found by running `ldd`/`readelf -d` over the Qt
+# Multimedia modules on a clean venv: it is the only system library they add to the set above.
 #
 # --appimage-extract-and-run rather than a FUSE mount: libfuse2 isn't installed by default on Ubuntu
 # 24.04+, and a container has no /dev/fuse without extra --device/--cap-add flags a bare-container check
@@ -28,7 +31,7 @@ APPIMAGE=/artifact/rehuco-agent-x86_64.AppImage
 echo "=== Installing the bare-container headless-Qt floor ==="
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-    libgl1 libegl1 libxkbcommon0 libglib2.0-0 libfontconfig1 libdbus-1-3 libgssapi-krb5-2 >/dev/null
+    libgl1 libegl1 libxkbcommon0 libglib2.0-0 libfontconfig1 libdbus-1-3 libgssapi-krb5-2 libpulse0 >/dev/null
 echo
 
 echo "=== Starting under QT_QPA_PLATFORM=offscreen ==="

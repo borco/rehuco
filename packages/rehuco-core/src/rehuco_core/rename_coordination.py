@@ -113,7 +113,7 @@ class ResourceLocation:
             self.__path = path
 
 
-class RenameCoordinator:
+class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
     """Runs a rename against the readers working inside the resource (#241).
 
     The protocol, from a reader's side: hold a handle only inside :meth:`holding`, check
@@ -150,6 +150,7 @@ class RenameCoordinator:
         self.__locations: list[ReferenceType[ResourceLocation]] = []
         self.__listeners: list[Callable[[Relocation], None]] = []
         self.__yield_listeners: list[Callable[[], None]] = []
+        self.__before_listeners: list[Callable[[Path], None]] = []
 
     def track(self, path: Path) -> ResourceLocation:
         """Start following ``path`` across renames.
@@ -225,6 +226,28 @@ class RenameCoordinator:
             if listener in self.__yield_listeners:
                 self.__yield_listeners.remove(listener)
 
+    def add_before_rename_listener(self, listener: Callable[[Path], None]) -> None:
+        """Be told, before a rename waits for anything, which resource it is about to move.
+
+        For a holder that must let go of one resource's files and no other's -- a video player stops playing the
+        video of the resource being renamed, and leaves the others alone. Unlike a yield listener it is told
+        which, and it is called ahead of the yield flag.
+
+        :param listener: called with the resource's ``.rehu`` path, on whichever thread asked for the rename,
+            with no lock held. **Must not block on a reader.** An exception is logged and the rename goes on.
+        """
+        with self.__condition:
+            self.__before_listeners.append(listener)
+
+    def remove_before_rename_listener(self, listener: Callable[[Path], None]) -> None:
+        """Stop being told a rename is about to start; tolerant the same way :meth:`remove_rename_listener` is.
+
+        :param listener: the callable to drop.
+        """
+        with self.__condition:
+            if listener in self.__before_listeners:
+                self.__before_listeners.remove(listener)
+
     @property
     def yield_wanted(self) -> bool:
         """Whether a rename is waiting for readers to let go.
@@ -292,6 +315,13 @@ class RenameCoordinator:
             a plain name, a missing ``.rehu``, an occupied destination, a failure part-way through.
         """
         with self.__renaming:
+            with self.__condition:
+                before = tuple(self.__before_listeners)
+            for listener in before:
+                try:
+                    listener(path)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    LOG.exception("A before-rename listener failed; its files may block this rename.")
             self.__step_out_of(path)
             self.__wait_for_readers(timeout)
             try:

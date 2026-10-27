@@ -17,6 +17,7 @@ from typing import Any, Final
 
 from .constants import EXCLUDED_FILE_PATTERNS, VIDEO_EXTENSIONS
 from .content_keys import content_key, content_path, is_valid_content_key
+from .natural_sort import natural_path_sort_key
 from .plugins import DEFAULT_CURRENT_USERNAME, DEFAULT_PLUGIN_REGISTRY, TUTORIAL_PLUGIN, PluginRegistry
 from .record_merge import merge_write
 from .rehu_content_duration import DURATION_KEY, VideoFacts, content_video_files, finite_seconds
@@ -36,6 +37,9 @@ POSITION_KEY: Final = "position"
 
 VIEWED_KEY: Final = "viewed"
 """*Watched to the end at least once* -- a progress entry's flag, and the tutorial's own per-user flag."""
+
+LAST_VIDEO_KEY: Final = "last_video"
+"""A user's key holding the content key of the video they watched last: where the player opens the tutorial."""
 
 SIZE_KEY: Final = "size"
 """A progress entry's key holding the file's size in bytes when it was last played -- what tells its renamed self
@@ -165,6 +169,38 @@ def read_progress(document: RehuDocument, username: str) -> dict[str, ProgressEn
     return {key: ProgressEntry.from_stored(value) for key, value in raw.items() if isinstance(value, dict)}
 
 
+def read_last_video(document: RehuDocument, username: str) -> str | None:
+    """Read the video ``username`` watched last.
+
+    :param document: the record.
+    :param username: whose.
+    :returns: its content key, or ``None`` when none is recorded or the stored value is not a key.
+    """
+    value = document.user_field(username, LAST_VIDEO_KEY)
+    return value if isinstance(value, str) and value else None
+
+
+def tutorial_video_keys(
+    rehu_path: Path,
+    *,
+    video_extensions: tuple[str, ...] = VIDEO_EXTENSIONS,
+    excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+) -> list[str]:
+    """List every video of a tutorial, in every folder, in the order a player plays them.
+
+    Natural order by path, component by component, so a folder's videos stay together and ``2`` comes before
+    ``10``.
+
+    :param rehu_path: the tutorial's record.
+    :param video_extensions: what counts as a video.
+    :param excluded_patterns: filename globs the walk leaves out.
+    :returns: each video's content key.
+    :raises ContentUnreachableError: some directory under the resource would not list.
+    """
+    files = content_video_files(rehu_path, video_extensions=video_extensions, excluded_patterns=excluded_patterns)
+    return sorted((content_key(rehu_path, file) for file in files), key=natural_path_sort_key)
+
+
 def set_progress_entry(document: RehuDocument, username: str, key: str, entry: ProgressEntry | None) -> None:
     """Replace one of ``username``'s progress entries, leaving the others as stored.
 
@@ -210,7 +246,8 @@ def record_progress(  # pylint: disable=too-many-arguments
     ([[field-schema#watch-progress]]).
 
     A :func:`~rehuco_core.record_merge.merge_write` replacing ``users.<username>.progress.<relative>`` only, plus
-    the tutorial's own ``viewed`` when the second rule fires, without stamping ``updated``. An explicit ``viewed``
+    the tutorial's own ``viewed`` when the second rule fires, and ``last_video`` when ``viewed`` is left to the
+    rules -- a player's write -- without stamping ``updated``. An explicit ``viewed``
     (the checkbox) is stored as given; otherwise the stored flag stands, and is set when ``rules`` say so and the
     position reached the end of the ``videos`` length, else of ``duration``. When the file's flag turns on and
     ``rules`` say so, the tutorial's is set if every video on disk and every missing file with an entry is viewed.
@@ -263,6 +300,9 @@ def record_progress(  # pylint: disable=too-many-arguments
         kept_size = size if size is not None else (old.size if old is not None else None)
         entry = ProgressEntry(float(position), kept_duration, now_viewed, kept_size)
         set_progress_entry(document, username, relative, entry)
+        if viewed is None:
+            # a player's write, not a tick of *Viewed*: this is the video they watched last
+            document.set_user_field(username, LAST_VIDEO_KEY, relative)
         written.append(entry)
         if now_viewed and not was_viewed and rules.mark_tutorial_viewed_on_last_file:
             if every_file_viewed(document, path, username, video_extensions, excluded_patterns):

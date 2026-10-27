@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PlayerView</class>
+ <widget class="QWidget" name="PlayerView">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>400</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="MessageBanner" name="notice_banner" native="true"/>
+   </item>
+   <item>
+    <widget class="ElidedLabel" name="title_label">
+     <property name="margin">
+      <number>4</number>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="surface_stack">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+       <horstretch>0</horstretch>
+       <verstretch>1</verstretch>
+      </sizepolicy>
+     </property>
+     <widget class="QVideoWidget" name="video_widget" native="true"/>
+     <widget class="VideoStill" name="still_widget" native="true"/>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="controls_layout">
+     <property name="spacing">
+      <number>2</number>
+     </property>
+     <property name="leftMargin">
+      <number>4</number>
+     </property>
+     <property name="topMargin">
+      <number>2</number>
+     </property>
+     <property name="rightMargin">
+      <number>4</number>
+     </property>
+     <property name="bottomMargin">
+      <number>2</number>
+     </property>
+     <item>
+      <widget class="QToolButton" name="previous_button">
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="autoRaise">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QToolButton" name="back_button">
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="autoRaise">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QToolButton" name="play_pause_button">
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="autoRaise">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QToolButton" name="forward_button">
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="autoRaise">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QToolButton" name="next_button">
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="autoRaise">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSlider" name="position_slider">
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="singleStep">
+        <number>5000</number>
+       </property>
+       <property name="pageStep">
+        <number>30000</number>
+       </property>
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="time_label">
+       <property name="text">
+        <string notr="true">0:00 / 0:00</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="speed_combo">
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="toolTip">
+        <string>Playback speed.</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+  </layout>
+  <action name="play_pause_action">
+   <property name="text">
+    <string>Play</string>
+   </property>
+   <property name="toolTip">
+    <string>Play or pause the video.</string>
+   </property>
+  </action>
+  <action name="back_action">
+   <property name="text">
+    <string>Back</string>
+   </property>
+   <property name="toolTip">
+    <string>Jump 5 seconds back.</string>
+   </property>
+  </action>
+  <action name="forward_action">
+   <property name="text">
+    <string>Forward</string>
+   </property>
+   <property name="toolTip">
+    <string>Jump 5 seconds forward.</string>
+   </property>
+  </action>
+  <action name="previous_action">
+   <property name="text">
+    <string>Previous</string>
+   </property>
+   <property name="toolTip">
+    <string>Play the previous video of the folder.</string>
+   </property>
+  </action>
+  <action name="next_action">
+   <property name="text">
+    <string>Next</string>
+   </property>
+   <property name="toolTip">
+    <string>Play the next video of the folder.</string>
+   </property>
+  </action>
+  <action name="to_start_action">
+   <property name="text">
+    <string>To the start</string>
+   </property>
+   <property name="toolTip">
+    <string>Move to the start of the video.</string>
+   </property>
+  </action>
+  <action name="to_end_action">
+   <property name="text">
+    <string>To the end</string>
+   </property>
+   <property name="toolTip">
+    <string>Finish the video: mark it watched and load the next one.</string>
+   </property>
+  </action>
+  <action name="volume_up_action">
+   <property name="text">
+    <string>Volume up</string>
+   </property>
+  </action>
+  <action name="volume_down_action">
+   <property name="text">
+    <string>Volume down</string>
+   </property>
+  </action>
+  <action name="speed_up_action">
+   <property name="text">
+    <string>Faster</string>
+   </property>
+  </action>
+  <action name="speed_down_action">
+   <property name="text">
+    <string>Slower</string>
+   </property>
+  </action>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MessageBanner</class>
+   <extends>QWidget</extends>
+   <header>borco_pyside.widgets</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ElidedLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>VideoStill</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.documents.video_still</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>QVideoWidget</class>
+   <extends>QWidget</extends>
+   <header>PySide6.QtMultimediaWidgets</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

@@ -793,24 +793,95 @@ def test_a_document_with_no_queue_leaves_the_checksum_row_inert(qtbot: QtBot, vi
     assert view.directory == DIRECTORY
 
 
-def test_anything_else_goes_to_the_systems_default_handler(view: FilesView, mocker: MockerFixture) -> None:
-    """The only sensible thing to do with a video, and the one route that does not involve this app
-    pretending to open it.
+def test_anything_else_goes_to_the_systems_default_handler(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The only sensible thing to do with a file this app has no surface for, and the one route that does not
+    involve this app pretending to open it.
 
     **Test steps:**
 
-    * activate a content row that is not an image
+    * list a content row that is neither an image nor a video of the tutorial
+    * activate it
     * verify the file's URL was handed to the desktop services
     """
+    mocker.patch.dict(
+        TREE, {DIRECTORY: (*ROOT_ENTRIES, DirectoryEntry("notes.pdf", FileKind.CONTENT, FileType.GENERIC))}
+    )
     opened = mocker.patch.object(QDesktopServices, "openUrl")
+    view = FilesView(model)
+    qtbot.addWidget(view)
+    view.show()
+    settle(qtbot, view)
 
-    view.activate(row_of(view, "lesson01.mp4"))
+    view.activate(row_of(view, "notes.pdf"))
 
     # compared as a Path, not as text: QUrl spells a local file with forward slashes on every platform
     url = opened.call_args.args[0]
     assert isinstance(url, QUrl)
     # pylint cannot see past the patched signal to the QUrl the isinstance above has just established
-    assert Path(url.toLocalFile()) == DIRECTORY / "lesson01.mp4"  # pylint: disable=no-member
+    assert Path(url.toLocalFile()) == DIRECTORY / "notes.pdf"  # pylint: disable=no-member
+
+
+def test_a_tutorials_video_is_reported_by_its_key_alone(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The player plays through the whole tutorial, so a double-click names the video and nothing else (#317).
+
+    **Test steps:**
+
+    * list two videos beside a subfolder and an image
+    * activate one
+    * verify the signal carries its key alone
+    * verify nothing was handed to the desktop services
+    """
+    mocker.patch.dict(
+        TREE,
+        {
+            DIRECTORY: (
+                *ROOT_ENTRIES,
+                DirectoryEntry("lesson10.mp4", FileKind.CONTENT, FileType.VIDEO),
+                DirectoryEntry("lesson02.mp4", FileKind.CONTENT, FileType.VIDEO),
+            )
+        },
+    )
+    opened = mocker.patch.object(QDesktopServices, "openUrl")
+    view = FilesView(model)
+    qtbot.addWidget(view)
+    view.show()
+    settle(qtbot, view)
+
+    with qtbot.waitSignal(view.video_activated) as activation:
+        view.activate(row_of(view, "lesson02.mp4"))
+
+    assert activation.args == ["lesson02.mp4"]
+    opened.assert_not_called()
+
+
+def test_a_video_of_a_resource_that_records_no_progress_goes_to_the_systems_default_handler(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """Only a tutorial has a player and a progress to resume from: another type's video opens as any file does.
+
+    **Test steps:**
+
+    * browse a resource of no type that lists a video
+    * activate the video
+    * verify the desktop services opened it, and no video was reported
+    """
+    opened = mocker.patch.object(QDesktopServices, "openUrl")
+    untyped = RehuDocumentModel(RehuDocument({}, INFO_PATH))
+    view = FilesView(untyped)
+    qtbot.addWidget(view)
+    view.show()
+    settle(qtbot, view)
+    reported: list[object] = []
+    view.video_activated.connect(lambda *args: reported.append(args))
+
+    view.activate(row_of(view, "lesson01.mp4"))
+
+    assert not reported
+    opened.assert_called_once()
 
 
 def test_a_disabled_row_cannot_be_activated(view: FilesView, mocker: MockerFixture) -> None:

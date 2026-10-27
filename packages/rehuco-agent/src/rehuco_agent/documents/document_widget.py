@@ -235,6 +235,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """See :meth:`DocumentSubDocks.detach`; called by `DocumentsDock` as the document is closed."""
         self.__sub_docks.detach()
 
+    def stop_playback(self) -> None:
+        """See :meth:`DocumentSubDocks.stop_playback`."""
+        self.__sub_docks.stop_playback()
+
     def toggle_action(self, tab: FieldsTab) -> QAction:
         """See :meth:`DocumentSubDocks.toggle_action`.
 

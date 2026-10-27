@@ -104,6 +104,10 @@ the `make_singleton` fixture (an explicit `DeferredDelete` flush at teardown); s
 for the
 mechanism. No CI-config change was needed for it beyond the library installs already described.
 
+One more joined the set with the in-app player (#317): **`libpulse0`**, which `Qt6Multimedia` links, so that
+`import PySide6.QtMultimedia` — which the tests do, through the document's player dock — fails on a runner without
+it. It is installed with the others in the setup action, and in the release workflow's Linux job.
+
 ## 4. One shell for all three runners
 
 [[[appendices.continuous-integration#cross-platform-shell]]]
@@ -202,8 +206,11 @@ hand-type it" requirement) and, on a tag push, fails the whole run if the tag's 
 file's — the one guard rail keeping a stray tag from shipping the wrong artifact. `build-windows` and
 `build-macos` are each one `make agent-dist-package` call (uis/icons already come along via the Makefile's
 own prerequisite graph, [[appendices.briefcase-packaging#build-and-iterate]]) plus a `--version` smoke
-check against the *built* exe/app bundle, no installer step needed to prove it starts.
-`build-linux-appimage` is `make agent-appimage-build` plus three smoke checks: `--version` first (cheap,
+check against the *built* exe/app bundle, no installer step needed to prove it starts, and a `--check-playback` one:
+the Makefile prunes `PySide6-Addons` to what playback needs before it packages, and a bundle pruned too far builds,
+installs and starts, so this plays a 3 KB clip through the built bundle's own Qt Multimedia and exits 0 only if a
+picture arrived and the position moved ([[packaging-deployment#qt-multimedia]], #317).
+`build-linux-appimage` is `make agent-appimage-build` plus four smoke checks: `--version` first (cheap,
 but proves only that the interpreter and entry point start — it returns before `rehuco_agent.app` is ever
 imported, so it says nothing about Qt), then the AppImage under `QT_QPA_PLATFORM=offscreen
 --appimage-extract-and-run` inside a bare `ubuntu:24.04` Docker container via `ci/verify-agent-appimage.sh`
@@ -213,7 +220,9 @@ qa.yml's own set**: `libgl1 libegl1 libxkbcommon0` ([[appendices.continuous-inte
 is sufficient on `ubuntu-latest` only because that runner's much larger preinstalled image already carries
 `libglib2.0-0`/`libfontconfig1`/`libdbus-1-3`/`libgssapi-krb5-2` as some other package's transitive
 dependency; a genuinely bare `ubuntu:24.04` container does not, and each was missing one `ImportError` at a
-time (QtCore itself, then QtGui twice over, then `pyside6-qtads`) until all seven were listed. Then
+time (QtCore itself, then QtGui twice over, then `pyside6-qtads`) until all seven were listed — and an eighth,
+`libpulse0`, once the document's player imported Qt Multimedia at start-up (#317). Then the AppImage plays the same
+clip, unpruned, and then
 `--register`/`--unregister` with `HOME` redirected to a scratch directory, confirming `Exec=` resolves to
 the AppImage's own path per #209's design. All three upload their
 artifact regardless of trigger; only the final `release` job (`needs` all four, `if:

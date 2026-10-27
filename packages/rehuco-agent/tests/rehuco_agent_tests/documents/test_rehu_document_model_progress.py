@@ -14,6 +14,7 @@ import shiboken6
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents.progress_writer import ProgressWriter
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import (
     ProgressEntry,
@@ -540,6 +541,85 @@ def test_lengths_posted_after_the_model_is_gone_end_quietly(tmp_path: Path, open
     shiboken6.delete(model)
 
     model.post_measured_videos(key, {"a.mp4": VideoFacts(1.0)})
+
+
+# endregion
+
+
+def test_waiting_for_the_progress_writes_asks_the_writer_to_be_idle(
+    mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
+) -> None:
+    """What quitting waits on is the writer's thread, so the model passes the question and its answer through (#317).
+
+    **Test steps:**
+
+    * make the writer say it did not go idle in time
+    * ask the model to wait for its progress writes
+    * verify the writer was asked for the same time and the model gave its answer
+    """
+    wait = mocker.patch.object(ProgressWriter, "wait_until_idle", return_value=False)
+    model = delete_at_teardown(RehuDocumentModel(RehuDocument({"type": "Tutorial"})))
+
+    assert model.wait_for_progress_writes(1.5) is False
+
+    wait.assert_called_once_with(1.5)
+
+
+# endregion
+
+# region the video watched last
+
+
+def test_the_last_video_is_what_a_player_recorded_last_and_survives_a_reopen(
+    tmp_path: Path, open_model: OpenModel
+) -> None:
+    """**Test steps:**
+
+    * open a tutorial that has no last video, and record progress on two videos as a player does
+    * verify the last video is the second, at once and in the user's sidecar
+    * open the record again and verify it still reads the second
+    """
+    path = write_tutorial(tmp_path / "t")
+    model = open_model(path)
+    assert model.last_video() is None
+
+    model.record_progress("a.mp4", 5.0, 100.0)
+    model.record_progress("b.mp4", 7.0, 100.0)
+
+    assert model.last_video() == "b.mp4"
+    assert open_model(path).last_video() == "b.mp4"
+
+
+def test_the_last_video_is_this_sessions_own_while_its_write_has_not_landed(
+    tmp_path: Path, open_model: OpenModel, records: Records, mocker: MockerFixture
+) -> None:
+    """**Test steps:**
+
+    * record progress on a video while the records' write raises ``OSError``
+    * verify the last video is that one, from this session, though the sidecar holds nothing
+    """
+    path = write_tutorial(tmp_path / "t")
+    model = open_model(path)
+    mocker.patch.object(records, "record_progress", side_effect=OSError(53, "The network path was not found"))
+
+    model.record_progress("a.mp4", 5.0, 100.0)
+
+    assert model.last_video() == "a.mp4"
+
+
+def test_ticking_viewed_by_hand_leaves_the_last_video_alone(tmp_path: Path, open_model: OpenModel) -> None:
+    """**Test steps:**
+
+    * record progress on one video, then tick another viewed by hand
+    * verify the last video is still the first
+    """
+    path = write_tutorial(tmp_path / "t")
+    model = open_model(path)
+    model.record_progress("a.mp4", 5.0, 100.0)
+
+    model.record_progress("b.mp4", 0.0, 100.0, viewed=True)
+
+    assert model.last_video() == "a.mp4"
 
 
 # endregion

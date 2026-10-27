@@ -24,13 +24,14 @@ runs:
       run: choco install make --no-progress -y
 
     # libgl1/libegl1/libxkbcommon0: Qt6Gui must load under QT_QPA_PLATFORM=offscreen, for pyside6-uic/-rcc as well as
-    # the tests -- [[appendices.continuous-integration#missing-qt-libs]].
+    # the tests -- [[appendices.continuous-integration#missing-qt-libs]]. libpulse0: Qt6Multimedia links it, and the
+    # tests import the in-app player (#317).
     - name: Install the Qt runtime libraries (Linux)
       if: inputs.qt == 'true' && runner.os == 'Linux'
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y libgl1 libegl1 libxkbcommon0
+        sudo apt-get install -y libgl1 libegl1 libxkbcommon0 libpulse0
 
     - name: Install dependencies
       shell: bash

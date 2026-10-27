@@ -11,6 +11,7 @@ from pytest import approx, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_REHUSER_VERSION,
+    LAST_VIDEO_KEY,
     ContentUnreachableError,
     ProgressEntry,
     RehuDocument,
@@ -21,12 +22,14 @@ from rehuco_core import (
     forget_progress,
     merge_write,
     missing_progress_keys,
+    read_last_video,
     read_progress,
     read_videos,
     record_progress,
     record_videos,
     set_progress_entry,
     set_videos,
+    tutorial_video_keys,
     user_sidecar_path,
     user_sidecar_paths,
     watch_totals,
@@ -123,6 +126,7 @@ def test_a_progress_write_replaces_only_its_own_entry(tmp_path: Path, freezer: F
     assert users_of(path) == {
         "admin": {
             "rating": 4,
+            "last_video": "a.mp4",
             "progress": {
                 "a.mp4": {"position": 12.5, "duration": 100.0, "size": 0, "viewed": False},
                 "b.mp4": {"position": 5.0, "viewed": False},
@@ -146,8 +150,14 @@ def test_progress_is_recorded_under_the_username_given(tmp_path: Path) -> None:
     record_progress(path, "bob", "a.mp4", 2.0, 10.0)
 
     assert users_of(path) == {
-        "alice": {"progress": {"a.mp4": {"position": 1.0, "duration": 10.0, "size": 0, "viewed": False}}},
-        "bob": {"progress": {"a.mp4": {"position": 2.0, "duration": 10.0, "size": 0, "viewed": False}}},
+        "alice": {
+            "last_video": "a.mp4",
+            "progress": {"a.mp4": {"position": 1.0, "duration": 10.0, "size": 0, "viewed": False}},
+        },
+        "bob": {
+            "last_video": "a.mp4",
+            "progress": {"a.mp4": {"position": 2.0, "duration": 10.0, "size": 0, "viewed": False}},
+        },
     }
 
 
@@ -171,7 +181,10 @@ def test_a_progress_write_never_hands_the_owners_legacy_flags_to_another_user(tm
 
     assert users_of(path) == {
         "owner": {"rating": 4, "viewed": True},
-        "bob": {"progress": {"a.mp4": {"position": 1.0, "duration": 10.0, "size": 0, "viewed": False}}},
+        "bob": {
+            "last_video": "a.mp4",
+            "progress": {"a.mp4": {"position": 1.0, "duration": 10.0, "size": 0, "viewed": False}},
+        },
     }
 
 
@@ -211,7 +224,11 @@ def test_a_standalone_records_progress_is_keyed_without_its_stem(tmp_path: Path)
     record_progress(path, "admin", ".mp4", 60.0, 60.0)
 
     assert users_of(path) == {
-        "admin": {"progress": {".mp4": {"position": 60.0, "duration": 60.0, "size": 0, "viewed": True}}, "viewed": True}
+        "admin": {
+            "last_video": ".mp4",
+            "progress": {".mp4": {"position": 60.0, "duration": 60.0, "size": 0, "viewed": True}},
+            "viewed": True,
+        }
     }
 
 
@@ -381,7 +398,8 @@ def test_with_the_setting_off_the_tutorial_is_left_alone(tmp_path: Path) -> None
     record_progress(path, "admin", "a.mp4", 10.0, 10.0, rules=rules)
 
     assert users_of(path)["admin"] == {
-        "progress": {"a.mp4": {"position": 10.0, "duration": 10.0, "size": 0, "viewed": True}}
+        "last_video": "a.mp4",
+        "progress": {"a.mp4": {"position": 10.0, "duration": 10.0, "size": 0, "viewed": True}},
     }
 
 
@@ -837,6 +855,140 @@ def test_forgetting_removes_a_stored_key_that_is_not_a_content_key(tmp_path: Pat
     assert forget_progress(path, "admin", "../a.mp4") is True
 
     assert not users_of(path)
+
+
+# endregion
+
+
+# region last_video -- the video a user watched last
+def test_a_players_write_records_the_video_as_the_one_watched_last(tmp_path: Path) -> None:
+    """**Test steps:**
+
+    * record progress on one video and then on another, as a player does
+    * verify the user's last video is the second
+    """
+    path = make_tutorial(tmp_path / "t", ["a.mp4", "b.mp4"])
+
+    record_progress(path, "owner", "a.mp4", 5.0, 100.0)
+    record_progress(path, "owner", "b.mp4", 7.0, 100.0)
+
+    assert users_of(path)["owner"][LAST_VIDEO_KEY] == "b.mp4"
+    assert read_last_video(RehuDocument.load(path), "owner") == "b.mp4"
+
+
+def test_ticking_viewed_by_hand_does_not_make_the_video_the_last_watched(tmp_path: Path) -> None:
+    """Ticking *Viewed* in the Files panel says nothing about what was watched last.
+
+    **Test steps:**
+
+    * record progress on one video, then tick another viewed by hand
+    * verify the last video is still the first
+    """
+    path = make_tutorial(tmp_path / "t", ["a.mp4", "b.mp4"])
+    record_progress(path, "owner", "a.mp4", 5.0, 100.0)
+
+    record_progress(path, "owner", "b.mp4", 0.0, 100.0, viewed=True)
+
+    assert read_last_video(RehuDocument.load(path), "owner") == "a.mp4"
+
+
+def test_each_user_has_a_last_video_of_their_own(tmp_path: Path) -> None:
+    """**Test steps:**
+
+    * record progress for two users on different videos
+    * verify each reads their own
+    """
+    path = make_tutorial(tmp_path / "t", ["a.mp4", "b.mp4"])
+
+    record_progress(path, "owner", "a.mp4", 5.0, 100.0)
+    record_progress(path, "guest", "b.mp4", 5.0, 100.0)
+
+    document = RehuDocument.load(path)
+    assert read_last_video(document, "owner") == "a.mp4"
+    assert read_last_video(document, "guest") == "b.mp4"
+
+
+@mark.parametrize("stored", [None, "", 5, ["a.mp4"], {"a": 1}], ids=repr)
+def test_a_last_video_that_is_not_a_key_reads_as_none(tmp_path: Path, stored: object) -> None:
+    """**Test steps:**
+
+    * write a record whose last video is missing, empty or not a string
+    * verify it reads as none
+    """
+    users = {"owner": {} if stored is None else {LAST_VIDEO_KEY: stored}}
+    path = make_tutorial(tmp_path / "t", ["a.mp4"], block={"users": users})
+
+    assert read_last_video(RehuDocument.load(path), "owner") is None
+
+
+# endregion
+
+
+# region tutorial_video_keys -- every video, in play order
+def test_the_tutorials_videos_are_listed_in_natural_order_across_folders(tmp_path: Path) -> None:
+    """A folder's videos stay together, ``2`` comes before ``10``, and a file beside a folder sorts by its own name.
+
+    **Test steps:**
+
+    * make a tutorial with videos in the root and two nested folders, and other files
+    * verify only the videos are listed, as content keys, in natural path order
+    """
+    path = make_tutorial(
+        tmp_path / "t",
+        [
+            "10 Last.mp4",
+            "2 Next/x.mp4",
+            "1 Intro/b2.mkv",
+            "1 Intro/b10.mkv",
+            "1 Intro/notes.txt",
+            "1 Intro/a.mp4",
+        ],
+    )
+
+    assert tutorial_video_keys(path) == [
+        "1 Intro/a.mp4",
+        "1 Intro/b2.mkv",
+        "1 Intro/b10.mkv",
+        "2 Next/x.mp4",
+        "10 Last.mp4",
+    ]
+
+
+def test_a_tutorial_with_no_videos_lists_none(tmp_path: Path) -> None:
+    """**Test steps:**
+
+    * list a tutorial of one text file
+    * verify nothing is listed
+    """
+    path = make_tutorial(tmp_path / "t", ["notes.txt"])
+
+    assert tutorial_video_keys(path) == []
+
+
+def test_the_extensions_and_exclusions_decide_what_a_video_is(tmp_path: Path) -> None:
+    """**Test steps:**
+
+    * list with a custom extension set and an exclusion pattern
+    * verify only what the extensions name and the pattern spares is listed
+    """
+    path = make_tutorial(tmp_path / "t", ["a.mp4", "b.xyz", "skip.xyz"])
+
+    assert tutorial_video_keys(path, video_extensions=(".xyz",), excluded_patterns=("skip.*",)) == ["b.xyz"]
+
+
+def test_a_directory_that_will_not_list_is_an_error_not_a_short_list(tmp_path: Path, mocker: MockerFixture) -> None:
+    """A playlist missing a folder's videos would be a wrong one: the unreachable listing is raised.
+
+    **Test steps:**
+
+    * make a tutorial whose content walk reports an unreachable directory
+    * verify listing it raises
+    """
+    path = make_tutorial(tmp_path / "t", ["a.mp4"])
+    mocker.patch("rehuco_core.watch_progress.content_video_files", side_effect=ContentUnreachableError("share gone"))
+
+    with raises(ContentUnreachableError):
+        tutorial_video_keys(path)
 
 
 # endregion

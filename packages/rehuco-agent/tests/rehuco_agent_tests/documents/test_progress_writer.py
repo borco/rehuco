@@ -167,3 +167,45 @@ def test_an_answer_nobody_waits_for_is_dropped(writer: ProgressWriter) -> None:
     * verify nothing happens
     """
     writer._ProgressWriter__on_answered(12345, None)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_waiting_until_idle_returns_at_once_when_nothing_was_submitted(writer: ProgressWriter) -> None:
+    """**Test steps:**
+
+    * ask an idle writer to wait
+    * verify it answers that it is idle
+    """
+    assert writer.wait_until_idle(WAIT_MS / 1000) is True
+
+
+def test_waiting_until_idle_waits_for_the_write_in_progress_and_the_ones_behind_it(
+    qtbot: QtBot, writer: ProgressWriter
+) -> None:
+    """What quitting waits for: the daemon thread is left behind, so a write it is in the middle of would be lost.
+
+    **Test steps:**
+
+    * submit a write that holds the thread, and another behind it
+    * wait for a short while and verify the writer is not idle
+    * let the first finish and wait again
+    * verify the writer is idle and both writes ran
+    """
+    del qtbot
+    release = threading.Event()
+    started = threading.Event()
+    ran: list[str] = []
+
+    def holding() -> None:
+        started.set()
+        release.wait(WAIT_MS / 1000)
+        ran.append("holding")
+
+    writer.submit(("hold",), holding, lambda _outcome: None)
+    assert started.wait(WAIT_MS / 1000)
+    writer.submit(("behind",), lambda: ran.append("behind"), lambda _outcome: None)
+
+    assert writer.wait_until_idle(0.05) is False
+    release.set()
+
+    assert writer.wait_until_idle(WAIT_MS / 1000) is True
+    assert ran == ["holding", "behind"]

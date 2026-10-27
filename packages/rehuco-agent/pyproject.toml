@@ -27,6 +27,9 @@ dependencies = [
     "borco-pyside>=0.3.0",
     # Essentials, not the `PySide6` meta-package -- see the note in borco-pyside's pyproject.toml.
     "PySide6-Essentials>=6.9",
+    # Only for Qt Multimedia (the in-app player, #317): the `agent-dist-*` build prunes this wheel to the ~20 MB
+    # playback needs ([[plugins#in-app-player]]); naming the `PySide6` meta-package instead would ship all of it.
+    "PySide6-Addons>=6.9",
     # >=5.0.0.2: rationale in borco-pyside's pyproject.toml, which owns the `QtAdsFocusTracker` code
     # that breaks on the yanked 5.0.0.1. Repeated here so the app's own resolve is protected even if
     # that dependency is ever relaxed.
@@ -36,8 +39,8 @@ dependencies = [
     "humanize>=4.16.0",
     "unidecode>=1.4.0",
     "pathvalidate>=3.3.1",
-    # >=5.6.3.7 is the floor that keeps Addons out: earlier releases require the `PySide6`
-    # meta-package, so an older resolve would drag Addons back in through this one dependency.
+    # >=5.6.3.7 is the floor that keeps the `PySide6` meta-package out: earlier releases require it, so an older
+    # resolve would drag every Qt module back in through this one dependency.
     "pyside6-scintilla>=5.6.3.7",
     "markdown>=3.7",
     "markdownify>=1.2.0",

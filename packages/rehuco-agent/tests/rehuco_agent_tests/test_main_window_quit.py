@@ -5,7 +5,8 @@ from PySide6.QtWidgets import QApplication
 from pytest import mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.main_window import MainWindow
+from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.main_window import PLAYBACK_WRITE_TIMEOUT, MainWindow
 from rehuco_agent.node_host import NodeHost
 
 from rehuco_agent_tests.test_main_window import browsers_dock_widget, float_open_settings_dock
@@ -91,3 +92,46 @@ def test_an_accepted_close_stops_the_node_before_anything_else_is_torn_down(
     window.closeEvent(QCloseEvent())
 
     assert order == ["stop", "detach"]
+
+
+def test_an_accepted_close_stops_the_players_and_waits_for_what_they_recorded(
+    mocker: MockerFixture, qtbot: QtBot, real_path_stat: None
+) -> None:
+    """A video still playing as the app quits is stopped where it is, and the progress it recorded is written before
+    the process goes: the thread that writes it is a daemon (#317).
+
+    **Test steps:**
+
+    * build the window and spy on the Documents dock's ``stop_playback``
+    * deliver an accepted close
+    * verify it was called once, with the time quitting allows for the writes
+    """
+    del real_path_stat
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(QApplication, "quit")
+    stop_playback = mocker.patch.object(DocumentsDock, "stop_playback")
+
+    window.closeEvent(QCloseEvent())
+
+    stop_playback.assert_called_once_with(PLAYBACK_WRITE_TIMEOUT)
+
+
+def test_a_refused_close_leaves_the_players_playing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Stopping a video is part of going, not of being asked: a close the dirty-document guard refuses leaves it
+    playing (#317).
+
+    **Test steps:**
+
+    * build the window, make the dirty-document guard refuse, and spy on ``stop_playback``
+    * deliver a close
+    * verify nothing was stopped
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch("rehuco_agent.main_window.confirm_and_save_dirty", return_value=False)
+    stop_playback = mocker.patch.object(DocumentsDock, "stop_playback")
+
+    window.closeEvent(QCloseEvent())
+
+    stop_playback.assert_not_called()

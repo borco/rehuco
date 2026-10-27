@@ -45,6 +45,7 @@ from rehuco_core import (
     payload_changes,
     put_paths,
     reached_end,
+    read_last_video,
     read_progress,
     read_videos,
     rehu_rename_conflict,
@@ -539,7 +540,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     ([[acquisition-tooling#tc-to-rehu]])."""
 
     # what a holder hands a model it builds: the document, and where it came from and how to reach it again
-    def __init__(  # pylint: disable=too-many-arguments
+    def __init__(  # pylint: disable=too-many-arguments,too-many-statements
         self,
         document: RehuDocument,
         parent: QObject | None = None,
@@ -561,6 +562,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__overlay: Final[dict[str, ProgressEntry]] = {}
         """The progress entries recorded in this session that no landed write has taken in yet -- shown at once, and
         the only home of those the record cannot hold (#316)."""
+        self.__last_video_overlay: str | None = None
+        """The video a player recorded last in this session, until a landed write takes it in: what :meth:`last_video`
+        answers over the record's own."""
         self.__read_serial = 0
         """Counts the reads asked for: an answer carrying an older count is for a read this model moved on from."""
         self.__read_out: RehuDocumentModel.OutstandingRead | None = None
@@ -1538,6 +1542,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         return self.progress_entries().get(relative)
 
+    def last_video(self) -> str | None:
+        """The video this user watched last: this session's own, over what the record holds.
+
+        :returns: its content key, or ``None`` when none was ever recorded.
+        """
+        if self.__last_video_overlay is not None:
+            return self.__last_video_overlay
+        return read_last_video(self.__document, self.__document.username)
+
     def measured_videos(self) -> dict[str, VideoFacts]:
         """The lengths a Measure wrote into the record, by content key.
 
@@ -1572,6 +1585,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             else was_viewed or (rules.mark_file_viewed_at_end and reached_end(position, length))
         )
         kept_duration = duration if duration is not None else (old.duration if old is not None else None)
+        if viewed is None:
+            self.__last_video_overlay = relative
         self.__overlay[relative] = ProgressEntry(  # pylint: disable=unsupported-assignment-operation
             float(position), kept_duration, now_viewed, old.size if old else None
         )
@@ -1669,6 +1684,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def watches_progress(self) -> bool:
         """Whether this document is one whose videos' watching is tracked: a tutorial."""
         return self.__document.active_block_key == TUTORIAL_PLUGIN.key
+
+    def wait_for_progress_writes(self, timeout: float) -> bool:
+        """Wait for the progress and lengths handed to the writer's thread to be written -- what quitting does, since
+        that thread is a daemon the process does not wait for.
+
+        :param timeout: the longest to wait, in seconds.
+        :returns: whether everything was written in time.
+        """
+        return self.__writer.wait_until_idle(timeout)
 
     def __write_progress(
         self, relative: str, position: float, duration: float | None, viewed: bool | None
@@ -1805,6 +1829,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__base_data = copy.deepcopy(record.document.data)
         self.__disk_signature = record.signature
         self.__overlay.clear()
+        self.__last_video_overlay = None
         with self.__seeding_guard():
             self.__seed_active_block_fields()
         self.progress_changed.emit()
@@ -1846,6 +1871,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         record holds is the answer -- and of the reason it was not saved."""
         if self.__overlay:
             self.__overlay.clear()
+        self.__last_video_overlay = None
         self.progress_unsaved = ""
         self.progress_changed.emit()
 

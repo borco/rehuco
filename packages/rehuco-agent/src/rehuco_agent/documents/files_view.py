@@ -162,6 +162,14 @@ class FilesView(QWidget):
     same owner-routed activation the viewer's own strip uses, with a different set: **the folder's**,
     curation ignored."""
 
+    video_activated: Signal = Signal(str)
+    """Emitted with the content key of a tutorial's video row that is double-clicked (#317).
+
+    It names the video and nothing else: the player plays through the whole tutorial, not the folder browsed, so a
+    double-click only says which video to jump to. The same owner-routed activation as :attr:`images_activated` -- the
+    browser knows what a file *is*, and the document decides what plays it. Other videos -- those of a resource that
+    records no progress -- still open in the system's player."""
+
     def __init__(
         self,
         model: RehuDocumentModel,
@@ -519,6 +527,8 @@ class FilesView(QWidget):
         elif row.kind is FileKind.OWN_MANIFEST:
             if self.__verify is not None:
                 self.__verify()
+        elif row.key is not None:
+            self.video_activated.emit(row.key)
         elif row.path.suffix.lower() in IMAGE_EXTENSIONS:
             self.images_activated.emit(self.__folder_images(), row.path)
         else:

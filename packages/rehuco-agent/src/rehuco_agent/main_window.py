@@ -244,6 +244,10 @@ Counts rather than names the jobs: the reason a prompt is owed is the *kind* of 
 below it spell out, and a label list would grow unbounded on the bulk enqueue this is most likely to
 follow."""
 
+PLAYBACK_WRITE_TIMEOUT: Final = 2.0
+"""How long quitting waits, in seconds, for the progress a stopped video recorded to be written (#317): as long as a
+write inside the rename barrier may wait for holders, so a share gone silent cannot hold the quit up."""
+
 THEME_DEFAULT_ICON: Final = ":/icons/theme_auto.svg"
 """Shown for the follow-system theme mode (``Qt.ColorScheme.Unknown``) -- on the toolbar's
 3-state cycling action (:class:`~borco_pyside.theming.ThemeManager`) and the ``View`` menu's
@@ -1929,6 +1933,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if not self.__confirm_task_queue_loss():
             event.ignore()
             return
+
+        # every guard has passed, so a video still playing is stopped where it is and what it recorded is written
+        # before the process goes: the thread that writes it is a daemon (#317)
+        self.__documents_dock.stop_playback(PLAYBACK_WRITE_TIMEOUT)
 
         if session_restore.keep_unsaved_changes:
             self.__unsaved_changes.keep(self.__documents_dock.open_document_widgets())

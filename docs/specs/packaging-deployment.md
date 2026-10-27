@@ -485,7 +485,8 @@ existing environment *breaks* `PySide6-Essentials`, because the two wheels share
 (`uv sync --reinstall-package pyside6-essentials` repairs it; a fresh venv never sees it). The upstream half of the fix is
 [borco/pyside6-scintilla#14](https://github.com/borco/pyside6-scintilla/issues/14), released as 5.6.3.7. The AppImage
 (#210) therefore inherits the smaller payload instead of baking the old one in, which is what made this worth doing
-first rather than treating the artifact size as fixed.
+first rather than treating the artifact size as fixed. The in-app player (#317) brings about 21 MB of the wheel
+back, on purpose and pruned to what playback needs ([[packaging-deployment#qt-multimedia]]).
 
 **The same measurement, applied before the fact: the video-duration probe (#224).** Nothing in the tree could read a
 video container, and the candidates differ by more than an order of magnitude in what they add to every artifact —
@@ -509,6 +510,71 @@ alternative for a machine that already has FFmpeg rather than the fallback for o
 cautionary entry: it is the smallest and the only one needing no binary at all, and it silently answers *no duration*
 for MPEG-TS and VOB — two containers on tc4's own extension list — which is exactly the silent-zero failure the probe
 contract refuses.
+
+### §16.8.3 Qt Multimedia in the bundle
+
+[[[packaging-deployment#qt-multimedia]]]
+
+- [#317: feat: in-app video player dock — Qt Multimedia surface, transport bar, keyboard, folder playlist, resume](https://github.com/borco/rehuco/issues/317)
+
+The in-app player ([[plugins#in-app-player]]) plays through Qt Multimedia, which lives in `PySide6-Addons` — the wheel
+[[packaging-deployment#channels]] cut from every artifact. So the agent names it again, `PySide6-Addons` and never the
+`PySide6` meta-package, and the build keeps only what playback needs of it.
+
+**The prune.** `tools/prune_pyside_addons.py` runs on the bundle's `app_packages` between `briefcase build`, which
+installs the wheel, and `briefcase package`, which wraps the bundle: `make agent-dist-build` and
+`make agent-dist-package` both do it, on Windows and macOS. It removes every file the Addons wheel's `RECORD` names,
+except a keep list and except what `PySide6-Essentials` owns too — 64 files in 6.11, `PySide6/__init__.py` among them.
+That is why a remove list, which is all Briefcase's own `cleanup_paths` can be, was not the tool: it would have to
+name every module, and a module a later release adds would ship. Here it is removed without anyone listing it. The keep
+list is regular expressions per platform, because the FFmpeg libraries carry their major version in their names and it
+moves with PySide6 (`avcodec-61` in 6.11, `avcodec-63` in 6.12); a pattern that matches nothing fails the build rather
+than ship a player that cannot play.
+
+Measured against the real wheels' `RECORD`, with the files `PySide6-Essentials` owns left out of both columns:
+
+| PySide6 | Platform | Addons wheel | Kept |
+| --- | --- | --- | --- |
+| 6.11.1 | Windows | 458 MB | 21.5 MB |
+| 6.12.0 | Windows | 105 MB | 22.7 MB |
+| 6.11.1 | Linux | 438 MB | 23.1 MB |
+| 6.12.0 | Linux | 160 MB | 24.4 MB |
+| 6.11.1 | macOS | 884 MB | 43.5 MB |
+| 6.12.0 | macOS | 251 MB | 46.0 MB |
+
+The macOS wheel is universal2, so every binary holds both architectures. On a real Windows build (6.12.0) the bundle's
+`app_packages` went from **424 MB to 343 MB**, and the installer is 118 MB.
+
+**Four things found only by running it**, none of them visible in the wheels' file lists:
+
+- **The bundle takes PySide6 from PyPI, not from `uv.lock`.** Briefcase pip-installs `PySide6-Essentials>=6.9` and got
+  6.12.0 while the lock holds 6.11.1, so the FFmpeg libraries a bundle carries are not the ones a developer's venv has.
+- **The wheels hold each FFmpeg library two or three times**, flattened out of their symlinks — on Linux
+  `libavcodec.so`, `libavcodec.so.63` and `libavcodec.so.63.1.101`, 15 MB each. Nothing loads the unversioned and the
+  full-version copies, so the macOS and Linux lists keep the SONAME only. Keeping them all made the Linux figure 62 MB
+  and the macOS one 80 MB.
+- **The Linux FFmpeg plugin needs `libQt6FFmpegStub-va-x11.so.2`**, which a first pattern missed for the digit in its
+  name: the plugin silently failed to load (`Failed to create QVideoSink`) and the clip showed nothing.
+- **`import PySide6.QtMultimedia` needs the system library `libpulse.so.0` on Linux**, which `Qt6Multimedia` links. The
+  document's player dock imports it, so this is a start-up dependency, not a playback one: the agent does not start
+  without it. `libpulse0` joins the package floor of the bare-container check (`ci/verify-agent-appimage.sh`,
+  [[packaging-deployment#linux-format]]) and of the CI and release workflows' Qt libraries.
+
+**The smoke test.** A bundle pruned too far builds, installs and starts, and fails only when a reader opens a video, so
+the release workflow plays one. `rehuco-agent --check-playback CLIP`, a flag left out of `--help`, plays the clip into
+a video sink with no window and no sound, and exits 0 only once a picture has arrived and the position has moved,
+within ten seconds. The clip is `ci/playback-check.mp4`, three kilobytes of H.264. The workflow runs it on the built
+Windows exe and macOS app and on the AppImage, beside `--version`. It was shown able to fail: with the FFmpeg plugin
+hidden from the built Windows bundle it exits 1, and with it restored, 0.
+
+**What was verified, and what was not.** Windows: built, pruned, packaged, and the built exe plays the clip. Linux: in a
+clean venv of 6.12.0 the prune took 403 MB to 270 MB and the clip played before and after. macOS: not run. The keep list
+matches the real wheels' `RECORD` for 6.11.1 and 6.12.0, and the load commands of the ten kept binaries, read out of
+the wheel, name nothing outside the keep list, `PySide6-Essentials`, `shiboken6` and the system; the first release dry
+run is the proof. **The AppImage is not pruned:** python-appimage installs the wheels and builds the image in one
+step, so it carries the whole Addons wheel, and cutting it is a step that image build does not have a place for.
+
+A development environment installs the whole wheel too, 437 MB of it in 6.11.1; only a bundle is pruned.
 
 ## §16.9 Auto-update
 
