@@ -25,8 +25,8 @@ from rehuco_agent.documents.checksum_rows import (
     ChecksumTableModel,
     ModelIndex,
 )
+from rehuco_agent.documents.file_row import FileChecksumState
 from rehuco_agent.documents.files_row_delegate import CHECKSUM_COLUMN_WIDTH, ICON_SIZE, TEXT_PADDING
-from rehuco_agent.documents.files_rows import FileChecksumState
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
 

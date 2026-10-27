@@ -24,9 +24,8 @@ one ``scandir`` and one small JSON read, neither of which is slow and either of 
 share timeout when the mount is away.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, override
 
@@ -47,29 +46,30 @@ from rehuco_core import (
     TRUST_NOT_TRACKED,
     ChecksumEntry,
     ChecksumRecordError,
+    ContentUnreachableError,
     DirectoryClassifier,
     DirectoryEntry,
     FileKind,
     FileType,
     Relocation,
     checksum_record_path,
+    content_key,
+    content_path,
+    content_video_files,
     is_checksum_fresh,
+    is_valid_content_key,
     load_checksum_record,
+    missing_progress_keys,
     natural_sort_key,
     parse_checksum_entry,
 )
 
 from ..fields.widgets import SizeMeasurementEdit
+from .file_row import PARENT_ROW_NAME, FileChecksumState, FileRow, FilesRows
+from .files_progress import FilesProgress, RowProgress
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
-
-PARENT_ROW_NAME: Final = ".."
-"""What the row leading out of a subdirectory is called.
-
-The shell's own spelling, and deliberately not a *Go up* button only: a reader who has walked into a
-subdirectory looks for it in the listing, and the toolbar's up action is the same act reachable from
-somewhere else."""
 
 NAME_COLUMN: Final = 0
 CHECKSUM_COLUMN: Final = 1
@@ -88,47 +88,6 @@ task queue's State column makes (#248)."""
 DATE_FORMAT: Final = "%Y-%m-%d %H:%M"
 """How a modification time is drawn: **local time**, to the minute -- the same spelling the checksum
 table's *Checked* column uses, since the two sit side by side in one document's docks."""
-
-
-class FileChecksumState(StrEnum):
-    """What this resource's record says about one file, as the column draws it (#266).
-
-    Resolved during the read so nothing downstream reasons about recorded statuses: the record's
-    vocabulary is [[data-model#checksums]]', and a surface that re-read it would be a second place for
-    *what counts as verified* to be decided.
-    """
-
-    NONE = "none"
-    """Nothing to say: the record itself, a sidecar, a directory, or content another record covers.
-    Drawn as an **empty cell** -- there is no claim here, which is different from a claim of ignorance."""
-
-    MISSING = "missing"
-    """Content this record holds no hash for -- whether because the resource has no ``.checksum`` at all,
-    because that record skips this file, or because it lists the file with no hash (the ``unexpected`` an
-    older build wrote, #467). Deliberately one state rather than three: all are *nothing is recorded about
-    these bytes*, and the remedy for all is the same generate."""
-
-    OK = "ok"
-    """Hashed, matched, and checked recently enough that a *Verify Old* would skip it."""
-
-    BAD = "bad"
-    """Hashed recently and **did not** match."""
-
-    OLD_OK = "old_ok"
-    """Matched when it was last checked, but that was long enough ago that a check would run again."""
-
-    OLD_BAD = "old_bad"
-    """Did not match when it was last checked, and is equally due a re-check. The pair with
-    :data:`OLD_OK` is what makes the column say *a fresh check would tell you something* rather than
-    conflating never-checked with checked-long-ago."""
-
-    MALFORMED = "malformed"
-    """The entry's hash sits under a key this build cannot read (#303). Distinct from
-    :data:`MISSING` and ``mismatched``: this build has made **no claim at all** about the bytes and never
-    re-hashes them -- drawing it as a mismatch would assert a check that never happened, and drawing it
-    as :data:`MISSING` would invite a generate that overwrites a neighbour's entry. Never actually
-    written by this build ([[data-model#checksums]]), so an entry resting here came from elsewhere.
-    Carries no ``verified`` stamp either, so there is no ``old_`` pair."""
 
 
 MALFORMED_STATUS: Final = "malformed"
@@ -202,6 +161,9 @@ Plain phrases rather than the enum's own names: the column is read by someone lo
 folder, and *other resource's* covers a neighbour's screenshot and a neighbour's content alike, because
 the only thing this resource has to say about either is that it is not its."""
 
+MISSING_KIND_LABEL: Final = "missing"
+"""What the Kind column says of a video whose file is gone and whose progress is kept (#316)."""
+
 INTERACTIVE_KINDS: Final = frozenset(
     {
         FileKind.OWN_SCREENSHOT,
@@ -222,81 +184,6 @@ speak for: its screenshots are curated in *its* images dock and its content is c
 checksums, so there is nothing here to do with either but see that it is there. A
 :data:`~FileKind.DIRECTORY` is decided per listing rather than per kind
 (:attr:`FilesRows.subdirectories_navigable`), which is why it is absent too."""
-
-
-# a row's data, one field per cell plus the two answers a cell is not -- where it points and whether it
-# can be acted on; there is no grouping of these that is not just a smaller bag inside a row
-@dataclass(frozen=True, slots=True)
-class FileRow:  # pylint: disable=too-many-instance-attributes
-    """One entry of the browsed directory, as the table shows it (#266).
-
-    :param name: the entry's file name, or :data:`PARENT_ROW_NAME` for the row leading out.
-    :param path: where it points -- the entry itself, or the parent directory for the ``..`` row.
-    :param kind: what it is to this resource.
-    :param file_type: what it is by shape, which picks its glyph.
-    :param checksum_state: what this resource's record says about it.
-    :param untrusted_location: whether an :data:`~FileChecksumState.OLD_OK`/:data:`~FileChecksumState.OLD_BAD`
-        ``checksum_state`` is old because of this record's *location* rather than the check's age (#358).
-    :param size: its size in bytes, or ``None`` for a directory and for an entry that would not
-        ``stat``.
-    :param modified: when it last changed, or ``None`` for the same reasons.
-    :param enabled: whether a reader can act on this row at all. Held rather than recomputed from
-        ``kind``, because a directory's answer is the *listing*'s (#254).
-    """
-
-    name: str
-    path: Path
-    kind: FileKind
-    file_type: FileType
-    checksum_state: FileChecksumState = FileChecksumState.NONE
-    untrusted_location: bool = False
-    size: int | None = None
-    modified: float | None = None
-    enabled: bool = True
-
-    @property
-    def is_directory(self) -> bool:
-        """Whether activating this row walks into a directory -- a subdirectory, or ``..``."""
-        return self.kind is FileKind.DIRECTORY
-
-    @property
-    def is_parent(self) -> bool:
-        """Whether this is the synthesized ``..`` row rather than something in the folder.
-
-        Asked here rather than compared at each place that cares -- the Kind cell, the sort group and
-        the glyph the delegate picks -- so the identity of the way-out row is decided once."""
-        return self.name == PARENT_ROW_NAME
-
-
-@dataclass(frozen=True, slots=True)
-class FilesRows:
-    """What one read of one directory established (#266).
-
-    :param directory: the directory that was read.
-    :param rows: its rows, unsorted -- the view sorts, and a read that imposed an order would fight it.
-    :param reachable: whether the directory listed at all. **Empty and away are not the same answer**
-        (#245): drawing an empty table over an offline mount
-        ([[mounts-and-storage#offline-mounts]]) would say this resource's folder is empty.
-    :param at_root: whether this is the resource's own directory, which is as far up as the browser
-        goes -- what hides the ``..`` row and greys the up action.
-    :param subdirectories_navigable: whether the subdirectories here may be entered. ``False`` where a
-        *foreign* directory-scoped record sits in this listing: everything beside it is that resource's
-        wholesale (#254), so the way in is to open that record, which is exactly the row offered.
-    :param foreign_record: the name of the foreign directory-scoped record covering this directory, or
-        ``""``. What :attr:`subdirectories_navigable` is ``False`` *because of*, so the surface can name
-        it rather than guessing at which of several foreign records owns the folders.
-    :param record_error: why this resource's ``.checksum`` could not be read, when that is what
-        happened. The listing is still drawn -- the folder is the folder -- with every checksum cell
-        blank, which is honest: this build knows nothing about any of them.
-    """
-
-    directory: Path
-    rows: tuple[FileRow, ...] = ()
-    reachable: bool = True
-    at_root: bool = True
-    subdirectories_navigable: bool = True
-    foreign_record: str = ""
-    record_error: str = ""
 
 
 def checksum_state_for(
@@ -473,6 +360,8 @@ class FilesRowsReader:
         caller the way every other core call takes them.
     :param stale_after: the staleness window a checksum run would use, so *fresh* here means what it
         means there.
+    :param video_extensions: what counts as a video, to list the resource's videos for watch progress (#316); ``None``
+        for a document with none to track, which lists nothing it was not asked to.
     """
 
     def __init__(
@@ -480,8 +369,11 @@ class FilesRowsReader:
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
         stale_after: timedelta,
+        video_extensions: tuple[str, ...] | None = None,
     ) -> None:
         self.__rehu_path: Final = rehu_path
+        self.__excluded_patterns: Final = excluded_patterns
+        self.__video_extensions: Final = video_extensions
         self.__stale_after: Final = stale_after
         self.__classifier: Final = DirectoryClassifier(rehu_path, excluded_patterns)
 
@@ -519,6 +411,7 @@ class FilesRowsReader:
                 )
             )
         rows.extend(self.__row_for(entry, directory, root, states, navigable=navigable) for entry in listing.entries)
+        video_keys = self.__video_keys()
         return FilesRows(
             directory,
             rows=tuple(rows),
@@ -526,11 +419,41 @@ class FilesRowsReader:
             subdirectories_navigable=navigable,
             foreign_record=listing.foreign_directory_record or "",
             record_error=states.error,
+            video_keys=video_keys,
         )
 
-    @staticmethod
+    def __video_keys(self) -> tuple[str, ...] | None:
+        """List the resource's videos, for the shares and the missing entries that are judged against them.
+
+        :returns: the content key of every video on disk at any depth; ``None`` when no extensions were given, or a
+            folder under the resource would not list -- a total over files nobody could count is not claimed.
+        """
+        extensions = self.__video_extensions
+        if extensions is None:
+            return None
+        try:
+            files = content_video_files(
+                self.__rehu_path, video_extensions=extensions, excluded_patterns=self.__excluded_patterns
+            )
+        except ContentUnreachableError:
+            return None
+        return tuple(content_key(self.__rehu_path, file) for file in files)
+
+    def __video_key(self, entry: DirectoryEntry, path: Path) -> str | None:
+        """The content key a listed entry's progress is filed under.
+
+        :param entry: the classified entry.
+        :param path: where it is.
+        :returns: its key when it is one of the resource's videos -- content the classifier has already placed in the
+            resource -- else ``None``.
+        """
+        extensions = self.__video_extensions
+        if extensions is None or entry.kind is not FileKind.CONTENT or path.suffix.lower() not in extensions:
+            return None
+        return content_key(self.__rehu_path, path)
+
     def __row_for(
-        entry: DirectoryEntry, directory: Path, root: Path, states: FileChecksumStates, *, navigable: bool
+        self, entry: DirectoryEntry, directory: Path, root: Path, states: FileChecksumStates, *, navigable: bool
     ) -> FileRow:
         """Turn one classified entry into a row.
 
@@ -553,7 +476,38 @@ class FilesRowsReader:
             size=entry.size,
             modified=entry.modified,
             enabled=navigable if entry.is_directory else entry.kind in INTERACTIVE_KINDS,
+            key=self.__video_key(entry, path),
         )
+
+
+def missing_rows(record: Path, directory: Path, progress: FilesProgress) -> tuple[FileRow, ...]:
+    """The rows of the videos in ``directory`` that are gone and have progress kept ([[field-schema#watch-progress]],
+    #316) -- what the user forgets by hand.
+
+    :param record: the resource's record, which a key is resolved against.
+    :param directory: the folder shown.
+    :param progress: the user's progress, with the videos on disk.
+    :returns: one row per missing video the folder held, none when the videos on disk are not known.
+    """
+    if progress.video_keys is None:
+        return ()
+    rows: list[FileRow] = []
+    for key in missing_progress_keys(progress.video_keys, progress.entries):
+        if not is_valid_content_key(record, key):
+            continue
+        file = content_path(record, key)
+        if file.parent == directory:
+            rows.append(
+                FileRow(
+                    name=file.name,
+                    path=file,
+                    kind=FileKind.CONTENT,
+                    file_type=FileType.VIDEO,
+                    key=key,
+                    missing=True,
+                )
+            )
+    return tuple(rows)
 
 
 class FilesRowsLoader(QObject):
@@ -648,9 +602,14 @@ class FilesTableModel(QAbstractTableModel):
     """The whole :class:`FileRow`, for the delegate that draws its glyphs and the view that activates
     it -- so neither has to map an index back through the proxy to ask what a row is."""
 
+    PROGRESS_ROLE: Final = Qt.ItemDataRole.UserRole + 2
+    """What the row ends with (:class:`~rehuco_agent.documents.files_progress.RowProgress`), or ``None`` where it
+    says nothing about watching (#316)."""
+
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__rows: Final[list[FileRow]] = []
+        self.__progress: FilesProgress | None = None
 
     def set_rows(self, rows: tuple[FileRow, ...]) -> None:
         """Show ``rows``, changing only what differs from what is shown.
@@ -670,6 +629,21 @@ class FilesTableModel(QAbstractTableModel):
             self.beginInsertRows(QModelIndex(), start, start + len(added) - 1)
             self.__rows.extend(added)
             self.endInsertRows()
+
+    def set_progress(self, progress: FilesProgress | None) -> None:
+        """Show what one user has watched at the end of the rows, redrawing them only when it changed (#316).
+
+        :param progress: the user's progress and the videos on disk, or ``None`` for a document with none to track.
+        """
+        if progress == self.__progress:
+            return
+        self.__progress = progress
+        if self.__rows:
+            self.dataChanged.emit(
+                self.index(0, NAME_COLUMN),
+                self.index(len(self.__rows) - 1, NAME_COLUMN),
+                [FilesTableModel.PROGRESS_ROLE, Qt.ItemDataRole.ToolTipRole],
+            )
 
     def relocate(self, relocation: Relocation) -> None:
         """Rename in place every row a rename moved, keeping each one's identity -- its selection with it.
@@ -760,13 +734,38 @@ class FilesTableModel(QAbstractTableModel):
         row = self.__rows[index.row()]
         if role == FilesTableModel.ROW_ROLE:
             return row
+        if role == FilesTableModel.PROGRESS_ROLE:
+            return self.__row_progress(row)
+        return self.__text_role(row, index.column(), role)
+
+    def __text_role(self, row: FileRow, column: int, role: int) -> Any:
+        """What one cell says for the roles that draw or sort it.
+
+        :param row: the cell's row.
+        :param column: its column.
+        :param role: what is being asked for.
+        :returns: the display text, the sort key or the tooltip; ``None`` for any other role.
+        """
         if role == Qt.ItemDataRole.DisplayRole:
-            return FilesTableModel.__display(row, index.column())
+            return FilesTableModel.__display(row, column)
         if role == FilesTableModel.SORT_ROLE:
-            return FilesTableModel.__sort_key(row, index.column())
+            return FilesTableModel.__sort_key(row, column)
         if role == Qt.ItemDataRole.ToolTipRole:
-            return FilesTableModel.__tooltip(row, index.column())
+            return self.__tooltip(row, column)
         return None
+
+    def __row_progress(self, row: FileRow) -> RowProgress | None:
+        """What one row ends with.
+
+        :param row: the row.
+        :returns: its percentage and checkbox, or ``None`` where watching has nothing to say of it.
+        """
+        progress = self.__progress
+        if progress is None or row.is_parent:
+            return None
+        if row.is_directory:
+            return progress.for_folder(row.path)
+        return None if row.key is None else progress.for_video(row.key, missing=row.missing)
 
     @staticmethod
     def __display(row: FileRow, column: int) -> str:
@@ -782,7 +781,7 @@ class FilesTableModel(QAbstractTableModel):
         if column == NAME_COLUMN:
             return row.name
         if column == KIND_COLUMN:
-            return "" if row.is_parent else KIND_LABELS[row.kind]
+            return "" if row.is_parent else FilesTableModel.__kind_label(row)
         if column == SIZE_COLUMN:
             return SizeMeasurementEdit.format(row.size)
         if column == MODIFIED_COLUMN:
@@ -806,7 +805,7 @@ class FilesTableModel(QAbstractTableModel):
         """
         group = 0 if row.is_parent else (1 if row.is_directory else 2)
         if column == KIND_COLUMN:
-            return group, KIND_LABELS[row.kind], natural_sort_key(row.name)
+            return group, FilesTableModel.__kind_label(row), natural_sort_key(row.name)
         if column == CHECKSUM_COLUMN:
             return group, row.checksum_state.value, natural_sort_key(row.name)
         if column == SIZE_COLUMN:
@@ -816,8 +815,17 @@ class FilesTableModel(QAbstractTableModel):
         return group, natural_sort_key(row.name)
 
     @staticmethod
-    def __tooltip(row: FileRow, column: int) -> str | None:
-        """One cell's tooltip -- the glyphs' meanings, and the full path everywhere else.
+    def __kind_label(row: FileRow) -> str:
+        """What the Kind column says of a row.
+
+        :param row: the row.
+        :returns: its kind's phrase, or :data:`MISSING_KIND_LABEL` for a video whose file is gone.
+        """
+        return MISSING_KIND_LABEL if row.missing else KIND_LABELS[row.kind]
+
+    def __tooltip(self, row: FileRow, column: int) -> str | None:
+        """One cell's tooltip -- the glyphs' meanings, and the full path everywhere else, with what watching says of
+        the row under the name (#316).
 
         :param row: the row.
         :param column: which column.
@@ -825,6 +833,9 @@ class FilesTableModel(QAbstractTableModel):
         """
         if column == CHECKSUM_COLUMN:
             return checksum_tooltip_for(row.checksum_state, row.untrusted_location)
+        progress = self.__row_progress(row) if column == NAME_COLUMN else None
+        if progress is not None and progress.tooltip:
+            return f"{row.path}\n{progress.tooltip}"
         return str(row.path)
 
     @override

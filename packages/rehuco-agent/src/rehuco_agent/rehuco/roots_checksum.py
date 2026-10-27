@@ -19,11 +19,8 @@ from typing import Final
 from PySide6.QtGui import QColor
 from rehuco_core import CoveredFile, FileKind
 
-from ..documents.files_rows import (
-    OLD_CHECKSUM_STATES,
-    FileChecksumState,
-    checksum_verdict_for,
-)
+from ..documents.file_row import FileChecksumState
+from ..documents.files_rows import OLD_CHECKSUM_STATES, checksum_verdict_for
 
 BOOKKEEPING_KINDS: Final = frozenset(
     {

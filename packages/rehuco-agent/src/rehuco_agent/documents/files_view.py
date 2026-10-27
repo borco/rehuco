@@ -29,6 +29,14 @@ do are each routed out of here rather than done here:
 Anything else is handed to the system's default handler, which is the only sensible thing to do with a
 video or a PDF and the one route that does not involve this app pretending to open it.
 
+**A video's row ends with what its user has watched** ([[field-schema#watch-progress]], #316): a percentage, and a
+folder's, the share of every video beneath it. The videos whose files are gone but whose progress is kept are listed in
+the folder they were in. What can be done to the selected row -- toggle *Viewed* on a video, *Forget* a missing one --
+is on its context menu and on the toolbar behind a separator, each shown only where it applies. The lengths the shares
+are weighed by come from the main editor's duration Compute, or from a player recording the file's length as it plays.
+All of it is the document model's -- this view reads it and asks it to record -- and it redraws when the model says
+progress changed, from what it already read, never from the disk.
+
 **It refreshes when shown, on demand, and when the app itself changes the files it shows -- never in
 between.** The dock starts hidden, and a listing is
 a filesystem round trip on a share ([[packaging-deployment#ts230-as-nas]]), so a document that is open
@@ -41,11 +49,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final, override
 
+from borco_pyside.core import ConnectionList
 from borco_pyside.file_browser import reveal_in_file_browser
 from borco_pyside.theming import ActionIconThemeHandler
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt, QUrl, Signal
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QShowEvent
-from PySide6.QtWidgets import QHeaderView, QToolBar, QToolButton, QWidget
+from PySide6.QtWidgets import QHeaderView, QMenu, QToolBar, QToolButton, QWidget
 from rehuco_core import IMAGE_EXTENSIONS, FileKind, Relocation
 from rehuco_core.access import KeyRelocation, ResourceKey
 
@@ -53,6 +62,9 @@ from ..commands import REFRESH_FILES, shared_command_registry
 from ..resource_events import ResourceEvents
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
+from ..settings.videos_settings import shared_videos_settings
+from .file_row import FileRow, FilesRows
+from .files_progress import FilesProgress
 from .files_row_delegate import CHECKSUM_COLUMN_WIDTH, FilesRowDelegate
 from .files_rows import (
     CHECKSUM_COLUMN,
@@ -60,17 +72,17 @@ from .files_rows import (
     MODIFIED_COLUMN,
     NAME_COLUMN,
     SIZE_COLUMN,
-    FileRow,
-    FilesRows,
     FilesRowsLoader,
     FilesRowsReader,
     FilesSortProxy,
     FilesTableModel,
+    missing_rows,
 )
 from .files_view_ui import Ui_FilesView
 from .rehu_document_model import RehuDocumentModel
 
 REFRESH_ICON_RESOURCE: Final = ":/icons/refresh.svg"
+FORGET_ICON_RESOURCE: Final = ":/icons/items_delete.svg"
 HOME_ICON_RESOURCE: Final = ":/icons/file_browser_home.svg"
 UP_ICON_RESOURCE: Final = ":/icons/file_browser_folder_parent.svg"
 """The up action wears the **parent-folder** glyph, which is also the ``..`` row's: the two are one act
@@ -170,6 +182,8 @@ class FilesView(QWidget):
         self.__shown: Path | None = None
         """The folder the table last drew, so a read of a different one -- navigation -- starts at the top while
         a read of the same one keeps the reader's place."""
+        self.__read: FilesRows | None = None
+        """What the last read established, kept so a change of progress redraws without reading again."""
 
         self.__ui: Final = Ui_FilesView()
         self.__ui.setupUi(self)
@@ -191,13 +205,21 @@ class FilesView(QWidget):
         self.__loader: Final = FilesRowsLoader(self)
         self.__loader.loaded.connect(self.__show)
 
-        self.__setup_toolbar()
+        self.__row_separator: Final = self.__setup_toolbar()
         self.__ui.file_view.doubleClicked.connect(self.__on_double_clicked)
+        self.__ui.file_view.selectionModel().selectionChanged.connect(self.__update_row_actions)
+        self.__ui.file_view.customContextMenuRequested.connect(self.__on_context_menu)
         model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
+        self.__model_connections: Final = ConnectionList()
+        self.__model_connections.connect(model.progress_changed, self.__apply_progress)
+        # whether the videos carry their keys is decided by the record's type: an open lists the folder before its
+        # placeholder is read, and a type switch changes it, so the listing is read again then (#316)
+        self.__model_connections.connect(model.active_block_changed, self.refresh)
         self.__events.moved.connect(self.__on_moved)
         self.__events.changed.connect(self.__on_files_changed)
         self.__events.folder_changed.connect(self.__on_folder_changed)
         self.__events.root_stale.connect(self.refresh)
+        self.__update_row_actions()
         self.__reset_to_root()
 
     def detach(self) -> None:
@@ -209,6 +231,7 @@ class FilesView(QWidget):
         so its connections go here as well.
         """
         self.__model.path_changed.disconnect(self.__on_path_changed)  # type: ignore[attr-defined]
+        self.__model_connections.clear()
         self.__events.moved.disconnect(self.__on_moved)
         self.__events.changed.disconnect(self.__on_files_changed)
         self.__events.folder_changed.disconnect(self.__on_folder_changed)
@@ -233,6 +256,8 @@ class FilesView(QWidget):
         directory = self.__directory
         if path is None or directory is None:
             self.__shown = None
+            self.__read = None
+            self.__rows.set_progress(None)
             self.__rows.set_rows(())
             self.__ui.path_label.setText("")
             self.__ui.summary_label.setText(NO_PATH_SUMMARY)
@@ -242,8 +267,11 @@ class FilesView(QWidget):
             path,
             shared_excluded_files_settings().excluded_file_patterns,
             shared_checksum_settings().stale_after,
+            shared_videos_settings().video_extensions if self.__model.watches_progress else None,
         )
         self.__loader.start(reader, directory)
+        # a renamed video takes its progress with it as the files are listed (#411); a no-op where nothing moved
+        self.__model.reattach_renamed_progress()
 
     @override
     def showEvent(self, event: QShowEvent) -> None:
@@ -263,12 +291,33 @@ class FilesView(QWidget):
         self.__directory = rows.directory
         navigated = rows.directory != self.__shown
         self.__shown = rows.directory
-        self.__rows.set_rows(rows.rows)
+        self.__read = rows
+        self.__apply_progress()
         if navigated:
             self.__ui.file_view.clearSelection()
             self.__ui.file_view.scrollToTop()
         self.__ui.path_label.setText(self.__relative_label(rows.directory))
         self.__ui.summary_label.setText(FilesView.__summary(rows))
+
+    def __apply_progress(self, *_args: object) -> None:
+        """Draw the last read with what its user has watched: a percentage on each video and folder, and the videos
+        that are gone with their progress kept (#316) -- from what was already read, never from the disk.
+
+        :param _args: whatever the triggering signal carried; unused.
+        """
+        rows = self.__read
+        if rows is None:
+            return
+        path = self.__model.path
+        progress = None
+        if path is not None and self.__model.watches_progress:
+            progress = FilesProgress(
+                path.parent, self.__model.progress_entries(), self.__model.measured_videos(), rows.video_keys
+            )
+        self.__rows.set_progress(progress)
+        gone = () if path is None or progress is None else missing_rows(path, rows.directory, progress)
+        self.__rows.set_rows((*rows.rows, *gone))
+        self.__update_row_actions()
 
     def __set_navigable(self, below_root: bool) -> None:
         """Offer Home and Up exactly while there is somewhere to go.
@@ -460,6 +509,9 @@ class FilesView(QWidget):
         row = index.data(FilesTableModel.ROW_ROLE)
         if not isinstance(row, FileRow):  # pragma: no cover -- only this view's own model reaches here
             return
+        if row.missing:
+            # no file to open: the row is only there for its progress to be forgotten
+            return
         if row.is_directory:
             self.__go_to(row.path)
         elif row.kind is FileKind.FOREIGN_RECORD:
@@ -503,13 +555,15 @@ class FilesView(QWidget):
 
     # region This dock's own actions
 
-    def __setup_toolbar(self) -> None:
-        """Put the three navigation actions on the dock's own toolbar."""
+    def __setup_toolbar(self) -> QAction:
+        """Put the dock's own actions on its toolbar: the ones that navigate, then -- behind a separator, and only while
+        the selected row has them -- *Viewed* and *Forget*."""
         ui = self.__ui
         for action, icon in (
             (ui.home_action, HOME_ICON_RESOURCE),
             (ui.up_action, UP_ICON_RESOURCE),
             (ui.refresh_action, REFRESH_ICON_RESOURCE),
+            (ui.forget_action, FORGET_ICON_RESOURCE),
         ):
             ActionIconThemeHandler(action, icon)
         # scoped to this widget's own subtree: every open document has a browser of its own (`REFRESH_FILES`)
@@ -519,6 +573,8 @@ class FilesView(QWidget):
         ui.up_action.triggered.connect(self.__on_up_triggered)
         ui.home_action.triggered.connect(self.__reset_to_root)
         ui.reveal_action.triggered.connect(self.__on_reveal_triggered)
+        ui.viewed_action.triggered.connect(self.__on_viewed_triggered)
+        ui.forget_action.triggered.connect(self.__on_forget_triggered)
 
         toolbar = QToolBar(self)
         # home first: leftmost is the longest jump, and the two are enabled and disabled together
@@ -526,17 +582,94 @@ class FilesView(QWidget):
         toolbar.addAction(ui.up_action)
         toolbar.addAction(ui.refresh_action)
         toolbar.addAction(ui.reveal_action)
+        row_separator = toolbar.addSeparator()
+        toolbar.addAction(ui.viewed_action)
+        toolbar.addAction(ui.forget_action)
         # no glyph of its own yet (design/icons#314); text keeps it visible until one is drawn
         reveal_button = toolbar.widgetForAction(ui.reveal_action)
-        if isinstance(reveal_button, QToolButton):  # pragma: no cover  (a QToolBar always builds one)
-            reveal_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        viewed_button = toolbar.widgetForAction(ui.viewed_action)
+        for button in (reveal_button, viewed_button):
+            if isinstance(button, QToolButton):  # pragma: no cover  (a QToolBar always builds one)
+                button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         ui.main_layout.insertWidget(0, toolbar)
+        return row_separator
 
     def __on_reveal_triggered(self) -> None:
         """Show the browsed folder in the system's file browser -- a no-op for a document with no local path,
         where the action is disabled anyway."""
         if self.__directory is not None:  # pragma: no cover  (a disabled action's trigger() is a no-op)
             reveal_in_file_browser(self.__directory)
+
+    # endregion
+
+    # region The selected row's actions (#316)
+
+    def __selected_row(self) -> FileRow | None:
+        """The selected row.
+
+        :returns: the row, or ``None`` when nothing is selected.
+        """
+        indexes = self.__ui.file_view.selectionModel().selectedRows()
+        row = indexes[0].data(FilesTableModel.ROW_ROLE) if indexes else None
+        return row if isinstance(row, FileRow) else None
+
+    def __update_row_actions(self, *_args: object) -> None:
+        """Show what can be done to the selected row, and nothing else: *Viewed*, ticked as the video is, on a video of
+        the resource -- present or missing -- and *Forget* on a missing one. The separator before them shows with them.
+
+        :param _args: whatever the triggering signal carried; unused.
+        """
+        ui = self.__ui
+        row = self.__selected_row()
+        key = None if row is None else row.key
+        ui.viewed_action.setVisible(key is not None)
+        if key is not None:
+            entry = self.__model.progress_of(key)
+            ui.viewed_action.setChecked(entry is not None and entry.viewed)
+        ui.forget_action.setVisible(row is not None and row.missing)
+        self.__row_separator.setVisible(ui.viewed_action.isVisible() or ui.forget_action.isVisible())
+
+    def __on_context_menu(self, position: QPoint) -> None:
+        """Offer the actions of the row under the cursor: it is selected first, so the menu and the toolbar speak of the
+        same row. No menu opens for a row that has none.
+
+        :param position: where the click landed, in the viewport's coordinates.
+        """
+        view = self.__ui.file_view
+        index = view.indexAt(position)
+        if index.isValid():
+            view.selectRow(index.row())
+        self.__update_row_actions()
+        actions = [action for action in (self.__ui.viewed_action, self.__ui.forget_action) if action.isVisible()]
+        if not actions:
+            return
+        menu = QMenu(self)
+        try:
+            menu.addActions(actions)
+            menu.exec(view.viewport().mapToGlobal(position))
+        finally:
+            menu.deleteLater()
+
+    def __on_viewed_triggered(self, viewed: bool) -> None:
+        """Record the selected video's *viewed* flag as the action now says, keeping the position it was left at.
+
+        :param viewed: the new state.
+        """
+        row = self.__selected_row()
+        if row is None or row.key is None:  # pragma: no cover -- a hidden action cannot be triggered
+            return
+        entry = self.__model.progress_of(row.key)
+        self.__model.record_progress(row.key, entry.position if entry is not None else 0.0, None, viewed=viewed)
+
+    def __on_forget_triggered(self) -> None:
+        """Forget the progress kept for the selected missing video."""
+        row = self.__selected_row()
+        if row is not None and row.key is not None:  # pragma: no branch -- a hidden action cannot be triggered
+            self.__model.forget_progress(row.key)
+
+    # endregion
+
+    # region The actions, for callers
 
     @property
     def refresh_action(self) -> QAction:
@@ -553,6 +686,17 @@ class FilesView(QWidget):
         """Goes to the folder above. Disabled at the resource's own folder, which is as far up as this
         browser goes."""
         return self.__ui.up_action
+
+    @property
+    def viewed_action(self) -> QAction:
+        """Marks the selected video watched to the end, or not; checked as it is. Shown only for a video of the
+        resource."""
+        return self.__ui.viewed_action
+
+    @property
+    def forget_action(self) -> QAction:
+        """Forgets the progress kept for the selected missing video. Shown only for a missing one."""
+        return self.__ui.forget_action
 
     @property
     def reveal_action(self) -> QAction:

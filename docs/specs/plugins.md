@@ -373,6 +373,22 @@ a file **is** and none of what to do about it:
 
 Anything else is handed to the system's default handler.
 
+**A tutorial's rows end with what its user has watched** ([[field-schema#watch-progress]], #316). A video's row ends
+with its percentage — `100%` once viewed, else its position over its length, nothing for a video never opened or whose
+length is not known — and a folder's with the duration-weighted share of every video beneath it, which shows none, with
+a tooltip saying why, while any video beneath it has no known length: a share of a total nobody knows would be a wrong
+number. The videos whose files are gone but whose progress is kept are listed in the folder they were in, as *missing*
+rows that open nothing.
+
+What can be done to the selected row is on its **context menu** and on the toolbar, behind a separator, each action
+**shown only where it applies** rather than disabled elsewhere: **Viewed**, a toggle ticked as the video is, on any video
+of the resource, and **Forget**, the only way a kept entry is ever removed, on a missing one. A row with neither opens no
+menu and shows no separator. There is no Measure button here: a video's length is known from the main editor's duration
+**Compute**, which probes every video once, fills the total and writes each video's length into the record, or from a
+player recording the file's length as it plays — so a video shows a percentage once it was measured or viewed, and
+nothing before. Everything redraws when the document model says progress changed, from what was already read, and
+listing the files is also when a renamed video takes its progress with it.
+
 **The checksum column reports what *this* record claims, and nothing else.** Six verdicts and an empty cell: nothing
 at all for the record, a sidecar, a folder, content another record covers, or every file at all when this record
 cannot be read — this record makes no claim there, which is different from a claim of ignorance, and reading the

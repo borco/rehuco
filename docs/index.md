@@ -76,7 +76,7 @@ What's left of the editor is small: a page image picker (a scraping helper, not 
 
 What's left of the catalog is filed in the [implementation plan](specs/implementation-plan.md).
 
-Past that the design reaches further — playback with progress tracking, web pages and long jobs served
+Past that the design reaches further — a video player that records where you stopped, web pages and long jobs served
 by the node, offline borrowing between machines, multi-user access, a browser interface, Daz3D library
 migration. None of it is implemented, none of it is scheduled, and some of it may never
 be: it is what the architecture is shaped to allow, and each piece has to earn its place when its turn

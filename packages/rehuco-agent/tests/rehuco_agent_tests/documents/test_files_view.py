@@ -22,7 +22,8 @@ from PySide6.QtWidgets import QTableView
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.files_rows import NAME_COLUMN, PARENT_ROW_NAME, FileRow, FilesTableModel
+from rehuco_agent.documents.file_row import PARENT_ROW_NAME, FileRow
+from rehuco_agent.documents.files_rows import NAME_COLUMN, FilesTableModel
 from rehuco_agent.documents.files_view import LOADING_SUMMARY, NO_PATH_SUMMARY, UNREACHABLE_SUMMARY, FilesView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.resource_events import ResourceEvents

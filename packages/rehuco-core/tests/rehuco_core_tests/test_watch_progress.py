@@ -24,6 +24,7 @@ from rehuco_core import (
     read_progress,
     read_videos,
     record_progress,
+    record_videos,
     set_progress_entry,
     set_videos,
     user_sidecar_path,
@@ -540,6 +541,52 @@ def test_an_empty_measure_removes_the_videos_map(tmp_path: Path) -> None:
     set_videos(doc, {})
 
     assert doc.active_field("videos") is None
+
+
+def test_a_measure_is_written_to_the_record_without_stamping_updated(tmp_path: Path) -> None:
+    """A Measure's lengths land in the record on their own -- the user saves nothing -- and describe the files, not an
+    edit, so ``updated`` stays and every user's progress is left as stored.
+
+    **Test steps:**
+
+    * write a tutorial with one user's progress and an older ``videos`` map
+    * record a Measure's result
+    * verify the stored map is the new one, ``updated`` is unchanged, and the progress is untouched
+    """
+    path = make_tutorial(
+        tmp_path / "t",
+        ["a.mp4"],
+        block={
+            "videos": {"gone.mp4": {"duration": 9.0}},
+            "users": {"admin": {"progress": {"a.mp4": {"position": 5.0, "viewed": False}}}},
+        },
+    )
+    progress_before = users_of(path)
+
+    record_videos(path, {"a.mp4": VideoFacts(100.0, 1920, 1080)})
+
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    assert stored["tutorial"]["videos"] == {"a.mp4": {"duration": 100.0, "width": 1920, "height": 1080}}
+    assert stored["core"]["updated"] == UPDATED
+    assert users_of(path) == progress_before
+
+
+def test_a_measure_is_refused_on_a_record_that_is_not_a_tutorial(tmp_path: Path) -> None:
+    """Lengths are kept on tutorials only; another type's record is left as it is.
+
+    **Test steps:**
+
+    * write a reference-images record
+    * record a Measure's result
+    * verify a ``ValueError`` and the file unchanged
+    """
+    path = make_tutorial(tmp_path / "t", [], resource_type="reference_images")
+    before = path.read_bytes()
+
+    with raises(ValueError, match="tutorials only"):
+        record_videos(path, {"a.mp4": VideoFacts(1.0)})
+
+    assert path.read_bytes() == before
 
 
 def test_malformed_stored_maps_read_as_defaults_and_stay_on_disk(tmp_path: Path) -> None:

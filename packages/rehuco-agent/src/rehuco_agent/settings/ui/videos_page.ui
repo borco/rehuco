@@ -171,6 +171,60 @@
     </widget>
    </item>
    <item>
+    <widget class="QFrame" name="watch_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="watch_frame_layout">
+      <item>
+       <widget class="QLabel" name="watch_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Watch progress</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="mark_file_viewed_check_box">
+        <property name="toolTip">
+         <string>A video that plays to its end is marked viewed. You can still tick or clear it by hand.</string>
+        </property>
+        <property name="text">
+         <string>Mark a video viewed when it reaches the end</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="mark_tutorial_viewed_check_box">
+        <property name="toolTip">
+         <string>Checked once, at the moment the last of its videos becomes viewed; never a standing rule.</string>
+        </property>
+        <property name="text">
+         <string>Mark the tutorial viewed when all its videos are viewed</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="match_renamed_by_size_check_box">
+        <property name="toolTip">
+         <string>A renamed video takes its progress with it when it is the only file of that size. A recorded checksum is always preferred.</string>
+        </property>
+        <property name="text">
+         <string>Match renamed files by size when no checksum is recorded</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <spacer name="bottom_spacer">
      <property name="orientation">
       <enum>Qt::Orientation::Vertical</enum>

@@ -12,7 +12,7 @@ from PySide6.QtCore import QModelIndex, Qt
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.files_rows import FileChecksumState
+from rehuco_agent.documents.file_row import FileChecksumState
 from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.roots_checksum import RowChecksum
 from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel

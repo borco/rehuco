@@ -78,6 +78,7 @@ from .rehu_document_model import USER_STATE_FIELD_NAMES, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .scrape_actions import ScrapeActions
 from .source_views import OnDiskView, SavePreviewView
+from .watch_progress_recorder import WatchProgressRecorder
 from .web_search_action import WebSearchAction
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
@@ -805,6 +806,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # its result as an ordinary dirty edit ([[acquisition-tooling#drag-drop-aids]], #272). Built
         # before the first __banner_rows call below, which asks what it found.
         self.__scrapes: Final = ScrapeActions(model, self.__image_downloads, parent=self)
+        self.__watch_progress: Final = WatchProgressRecorder(model, self)
         self.__scrapes.changed.connect(self.__on_scrape_notice_changed)
         main_editor_dock: QtAds.CDockWidget = self.__editor_docks[EDITOR_MAIN_TAB]
         main_editor_dock.setAcceptDrops(True)  # pylint: disable=no-member
@@ -842,6 +844,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__connect(model.saving_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         self.__connect(model.pending_save_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         self.__connect(model.gone_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
+        self.__connect(model.progress_unsaved_changed, self.__on_rename_error_changed)  # type: ignore[attr-defined]
         self.__connect(model.active_block_changed, self.__rebuild_field_docks)
         self.__connect(model.path_changed, self.__on_path_changed)  # type: ignore[attr-defined]
         # every notice is asked again once a load settles: what is running or failed is told per record, and a
@@ -997,6 +1000,12 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         return self.__conversion_backups
 
     @property
+    def watch_progress(self) -> WatchProgressRecorder:
+        """What a player records its position through: written about every five seconds, and flushed at once when the
+        player pauses, seeks, stops or closes -- and when this document closes (#316)."""
+        return self.__watch_progress
+
+    @property
     def layout_type(self) -> str:
         """The key this document's dock set and default layout are chosen by (#320): its resource
         type's main key, aliases normalized through the registry ([[plugins#plugin-blocks]]); a type
@@ -1013,6 +1022,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         cancel a checksum run already enqueued (its row stays in the Tasks dock) or a scrape already
         dispatched; each simply stops mattering to this document once it lands.
         """
+        self.__watch_progress.flush()
         if self.__checksums is not None:
             self.__checksums.detach()
         self.__scrapes.detach()
@@ -1666,7 +1676,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             :attr:`~RehuDocumentModel.changed_on_disk` is set (#487), then a pending-save row while
             :attr:`~RehuDocumentModel.pending_save` says something and no conflict row shows, or else a saving row
             while :attr:`~RehuDocumentModel.saving`, then an upgrade row when
-            :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
+            :attr:`~RehuDocumentModel.upgradable` is set, then a row while
+            :attr:`~RehuDocumentModel.progress_unsaved` says watch progress is not being saved (#316), then a rename
+            row when
             :attr:`~RehuDocumentModel.rename_error` is non-empty -- with the magnifier while
             :attr:`~RehuDocumentModel.rename_held` names the record (#505) -- then the checksum and conversion-backup
             rows, then whatever `.ScrapeActions.notice` says about the current or last dropped scrape
@@ -1696,6 +1708,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, SAVING_MESSAGE))
         if self.__model.upgradable:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, UPGRADE_MESSAGE))
+        if self.__model.progress_unsaved:
+            rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, self.__model.progress_unsaved))
         if self.__model.rename_error:
             find_holders = self.__find_holders_action if self.__model.rename_held is not None else None
             rows.append(MessageBannerRow(MessageBannerSeverity.ERROR, self.__model.rename_error, find_holders))

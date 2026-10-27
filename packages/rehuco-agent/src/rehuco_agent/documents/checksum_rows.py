@@ -44,7 +44,8 @@ from rehuco_core import (
     parse_checksum_entry,
 )
 
-from .files_rows import FileChecksumState, checksum_tooltip_for, checksum_verdict_for
+from .file_row import FileChecksumState
+from .files_rows import checksum_tooltip_for, checksum_verdict_for
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""

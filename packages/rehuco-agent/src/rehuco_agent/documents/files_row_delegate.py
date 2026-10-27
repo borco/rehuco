@@ -19,6 +19,8 @@ from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPalette
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from ..svg_icon_cache import SvgIconCache
+from .file_row import FileRow
+from .files_progress import RowProgress
 from .files_rows import (
     CHECKSUM_COLUMN,
     CHECKSUM_STATE_ICONS,
@@ -26,7 +28,6 @@ from .files_rows import (
     MODIFIED_COLUMN,
     NAME_COLUMN,
     SIZE_COLUMN,
-    FileRow,
     FilesTableModel,
     ModelIndex,
 )
@@ -65,6 +66,10 @@ whichever digits a particular row happens to carry -- and measured in the font's
 a proportional font need not draw ``1`` as wide as ``0``. A column sized from one row's narrow digits is
 a column that elides a wider row's."""
 
+PERCENT_SHAPE: Final = "100%"
+"""The widest percentage there is: what the progress text of a row is given room for (#316), so the names above one
+another end where they do whether or not the row says anything."""
+
 DIGITS: Final = "0123456789"
 """The digits a timestamp can hold, measured to find the widest this font draws
 (:meth:`FilesRowDelegate.sizeHint`)."""
@@ -83,6 +88,10 @@ class FilesRowDelegate(QStyledItemDelegate):
     *disabled* group is what draws it. The group is read from the **index's own flags** rather than from
     whichever group the incoming palette happens to be set to, so the colour is a property of the row
     rather than of who called.
+
+    **A video's row ends with what has been watched** (#316): its percentage; a folder's, its
+    share of every video beneath it. Both come from the model
+    (:attr:`~rehuco_agent.documents.files_rows.FilesTableModel.PROGRESS_ROLE`), so what a row says is decided once.
 
     A cell whose row cannot be read is handed to the base delegate untouched, the same deference
     `LogMessageDelegate` and :class:`~rehuco_agent.tasks.task_state_delegate.TaskStateDelegate` show a
@@ -122,10 +131,29 @@ class FilesRowDelegate(QStyledItemDelegate):
                 path = PARENT_ICON_RESOURCE if row.is_parent else FILE_TYPE_ICONS[row.file_type]
                 self.__icons.icon(path, pen_color).paint(painter, glyph)
                 cell = cell.adjusted(TEXT_PADDING + ICON_SIZE + ICON_TEXT_GAP, 0, 0, 0)
+                progress = index.data(FilesTableModel.PROGRESS_ROLE)
+                if isinstance(progress, RowProgress):
+                    cell = FilesRowDelegate.__paint_progress(painter, option, cell, progress)
             alignment = Qt.AlignmentFlag.AlignRight if column == SIZE_COLUMN else Qt.AlignmentFlag.AlignLeft
             FilesRowDelegate.__paint_text(painter, cell, str(index.data() or ""), alignment)
         finally:
             painter.restore()
+
+    @staticmethod
+    def __paint_progress(painter: QPainter, option: QStyleOptionViewItem, cell: QRect, progress: RowProgress) -> QRect:
+        """Draw what a row ends with at the right of its Name cell: its percentage, in the room reserved for the widest.
+
+        :param painter: the painter to draw with, its pen already the row's colour.
+        :param option: the item's option, for its font.
+        :param cell: what is left of the Name cell once the glyph is placed.
+        :param progress: what the row says of watching.
+        :returns: what is left of the cell for the name, which is elided to it.
+        """
+        right = cell.right() - TEXT_PADDING
+        width = ceil(QFontMetricsF(option.font).horizontalAdvance(PERCENT_SHAPE))
+        percent = QRect(right - width, cell.top(), width, cell.height())
+        painter.drawText(percent, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, progress.text)
+        return cell.adjusted(0, 0, percent.left() - ICON_TEXT_GAP - cell.right() + TEXT_PADDING, 0)
 
     def __paint_background(self, painter: QPainter, option: QStyleOptionViewItem, index: ModelIndex) -> QColor:
         """Fill the cell and decide the colour its content is drawn in.

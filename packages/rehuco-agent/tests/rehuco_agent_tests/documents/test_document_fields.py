@@ -58,6 +58,7 @@ from rehuco_core import (
     MediaInfoDurationProbe,
     RehuDocument,
     RenameCoordinator,
+    VideoFacts,
 )
 
 PACK_PATH = Path.cwd() / "library" / "anatomy-pack.rehu"
@@ -802,30 +803,31 @@ def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusio
     * build a tutorial's editor with the duration scan mocked to find 2h 15m
     * press the pair's one Compute and verify the scan was handed the document's own path, that list, the
       configured formats and a probe built from the selected backend
-    * verify the measured duration reached the pair, without touching either stored one
+    * verify the total reached the pair, without touching either stored one, and each video's own length was handed
+      to the model to keep (#316)
     """
     shared_excluded_files_settings().patterns = ("*.tmp",)
     shared_videos_settings().extensions = ("mkv",)
-    content_duration = mocker.patch(
-        "rehuco_agent.documents.document_fields.content_duration",
-        return_value=8100,
-    )
+    measured = {"lesson.mkv": VideoFacts(8100.0)}
+    content_videos = mocker.patch("rehuco_agent.documents.document_fields.content_videos", return_value=measured)
+    posted = mocker.patch.object(RehuDocumentModel, "post_measured_videos")
     model = RehuDocumentModel(RehuDocument({"core": {"type": "tutorial"}}, PACK_PATH))
     grid = main_editor(qtbot, model)
     editor = duration_editor(grid)
 
     compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
 
-    path, probe = content_duration.call_args.args
+    path, probe = content_videos.call_args.args
     assert path == PACK_PATH
     assert isinstance(probe, MediaInfoDurationProbe)
-    assert content_duration.call_args.kwargs == {
+    assert content_videos.call_args.kwargs == {
         "video_extensions": (".mkv",),
         "excluded_patterns": ("*.tmp",),
     }
     assert editor.computed == 8100
     assert model.original_duration is None
     assert model.current_duration is None
+    posted.assert_called_once_with(model.key, measured)
 
 
 def test_duration_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -838,14 +840,14 @@ def test_duration_compute_measures_nothing_for_a_document_with_no_path(qtbot: Qt
     * press the pair's Compute
     * verify the scan was never called and nothing was computed
     """
-    content_duration = mocker.patch("rehuco_agent.documents.document_fields.content_duration")
+    content_videos = mocker.patch("rehuco_agent.documents.document_fields.content_videos")
     model = typed_model("tutorial")
     grid = main_editor(qtbot, model)
     editor = duration_editor(grid)
 
     compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
 
-    content_duration.assert_not_called()
+    content_videos.assert_not_called()
     assert editor.computed is None
 
 
@@ -864,7 +866,7 @@ def test_a_probe_that_cannot_run_computes_nothing_rather_than_zero(qtbot: QtBot,
     * verify nothing was computed, and the stored duration is untouched
     """
     mocker.patch(
-        "rehuco_agent.documents.document_fields.content_duration",
+        "rehuco_agent.documents.document_fields.content_videos",
         side_effect=DurationProbeError("ffprobe was not found on PATH, and no path is configured."),
     )
     model = RehuDocumentModel(
@@ -890,7 +892,7 @@ def test_a_resource_that_will_not_read_computes_no_duration_either(qtbot: QtBot,
     * verify nothing was computed, and the stored duration is untouched
     """
     mocker.patch(
-        "rehuco_agent.documents.document_fields.content_duration",
+        "rehuco_agent.documents.document_fields.content_videos",
         side_effect=ContentUnreachableError("Part of the resource could not be read: Z:/pack/extras"),
     )
     model = RehuDocumentModel(
@@ -917,7 +919,9 @@ def test_the_two_duration_rows_accept_one_measurement_independently(qtbot: QtBot
     * verify the scan ran **once**, ``current_duration`` took the measurement, and ``original_duration``
       is untouched
     """
-    content_duration = mocker.patch("rehuco_agent.documents.document_fields.content_duration", return_value=4050)
+    content_videos = mocker.patch(
+        "rehuco_agent.documents.document_fields.content_videos", return_value={"a.mp4": VideoFacts(4050.0)}
+    )
     model = RehuDocumentModel(
         RehuDocument(
             {"core": {"type": "tutorial"}, "tutorial": {"original_duration": 8100, "current_duration": 7000}},
@@ -930,7 +934,7 @@ def test_the_two_duration_rows_accept_one_measurement_independently(qtbot: QtBot
     compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
     press(editor, duration_copy_tooltip("Current Duration"))
 
-    content_duration.assert_called_once()
+    content_videos.assert_called_once()
     assert model.current_duration == 4050
     assert model.original_duration == 8100
 

@@ -26,16 +26,13 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from pytestqt.wait_signal import SignalBlocker
+from rehuco_agent.documents.file_row import PARENT_ROW_NAME, FileChecksumState, FileRow, FilesRows
 from rehuco_agent.documents.files_rows import (
     CHECKSUM_COLUMN,
     KIND_COLUMN,
     MODIFIED_COLUMN,
     NAME_COLUMN,
-    PARENT_ROW_NAME,
     SIZE_COLUMN,
-    FileChecksumState,
-    FileRow,
-    FilesRows,
     FilesRowsLoader,
     FilesRowsReader,
     FilesSortProxy,

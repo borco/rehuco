@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QImage, QPainter, QStandardItem, QStandardItem
 from PySide6.QtWidgets import QListView, QStyle, QStyleOptionViewItem
 from pytest import fixture, mark
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.files_rows import FileChecksumState
+from rehuco_agent.documents.file_row import FileChecksumState
 from rehuco_agent.rehuco.roots_checksum import BAD_INK, OLD_BAD_INK, RowChecksum
 from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
 from rehuco_agent.rehuco.roots_item_delegate import ARROW_WIDTH, ICON_SIZE, ICON_TEXT_GAP, RootsItemDelegate

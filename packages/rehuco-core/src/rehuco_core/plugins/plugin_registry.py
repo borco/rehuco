@@ -60,6 +60,7 @@ TUTORIAL_FIELD_NAMES: Final = (
     "original_duration",
     "current_duration",
     "level",
+    "videos",
 )
 """The **Tutorial-only** tier ([[field-schema#resource-types]]): the progress flags, the three durations
 ([[field-schema#duration-size]]) and the multi-choice ``level``.

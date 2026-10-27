@@ -31,7 +31,8 @@ from rehuco_agent.documents.checksum_rows import (
     tally_rows,
     tally_text,
 )
-from rehuco_agent.documents.files_rows import CHECKSUM_STATE_TOOLTIPS, UNTRUSTED_LOCATION_TOOLTIP, FileChecksumState
+from rehuco_agent.documents.file_row import FileChecksumState
+from rehuco_agent.documents.files_rows import CHECKSUM_STATE_TOOLTIPS, UNTRUSTED_LOCATION_TOOLTIP
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 

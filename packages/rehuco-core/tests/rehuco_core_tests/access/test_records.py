@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from freezegun.api import FrozenDateTimeFactory
 from pytest import LogCaptureFixture
+from pytest_mock import MockerFixture
 from rehuco_core import (
     DEFAULT_DELETER,
     EXCLUDED_FILE_PATTERNS,
@@ -21,6 +22,8 @@ from rehuco_core import (
     Records,
     RehuDocument,
     ResourceKey,
+    VideoFacts,
+    WatchRules,
     current_block_version,
     record_version,
     user_sidecar_paths,
@@ -851,6 +854,127 @@ def test_a_records_signature_is_its_time_and_size_looked_at_under_the_rename_hol
     assert records.signature(key) == (stat.st_mtime_ns, stat.st_size)
     assert records.signature(ResourceKey(tmp_path / "gone.rehu")) is None
     assert coordinator.holding.call_count == 2
+
+
+# endregion
+
+
+# region progress and measured lengths
+
+
+def test_a_progress_write_goes_through_core_and_answers_the_record_as_read_after(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """Recording progress is core's write path with the caller's identity as both the user and the one the record is
+    opened as, answered with the record read after it.
+
+    **Test steps:**
+
+    * write a record, and replace core's write with a mock
+    * record progress through the records
+    * verify core was called with the key's path, the identity twice and the settings handed in, and the answer is the
+      record loaded after it
+    """
+    key = write_record(tmp_path / "info.rehu", tutorial_data())
+    write = mocker.patch("rehuco_core.access.records.record_progress")
+    rules = WatchRules(mark_file_viewed_at_end=False)
+
+    loaded = Records().record_progress(
+        key,
+        username=USERNAME,
+        relative="a.mp4",
+        position=12.5,
+        duration=100.0,
+        viewed=None,
+        rules=rules,
+        video_extensions=(".mp4",),
+        excluded_patterns=("*.tmp",),
+    )
+
+    write.assert_called_once_with(
+        key.path,
+        USERNAME,
+        "a.mp4",
+        12.5,
+        100.0,
+        viewed=None,
+        rules=rules,
+        current_username=USERNAME,
+        video_extensions=(".mp4",),
+        excluded_patterns=("*.tmp",),
+    )
+    assert loaded.version == load(Records(), key).version
+
+
+def test_forgetting_progress_goes_through_core_and_answers_the_record_as_read_after(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """Forgetting an entry is core's forget, answered with the record read after it.
+
+    **Test steps:**
+
+    * write a record, and replace core's forget with a mock
+    * forget an entry through the records
+    * verify core was called for that entry and the answer is the record loaded after it
+    """
+    key = write_record(tmp_path / "info.rehu", tutorial_data())
+    forget = mocker.patch("rehuco_core.access.records.forget_progress")
+
+    loaded = Records().forget_progress(key, username=USERNAME, relative="gone.mp4")
+
+    forget.assert_called_once_with(key.path, USERNAME, "gone.mp4", current_username=USERNAME)
+    assert loaded.version == load(Records(), key).version
+
+
+@pytest.mark.parametrize(("moved", "answers"), [({"a.mp4": "b.mp4"}, True), ({}, False)])
+def test_moving_progress_answers_the_record_only_when_something_moved(
+    tmp_path: Path, mocker: MockerFixture, moved: dict[str, str], answers: bool
+) -> None:
+    """Reattaching renamed progress is core's, and reads the record again only when it wrote.
+
+    **Test steps:**
+
+    * write a record, and replace core's reattach with a mock answering the moves
+    * reattach through the records
+    * verify core got the settings handed in, and the answer is the loaded record after a move and ``None`` after none
+    """
+    key = write_record(tmp_path / "info.rehu", tutorial_data())
+    reattach = mocker.patch("rehuco_core.access.records.reattach_renamed_progress", return_value=moved)
+
+    loaded = Records().reattach_renamed_progress(
+        key, username=USERNAME, match_by_size=False, video_extensions=(".mp4",), excluded_patterns=()
+    )
+
+    reattach.assert_called_once_with(
+        key.path,
+        USERNAME,
+        match_by_size=False,
+        current_username=USERNAME,
+        video_extensions=(".mp4",),
+        excluded_patterns=(),
+    )
+    assert (loaded is not None) is answers
+
+
+def test_a_measure_goes_through_core_and_answers_the_record_as_read_after(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """Writing a Measure's lengths is core's, answered with the record read after it.
+
+    **Test steps:**
+
+    * write a record, and replace core's write with a mock
+    * record a Measure through the records
+    * verify core was called with the facts and the identity, and the answer is the record loaded after it
+    """
+    key = write_record(tmp_path / "info.rehu", tutorial_data())
+    write = mocker.patch("rehuco_core.access.records.record_videos")
+    facts = {"a.mp4": VideoFacts(100.0)}
+
+    loaded = Records().record_videos(key, facts, username=USERNAME)
+
+    write.assert_called_once_with(key.path, facts, current_username=USERNAME)
+    assert loaded.version == load(Records(), key).version
 
 
 # endregion

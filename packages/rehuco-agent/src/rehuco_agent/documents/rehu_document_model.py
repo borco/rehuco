@@ -17,17 +17,19 @@ from typing import Any, Final, cast
 
 from borco_core.logging import LogScope
 from borco_pyside.core import ConnectionList, SimpleProperty
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_CURRENT_USERNAME,
     FORMAT_VERSION_KEY,
+    TUTORIAL_PLUGIN,
     USERS_KEY,
     AuthorEntry,
     Deleter,
     FieldPath,
     JobWaiting,
     LockReason,
+    ProgressEntry,
     RecordConflict,
     RecordVersion,
     RehuDocument,
@@ -35,11 +37,16 @@ from rehuco_core import (
     SaveOutcome,
     SavePayload,
     SaveRecordJob,
+    VideoFacts,
     is_directory_scoped_name,
     merge_users,
+    metadata_of,
     paths_overlap,
     payload_changes,
     put_paths,
+    reached_end,
+    read_progress,
+    read_videos,
     rehu_rename_conflict,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
@@ -47,12 +54,15 @@ from rehuco_core import (
 )
 from rehuco_core.access import FileSignature, KeyRelocation, LoadedRecord, Records, ResourceKey
 from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS
+from rehuco_core.watch_progress import VIDEOS_KEY
 
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
+from ..settings.videos_settings import shared_videos_settings
+from .progress_writer import ProgressWriter
 from .record_reader import RecordReader
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 from .rename_holders import RenameHolderReport
@@ -242,6 +252,16 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """Fires once a :meth:`rename_location` landed, after every holder followed it (#566): the record at its new key
     may say more than what was cached of it under the old one -- the save the rename wrote first, or one whose report
     named the path the rename emptied -- so it is checked again. Never on a rename that failed: nothing moved."""
+
+    progress_changed = Signal()
+    """Fires when what :meth:`progress_entries` or :meth:`measured_videos` answers changed (#316): a position recorded
+    -- at once, before it is written -- a write that landed and was taken in, an entry forgotten, a Measure written.
+    Never a change to the document: progress is the user's own state beside the record, not an edit of it
+    ([[field-schema#watch-progress]])."""
+
+    __videos_measured = Signal(object, object)
+    """A Measure's lengths on their way to the GUI thread, with the record they were measured of
+    (:meth:`post_measured_videos`)."""
 
     active_block_changed = Signal()
     """Fires when the whole field composition must be re-resolved from scratch: the outgoing block's
@@ -490,6 +510,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     :data:`USER_STATE_FIELD_NAMES` read-only while the details stay editable (#568). Set with
     :attr:`unreadable_sidecars`."""
 
+    progress_unsaved = SimpleProperty("")
+    """Why the watch progress recorded in this session is not being saved, in the banner's words, or empty (#316): the
+    record is locked or has no file, or the last write failed. What was recorded is kept in memory meanwhile
+    (:meth:`progress_entries`), and the next write that lands clears this."""
+
     upgradable = SimpleProperty(False)
     """Whether this document can be brought current by a plain save (#89, [[data-model#schema-version]]):
     the file on disk is older -- at the file-wide :data:`~rehuco_core.CURRENT_FORMAT_VERSION`, at the
@@ -531,6 +556,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document = document
         self.__records: Final = records if records is not None else Records()
         self.__reader: Final = reader if reader is not None else RecordReader(self.__records, rename_coordinator, self)
+        self.__writer: Final = ProgressWriter(rename_coordinator, self)
+        self.__videos_measured.connect(self.__on_videos_measured, Qt.ConnectionType.QueuedConnection)
+        self.__overlay: Final[dict[str, ProgressEntry]] = {}
+        """The progress entries recorded in this session that no landed write has taken in yet -- shown at once, and
+        the only home of those the record cannot hold (#316)."""
         self.__read_serial = 0
         """Counts the reads asked for: an answer carrying an older count is for a read this model moved on from."""
         self.__read_out: RehuDocumentModel.OutstandingRead | None = None
@@ -1009,6 +1039,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.__base_data = copy.deepcopy(payload.base_payload) if payload.base_payload is not None else {}
             self.__disk_signature = current.signature if current is not None else None
             self.__signature_during_save = None
+            self.__forget_progress_session()
             if dirty:
                 self.conflict = None
                 self.gone = ""
@@ -1345,6 +1376,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.conflict = None
         self.changed_on_disk = False
         self.gone = ""
+        self.__forget_progress_session()
 
     def __form_shape(self) -> tuple[object, ...]:
         """What the form is built from beyond the values it binds: the type, the active block's unknown fields,
@@ -1433,9 +1465,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # the file is there: whatever was gone has come back, and the change-on-disk rule below decides the rest
         self.gone = ""
         key = self.key
-        if self.saving or (key is not None and self.__pending_save_for(key) is not None):
+        if self.saving or self.__writer.busy or (key is not None and self.__pending_save_for(key) is not None):
             # the save's own write, or one after it: told apart once the save is back (complete_save) -- and a save not
-            # landed is the record here, which nothing on disk reloads over; its own check judges the file
+            # landed is the record here, which nothing on disk reloads over; its own check judges the file. A progress
+            # write out is the same: its own file change is judged once it is taken in (:meth:`__on_progress_written`)
             self.__signature_during_save = (mtime_ns, size)
             return
         if (
@@ -1484,6 +1517,339 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if key is None:
             return False
         return self.__adopt_path(relocation.relocate(key).path)
+
+    # region Watch progress ([[field-schema#watch-progress]], #316)
+
+    def progress_entries(self) -> dict[str, ProgressEntry]:
+        """This user's progress on each video, by content key: what the record holds, over what this session recorded
+        and no landed write has taken in yet.
+
+        :returns: the entries.
+        """
+        entries = read_progress(self.__document, self.__document.username)
+        entries.update(self.__overlay)
+        return entries
+
+    def progress_of(self, relative: str) -> ProgressEntry | None:
+        """This user's progress on one video.
+
+        :param relative: the file's content key.
+        :returns: the entry, or ``None`` when it was never opened.
+        """
+        return self.progress_entries().get(relative)
+
+    def measured_videos(self) -> dict[str, VideoFacts]:
+        """The lengths a Measure wrote into the record, by content key.
+
+        :returns: the facts of each measured video.
+        """
+        return read_videos(self.__document)
+
+    def record_progress(
+        self, relative: str, position: float, duration: float | None, viewed: bool | None = None
+    ) -> None:
+        """Record where this user stopped in one video: shown at once, written to the record without a save and
+        without making the document dirty, on a thread of its own.
+
+        What a player calls, every few seconds and at each pause, seek and stop; a newer position for the same video
+        replaces one still waiting to be written. When the record cannot hold it -- no file, locked, an unreadable
+        sidecar of the user's own -- or the write fails, the entry is kept for the session and :attr:`progress_unsaved`
+        says why.
+
+        :param relative: the file's content key.
+        :param position: where playback stopped, in seconds.
+        :param duration: the length the player saw, or ``None`` to keep the stored one.
+        :param viewed: the file's flag set by hand, or ``None`` to let the Videos settings' rules decide.
+        """
+        rules = shared_videos_settings().watch_rules
+        old = self.progress_of(relative)
+        measured = self.measured_videos().get(relative)
+        length = measured.duration if measured is not None else duration
+        was_viewed = old is not None and old.viewed
+        now_viewed = (
+            viewed
+            if viewed is not None
+            else was_viewed or (rules.mark_file_viewed_at_end and reached_end(position, length))
+        )
+        kept_duration = duration if duration is not None else (old.duration if old is not None else None)
+        self.__overlay[relative] = ProgressEntry(  # pylint: disable=unsupported-assignment-operation
+            float(position), kept_duration, now_viewed, old.size if old else None
+        )
+        self.progress_changed.emit()
+        self.__submit_progress(
+            ("progress", relative), report=True, work=self.__write_progress(relative, position, duration, viewed)
+        )
+
+    def forget_progress(self, relative: str) -> None:
+        """Remove one of this user's progress entries, the way a missing video's is -- by hand, never automatically.
+
+        :param relative: the entry's key as stored.
+        """
+        self.__overlay.pop(relative, None)
+        username = self.__document.username
+        target = cast(ResourceKey, self.key)
+
+        def forget(records: Records) -> LoadedRecord:
+            """Remove the entry (the writer's thread).
+
+            :param records: what the record is reached through.
+            :returns: the record as read after.
+            """
+            return records.forget_progress(target, username=username, relative=relative)
+
+        self.__submit_progress(("forget", relative), report=True, work=forget)
+
+    def reattach_renamed_progress(self) -> None:
+        """Move this user's progress onto the videos that were renamed, as listing the files does (#411). Silent where
+        progress cannot be written, and when nothing moved."""
+        username = self.__document.username
+        settings = shared_videos_settings()
+        match_by_size = settings.match_renamed_by_size
+        extensions = settings.video_extensions
+        excluded = shared_excluded_files_settings().excluded_file_patterns
+        target = cast(ResourceKey, self.key)
+
+        def reattach(records: Records) -> LoadedRecord | None:
+            """Move the entries (the writer's thread).
+
+            :param records: what the record is reached through.
+            :returns: the record as read after, or ``None`` when none moved.
+            """
+            return records.reattach_renamed_progress(
+                target,
+                username=username,
+                match_by_size=match_by_size,
+                video_extensions=extensions,
+                excluded_patterns=excluded,
+            )
+
+        self.__submit_progress(("reattach",), report=False, work=reattach)
+
+    def record_videos(self, measured: Mapping[str, VideoFacts]) -> None:
+        """Write a Measure's lengths into the record, without a save and without making the document dirty. Silent where
+        the record cannot be written: the Measure's total still fills its field, and that is what the user asked for.
+
+        :param measured: the facts of each measured video, by content key.
+        """
+        username = self.__document.username
+        target = cast(ResourceKey, self.key)
+
+        def write(records: Records) -> LoadedRecord:
+            """Write the lengths (the writer's thread).
+
+            :param records: what the record is reached through.
+            :returns: the record as read after.
+            """
+            return records.record_videos(target, measured, username=username)
+
+        self.__submit_progress(("videos",), report=False, work=write)
+
+    def post_measured_videos(self, key: ResourceKey | None, measured: Mapping[str, VideoFacts]) -> None:
+        """Hand a Measure's lengths over from the worker thread that measured them: they are written into the record on
+        the GUI thread, and only while this model still shows the record they were measured of.
+
+        :param key: the record the lengths are of.
+        :param measured: the facts of each measured video, by content key.
+        """
+        try:
+            self.__videos_measured.emit(key, measured)
+        except RuntimeError:  # this model was deleted while the measurement ran
+            pass
+
+    def __on_videos_measured(self, key: ResourceKey | None, measured: Mapping[str, VideoFacts]) -> None:
+        """Write a Measure's lengths into the record (GUI thread), unless the model moved to another record meanwhile.
+
+        :param key: the record the lengths are of.
+        :param measured: the facts of each measured video, by content key.
+        """
+        if key is not None and key == self.key:
+            self.record_videos(measured)
+
+    @property
+    def watches_progress(self) -> bool:
+        """Whether this document is one whose videos' watching is tracked: a tutorial."""
+        return self.__document.active_block_key == TUTORIAL_PLUGIN.key
+
+    def __write_progress(
+        self, relative: str, position: float, duration: float | None, viewed: bool | None
+    ) -> Callable[[Records], LoadedRecord]:
+        """The write one :meth:`record_progress` makes, with every setting it reads taken now, on the GUI thread.
+
+        :param relative: the file's content key.
+        :param position: where playback stopped, in seconds.
+        :param duration: the length the player saw, or ``None``.
+        :param viewed: the file's flag set by hand, or ``None``.
+        :returns: what the writer's thread calls with the records.
+        """
+        username = self.__document.username
+        key = cast(ResourceKey, self.key)
+        settings = shared_videos_settings()
+        rules = settings.watch_rules
+        extensions = settings.video_extensions
+        excluded = shared_excluded_files_settings().excluded_file_patterns
+
+        def write(records: Records) -> LoadedRecord:
+            """Write the entry (the writer's thread).
+
+            :param records: what the record is reached through.
+            :returns: the record as read after.
+            """
+            return records.record_progress(
+                key,
+                username=username,
+                relative=relative,
+                position=position,
+                duration=duration,
+                viewed=viewed,
+                rules=rules,
+                video_extensions=extensions,
+                excluded_patterns=excluded,
+            )
+
+        return write
+
+    def __progress_blocker(self) -> str:
+        """Why this document's record cannot be written for progress now.
+
+        :returns: the reason, a phrase; empty when it can be.
+        """
+        document = self.__document
+        blocking = next((reason for reason in document.lock_reasons if reason.kind in SAVE_BLOCKING_LOCK_KINDS), None)
+        if self.path is None or self.key is None or document.legacy_tc:
+            return "this is not a file on this machine"
+        if blocking is not None:
+            return blocking.message
+        if document.own_sidecar_unreadable:
+            return "your own per-user file beside the record could not be read"
+        if not self.watches_progress:
+            return "watch progress is kept on tutorials only"
+        if self.__pending or self.reading is not None or self.__version is None or not self.saved_on_disk:
+            return "the record has not been read from its file yet"
+        return ""
+
+    def __submit_progress(
+        self, key: tuple[str, ...], *, report: bool, work: Callable[[Records], LoadedRecord | None]
+    ) -> bool:
+        """Hand a write to the writer, unless the record cannot be written now.
+
+        :param key: what makes two writes the same one (:meth:`ProgressWriter.submit`).
+        :param report: say in :attr:`progress_unsaved` why it was not written, rather than say nothing.
+        :param work: the write, given the records to reach the record through.
+        :returns: whether it was handed over.
+        """
+        reason = self.__progress_blocker()
+        if reason:
+            if report:
+                self.progress_unsaved = f"Watch progress is not being saved: {reason}"
+            return False
+        records = self.__records
+        self.__writer.submit(
+            key,
+            lambda: work(records),
+            lambda outcome: self.__on_progress_written(outcome, report=report),
+            self.path,
+        )
+        return True
+
+    def __on_progress_written(self, outcome: LoadedRecord | Exception | None, *, report: bool) -> None:
+        """Take in the outcome of a write (GUI thread): the record it left, taken into the open document without
+        reloading it or touching its edits, or the failure, which keeps what was recorded and says so.
+
+        :param outcome: the record read after the write, the error it ended in, or ``None`` when it wrote nothing.
+        :param report: whether a failure is shown in :attr:`progress_unsaved`.
+        """
+        if isinstance(outcome, Exception):
+            LOG.warning("Watch progress not written to %s: %s", self.path, outcome)
+            if report:
+                self.progress_unsaved = f"Watch progress could not be saved: {self.__failure_reason(outcome)}"
+        elif outcome is not None:
+            if self.__absorb_progress(outcome):
+                self.progress_unsaved = ""
+            else:
+                self.__signature_during_save = outcome.signature
+        deferred = self.__signature_during_save
+        if deferred is not None and not self.__writer.busy and not self.saving:
+            self.__signature_during_save = None
+            self.note_file_signature(*deferred)
+
+    def __absorb_progress(self, record: LoadedRecord) -> bool:
+        """Take a record a progress write or a Measure left into this document, as a save takes the file's per-user
+        fields in: the file's per-user fields merged in except those edited here, its measured lengths adopted, the
+        document based on it from now on -- and the document's own edits, its dirty flag and its form left alone.
+
+        Refused, for the file-change rule to judge instead, when a save is out or waiting (it is the record here), the
+        document is not read, or the record's details differ from what this document was read at -- someone edited the
+        resource meanwhile.
+
+        :param record: the record as read after the write.
+        :returns: whether it was taken in.
+        """
+        key = self.key
+        base = self.__version
+        document = self.__document
+        if (
+            record.version is None
+            or base is None
+            or key is None
+            or self.__progress_unsettled(key)
+            or RehuDocumentModel.__details(record.document.data) != RehuDocumentModel.__details(self.__base_data)
+        ):
+            return False
+        merge_users(document.data, record.document.data, base, document.username)
+        videos = record.document.active_field(VIDEOS_KEY)
+        if videos is None:
+            document.remove_active_field(VIDEOS_KEY)
+        else:
+            document.set_active_field(VIDEOS_KEY, copy.deepcopy(videos))
+        self.__version = record.version
+        self.__base_data = copy.deepcopy(record.document.data)
+        self.__disk_signature = record.signature
+        self.__overlay.clear()
+        with self.__seeding_guard():
+            self.__seed_active_block_fields()
+        self.progress_changed.emit()
+        return True
+
+    def __progress_unsettled(self, key: ResourceKey) -> bool:
+        """Whether a record read after a progress write cannot be taken in now: a save is out or waiting (it is the
+        record here), the document is not read yet, or it is not a tutorial any more.
+
+        :param key: the record.
+        :returns: whether the file-change rule is left to judge it.
+        """
+        return (
+            self.saving
+            or self.__pending
+            or self.reading is not None
+            or not self.watches_progress
+            or self.__pending_save_for(key) is not None
+        )
+
+    @staticmethod
+    def __details(data: dict[str, Any]) -> dict[str, Any]:
+        """What a record says about the resource, but for the measured lengths a Measure writes on its own.
+
+        :param data: the record's payload.
+        :returns: its metadata without the tutorial block's ``videos`` map.
+        """
+        details = metadata_of(data)
+        block = details.get(TUTORIAL_PLUGIN.key)
+        if isinstance(block, dict):
+            block.pop(VIDEOS_KEY, None)
+            if not block.keys() - {FORMAT_VERSION_KEY}:
+                # a block holding nothing else is no detail, as `metadata_of` reads it before its first Measure
+                del details[TUTORIAL_PLUGIN.key]
+        return details
+
+    def __forget_progress_session(self) -> None:
+        """Let go of what this session recorded and no write took in -- a file seam read the record again, so what the
+        record holds is the answer -- and of the reason it was not saved."""
+        if self.__overlay:
+            self.__overlay.clear()
+        self.progress_unsaved = ""
+        self.progress_changed.emit()
+
+    # endregion
 
     def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:
         """Resolve one of a field's names into its current binding on this model
