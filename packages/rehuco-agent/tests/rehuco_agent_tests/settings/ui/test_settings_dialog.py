@@ -1566,6 +1566,44 @@ def test_restore_selected_page_shows_the_page_matching_the_stored_title(
     assert tree.currentIndex() == visible_index(dialog, "Markdown Rendering")
 
 
+def test_show_page_shows_the_page_registered_under_a_title(qtbot: QtBot) -> None:
+    """A link from one page to another shows the other (#521).
+
+    **Test steps:**
+
+    * register two pages, the first being the one shown
+    * ask for the second by its title
+    * verify the stack shows it, and its tree row is the current one
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    register_page(dialog, "Registry")
+    second = register_page(dialog, "Tools")
+
+    dialog.show_page("Tools")
+
+    tree = dialog_ui(dialog).category_tree  # type: ignore[attr-defined]
+    assert current_page(dialog) is second
+    assert tree.currentIndex() == visible_index(dialog, "Tools")
+
+
+def test_show_page_ignores_a_title_nothing_is_registered_under(qtbot: QtBot) -> None:
+    """A page this platform lacks is not an error to link to (#521).
+
+    **Test steps:**
+
+    * register a page and ask for another title
+    * verify the page that was shown still is
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = register_page(dialog, "Registry")
+
+    dialog.show_page("Nowhere")
+
+    assert current_page(dialog) is first
+
+
 def test_restore_selected_page_shows_the_group_matching_the_stored_title(
     qtbot: QtBot, fake_persistent_settings: FakeSettings
 ) -> None:

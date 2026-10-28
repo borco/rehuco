@@ -11,12 +11,14 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Final, override
+from unittest.mock import Mock
 
 from pytest import approx, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     DEFAULT_DURATION_PROBE,
     DURATION_PROBES,
+    FFMPEG_TOOL,
     INFO_REHU_FILENAME,
     VIDEO_EXTENSIONS,
     ContentEnumeration,
@@ -25,12 +27,16 @@ from rehuco_core import (
     DurationProbeError,
     FfprobeDurationProbe,
     MediaInfoDurationProbe,
+    ToolCandidate,
+    ToolLocator,
+    ToolStatus,
     VideoFacts,
     content_duration,
     content_video_files,
     content_videos,
     total_duration,
 )
+from rehuco_core.external_tools.tool_descriptor import EXECUTABLE_SUFFIX
 
 DIRECTORY: Final = Path("/fake/tutorial")
 REHU_PATH: Final = DIRECTORY / INFO_REHU_FILENAME
@@ -488,50 +494,77 @@ def test_mediainfo_is_available_when_its_bundled_library_loads(mocker: MockerFix
 
 
 # region FfprobeDurationProbe tests
-def test_ffprobe_resolves_the_configured_path_before_the_one_on_the_path(mocker: MockerFixture) -> None:
-    """A configured executable is what runs; ``PATH`` is the fallback for an unset one.
+FFMPEG_FOLDER: Final = Path("/opt/ffmpeg/bin")
+FOUND_EARLIER: Final = ToolCandidate(Path("/found"), "PATH", ToolStatus.USABLE, (6, 0))
 
-    ``which`` for both, so a configured path is also checked for being *runnable* -- and, on Windows,
-    gets the ``.exe`` a user's path may well omit.
+
+def locator_resolving(mocker: MockerFixture, candidate: ToolCandidate | None) -> Mock:
+    """Build a locator that answers every ``resolve`` with one candidate.
+
+    :param mocker: the fixture patching nothing here, only building the mock.
+    :param candidate: what it resolves to.
+    :returns: the mock locator.
+    """
+    locator = mocker.Mock(spec=ToolLocator)
+    locator.resolve.return_value = candidate
+    return locator
+
+
+def usable_locator(mocker: MockerFixture) -> Mock:
+    """Build a locator whose FFmpeg is usable.
+
+    :param mocker: the pytest-mock fixture.
+    :returns: the mock locator.
+    """
+    return locator_resolving(mocker, ToolCandidate(FFMPEG_FOLDER, "PATH", ToolStatus.USABLE, (7, 1)))
+
+
+def test_ffprobe_asks_the_locator_for_the_chosen_install_once(mocker: MockerFixture) -> None:
+    """The chosen path is what the locator is asked about, empty meaning *Automatic*, and a probe asks only once.
 
     **Test steps:**
 
-    * resolve with a configured path and verify ``which`` was asked about that path
-    * resolve with none and verify it was asked about the bare name
+    * ask a probe holding a chosen path twice whether it can run
+    * verify the locator was asked once, about that path
+    * verify one holding none asks about the empty path
     """
-    which = mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    locator = usable_locator(mocker)
+    probe = FfprobeDurationProbe("/opt/ffmpeg", [FOUND_EARLIER], locator)
 
-    assert FfprobeDurationProbe("/opt/ffprobe").unavailable_reason() is None
-    which.assert_called_once_with("/opt/ffprobe")
+    assert probe.unavailable_reason() is None
+    assert probe.unavailable_reason() is None
+    locator.resolve.assert_called_once_with(FFMPEG_TOOL, "/opt/ffmpeg", (FOUND_EARLIER,))
 
-    which.reset_mock()
-    assert FfprobeDurationProbe().unavailable_reason() is None
-    which.assert_called_once_with("ffprobe")
+    automatic = usable_locator(mocker)
+    assert FfprobeDurationProbe(locator=automatic).unavailable_reason() is None
+    automatic.resolve.assert_called_once_with(FFMPEG_TOOL, "", ())
 
 
 @mark.parametrize(
-    ("executable", "expected"),
+    ("candidate", "expected"),
     [
-        param("/opt/ffprobe", "No runnable ffprobe at /opt/ffprobe.", id="configured-path-holds-nothing-runnable"),
+        param(None, "No FFmpeg was found, and none is set up.", id="nothing-found"),
         param(
-            None, "ffprobe was not found on PATH, and no path is configured.", id="nothing-configured-and-none-found"
+            ToolCandidate(Path("/x"), "Custom", ToolStatus.MISSING, reason="No FFmpeg at /x."),
+            "No FFmpeg at /x.",
+            id="chosen-path-holds-nothing",
+        ),
+        param(
+            ToolCandidate(Path("/x"), "Custom", ToolStatus.TOO_OLD, (3, 4), "Version 4.0 or newer is needed."),
+            "Version 4.0 or newer is needed.",
+            id="too-old",
         ),
     ],
 )
-def test_ffprobe_says_which_misconfiguration_it_is(
-    mocker: MockerFixture, executable: str | None, expected: str
-) -> None:
-    """The two ways ``ffprobe`` can be missing read differently, because the fix differs: point the
-    setting somewhere real, or install FFmpeg.
+def test_ffprobe_says_why_it_cannot_run(mocker: MockerFixture, candidate: ToolCandidate | None, expected: str) -> None:
+    """The reason is the candidate's own, since the fix differs: install FFmpeg, point at a real one, or update it.
 
     **Test steps:**
 
-    * make nothing resolve
-    * verify the reason names which case it is
+    * resolve to an unusable candidate, or to none
+    * verify the reason says which
     """
-    mocker.patch(f"{MODULE}.which", return_value=None)
-
-    assert FfprobeDurationProbe(executable).unavailable_reason() == expected
+    assert FfprobeDurationProbe(locator=locator_resolving(mocker, candidate)).unavailable_reason() == expected
 
 
 def test_ffprobe_reads_the_duration_off_stdout(mocker: MockerFixture) -> None:
@@ -542,13 +575,13 @@ def test_ffprobe_reads_the_duration_off_stdout(mocker: MockerFixture) -> None:
     * run the probe over a file
     * verify the executable and flags it ran, and the fractional seconds it read back
     """
-    mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    locator = usable_locator(mocker)
     run = mocker.patch(f"{MODULE}.subprocess.run", return_value=SimpleNamespace(stdout=ffprobe_output("2.500000")))
 
-    assert FfprobeDurationProbe().probe(Path("/fake/a.mp4")) == approx(2.5)
+    assert FfprobeDurationProbe(locator=locator).probe(Path("/fake/a.mp4")) == approx(2.5)
 
     command = run.call_args.args[0]
-    assert command[0] == "/usr/bin/ffprobe"
+    assert command[0] == str(FFMPEG_FOLDER / f"ffprobe{EXECUTABLE_SUFFIX}")
     assert "format=duration:stream=width,height" in command
     assert command[-1] == str(Path("/fake/a.mp4"))
 
@@ -562,13 +595,13 @@ def test_ffprobe_reads_the_first_video_streams_size(mocker: MockerFixture) -> No
     * run the probe over a file whose output carries a stream size
     * verify the facts carry the duration, width and height
     """
-    mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    locator = usable_locator(mocker)
     mocker.patch(
         f"{MODULE}.subprocess.run",
         return_value=SimpleNamespace(stdout=ffprobe_output("2.500000", {"width": 1280, "height": 720})),
     )
 
-    assert FfprobeDurationProbe().probe_video(Path("/fake/a.mp4")) == VideoFacts(2.5, 1280, 720)
+    assert FfprobeDurationProbe(locator=locator).probe_video(Path("/fake/a.mp4")) == VideoFacts(2.5, 1280, 720)
 
 
 def test_ffprobe_reads_a_file_with_no_video_stream_as_length_only(mocker: MockerFixture) -> None:
@@ -580,10 +613,10 @@ def test_ffprobe_reads_a_file_with_no_video_stream_as_length_only(mocker: Mocker
     * run the probe over a file whose output lists no stream
     * verify the facts carry the duration and no size
     """
-    mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    locator = usable_locator(mocker)
     mocker.patch(f"{MODULE}.subprocess.run", return_value=SimpleNamespace(stdout=ffprobe_output("3.0")))
 
-    assert FfprobeDurationProbe().probe_video(Path("/fake/a.mp4")) == VideoFacts(3.0, None, None)
+    assert FfprobeDurationProbe(locator=locator).probe_video(Path("/fake/a.mp4")) == VideoFacts(3.0, None, None)
 
 
 def ffprobe_output(duration: str | None, stream: dict[str, object] | None = None) -> str:
@@ -616,10 +649,10 @@ def test_ffprobe_treats_unparseable_output_as_an_unreadable_file(mocker: MockerF
     * run the probe over a file the call answers for with no number
     * verify it answers ``None``
     """
-    mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    locator = usable_locator(mocker)
     mocker.patch(f"{MODULE}.subprocess.run", return_value=SimpleNamespace(stdout=stdout))
 
-    assert FfprobeDurationProbe().probe(Path("/fake/a.mp4")) is None
+    assert FfprobeDurationProbe(locator=locator).probe(Path("/fake/a.mp4")) is None
 
 
 @mark.parametrize(
@@ -637,10 +670,10 @@ def test_ffprobe_treats_a_failed_call_as_an_unreadable_file(mocker: MockerFixtur
     * make the call raise
     * verify the probe answers ``None`` rather than propagating
     """
-    mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    locator = usable_locator(mocker)
     mocker.patch(f"{MODULE}.subprocess.run", side_effect=error)
 
-    assert FfprobeDurationProbe().probe(Path("/fake/a.mp4")) is None
+    assert FfprobeDurationProbe(locator=locator).probe(Path("/fake/a.mp4")) is None
 
 
 def test_ffprobe_refuses_to_probe_with_nothing_to_run(mocker: MockerFixture) -> None:
@@ -652,10 +685,10 @@ def test_ffprobe_refuses_to_probe_with_nothing_to_run(mocker: MockerFixture) -> 
     * probe with nothing resolvable
     * verify it raises
     """
-    mocker.patch(f"{MODULE}.which", return_value=None)
+    locator = locator_resolving(mocker, None)
 
     with raises(DurationProbeError):
-        FfprobeDurationProbe().probe(Path("/fake/a.mp4"))
+        FfprobeDurationProbe(locator=locator).probe(Path("/fake/a.mp4"))
 
 
 # endregion
@@ -778,7 +811,7 @@ def test_both_backends_total_the_same_tree_identically(mocker: MockerFixture) ->
             [SimpleNamespace(track_type="General", duration=2500 if Path(path).name == "a.mp4" else 2600)]
         ),
     )
-    mocker.patch(f"{MODULE}.which", return_value="/usr/bin/ffprobe")
+    locator = usable_locator(mocker)
     mocker.patch(
         f"{MODULE}.subprocess.run",
         side_effect=lambda command, **_kwargs: SimpleNamespace(
@@ -787,7 +820,7 @@ def test_both_backends_total_the_same_tree_identically(mocker: MockerFixture) ->
     )
 
     mediainfo_total = content_duration(REHU_PATH, MediaInfoDurationProbe())
-    ffprobe_total = content_duration(REHU_PATH, FfprobeDurationProbe())
+    ffprobe_total = content_duration(REHU_PATH, FfprobeDurationProbe(locator=locator))
 
     assert mediainfo_total == ffprobe_total == 5
 

@@ -120,6 +120,8 @@ from .settings.root_catalog_settings import shared_root_catalog_settings
 from .settings.session_restore_settings import SessionRestoreSettings
 from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
+from .settings.tool_discovery import shared_tool_discovery
+from .settings.tools_settings import shared_tools_settings
 from .settings.tray_settings import shared_tray_settings
 from .settings.ui.checksums_page import ChecksumsPage
 from .settings.ui.descriptions_page import DescriptionsPage
@@ -138,6 +140,7 @@ from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.shortcuts_page import ShortcutsPage
 from .settings.ui.system_integration_page import SystemIntegrationPage
 from .settings.ui.tasks_page import TasksPage
+from .settings.ui.tools_page import ToolsPage
 from .settings.ui.videos_page import VideosPage
 from .tasks import (
     PendingSavesIndicator,
@@ -360,6 +363,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         QtAdsLoneTabHider(self.__dock_manager)
         self.__settings_dialog: Final = SettingsDialog()
         self.__register_settings_pages()
+        # after the pages, which follow it: the tools are found once, on a thread of their own, and only verified after
+        # (#521)
+        shared_tool_discovery().start()
         # after registration, not folded into SettingsDialog.__init__: add_page's own "first page
         # added becomes current" side effect needs every page registered first, or there'd be nothing
         # yet to correct (#228)
@@ -1336,7 +1342,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         self.__settings_dialog.add_page("System Integration", SystemIntegrationPage(self.__node_host, platform_frames))
         self.__settings_dialog.add_page("Tasks", TasksPage())
-        self.__settings_dialog.add_page("Videos", VideosPage())
+        self.__settings_dialog.add_page("Tools", ToolsPage())
+        videos_page = VideosPage()
+        videos_page.tools_requested.connect(lambda: self.__settings_dialog.show_page("Tools"))
+        self.__settings_dialog.add_page("Videos", videos_page)
 
     def __setup_docking_system(self) -> None:
         # not Final: this runs from __setup_docking_system rather than __init__, matching
@@ -1946,6 +1955,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # the node goes first, and fast: a node still starting is killed outright, a running one gets a short grace
         # (#506), so quitting never waits on it
         self.__node_host.stop()
+        # a search still going is left behind, and what it found so far is written with the rest below (#521)
+        shared_tool_discovery().stop()
 
         # the guards have passed, so the window is going: no answer from the presence scan may reach it from here on.
         # A call still blocked on a switched-off server is left where it is -- its thread is a daemon, and the process
@@ -1976,6 +1987,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__save_session()
         self.__documents_dock.save_preview_layouts()
         self.__settings_dialog.save_filter_state()
+        shared_tools_settings().save(persistent_settings())
         self.__recent_files.save(persistent_settings())
         self.__theme_settings.mode = self.__theme_model.mode
         self.__theme_settings.save(persistent_settings())

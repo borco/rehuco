@@ -849,9 +849,9 @@ Field order, in the three groups the layout separates:
   Reading a container is delegated to a **probe backend**, of which two ship, selected by an `engine`
   name the way the Markdown renderer's is
   (the `Videos` settings page is where one is selected, #225): **MediaInfo**, whose
-  library is bundled with the app and is therefore the default, and **ffprobe**, an executable the user
-  points at. A backend that cannot run *reports that* rather than measuring `0` — a silent zero is
-  indistinguishable from a tutorial holding no video. The recognized video extensions are a list, not a
+  library is bundled with the app and is therefore the default, and **FFmpeg's ffprobe**, an executable the user
+  sets up on the Tools page ([[packaging-deployment#external-tools]]). A backend that cannot run *reports that*
+  rather than measuring `0` — a silent zero is indistinguishable from a tutorial holding no video. The recognized video extensions are a list, not a
   constant, defaulting to tc4's set.
 - **Measuring runs off the GUI thread — resolved (#223)** — every measure row (both sizes, both
   durations, and the content count) hands its measurement to a worker and is *busy* until it answers, so a multi-gigabyte tree on an

@@ -22,16 +22,16 @@ import json
 import math
 import subprocess  # nosec B404  # only ever runs the ffprobe executable the caller named, with fixed flags
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from shutil import which
 from typing import Any, ClassVar, Final, override
 
 from pymediainfo import MediaInfo
 
 from .constants import EXCLUDED_FILE_PATTERNS, VIDEO_EXTENSIONS
 from .content_keys import content_key
+from .external_tools import FFMPEG_TOOL, ToolCandidate, ToolLocator, shared_tool_locator
 from .rehu_content_files import enumerate_content_files
 
 DURATION_KEY: Final = "duration"
@@ -216,18 +216,22 @@ class MediaInfoDurationProbe(DurationProbe):
 
 
 class FfprobeDurationProbe(DurationProbe):
-    """Reads durations by running **ffprobe**, an executable the user supplies.
+    """Reads durations by running **ffprobe**, from an FFmpeg the user has installed.
 
-    The backend for whoever already has FFmpeg installed and would rather the app use it than carry a
-    second media library: the ``-show_entries format=duration`` call ``tutcatalogpy3`` made, widened to
-    the first video stream's ``width,height`` (#410), with the executable's location a setting (#225)
-    because a system FFmpeg lives wherever that system put it.
+    The backend for whoever already has FFmpeg and would rather the app use it than carry a second media
+    library: the ``-show_entries format=duration`` call ``tutcatalogpy3`` made, widened to the first video
+    stream's ``width,height`` (#410). Which FFmpeg is the Tools page's to say ([[packaging-deployment#external-tools]],
+    #521); this finds it through the :class:`~rehuco_core.external_tools.ToolLocator`, once per instance, and a probe is
+    made fresh for each scan.
 
-    :param executable: the ``ffprobe`` executable's path, or ``None`` to look it up on ``PATH``.
+    :param install: the FFmpeg path the user chose, or empty for the newest usable one found.
+    :param detected: the installs found earlier, which an empty ``install`` takes the best of -- nothing is searched
+        for here.
+    :param locator: judges the chosen path; the process-wide one when omitted.
     """
 
     NAME = "ffprobe"
-    LABEL = "ffprobe (external)"
+    LABEL = "FFmpeg (external)"
 
     __ARGUMENTS: Final = (
         "-v",
@@ -248,22 +252,26 @@ class FfprobeDurationProbe(DurationProbe):
     mount; a call still running after this is one that will not return (a named pipe, a device node
     that answered the extension test), and a scan of hundreds of files must not hang on it."""
 
-    def __init__(self, executable: str | None = None) -> None:
-        self.__executable: Final = executable or ""
+    def __init__(
+        self, install: str = "", detected: Sequence[ToolCandidate] = (), locator: ToolLocator | None = None
+    ) -> None:
+        self.__install: Final = install
+        self.__detected: Final = tuple(detected)
+        self.__locator: Final = locator if locator is not None else shared_tool_locator()
+        self.__candidate: ToolCandidate | None = None
+        self.__resolved = False
 
     @override
     def unavailable_reason(self) -> str | None:
-        """Whether an ``ffprobe`` executable can be found.
+        """Whether a usable FFmpeg can be found.
 
-        :returns: ``None`` when one resolves, otherwise a sentence naming what is missing -- an unset
-            path with nothing on ``PATH`` to fall back to, or a configured path that holds no runnable
-            executable.
+        :returns: ``None`` when one is, otherwise a sentence saying why not -- none found, or the chosen path's own
+            problem.
         """
-        if self.__resolved_executable() is not None:
-            return None
-        if self.__executable:
-            return f"No runnable ffprobe at {self.__executable}."
-        return "ffprobe was not found on PATH, and no path is configured."
+        candidate = self.__resolve()
+        if candidate is None:
+            return "No FFmpeg was found, and none is set up."
+        return None if candidate.is_usable else candidate.reason
 
     @override
     def probe_video(self, path: Path) -> VideoFacts | None:
@@ -272,15 +280,16 @@ class FfprobeDurationProbe(DurationProbe):
         :param path: the video file.
         :returns: the file's facts, or ``None`` when the call failed, timed out, or printed no readable
             duration -- every one of which means this file contributes nothing.
-        :raises DurationProbeError: if no executable resolves; a scan cannot silently total ``0``
+        :raises DurationProbeError: if no usable FFmpeg resolves; a scan cannot silently total ``0``
             because the tool it was told to use is not there.
         """
-        executable = self.__resolved_executable()
-        if executable is None:
-            raise DurationProbeError(self.unavailable_reason())
+        reason = self.unavailable_reason()
+        candidate = self.__candidate
+        if reason is not None or candidate is None:
+            raise DurationProbeError(reason)
         try:
             completed = subprocess.run(  # nosec B603  # a resolved executable and fixed flags, never a shell
-                [executable, *self.__ARGUMENTS, str(path)],
+                [str(candidate.executable("ffprobe")), *self.__ARGUMENTS, str(path)],
                 capture_output=True,
                 text=True,
                 timeout=self.__TIMEOUT_SECONDS,
@@ -299,18 +308,15 @@ class FfprobeDurationProbe(DurationProbe):
         stream = streams[0] if isinstance(streams, list) and streams and isinstance(streams[0], dict) else {}
         return VideoFacts(duration, reported_pixels(stream.get("width")), reported_pixels(stream.get("height")))
 
-    def __resolved_executable(self) -> str | None:
-        """Locate the executable to run.
+    def __resolve(self) -> ToolCandidate | None:
+        """Find the FFmpeg to run, the first time it is asked.
 
-        :func:`shutil.which` for both cases rather than only the ``PATH`` one: given a configured path
-        it also answers *is this actually runnable*, and on Windows it is what supplies the ``.exe``
-        the user's path may well omit.
-
-        :returns: the executable's path, or ``None`` when none resolves.
+        :returns: the candidate, or ``None`` when none is configured and none is found.
         """
-        if self.__executable:
-            return which(self.__executable)
-        return which("ffprobe")
+        if not self.__resolved:
+            self.__candidate = self.__locator.resolve(FFMPEG_TOOL, self.__install, self.__detected)
+            self.__resolved = True
+        return self.__candidate
 
 
 def finite_seconds(raw: Any, *, allow_zero: bool = False) -> float | None:

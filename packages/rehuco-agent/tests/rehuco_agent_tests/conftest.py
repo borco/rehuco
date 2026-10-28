@@ -115,6 +115,10 @@ from rehuco_agent_tests.sub_docks_stub import (  # noqa: F401  # pylint: disable
     fixture_real_sub_docks,
     fixture_stub_sub_docks,
 )
+from rehuco_agent_tests.tool_isolation import (  # noqa: F401  # pylint: disable=unused-import
+    fixture_fake_tool_locator,
+    fixture_isolate_shared_tools_settings,
+)
 
 
 # Mirrors every dedicated settings test's own FakeSettings exactly (see e.g.
