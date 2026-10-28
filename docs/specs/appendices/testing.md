@@ -217,6 +217,11 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
 - **A hung `make` or pytest keeps running after it is stopped** (#459). Find its `uv`/`pytest`/`python` children by
   command line (`Get-CimInstance Win32_Process`) and stop only those; never `taskkill /IM python.exe` (#102), and never
   `git stash` across such a run. A clean second worktree, detached at master, runs master's suite beside a branch.
+  Match on `Name -eq 'python.exe'` as well as the command line: the shell running the query carries the same words in
+  its own, and stopping it stops whatever was to run next — the step restoring a file a break script had changed
+  (#522).
+- **A test's own thread is a daemon** (#522): `threading.Thread(daemon=True, …)`. One left waiting on an answer that
+  never comes keeps pytest alive after the test has failed, so the run hangs instead of reporting it.
 - **A silent parallel run at 0 CPU may be a deadlock** (#529): `uvx py-spy dump --pid N --native`, then `taskkill /T
   /F`. Repo-wide pylint is silent for minutes, and runs from the repo root (#498). An xdist "node down":
   `-p no:xdist --timeout=20` (#512).
