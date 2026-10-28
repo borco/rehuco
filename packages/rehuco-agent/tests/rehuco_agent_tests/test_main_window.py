@@ -79,7 +79,10 @@ from rehuco_agent.settings.rehuco_settings import RehucoSettings
 from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_agent.settings.session_restore_settings import SessionRestoreSettings
 from rehuco_agent.settings.tasks_settings import TasksSettings
+from rehuco_agent.settings.tool_discovery import ToolDiscovery
+from rehuco_agent.settings.tools_settings import ToolsSettings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
+from rehuco_agent.settings.ui.category_filter_proxy_model import PAGE_ROLE, TITLE_ROLE
 from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.files_page import FilesPage
@@ -89,10 +92,11 @@ from rehuco_agent.settings.ui.images_files_page import ImagesFilesPage
 from rehuco_agent.settings.ui.location_templates_page import LocationTemplatesPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
-from rehuco_agent.settings.ui.settings_dialog import PAGE_ROLE, TITLE_ROLE, SettingsDialog
+from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.system_integration_page import SystemIntegrationPage
 from rehuco_agent.settings.ui.tasks_page import TasksPage
+from rehuco_agent.settings.ui.tools_page import ToolsPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
 from rehuco_agent.tray_icon import TrayIcon
@@ -619,6 +623,30 @@ def test_registers_the_videos_page(qtbot: QtBot) -> None:
     assert any(isinstance(page, VideosPage) for page in pages)
 
 
+@mark.usefixtures("real_settings_pages")
+def test_the_videos_page_link_shows_the_tools_page(qtbot: QtBot) -> None:
+    """The link under the duration probe opens Tools (#521).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * make the Videos page ask for the Tools page
+    * verify the dialog shows the Tools page
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    videos_page = next(page for page in pages if isinstance(page, VideosPage))
+    tools_page = next(page for page in pages if isinstance(page, ToolsPage))
+
+    videos_page.tools_requested.emit()
+
+    assert dialog_ui.page_stack.currentWidget().widget() is tools_page
+
+
 def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     """Every page is a top-level row, except the ones grouped under "Images" (#277, #294, #298) and
     "Locations" (#322), and the rows are in alphabetical order.
@@ -657,6 +685,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
         "Session",
         "Shortcuts",
         "Tasks",
+        "Tools",
         "Videos",
     }
     assert "Excluded Files" not in titles
@@ -2095,6 +2124,43 @@ def test_close_event_saves_the_settings_dialogs_filter_state(mocker: MockerFixtu
     window.closeEvent(event)
 
     save_filter_state.assert_called_once()
+
+
+def test_the_tools_are_searched_for_when_the_window_starts(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Finding the external tools starts with the window and is the discovery's, on a thread of its own (#521).
+
+    **Test steps:**
+
+    * mock the shared discovery's ``start``
+    * construct ``MainWindow``
+    * verify it was started once
+    """
+    start = mocker.patch.object(ToolDiscovery, "start")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    start.assert_called_once_with()
+
+
+def test_close_event_stops_the_search_and_writes_the_tools_settings(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """What a search found is written once, with the other at-shutdown saves, never as each tool is found (#521).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and mock the discovery's ``stop`` and the tools settings' ``save``
+    * dispatch a close event
+    * verify the search was stopped and the settings saved, once each
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    stop = mocker.patch.object(ToolDiscovery, "stop")
+    save = mocker.patch.object(ToolsSettings, "save")
+
+    window.closeEvent(QCloseEvent())
+
+    stop.assert_called_once()
+    save.assert_called_once()
 
 
 def test_close_event_accepts_immediately_with_no_dirty_documents(mocker: MockerFixture, qtbot: QtBot) -> None:

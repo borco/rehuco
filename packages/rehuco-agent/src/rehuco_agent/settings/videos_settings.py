@@ -4,11 +4,10 @@
 extensions it recognizes as parameters rather than reading a setting, so this is where the two come from.
 The counterpart of `ReferenceImagesSettings`, which supplies the other plugin's scan the same way.
 
-**Each backend's settings are stored side by side**, the shape `MarkdownRenderingSettings` already uses:
-an ``engine`` key naming a registry member, and ``ffprobe_executable`` kept whether or not ffprobe is the
-selected one, so switching backends and back loses neither. An ``engine`` naming a backend this build
-does not have -- an ``.ini`` written by a newer version -- selects the default rather than raising, the
-way `ImageViewerSettings` already treats an unrecognized ``mode``.
+An ``engine`` key names a registry member; one naming a backend this build does not have -- an ``.ini``
+written by a newer version -- selects the default rather than raising, the way `ImageViewerSettings` already
+treats an unrecognized ``mode``. Where the external backend's FFmpeg lives is not kept here: it is the Tools
+page's ([[packaging-deployment#external-tools]], #521), read through `ToolsSettings`.
 
 A plain ``@dataclass``, like `ReferenceImagesSettings` and `ExcludedFilesSettings`: both values are read
 only when a scan runs, so nothing on screen changes when they do and there is nothing to watch them
@@ -23,6 +22,7 @@ from PySide6.QtCore import QSettings
 from rehuco_core import (
     DEFAULT_DURATION_PROBE,
     DURATION_PROBES,
+    FFMPEG_TOOL,
     VIDEO_EXTENSIONS,
     DurationProbe,
     FfprobeDurationProbe,
@@ -31,10 +31,10 @@ from rehuco_core import (
 
 from .extension_lists import normalize_extensions as normalize_extension_list
 from .persistent_settings import persistent_settings, read_stored_strings
+from .tools_settings import shared_tools_settings
 
 GROUP: Final = "videos"
 ENGINE_KEY: Final = "engine"
-FFPROBE_EXECUTABLE_KEY: Final = "ffprobe_executable"
 EXTENSIONS_KEY: Final = "extensions"
 MARK_FILE_VIEWED_KEY: Final = "mark_file_viewed_at_end"
 MARK_TUTORIAL_VIEWED_KEY: Final = "mark_tutorial_viewed_on_last_file"
@@ -95,10 +95,6 @@ class VideosSettings:
     engine: str = DEFAULT_DURATION_PROBE
     """Which probe reads a video's duration -- a key of :data:`~rehuco_core.DURATION_PROBES`."""
 
-    ffprobe_executable: str = ""
-    """Where the ``ffprobe`` executable lives, or empty to look it up on ``PATH``. Kept whether or not
-    ffprobe is the selected backend, so switching to the other and back does not lose it."""
-
     extensions: tuple[str, ...] = field(default_factory=tuple)
     """The recognized video extensions as stored -- empty on a fresh install, where the effective set is
     the shipped one rather than nothing."""
@@ -129,7 +125,7 @@ class VideosSettings:
         """Build the selected backend, with its own settings.
 
         :data:`~rehuco_core.DURATION_PROBES` holds classes rather than instances precisely so this can
-        happen: ffprobe is constructed with the path this section keeps for it, and every other backend
+        happen: ffprobe is constructed with the FFmpeg path the Tools page keeps, and every other backend
         takes none. A fresh instance per scan, since a probe holds no state worth sharing and the
         settings behind it may have changed since the last one.
 
@@ -138,7 +134,8 @@ class VideosSettings:
         """
         probe_class = DURATION_PROBES[read_engine(self.engine)]
         if issubclass(probe_class, FfprobeDurationProbe):
-            return probe_class(self.ffprobe_executable)
+            tools = shared_tools_settings()
+            return probe_class(tools.path(FFMPEG_TOOL.ID), tools.detection(FFMPEG_TOOL.ID).installs)
         return probe_class()
 
     def load(self, settings: QSettings) -> None:
@@ -152,7 +149,6 @@ class VideosSettings:
         """
         settings.beginGroup(GROUP)
         self.engine = read_engine(settings.value(ENGINE_KEY))
-        self.ffprobe_executable = cast(str, settings.value(FFPROBE_EXECUTABLE_KEY, "", type=str))
         self.extensions = read_extensions(settings.value(EXTENSIONS_KEY))
         self.mark_file_viewed_at_end = cast(bool, settings.value(MARK_FILE_VIEWED_KEY, True, type=bool))
         self.mark_tutorial_viewed_on_last_file = cast(bool, settings.value(MARK_TUTORIAL_VIEWED_KEY, True, type=bool))
@@ -166,7 +162,6 @@ class VideosSettings:
         """
         settings.beginGroup(GROUP)
         settings.setValue(ENGINE_KEY, self.engine)
-        settings.setValue(FFPROBE_EXECUTABLE_KEY, self.ffprobe_executable)
         settings.setValue(EXTENSIONS_KEY, list(self.extensions))
         settings.setValue(MARK_FILE_VIEWED_KEY, self.mark_file_viewed_at_end)
         settings.setValue(MARK_TUTORIAL_VIEWED_KEY, self.mark_tutorial_viewed_on_last_file)

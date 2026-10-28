@@ -130,9 +130,9 @@ Four of those rows can **measure themselves**: the two sizes sum the resource's 
 add up how long its videos run, and a reference pack's image count opens its archives. Each shows what it
 found *beside* the stored value rather than instead of it, so a disagreement — content deleted as it was
 watched, an archive refreshed behind the app's back — is something you read before deciding, and a second
-click is what stores it. Reading a video's length needs a media library the app carries, or an `ffprobe`
-you already have; which one is a setting. The duration Compute also writes each video's length into the
-record as it goes, without a save: that is what the **Files** panel's percentages are measured against.
+click is what stores it. Reading a video's length needs a media library the app carries, or the `ffprobe` of an
+FFmpeg you already have, set up on the Tools page; which one is a setting. The duration Compute also writes each
+video's length into the record as it goes, without a save: that is what the **Files** panel's percentages are measured against.
 
 Which panels you had open, how you'd arranged them, and which file was in front are remembered per
 resource and restored when you open it again. The documents open at quit are reopened on the next start, under the

@@ -91,8 +91,9 @@ and Tasks docks get.
 "Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Files" (`FilesPage`, #226,
 #291, #298), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
 "Root Catalog" (`RootCatalogPage`, #457), "Session" (`SessionPage`, #65), "Shortcuts" (`ShortcutsPage`, #344),
-"System Integration", "Tasks" (`TasksPage`, #202) and "Videos" (`VideosPage`, #225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar
-Extensions" (`ImagesFilesPage`) and "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
+"System Integration", "Tasks" (`TasksPage`, #202), "Tools" (`ToolsPage`, #521) and "Videos" (`VideosPage`, #225).
+"Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar Extensions" (`ImagesFilesPage`) and
+"Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
 Two settings the 0.4.0 video and root work adds to existing pages: **Videos** gains *Maximize videos over* — the
 document, the main window or full screen, the lightbox's three surfaces, chosen separately for the player
@@ -348,18 +349,46 @@ again, which was the cheaper trade than carrying a compatibility path for a pref
 `VideosPage` reloads itself after saving for the same reason, over the same rule: its video-extension
 list normalizes exactly as the reference-images one does, and the two share it
 (`settings/extension_lists.py`) rather than each restating a rule that differs only in which set an
-emptied list falls back to. Its other block is the **duration probe** ([[field-schema#duration-size]]),
-which adds two things neither list page needs. First, **each backend's own settings are stored side by
-side** — an `engine` key naming a registry member, and `ffprobe_executable` kept whether or not ffprobe
-is the selected backend — so switching to MediaInfo and back does not lose a path that was typed; that is
-the `markdown_css`/`mistletoe_css` arrangement, and the page keeps both halves too, disabling the path
-row under the other backend rather than hiding or clearing it. An `engine` naming a backend this build
-does not have (an `.ini` written by a newer version) selects the default rather than raising, the way
-`ImageViewerSettings` already treats an unrecognized `mode`. Second, **the page reports whether the
-selected backend can actually run**, asking the probe itself (`unavailable_reason`) about the *staged*
-choice as it is typed: a scan under an unusable backend raises rather than measuring `0`
-([[field-schema#duration-size]]), so an ffprobe path pointing at nothing has to be visible here rather
-than surfacing as a row that refuses to compute.
+emptied list falls back to. Its other block is the **duration probe** ([[field-schema#duration-size]]), which adds two things neither list
+page needs. First, **the backend's `engine` name is stored** and an unrecognized one (an `.ini` written by a newer
+version) selects the default rather than raising, the way `ImageViewerSettings` already treats an unrecognized
+`mode`; the external one is offered as *FFmpeg (external)* but stored as `ffprobe`, a name that never changes, since
+renaming one silently reselects the default on every install. Its location is no longer here: it is set on the Tools
+page ([[appendices.settings-pages#tools-page]]). Second, **the page reports whether the selected backend can actually
+run**, asking the probe itself (`unavailable_reason`) off the GUI thread, the first time the page is shown and again
+whenever FFmpeg's path or detection changes -- never on each show, since asking searches for nothing and a probe is
+built for each Measure: a scan under an unusable backend
+raises rather than measuring `0` ([[field-schema#duration-size]]). The *FFmpeg (external)* choice is **disabled until
+FFmpeg is usable**, with a tooltip and a link to the Tools page; a choice already stored stays selected when its tool
+later goes missing, and the page says why rather than switching to MediaInfo.
+
+### The Tools page (#521)
+
+[[[appendices.settings-pages#tools-page]]]
+
+One frame per external tool in `rehuco_core`'s registry ([[packaging-deployment#external-tools]]), each built by a
+`ToolFrame` controller from one `.ui`, a plain `QFrame` the controller hands out, as the platform frames are. A frame
+says what the tool is for, which features need it and why it is not bundled, links to its install instructions on the
+docs site, and **lists every install found, one radio each**, best first, each with its folder and, in
+parentheses, its version and status — an unusable one greyed, with the reason, so the user sees why it is not used —
+then a last **Custom** row, a path with **Browse…**. The best install is chosen by default.
+
+**The stored value is one string.** Empty means *the best install found*, so a fresh install needs no Apply and a
+search that finds a newer build moves the choice with it; any other row stores its folder, which pins it; Custom
+stores the typed path. A stored folder no longer listed — uninstalled, on a share that is down, or browsed to — shows
+under Custom. **The Custom row carries the same parenthesis**, from inspecting its path, and a path holding nothing
+usable reads *not found* and is painted in the warning colour, so a choice that has gone is marked rather than dropped.
+**When nothing is found, Custom is the only row and is checked** — which is not an edit, the value being still empty,
+so the page is not dirty. A tool that resolves to nothing is *not set up*, and what needs it is disabled until it is.
+Below the list a status line says the same in full.
+
+**The page searches for nothing.** The rows are what the background discovery recorded
+([[packaging-deployment#external-tools]]), shown at once, with *Looking…* until a tool's first result is in; the block
+follows the discovery as it records. **Detect** asks it to search that tool again. A listed install was judged when it
+was found, so choosing it reads nothing; only a custom path is looked at here, since the user typed it, and its version
+is read on a pool thread ([[appendices.code-conventions#worker-threads]]). The settings object is reactive, so the
+Videos page follows a tool changing. The radios and the path text are inside one `ValueControl`, whose value is that
+string -- so they are not values of their own, and Apply writes the detections with the paths.
 
 The "System Integration" page has no local settings dataclass of its own: Register/Unregister and the crash
 dump buttons write straight to the OS when clicked (`rehuco_agent.registration_windows` on Windows), so the

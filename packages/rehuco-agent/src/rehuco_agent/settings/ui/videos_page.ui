@@ -59,7 +59,7 @@
         <item>
          <widget class="QRadioButton" name="ffprobe_probe_radio_button">
           <property name="text">
-           <string>ffprobe</string>
+           <string>FFmpeg (external)</string>
           </property>
          </widget>
         </item>
@@ -79,34 +79,6 @@
        </layout>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="ffprobe_executable_layout">
-        <item>
-         <widget class="QLabel" name="ffprobe_executable_label">
-          <property name="text">
-           <string>ffprobe executable:</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLineEdit" name="ffprobe_executable_edit">
-          <property name="toolTip">
-           <string>Where the ffprobe executable lives. Leave it empty to use whichever one is on PATH.</string>
-          </property>
-          <property name="placeholderText">
-           <string>found on PATH</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="browse_button">
-          <property name="text">
-           <string>Browse…</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-      <item>
        <widget class="WrappingLabel" name="availability_label">
         <property name="toolTip">
          <string>Whether the selected backend can run here, checked as you change it.</string>
@@ -117,9 +89,19 @@
        </widget>
       </item>
       <item>
+       <widget class="QLabel" name="tools_link_label">
+        <property name="text">
+         <string>&lt;a href=&quot;tools&quot;&gt;Set up FFmpeg in Tools&lt;/a&gt;</string>
+        </property>
+        <property name="textInteractionFlags">
+         <set>Qt::TextInteractionFlag::LinksAccessibleByMouse</set>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="WrappingLabel" name="probe_note_label">
         <property name="text">
-         <string>Which program reads how long a video runs. MediaInfo ships with the app and needs nothing installed; ffprobe comes with FFmpeg, if this machine already has it. Durations already measured are not recomputed by a change here.</string>
+         <string>Which program reads how long a video runs. MediaInfo ships with the app and needs nothing installed; FFmpeg is one this machine already has, set up on the Tools page. Durations already measured are not recomputed by a change here.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

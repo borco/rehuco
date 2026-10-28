@@ -33,6 +33,7 @@ from rehuco_agent.settings.ui.session_page import SessionPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.settings_page import SettingsPage
 from rehuco_agent.settings.ui.tasks_page import TasksPage
+from rehuco_agent.settings.ui.tools_page import ToolsPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 
 
@@ -55,6 +56,7 @@ PAGE_FACTORIES: list[Callable[[], SettingsPage]] = [
     ScreenshotPatternsPage,
     SessionPage,
     TasksPage,
+    ToolsPage,
     VideosPage,
 ]
 """Every page `MainWindow` registers on every platform, in registration order."""

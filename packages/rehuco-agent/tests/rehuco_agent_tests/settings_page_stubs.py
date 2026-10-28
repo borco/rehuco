@@ -4,6 +4,7 @@ pages (#545); with the fixtures that install them, imported by name into the pac
 import sys
 from typing import Final
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFrame, QWidget
 from pytest import FixtureRequest, fixture
 from pytest_mock import MockerFixture
@@ -25,6 +26,7 @@ SETTINGS_PAGE_CLASSES: Final = (
     "ShortcutsPage",
     "SystemIntegrationPage",
     "TasksPage",
+    "ToolsPage",
     "VideosPage",
 )
 """The settings pages `MainWindow` registers, by their names in :mod:`rehuco_agent.main_window`."""
@@ -39,6 +41,9 @@ PLATFORM_FRAME_CLASSES: Final = (
 
 class StubSettingsPage(QWidget):
     """An empty settings page: what `MainWindow` registers in a test of anything but its settings pages (#545)."""
+
+    tools_requested = Signal()
+    """What `VideosPage` has, which `MainWindow` connects."""
 
     def __init__(self, *_args: object) -> None:
         super().__init__()

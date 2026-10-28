@@ -511,7 +511,60 @@ cautionary entry: it is the smallest and the only one needing no binary at all, 
 for MPEG-TS and VOB — two containers on tc4's own extension list — which is exactly the silent-zero failure the probe
 contract refuses.
 
-### §16.8.3 Qt Multimedia in the bundle
+### §16.8.3 External tools
+
+[[[packaging-deployment#external-tools]]]
+
+- [#521: feat: Tools settings page — optional external tools (ffprobe, VLC, ffmpeg): detect, browse, version gates, install instructions](https://github.com/borco/rehuco/issues/521)
+
+Some programs the app uses cannot ship with it: too large, GPL, or non-free. Each is an **external tool**: a
+`ToolDescriptor` in `rehuco-core` (Qt-free) says what it is for, which features need it, why it is not bundled, where
+each OS keeps it, how its version is read, its minimum and its blocklist. A `ToolLocator` turns a descriptor into
+candidates, each with a version and a status. One **Tools** settings page ([[appendices.settings-pages#tools-page]])
+sets them all up. The tracer has one tool, **FFmpeg** (`ffmpeg` and `ffprobe` in one folder, the duration probe's
+external backend, [[field-schema#duration-size]]); VLC (#318, #319) and the conversion `ffmpeg` (#520) arrive with the
+features that need them.
+
+- **The app never downloads a tool.** The docs site's [External Tools](../external-tools.md) page says where each one
+  comes from, one section per tool under a fixed anchor (`#ffmpeg`, `#vlc`, `#ffmpeg-libraries`); each tool's frame links
+  to its section.
+- **Detection finds every install**, in the current OS's default places — Windows: `PATH`, winget, scoop,
+  chocolatey, Program Files; macOS: `PATH`, `/opt/homebrew`, `/usr/local`, MacPorts; Linux: `PATH`, `/usr/bin`,
+  `/usr/local/bin` — and the newest usable one is chosen unless the user picks another. A folder of links to the
+  executables (winget's `Links`), or of scoop's shims (a launcher beside a `.shim` file naming the real executable),
+  counts as the install it points at, so one install is listed once; a linked folder (scoop's `current`) keeps its own
+  path, so a choice of it survives an update. **Browse** picks a custom install and takes the executable, its folder,
+  or an unpacked archive's root holding a `bin`.
+- **It runs once, in the background.** The agent starts a thread of its own at launch that visits each tool: one never
+  searched for is searched for, one already searched for is only **verified** — its stored installs are kept while their
+  executables still exist, with nothing searched for and no version read. So the first start searches, a later one
+  costs a few file checks, and a run interrupted by quitting resumes with the tools it had not reached. A tool searched
+  for that found nothing is not searched for again until the user presses **Detect**, which forces the search. The
+  thread is a daemon, so quitting never waits for it.
+- **What was found is stored, beside the user's path, and both are kept.** Per tool the settings file holds the path
+  the user chose (empty for the best install found) and the detection: whether the tool was searched for, and every
+  install found, each with its version and status. A custom path never removes the detection, so giving it up finds
+  what was found before. Recording a result changes memory only; the file is written with the other settings when the window
+  closes and when the Tools page applies, never per tool. A feature **reads** the detection and searches for nothing.
+- **Versions only, no checksums.** A descriptor has a minimum and a blocklist of versions known not to work, each with
+  its reason. A version newer than any tested, or one that cannot be read (a git build), is **untested** and allowed:
+  an allowlist would lock out everyone who updated.
+- **Status** per candidate: *usable*; *untested* (usable); *not runnable* (the executable does not start); *too old*;
+  *blocklisted*, with the reason; and, when VLC arrives, *wrong architecture* (a 32-bit `libvlc.dll` in a 64-bit
+  process) and *unusable in a sandbox* (a snap or flatpak VLC), each its own status rather than a version failure.
+  *Missing* is a path with nothing at it.
+- **The version is read without loading anything into the agent**: by running the tool (`ffprobe -version`), from the
+  vendor's own metadata where the executable prints nothing, and for a library in a child process.
+- **A chosen path is judged when used**, its version read once and cached by path and modification time. A feature
+  whose tool is unusable is disabled with the reason and a way to the Tools page, rather than failing at use; one that
+  was usable and later breaks, as a tool updated or a share unmounted, fails with the candidate's own reason.
+- **Two kinds of FFmpeg.** The **program** takes any version at or above its minimum. The **playback libraries** replace
+  the FFmpeg Qt Multimedia bundles ([[plugins#in-app-player]]) and must match the major versions the shipped PySide6
+  bundles, read from its own DLL names; they are not built yet.
+- **Paths are machine-local, never remotely settable** ([[discovery-trust-access#remote-admin]]). A node locates its own
+  tools through the same `ToolLocator`, configured from its own config, and never sees the agent's paths.
+
+### §16.8.4 Qt Multimedia in the bundle
 
 [[[packaging-deployment#qt-multimedia]]]
 

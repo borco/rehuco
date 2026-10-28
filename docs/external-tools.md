@@ -6,9 +6,14 @@ should not carry. You install them yourself and point the app at them. This page
 ## FFmpeg, for video durations {#ffmpeg}
 
 A tutorial's runtime is the sum of its videos' durations. **Settings ▸ Videos ▸ Duration probe** chooses what reads
-them: **MediaInfo**, which ships with the app and needs nothing installed, or **ffprobe**, which comes with FFmpeg.
-With ffprobe selected, *ffprobe executable* says where it lives; left empty, the one on `PATH` is used, and the page
-reports whether the selected probe can run. Any recent FFmpeg works.
+them: **MediaInfo**, which ships with the app and needs nothing installed, or **FFmpeg (external)**, which uses the
+`ffprobe` that comes with FFmpeg. The app looks for FFmpeg once, in the background, the first time it starts, and
+remembers what it found. **Settings ▸ Tools** lists every install found (on `PATH`, or installed by winget, scoop,
+Chocolatey, Homebrew or your distribution), each with its version and whether it works, and uses the newest that does
+unless you pick another. **Custom** takes a path you browse to — the `ffmpeg` or `ffprobe` file, or the folder holding
+them — and marks it *not found* if nothing usable is there. If you install
+FFmpeg later, press **Detect** to look again. The *FFmpeg (external)* choice on the Videos page is available once one
+does. Any FFmpeg from version 4.0 on works.
 
 === "Windows"
 

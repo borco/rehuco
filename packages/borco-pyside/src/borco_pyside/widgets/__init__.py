@@ -17,6 +17,7 @@ from .content_sized_list_view import ContentSizedListView
 from .content_sized_table_view import ContentSizedTableView
 from .dynamic_properties_helpers import toggle_dynamic_property
 from .elided_label import ElidedLabel
+from .elided_radio_button import ElidedRadioButton
 from .flow_layout import FlowLayout
 from .header_sections_menu import HeaderSectionsMenu
 from .horizontal_line import HorizontalLine
@@ -75,6 +76,7 @@ __all__ = [
     "DuplicateItemAction",
     "EditItemAction",
     "ElidedLabel",
+    "ElidedRadioButton",
     "FlowLayout",
     "HeaderSectionsMenu",
     "HorizontalLine",

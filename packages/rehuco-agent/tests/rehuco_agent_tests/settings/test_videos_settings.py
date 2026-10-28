@@ -10,6 +10,7 @@ from typing import Any
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import videos_settings
+from rehuco_agent.settings.tools_settings import shared_tools_settings
 from rehuco_agent.settings.videos_settings import (
     VideosSettings,
     normalize_extensions,
@@ -18,15 +19,15 @@ from rehuco_agent.settings.videos_settings import (
 )
 from rehuco_core import (
     DEFAULT_DURATION_PROBE,
+    FFMPEG_TOOL,
     VIDEO_EXTENSIONS,
     FfprobeDurationProbe,
     MediaInfoDurationProbe,
     WatchRules,
 )
 
-MISSING_FFPROBE = "/nowhere/ffprobe"
-"""A path holding no executable, so :meth:`FfprobeDurationProbe.unavailable_reason` names it back --
-which is how a test observes *which* executable the probe was built with, without reaching inside it."""
+FFMPEG_PATH = "/opt/ffmpeg/bin"
+"""A path the Tools page might hold for FFmpeg; the locator is a mock, so nothing needs to be there."""
 
 
 # region fixtures
@@ -185,20 +186,22 @@ def test_stored_extensions_replace_the_shipped_set_entirely() -> None:
     assert VideosSettings(extensions=("mp4",)).video_extensions == (".mp4",)
 
 
-def test_the_ffprobe_probe_is_built_with_the_configured_executable() -> None:
-    """Selecting ffprobe hands it the path this section keeps for it, not a bare ``PATH`` lookup (#225).
+def test_the_ffprobe_probe_is_built_with_the_path_the_tools_page_keeps(fake_tool_locator: Any) -> None:
+    """Selecting ffprobe hands it the FFmpeg path the Tools page holds, not a bare lookup (#225, #521).
 
     **Test steps:**
 
-    * build a settings object selecting ffprobe with an executable that does not exist
-    * verify the probe is an ffprobe one, and reports that very path as missing
+    * set the Tools page's FFmpeg path and build the probe from a settings object selecting ffprobe
+    * ask the probe whether it can run
+    * verify the locator was asked about that very path
     """
-    settings = VideosSettings(engine=FfprobeDurationProbe.NAME, ffprobe_executable=MISSING_FFPROBE)
+    shared_tools_settings().set_path(FFMPEG_TOOL.ID, FFMPEG_PATH)
 
-    probe = settings.create_probe()
+    probe = VideosSettings(engine=FfprobeDurationProbe.NAME).create_probe()
 
     assert isinstance(probe, FfprobeDurationProbe)
-    assert probe.unavailable_reason() == f"No runnable ffprobe at {MISSING_FFPROBE}."
+    probe.unavailable_reason()
+    fake_tool_locator.resolve.assert_called_once_with(FFMPEG_TOOL, FFMPEG_PATH, ())
 
 
 def test_an_engine_this_build_lacks_still_yields_a_usable_probe() -> None:
@@ -223,28 +226,26 @@ def test_load_falls_back_to_the_defaults_on_a_fresh_install(settings: FakeSettin
     **Test steps:**
 
     * load a settings object from empty storage
-    * verify the default engine, no executable and the shipped extension set
+    * verify the default engine and the shipped extension set
     """
     loaded = VideosSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.engine == DEFAULT_DURATION_PROBE
-    assert loaded.ffprobe_executable == ""
     assert loaded.video_extensions == VIDEO_EXTENSIONS
 
 
 def test_every_value_round_trips_through_storage(settings: FakeSettings) -> None:
-    """What was saved is what loads back: the backend, its executable, and the list in order (#225).
+    """What was saved is what loads back: the backend and the list in order (#225).
 
     **Test steps:**
 
-    * save a settings object holding all three
+    * save a settings object holding both
     * load a second object from the same storage
-    * verify it holds the same three
+    * verify it holds the same two
     """
     saved = VideosSettings(
         engine=FfprobeDurationProbe.NAME,
-        ffprobe_executable=MISSING_FFPROBE,
         extensions=(".mp4", ".mkv"),
     )
     saved.save(settings)  # type: ignore[arg-type]
@@ -253,7 +254,6 @@ def test_every_value_round_trips_through_storage(settings: FakeSettings) -> None
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.engine == FfprobeDurationProbe.NAME
-    assert loaded.ffprobe_executable == MISSING_FFPROBE
     assert loaded.extensions == (".mp4", ".mkv")
 
 
@@ -270,33 +270,17 @@ def test_extensions_are_saved_as_a_list(settings: FakeSettings) -> None:
     assert settings.value("videos/extensions") == [".mp4", ".mkv"]
 
 
-def test_each_backends_settings_survive_switching_to_the_other_and_back(settings: FakeSettings) -> None:
-    """The executable is kept whether or not ffprobe is selected, so a switch loses nothing (#225).
-
-    That is the whole reason the two backends' settings sit side by side rather than under one
-    "probe settings" key, the same arrangement ``markdown_css``/``mistletoe_css`` already takes.
+def test_the_ffmpeg_path_is_not_stored_with_the_videos(settings: FakeSettings) -> None:
+    """Where FFmpeg is lives on the Tools page, so the Videos group holds no copy of it (#521).
 
     **Test steps:**
 
-    * save ffprobe selected with an executable path
-    * save again with the bundled backend selected, keeping the path as loaded
-    * load afresh and select ffprobe again
-    * verify the executable is still the one configured
+    * save a settings object selecting ffprobe
+    * verify nothing was stored for an executable
     """
-    configured = VideosSettings(engine=FfprobeDurationProbe.NAME, ffprobe_executable=MISSING_FFPROBE)
-    configured.save(settings)  # type: ignore[arg-type]
+    VideosSettings(engine=FfprobeDurationProbe.NAME).save(settings)  # type: ignore[arg-type]
 
-    switched = VideosSettings()
-    switched.load(settings)  # type: ignore[arg-type]
-    switched.engine = MediaInfoDurationProbe.NAME
-    switched.save(settings)  # type: ignore[arg-type]
-
-    switched_back = VideosSettings()
-    switched_back.load(settings)  # type: ignore[arg-type]
-    switched_back.engine = FfprobeDurationProbe.NAME
-
-    assert switched_back.ffprobe_executable == MISSING_FFPROBE
-    assert switched_back.create_probe().unavailable_reason() == f"No runnable ffprobe at {MISSING_FFPROBE}."
+    assert settings.value("videos/ffprobe_executable") is None
 
 
 def test_load_repairs_an_engine_this_build_lacks(settings: FakeSettings) -> None:

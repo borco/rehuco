@@ -1,6 +1,7 @@
 """Tests for VideosPage: the Videos settings category page (#225)."""
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from borco_pyside.widgets import StringListEditor
@@ -9,14 +10,25 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import videos_settings
+from rehuco_agent.settings.tools_settings import ToolDetection, shared_tools_settings
 from rehuco_agent.settings.ui import videos_page
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
-from rehuco_agent.settings.ui.videos_page import VideosPage
+from rehuco_agent.settings.ui.videos_page import CHECKING_TEXT, NEEDS_FFMPEG_TOOLTIP, VideosPage
 from rehuco_agent.settings.videos_settings import VideosSettings, shared_videos_settings
-from rehuco_core import VIDEO_EXTENSIONS, FfprobeDurationProbe, MediaInfoDurationProbe
+from rehuco_core import (
+    FFMPEG_TOOL,
+    VIDEO_EXTENSIONS,
+    FfprobeDurationProbe,
+    MediaInfoDurationProbe,
+    ToolCandidate,
+    ToolStatus,
+)
 
-MISSING_FFPROBE = "/nowhere/ffprobe"
-"""A path holding no executable, so the page has something concrete to report as unusable."""
+USABLE_FFMPEG = ToolCandidate(Path("/opt/ffmpeg/bin"), "PATH", ToolStatus.USABLE, (7, 1))
+"""An FFmpeg the locator found and judged usable."""
+
+NO_FFMPEG = "No FFmpeg was found, and none is set up."
+"""What the probe says when the locator finds none."""
 
 
 # region fixtures
@@ -99,6 +111,16 @@ def extensions_editor(page: VideosPage) -> StringListEditor:
     return page_ui(page).extensions_editor
 
 
+def settle(qtbot: QtBot, page: VideosPage) -> None:
+    """Ask the page to check FFmpeg and wait for its answer to be shown.
+
+    :param qtbot: the pytest-qt fixture.
+    :param page: the page to check.
+    """
+    with qtbot.waitSignal(page.availability_checked, timeout=5000):
+        page.refresh_availability()
+
+
 # endregion
 
 # region the probe choice
@@ -137,31 +159,101 @@ def test_the_backends_name_themselves(qtbot: QtBot) -> None:
     assert ui.ffprobe_probe_radio_button.text() == FfprobeDurationProbe.LABEL
 
 
-def test_the_executable_row_is_live_only_while_ffprobe_is_selected(qtbot: QtBot) -> None:
-    """The path is only meaningful under the backend that runs it, so it is disabled under the other.
-
-    Disabled rather than hidden: a path already typed stays visible under the choice it belongs to,
-    which is what says the two backends' settings are kept side by side (#225).
+def test_the_ffmpeg_choice_is_offered_only_once_ffmpeg_is_usable(qtbot: QtBot, fake_tool_locator: Any) -> None:
+    """The choice is disabled, with the way to the Tools page beside it, until FFmpeg can be used (#521).
 
     **Test steps:**
 
-    * build the page and verify the path row is disabled under the bundled backend
-    * select ffprobe and verify the row came alive
-    * select the bundled backend again and verify it went back
+    * build the page with no FFmpeg found and verify the choice is disabled, with its tooltip
+    * check, and verify the link to the Tools page is shown and the choice is still disabled
+    * find a usable FFmpeg and check again
+    * verify the choice is enabled, the tooltip gone and the link hidden
     """
     page = VideosPage()
     qtbot.addWidget(page)
     ui = page_ui(page)
+    assert ui.ffprobe_probe_radio_button.isEnabled() is False
+    assert ui.ffprobe_probe_radio_button.toolTip() == NEEDS_FFMPEG_TOOLTIP
 
-    assert ui.ffprobe_executable_edit.isEnabled() is False
-    assert ui.browse_button.isEnabled() is False
+    settle(qtbot, page)
+    assert ui.ffprobe_probe_radio_button.isEnabled() is False
+    assert ui.tools_link_label.isHidden() is False
 
-    ui.ffprobe_probe_radio_button.setChecked(True)
-    assert ui.ffprobe_executable_edit.isEnabled() is True
-    assert ui.browse_button.isEnabled() is True
+    fake_tool_locator.resolve.return_value = USABLE_FFMPEG
+    settle(qtbot, page)
+    assert ui.ffprobe_probe_radio_button.isEnabled() is True
+    assert ui.ffprobe_probe_radio_button.toolTip() == ""
+    assert ui.tools_link_label.isHidden() is True
 
-    ui.mediainfo_probe_radio_button.setChecked(True)
-    assert ui.ffprobe_executable_edit.isEnabled() is False
+
+def test_a_selected_ffmpeg_stays_selected_when_it_goes_missing(qtbot: QtBot) -> None:
+    """A choice made while FFmpeg worked is still what the next scan uses, so it stays, and says why it cannot (#521).
+
+    **Test steps:**
+
+    * save ffprobe as the engine, build the page and check with no FFmpeg to be found
+    * verify ffprobe is still checked and enabled, and the line gives the reason
+    """
+    shared_videos_settings().engine = FfprobeDurationProbe.NAME
+    page = VideosPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+
+    settle(qtbot, page)
+
+    assert ui.ffprobe_probe_radio_button.isChecked() is True
+    assert ui.ffprobe_probe_radio_button.isEnabled() is True
+    assert ui.availability_label.text() == NO_FFMPEG
+    assert page.is_dirty() is False
+
+
+def test_the_link_asks_for_the_tools_page(qtbot: QtBot) -> None:
+    """Following the link is the page's whole part in opening Tools; the dialog does the showing (#521).
+
+    **Test steps:**
+
+    * build the page and activate the link
+    * verify the page asked for Tools
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    with qtbot.waitSignal(page.tools_requested, timeout=1000):
+        page_ui(page).tools_link_label.linkActivated.emit("tools")
+
+
+def test_showing_the_page_checks_ffmpeg_again(qtbot: QtBot) -> None:
+    """A tool installed since, or a share unmounted, is seen each time the page is shown (#521).
+
+    **Test steps:**
+
+    * build the page and show it
+    * verify the check ran and its answer is on screen
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    with qtbot.waitSignal(page.availability_checked, timeout=5000):
+        page.show()
+
+    assert page_ui(page).ffprobe_probe_radio_button.isEnabled() is False
+
+
+def test_the_check_asks_for_the_path_the_tools_page_saved(qtbot: QtBot, fake_tool_locator: Any) -> None:
+    """The page asks about the saved FFmpeg, whatever the staged choice (#521).
+
+    **Test steps:**
+
+    * save a path for FFmpeg and check
+    * verify the locator was asked about that path
+    """
+    shared_tools_settings().set_path(FFMPEG_TOOL.ID, "/opt/ffmpeg")
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    settle(qtbot, page)
+
+    fake_tool_locator.resolve.assert_called_once_with(FFMPEG_TOOL, "/opt/ffmpeg", ())
 
 
 def test_choosing_a_backend_makes_the_page_dirty(qtbot: QtBot) -> None:
@@ -199,95 +291,83 @@ def test_reports_the_bundled_backend_as_ready(qtbot: QtBot) -> None:
     assert page_ui(page).availability_label.text() == f"{MediaInfoDurationProbe.LABEL} is ready."
 
 
-def test_reports_a_misconfigured_ffprobe_before_any_scan_is_run(qtbot: QtBot) -> None:
-    """An ffprobe path holding no executable is reported here, in the probe's own words (#224, #225).
+def test_reports_an_unusable_ffmpeg_before_any_scan_is_run(qtbot: QtBot) -> None:
+    """An FFmpeg that cannot be used is reported here, in the probe's own words (#224, #225, #521).
 
     This is the page's reason for showing a status at all: a scan under an unusable backend raises
     rather than measuring ``0``, so the misconfiguration has to be visible before Compute is pressed.
 
     **Test steps:**
 
-    * build the page, select ffprobe and type a path holding no executable
-    * verify the availability line names that path as unrunnable
+    * build the page, select ffprobe and check with none found
+    * verify the line gives the probe's reason
     """
     page = VideosPage()
     qtbot.addWidget(page)
     ui = page_ui(page)
 
     ui.ffprobe_probe_radio_button.setChecked(True)
-    ui.ffprobe_executable_edit.setText(MISSING_FFPROBE)
+    settle(qtbot, page)
 
-    assert ui.availability_label.text() == f"No runnable ffprobe at {MISSING_FFPROBE}."
+    assert ui.availability_label.text() == NO_FFMPEG
 
 
-def test_the_availability_line_follows_the_staged_choice_not_the_saved_one(qtbot: QtBot) -> None:
+def test_says_it_is_checking_until_the_answer_comes(qtbot: QtBot) -> None:
+    """Asking about FFmpeg runs it, so until the answer is in the line says so rather than guessing (#521).
+
+    **Test steps:**
+
+    * build the page with ffprobe selected, before any check has answered
+    * verify the line says it is checking
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    page_ui(page).ffprobe_probe_radio_button.setChecked(True)
+
+    assert page_ui(page).availability_label.text() == CHECKING_TEXT
+
+
+def test_reports_a_check_that_failed(qtbot: QtBot, fake_tool_locator: Any) -> None:
+    """A check that raises is shown as such, never left reading as *checking* (#521).
+
+    **Test steps:**
+
+    * make the locator raise, select ffprobe and check
+    * verify the line names the failure
+    """
+    fake_tool_locator.resolve.side_effect = RuntimeError("boom")
+    page = VideosPage()
+    qtbot.addWidget(page)
+    page_ui(page).ffprobe_probe_radio_button.setChecked(True)
+
+    settle(qtbot, page)
+
+    assert page_ui(page).availability_label.text() == "Checking FFmpeg failed: boom"
+
+
+def test_the_availability_line_follows_the_staged_choice_not_the_saved_one(
+    qtbot: QtBot, fake_tool_locator: Any
+) -> None:
     """It answers *would this work*, so it re-checks as the choice changes rather than on Save.
 
     **Test steps:**
 
-    * build the page on the bundled backend with a bad ffprobe path already saved
-    * select ffprobe and verify the line switched to the ffprobe complaint
+    * build the page on the bundled backend with a usable FFmpeg, and check
+    * select ffprobe and verify the line names it as ready
     * select the bundled backend again and verify it switched back, unsaved either way
     """
-    shared_videos_settings().ffprobe_executable = MISSING_FFPROBE
+    fake_tool_locator.resolve.return_value = USABLE_FFMPEG
     page = VideosPage()
     qtbot.addWidget(page)
     ui = page_ui(page)
+    settle(qtbot, page)
 
     ui.ffprobe_probe_radio_button.setChecked(True)
-    assert ui.availability_label.text() == f"No runnable ffprobe at {MISSING_FFPROBE}."
+    assert ui.availability_label.text() == f"{FfprobeDurationProbe.LABEL} is ready."
 
     ui.mediainfo_probe_radio_button.setChecked(True)
     assert ui.availability_label.text() == f"{MediaInfoDurationProbe.LABEL} is ready."
-
-
-# endregion
-
-# region the executable picker
-
-
-def test_browse_fills_the_executable_from_the_file_dialog(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Picking a file writes its path into the edit, so the path need not be typed by hand.
-
-    **Test steps:**
-
-    * build the page with the file dialog mocked to return a path
-    * click Browse
-    * verify the edit holds the picked path
-    """
-    mocker.patch(
-        "rehuco_agent.settings.ui.videos_page.QFileDialog.getOpenFileName",
-        return_value=(MISSING_FFPROBE, "All files (*)"),
-    )
-    page = VideosPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.ffprobe_probe_radio_button.setChecked(True)
-
-    ui.browse_button.click()
-
-    assert ui.ffprobe_executable_edit.text() == MISSING_FFPROBE
-
-
-def test_a_cancelled_pick_leaves_the_executable_alone(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Cancelling the dialog must not blank a path that was already configured.
-
-    **Test steps:**
-
-    * build the page over a configured executable, with the file dialog mocked to return nothing
-    * click Browse
-    * verify the edit still holds what it did
-    """
-    shared_videos_settings().ffprobe_executable = MISSING_FFPROBE
-    mocker.patch("rehuco_agent.settings.ui.videos_page.QFileDialog.getOpenFileName", return_value=("", ""))
-    page = VideosPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.ffprobe_probe_radio_button.setChecked(True)
-
-    ui.browse_button.click()
-
-    assert ui.ffprobe_executable_edit.text() == MISSING_FFPROBE
 
 
 # endregion
@@ -381,86 +461,50 @@ def test_the_editor_restores_the_shipped_formats_not_an_empty_list(qtbot: QtBot)
 
 
 def test_save_pushes_every_staged_choice_and_persists_it(qtbot: QtBot, fake_persistent_settings: FakeSettings) -> None:
-    """``save_changes`` writes the backend, its executable and the list to storage (#225).
+    """``save_changes`` writes the backend and the list to storage (#225).
 
     **Test steps:**
 
-    * build the page, select ffprobe with a path, and replace the format list
+    * build the page, select ffprobe, and replace the format list
     * call ``save_changes``
-    * verify the shared settings hold all three, the page is clean, and a fresh load agrees
+    * verify the shared settings hold both, the page is clean, and a fresh load agrees
     """
     page = VideosPage()
     qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.ffprobe_probe_radio_button.setChecked(True)
-    ui.ffprobe_executable_edit.setText(MISSING_FFPROBE)
+    page_ui(page).ffprobe_probe_radio_button.setChecked(True)
     extensions_editor(page).values = (".mp4",)
 
     page.save_changes()
 
     shared = shared_videos_settings()
     assert shared.engine == FfprobeDurationProbe.NAME
-    assert shared.ffprobe_executable == MISSING_FFPROBE
     assert shared.video_extensions == (".mp4",)
     assert page.is_dirty() is False
 
     reloaded = VideosSettings()
     reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
     assert reloaded.engine == FfprobeDurationProbe.NAME
-    assert reloaded.ffprobe_executable == MISSING_FFPROBE
     assert reloaded.extensions == (".mp4",)
 
 
 def test_a_saved_page_reopens_on_what_it_saved(qtbot: QtBot) -> None:
-    """A freshly-built page reflects the saved backend, executable and list -- the round trip (#225).
+    """A freshly-built page reflects the saved backend and list -- the round trip (#225).
 
     **Test steps:**
 
-    * seed the shared settings with ffprobe, a path and one format
+    * seed the shared settings with ffprobe and one format
     * build a page
-    * verify all three are on screen and the page is clean
+    * verify both are on screen and the page is clean
     """
     shared = shared_videos_settings()
     shared.engine = FfprobeDurationProbe.NAME
-    shared.ffprobe_executable = MISSING_FFPROBE
     shared.extensions = (".mp4",)
     page = VideosPage()
     qtbot.addWidget(page)
-    ui = page_ui(page)
 
-    assert ui.ffprobe_probe_radio_button.isChecked() is True
-    assert ui.ffprobe_executable_edit.text() == MISSING_FFPROBE
+    assert page_ui(page).ffprobe_probe_radio_button.isChecked() is True
     assert extensions_editor(page).values == (".mp4",)
     assert page.is_dirty() is False
-
-
-def test_switching_backend_on_the_page_keeps_the_other_ones_settings(qtbot: QtBot) -> None:
-    """A path typed under ffprobe survives a save made with the bundled backend selected (#225).
-
-    The side-by-side storage is only worth having if the page keeps both halves too: dropping the path
-    when the other radio is chosen would lose it on the very next Save.
-
-    **Test steps:**
-
-    * build the page, select ffprobe and type a path
-    * select the bundled backend again and save
-    * verify the saved settings kept the path, and a fresh page still shows it
-    """
-    page = VideosPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.ffprobe_probe_radio_button.setChecked(True)
-    ui.ffprobe_executable_edit.setText(MISSING_FFPROBE)
-    ui.mediainfo_probe_radio_button.setChecked(True)
-
-    page.save_changes()
-
-    assert shared_videos_settings().engine == MediaInfoDurationProbe.NAME
-    assert shared_videos_settings().ffprobe_executable == MISSING_FFPROBE
-
-    reopened = VideosPage()
-    qtbot.addWidget(reopened)
-    assert page_ui(reopened).ffprobe_executable_edit.text() == MISSING_FFPROBE
 
 
 def test_saving_normalizes_the_formats_on_screen(qtbot: QtBot) -> None:
@@ -511,7 +555,7 @@ def test_drop_changes_reverts_every_staged_choice(qtbot: QtBot) -> None:
     **Test steps:**
 
     * seed the shared settings with the bundled backend and one format, and build the page
-    * stage the other backend, a path and a different list
+    * stage the other backend and a different list
     * call ``drop_changes``
     * verify the seeded values are back and the page is clean
     """
@@ -520,30 +564,27 @@ def test_drop_changes_reverts_every_staged_choice(qtbot: QtBot) -> None:
     qtbot.addWidget(page)
     ui = page_ui(page)
     ui.ffprobe_probe_radio_button.setChecked(True)
-    ui.ffprobe_executable_edit.setText(MISSING_FFPROBE)
     extensions_editor(page).values = (".mkv",)
 
     page.drop_changes()
 
     assert ui.mediainfo_probe_radio_button.isChecked() is True
-    assert ui.ffprobe_executable_edit.text() == ""
     assert extensions_editor(page).values == (".mp4",)
     assert page.is_dirty() is False
 
 
 def test_seed_defaults_stages_the_factory_values_over_saved_ones(qtbot: QtBot) -> None:
-    """``seed_defaults`` shows what a fresh install would -- the bundled backend, no path, the shipped
+    """``seed_defaults`` shows what a fresh install would -- the bundled backend, the shipped
     formats -- as a staged edit against whatever is saved (#342).
 
     **Test steps:**
 
-    * save the other backend, a path and one format, and build the page
+    * save the other backend and one format, and build the page
     * call ``seed_defaults``
     * verify the factory values are on screen and the page is dirty
     """
     settings = shared_videos_settings()
     settings.engine = FfprobeDurationProbe.NAME
-    settings.ffprobe_executable = MISSING_FFPROBE
     settings.extensions = (".mp4",)
     page = VideosPage()
     qtbot.addWidget(page)
@@ -552,7 +593,6 @@ def test_seed_defaults_stages_the_factory_values_over_saved_ones(qtbot: QtBot) -
     page.seed_defaults()
 
     assert ui.mediainfo_probe_radio_button.isChecked() is True
-    assert ui.ffprobe_executable_edit.text() == ""
     assert extensions_editor(page).values == VIDEO_EXTENSIONS
     assert page.is_dirty() is True
 
@@ -561,13 +601,13 @@ def test_applying_one_frame_through_the_filter_saves_it_alone_on_a_page_that_res
     qtbot: QtBot,
 ) -> None:
     """The generic one-frame commit (`SettingsFrameFilter.apply_frame`) on a real page whose
-    ``save_changes`` ends by re-seeding every widget from what was saved: the probe frame's path
+    ``save_changes`` ends by re-seeding every widget from what was saved: the probe frame's choice
     lands in the settings, the extensions frame's staged list does not, and after the save the staged
     list is back on screen and that frame alone reads dirty (#342).
 
     **Test steps:**
 
-    * stage a path in the probe frame and a different list in the extensions frame
+    * stage ffprobe in the probe frame and a different list in the extensions frame
     * ``apply_frame`` the probe frame with the page's own ``save_changes``
     * verify what was saved, what is still on screen, and which frame is dirty
     """
@@ -575,15 +615,15 @@ def test_applying_one_frame_through_the_filter_saves_it_alone_on_a_page_that_res
     qtbot.addWidget(page)
     frame_filter = SettingsFrameFilter(page, "Videos")
     ui = page_ui(page)
-    ui.ffprobe_executable_edit.setText(MISSING_FFPROBE)
+    ui.ffprobe_probe_radio_button.setChecked(True)
     extensions_editor(page).values = (".mkv",)
 
     frame_filter.apply_frame(ui.probe_frame, page.save_changes)
 
     settings = shared_videos_settings()
-    assert settings.ffprobe_executable == MISSING_FFPROBE
+    assert settings.engine == FfprobeDurationProbe.NAME
     assert settings.video_extensions == VIDEO_EXTENSIONS
-    assert ui.ffprobe_executable_edit.text() == MISSING_FFPROBE
+    assert ui.ffprobe_probe_radio_button.isChecked() is True
     assert extensions_editor(page).values == (".mkv",)
     assert frame_filter.dirty_frames() == [ui.extensions_frame]
     assert page.is_dirty() is True
@@ -716,3 +756,79 @@ def test_dropping_changes_and_seeding_defaults_move_the_watch_checkboxes(qtbot: 
 
 
 # endregion
+
+
+def test_the_check_is_given_what_the_discovery_found(qtbot: QtBot, fake_tool_locator: Any) -> None:
+    """An empty path is the best install recorded, so nothing is searched for here (#521).
+
+    **Test steps:**
+
+    * record an install for FFmpeg and check
+    * verify the locator was handed the recorded installs and searched for nothing
+    """
+    shared_tools_settings().set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (USABLE_FFMPEG,)))
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    settle(qtbot, page)
+
+    fake_tool_locator.resolve.assert_called_once_with(FFMPEG_TOOL, "", (USABLE_FFMPEG,))
+    fake_tool_locator.detect.assert_not_called()
+
+
+def test_showing_the_page_again_does_not_check_again(qtbot: QtBot, fake_tool_locator: Any) -> None:
+    """The page asks once; the Tools settings say when the answer may have changed (#521).
+
+    **Test steps:**
+
+    * show the page, hide it and show it again
+    * verify the locator was asked once
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    with qtbot.waitSignal(page.availability_checked, timeout=5000):
+        page.show()
+    page.hide()
+    page.show()
+
+    fake_tool_locator.resolve.assert_called_once()
+
+
+def test_a_change_to_the_tool_checks_again_once_the_page_has_asked(qtbot: QtBot, fake_tool_locator: Any) -> None:
+    """A search finishing, or the Tools page saving a path, is followed without the page being shown again (#521).
+
+    **Test steps:**
+
+    * check once, then find FFmpeg: record an install for it
+    * verify the page checked again and now offers the choice
+    * change another tool and verify nothing more was asked
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+    settle(qtbot, page)
+    fake_tool_locator.resolve.return_value = USABLE_FFMPEG
+
+    with qtbot.waitSignal(page.availability_checked, timeout=5000):
+        shared_tools_settings().set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (USABLE_FFMPEG,)))
+
+    assert page_ui(page).ffprobe_probe_radio_button.isEnabled() is True
+    calls = fake_tool_locator.resolve.call_count
+    shared_tools_settings().set_path("vlc", "/somewhere")
+    assert fake_tool_locator.resolve.call_count == calls
+
+
+def test_a_tool_change_before_the_page_asked_does_not_check(qtbot: QtBot, fake_tool_locator: Any) -> None:
+    """The start-up search reports while the page is not on screen; it is not worth a check nobody sees (#521).
+
+    **Test steps:**
+
+    * build the page and record an install for FFmpeg
+    * verify the locator was not asked
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    shared_tools_settings().set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (USABLE_FFMPEG,)))
+
+    fake_tool_locator.resolve.assert_not_called()
