@@ -679,6 +679,48 @@ read against:
   node that was off pushes its own changes and pulls what it missed when it comes back. Its changes are delayed, not
   lost, while it is off. The merge rules are [[sync#overview]]'s.
 
+### §17.3.4 Per-user video notes and favorites
+
+[[[field-schema#video-notes]]]
+
+- [#571: feat(core): per-user video notes and favorites — notes, video_notes, video_favorites in the sidecar, record_notes, rename and Forget follow](https://github.com/borco/rehuco/issues/571)
+
+The notes and bookmarks Follow mode has always named ([[plugins#tutorial-plugin]], [[data-model#single-file]],
+[[sync#compare-and-swap]]), made concrete. Three more per-user keys beside `progress`, in the same `users` map and so
+in the same sidecar:
+
+```json
+"tutorial": { "users": { "admin": {
+  "notes": "Markdown about the whole tutorial",
+  "video_notes": { "01 Basics/03 Brushes.mp4": "- [12:34](rehuco-video:01%20Basics/03%20Brushes.mp4#t=754) the smudge trick" },
+  "video_favorites": ["01 Basics/03 Brushes.mp4"]
+} } }
+```
+
+- **`notes`** is markdown about the tutorial; **`video_notes`** is markdown per video, keyed exactly as `progress` is
+  ([[field-schema#watch-progress]]: a path relative to the record, posix separators, the stem removed for a
+  standalone `.rehu`); **`video_favorites`** is the set of keys the user starred. An empty string or an empty list is
+  removed, never stored. The tutorial's own `favorite` ([[field-schema#boolean-flags]]) is a different fact, about
+  the resource.
+- **There is no bookmark schema.** A bookmark is a timestamped line in a video's notes: a link of the form
+  `rehuco-video:<url-encoded key>#t=<seconds>`, which the agent's notes views turn into a seek of the player
+  ([[plugins#video-notes-dock]]); without `#t` it loads the video. The full form is used everywhere, so a line pasted
+  into the tutorial's notes still works. [[sync#compare-and-swap]]'s "bookmarks a union by position" is therefore
+  answered by the notes rule: two sets of notes that collide keep both.
+- **A renamed file takes its notes and favorite with it**, by the rename detection that moves a progress entry, both
+  rungs; **a file that is gone keeps them**, as it keeps its progress; **forget** removes all three together.
+- **Writer-owned, like progress.** The rule the code already implies, stated: **a per-user field is either
+  editor-owned — shown as a field, staged, dirtying the document, saved by Save — or writer-owned — written the
+  moment it is recorded, through the locked merge-write that never stamps `updated`, and never shown as an editor
+  field — and never both.** `progress` and `last_video` are writer-owned; so are these three. An open document takes
+  a write in without a reload and without becoming dirty, exactly as it takes progress in, and a write that lands while
+  a save is out waits for it. So a note is never an edit and never asks for a save, and a field can never be edited
+  in one view while another writes it. The asymmetry this leaves — a video's favorite saves at once while the
+  tutorial's `favorite`, `rating`, `viewed`, `todo` and `keep` still need Save — is recorded in
+  [[appendices.open-questions#still-open]], not solved here.
+- **Recorded by rehuco's own views** — the agent's notes dock and overlay, and later the web — through one core
+  function, `record_notes`, Qt-free, beside `record_progress`.
+
 ## §17.4 Field types
 
 [[[field-schema#field-types]]]

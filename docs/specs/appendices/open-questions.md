@@ -216,3 +216,22 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
   TutCatalog5's user-editable fields ([[plugins#core-vs-plugin]]). Decide, then file.
 - **A checksum file with no rehu** defaults to a disabled *Verify old checksums* (#457), so a double-click does
   nothing; whether Open is the fallback is undecided.
+- **Top-level Videos and Images docks** (parked 2026-10-28). The alternative to a tutorial's player, tree and notes
+  sub-docks ([[plugins#video-tree]], [[plugins#player-maximized]]): a `Videos` dock and an `Images` dock on the outer
+  manager, each with a **current** view that follows the focused record — the preview's idiom
+  ([[plugins#dock-shell]]), with a follow toggle and a one-shot button in each direction between the Documents dock
+  and the view dock — and
+  **locked** views made by double-clicking the current one's title, which outlive the document and are restored; one
+  `RehuDocumentModel` per record held by every view through `DocumentRegistry` (#375) and freed when the last view
+  lets go; and a per-kind setting, *the document* or *the top dock*, exclusive, the controls following it, applied at
+  once by rebuilding the type docks. Also parked with it: the web watch page (#441) carrying the tree, notes,
+  favorites and timestamp links over the same core functions. Why parked: the per-document sub-docks plus a
+  maximizable player with overlays answer the space problem first; revisit when a workflow needs two tutorials'
+  videos side by side.
+- **Editor-owned and writer-owned per-user fields** ([[field-schema#video-notes]]): a video's favorite and notes are
+  written the moment they are recorded, while the tutorial's own `favorite`, `rating`, `viewed`, `todo` and `keep`
+  are editor fields that need Save. Whether those five should become immediate writes too — they are the user's own
+  state, not the resource's — is a later decision.
+- **A cache per root** ([[mounts-and-storage#rehuroot]]): with roots as shared `.rehuroot` files, a root two catalogs
+  list is still scanned into each catalog's `.rehudb`. One cache per root, the catalog a view over its roots' caches,
+  is the natural follow-up and a redesign of the cache's keying; not designed.

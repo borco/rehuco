@@ -76,7 +76,8 @@ but that user's other device.
 
 - **`<stem>.user-<name>.rehuser`** holds one user's state for one record: ratings, favourites, *viewed* flags,
   progress, bookmarks, notes, learning-path memberships — what the plugin blocks' `users` maps hold today
-  ([[field-schema#per-user-shared]]). `<name>` is the username, lower-cased, ASCII, filesystem-safe; Windows and macOS
+  ([[field-schema#per-user-shared]]; notes, favorites and bookmarks as timestamped notes are
+  [[field-schema#video-notes]]). `<name>` is the username, lower-cased, ASCII, filesystem-safe; Windows and macOS
   compare names case-insensitively, so the fold is not optional. The fold is NFKD to ASCII, lower case, every run of
   characters outside `a-z 0-9 . _ -` one `_`, the ends trimmed of `._-` (`Ioan Călin` → `ioan_calin`); two names that
   fold alike share one sidecar, and a name that folds to nothing keeps its state in the record. The reserved scopes are
@@ -774,8 +775,9 @@ Each machine keeps, for every `.rehuco` it opens, files with sharply different r
 
 | File | Holds | Category | Lifecycle |
 | --- | --- | --- | --- |
-| `.rehuco` | The user's roots, each with a label and a machine-independent location ([[mounts-and-storage#rehuco-scope]]); its own `id` (the **rehuco id**); the plugin list ([[plugins#overview]]) | Shared: opened from any machine, holding nothing about one machine | A document; saved under the lock like a record, refusing to overwrite another machine's change ([[sync#overview]]) |
-| the root mappings | Where this machine finds each root of every `.rehuco` it opened, the storage detected there, and the roots the user skipped ([[mounts-and-storage#rehuco-scope]]); retention opt-ins per mapping ([[mounts-and-storage#durable-retention]]) | Durable, per machine; read by the agent and the node of that machine | Written by one machine, replaced atomically, no lock |
+| `.rehuco` | The user's roots, each with a label and a machine-independent location ([[mounts-and-storage#rehuco-scope]]); its own `id` (the **rehuco id**); the plugin list ([[plugins#overview]]). With `.rehuroot` (below) it holds only an ordered list of references to root files | Shared: opened from any machine, holding nothing about one machine | A document; saved under the lock like a record, refusing to overwrite another machine's change ([[sync#overview]]) |
+| `.rehuroot` | One root: its id, label, machine-independent location, per-type path layouts and placeholder fallbacks ([[mounts-and-storage#rehuroot]]); beside the `.rehuco` files, never inside the root; shared by every catalog that lists it | Shared, like the `.rehuco` | Saved under the lock like the `.rehuco`, refusing to overwrite another machine's change |
+| the root mappings | Where this machine finds each root it has seen, the storage detected there, and the roots the user skipped ([[mounts-and-storage#rehuco-scope]]) — keyed by root id once roots are `.rehuroot` files; retention opt-ins per mapping ([[mounts-and-storage#durable-retention]]) | Durable, per machine; read by the agent and the node of that machine | Written by one machine, replaced atomically, no lock |
 | `.rehudb` | The SQLite catalog cache of one `.rehuco`'s roots as this machine maps them ([[data-model#cache-schema]]) | Derived cache, per machine | Rebuildable within the [[architecture-design#why-distributed]] boundary; disposable |
 | the retention store | Retained metadata of cached roots ([[mounts-and-storage#durable-retention]]) | Durable, per machine | Never regenerated: for a removable root it is the only copy there is |
 

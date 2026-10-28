@@ -92,7 +92,8 @@ ten seconds. Then:
   watched segments are a union; bookmarks a union by position; a video's and the tutorial's *viewed* flags a logical OR
   (*watched to the end at least once* only becomes true), except a *viewed* the user cleared by hand, which is a
   deliberate action and wins over an older true; a resume position takes the later action
-  ([[field-schema#watch-progress]]); free-text notes that genuinely collide keep both and say so. Data is never
+  ([[field-schema#watch-progress]]); free-text notes that genuinely collide keep both and say so — and a bookmark is
+  a timestamped line in those notes ([[field-schema#video-notes]]), so the two rules are one. Data is never
   silently lost.
 - **Changed in the details** → the save is a **conflict**: the job fails with the conflict kept on it, and the document
   stays dirty under the conflict banner. No dialog pops while the user is elsewhere; the **next Save** first shows every

@@ -94,6 +94,14 @@ and Tasks docks get.
 "System Integration", "Tasks" (`TasksPage`, #202) and "Videos" (`VideosPage`, #225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar
 Extensions" (`ImagesFilesPage`) and "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
+Two settings the 0.4.0 video and root work adds to existing pages: **Videos** gains *Maximize videos over* — the
+document, the main window or full screen, the lightbox's three surfaces, chosen separately for the player
+([[plugins#player-maximized]], #574); the next maximize uses a change, an open one is not moved. **Root Catalog**
+gains *Default root layouts* — a list of named entries, each a per-type layout map (one row per type or `*`) and a
+fallback map, seeded with *Current name* (`{"*": "*"}`), which the Add Roots dialog offers in its combo and can add
+to from the dialog ([[mounts-and-storage#rehuroot]], #578). The per-type Locations pages keep their single-name
+templates: those are in-place renames, a root's layout is where a record lives.
+
 "System Integration" is one page, `SystemIntegrationPage`, on every platform (#508). It declares the tray
 and local node blocks every platform has, and takes the platform's own blocks as frames inserted ahead of
 them: `RegistrationFrameWindows` and `CrashDumpsFrameWindows` on Windows, `RegistrationFrameLinux` on
@@ -698,6 +706,12 @@ entry costs only itself.
 entry is kept and the closed ones are cut to the newest few (`MAXIMUM_REMEMBERED_FILES` in all). Paths are stored as
 saved and are not resolved on load, so a share that is down cannot stall the start.
 
+[[plugins#session-restore]] (#576) adds, under the same lenient read: a `preview` entry of the item's shape for the
+preview dock; per item a `maximized` object — `kind` (`lightbox` or `player`), the image or video `key`, the surface
+`mode`, and for a lightbox `info` and `strip` — restored once the document has loaded; and inside each manager's
+layout state the name of its maximized dock, kept **beside** the layout because a layout is always captured
+unmaximized ([[appendices.qt-ads#area-maximize]]).
+
 ### `main-window.json`
 
 `MainWindowSettings`, version `1`. The main window as it was closed.
@@ -719,3 +733,10 @@ with defaults of its own names another group.
 | `states` | object | resource type's main key (`""` for a document with no type) to a base64 `DocumentSubDocks.save_layout_state()` blob; a type whose blob is empty or damaged has no default |
 
 A type with no entry has no default: layouts are never inherited across types.
+
+### `catalogs/<rehuco id>.json`
+
+The per-catalog, per-machine file the Browsers dock keeps ([[plugins#browsers]]): each browser's name, filter,
+header state and saved search, and where the browsers' sub-docks sit. [[plugins#session-restore]] (#576) adds each
+browser's current row's key, and the Root Catalog's current folder and expanded roots, re-selected once the rows
+and listings load.

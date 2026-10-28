@@ -40,7 +40,9 @@ and *Open* starts there; putting one on the share is the user's choice, and noth
 - the **roots**, each with a stable **id** the cache keys its rows on, a **label** (defaulting to the folder's name,
   made unique with a suffix on a clash; what the browser shows and what a folder filter addresses,
   `folder="<label>/<relative path>"`, [[plugins#browsers]]) and a machine-independent **location** (below) — nothing
-  that is a fact about one machine; where each machine finds a root is that machine's **mapping**, kept apart;
+  that is a fact about one machine; where each machine finds a root is that machine's **mapping**, kept apart. **As
+  built (format 3) these sit inline; with [[mounts-and-storage#rehuroot]] (format 4) each root is a `.rehuroot` file
+  of its own and the `.rehuco` holds only an ordered list of references to them;**
 - which plugins ([[plugins#overview]]) to load;
 - a **home** for each kind of grouping-entity document — creators, collections, learning paths
   ([[plugins#grouping-entities]]) — as `homes: {"creator": {"root": <root id>, "path": <relative path>}, "collection":
@@ -82,7 +84,8 @@ plus whether the user chose to skip the root:
 One machine writes it, so it takes no lock. The agent and the node of one machine read the same file
 ([[nodes#node-actions]]), so a root mapped in the agent is served by the node. A mapping is keyed by the rehuco id and
 the root id, so moving or renaming the `.rehuco` keeps it; a machine that is renamed loses nothing, since nothing in the
-shared file names it.
+shared file names it. With `.rehuroot` the rehuco level goes: a root's id is the same in every catalog that lists it,
+so a mapping is keyed by the root id alone ([[mounts-and-storage#rehuroot]]).
 
 - **The storage kind is detected, not declared** — local disk, network share, removable drive or disc — from the drive
   type on Windows and the mount table elsewhere, when the mapping is written; the notifier picks its backend from it
@@ -108,6 +111,57 @@ together — and the agent opens one at a time ([[data-model#local-file-trio]], 
 that its files stay where they are, and drops only the root's cached entries ([[data-model#cache-schema]]).
 
 **Roots do not overlap** within one file ([[multiplicity#instances]]), and no root has an owner.
+
+### §9.3.1 `.rehuroot`: a root as a file of its own
+
+[[[mounts-and-storage#rehuroot]]]
+
+- [#577: feat(core): the .rehuroot file — id, label, location, layouts, fallbacks; .rehuco format 4 as an ordered list of references; mappings keyed by root id; path templates with /](https://github.com/borco/rehuco/issues/577)
+- [#578: feat(agent): Add Roots — pick existing .rehuroot files or a folder with a default layout; default layouts in settings; layouts and fallbacks on the root's properties](https://github.com/borco/rehuco/issues/578)
+- [#579: feat(agent): the path row's root destinations — rename in place within the root, the verified move across roots once #339 lands, greyed with the reason otherwise](https://github.com/borco/rehuco/issues/579)
+
+With a root's id, label and location inline in the `.rehuco`, the same folder listed by two catalogs is two roots:
+two ids, two mappings, two caches, and nothing that is a fact about the root — how it is laid out — has a home at
+all. So **a root becomes a file of its own**, `<name>.rehuroot`, and **the `.rehuco` becomes an ordered list of
+references** to such files and nothing more about a root: its role is to aggregate and order roots.
+
+```json
+{
+  "format_version": 1,
+  "id": "…",
+  "label": "Tutorials",
+  "location": "//nas/data/Tutorials",
+  "layouts": { "*": "*" },
+  "fallbacks": { "authors": "Unknown" }
+}
+```
+
+- **It never lives inside the root.** [[mounts-and-storage#fingerprint-map]] retired files dropped into the user's
+  folders, and that holds. A `.rehuroot` lives beside the `.rehuco` files — by default the `.rehuco`'s own folder —
+  and a `.rehuco` names it by a path relative to itself: `"roots": [ { "file": "tutorials.rehuroot" }, … ]`, format
+  4. It is saved as the `.rehuco` is: under the lock, compared with what this machine last read, refused when another
+  machine changed it meanwhile.
+- **`id`** is the root's id, minted once and shared by every catalog that lists the file. **Mappings are therefore
+  keyed by root id alone** — `{"format_version": 2, "roots": {"<root id>": {"path": …, "storage": …} | {"skipped":
+  true}}}` — one mapping per root per machine, whichever catalogs list it. The cache stays per catalog (`<rehuco
+  id>.rehudb`), so a root two catalogs share is scanned into both; a cache per root is the follow-up
+  ([[appendices.open-questions#still-open]]), not this.
+- **`layouts`** says where a record of each type lives under this root: a map from a resource type's main key, or
+  `*` for any type not named, to a **path template** — the Locations grammar ([[plugins#tutorial-plugin]]'s
+  placeholders, `{{ … }}` optional groups, `{count}` where the type declares it, the Location Replacements applied
+  after) **plus `/` as a level separator**, each segment sanitized as a name is today and the separators kept. The
+  value `*` means *keep the record's current folder name*, at the root's top. The default `{"*": "*"}` admits
+  anything under its current name; `{"tutorial": "{authors}/{title}{{ [{year}]}}"}` groups tutorials under their
+  authors **and admits no other type** — a type with no entry and no `*` cannot be moved here.
+- **`fallbacks`** names what a placeholder renders as when the record leaves it empty. An empty placeholder outside
+  an optional group with no fallback **forbids** the root for that record, and the renderer says why — the path row
+  shows the root greyed with the reason ([[plugins#tutorial-plugin]]).
+- **Adding a root** is picking existing `.rehuroot` files, or a folder, which makes one with a layout chosen from the
+  default root layouts the settings keep ([[plugins#rehuco-dock]]); the Roots view edits a root's layouts and
+  fallbacks beside its name.
+- **Nothing is migrated**, as format 2 was not: a format-3 `.rehuco` is refused with a message saying to add its
+  roots again, and a format-1 mapping file is set aside. Overlap is checked across the catalog's `.rehuroot`s as it
+  was across its roots.
 
 ## §9.4 The node serves what its machine reaches
 
@@ -298,7 +352,8 @@ machine's mount table, answers the same question without writing anything into t
 
 Retired as a primary/remote declaration; there is no owner to declare ([[multiplicity#instances]]). Adding a root is:
 pick the folder, detect its storage kind and its location from this machine's mount table, refuse it if it overlaps a
-root already listed, write this machine's mapping ([[mounts-and-storage#rehuco-scope]]).
+root already listed, write this machine's mapping ([[mounts-and-storage#rehuco-scope]]) — or, with
+[[mounts-and-storage#rehuroot]], pick existing `.rehuroot` files, which already know their location.
 
 ## §9.12 Measuring a machine's throughput
 

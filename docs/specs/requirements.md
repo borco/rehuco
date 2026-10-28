@@ -15,7 +15,8 @@ Consolidated list of requirements established across discussion, checked against
   conflict rather than losing an edit ([[sync#overview]]).
 - Every machine learns of a change made by another within about a second on a share that notifies, and within one
   polling period everywhere else, without a scan ([[mounts-and-storage#out-of-band]]).
-- Per-resource notes, view/watch progress, and bookmarking; ability to delete local viewed files on request. Progress
+- Per-resource and per-video notes, view/watch progress, favorites and bookmarking ([[field-schema#video-notes]]);
+  ability to delete local viewed files on request. Progress
   is per video file — a resume position and a *viewed* flag, totalled per folder — recorded by the agent and the web
   UI and carried between them ([[field-schema#watch-progress]]). Each user's state lives in that user's own sidecar
   beside the record ([[data-model#single-file]]).

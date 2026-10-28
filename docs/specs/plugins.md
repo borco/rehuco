@@ -271,7 +271,8 @@ existing dock** rather than opening a second. Each document dock is itself a nes
 and description view; the main editor, the description and the images editors; plus the hidden-by-default
 inspection set — save preview, on disk, log, checksums, files ([[plugins#files-subdock]]) — and then **the type's
 own**: a reference pack adds content images (the browse over its archived and loose images,
-[[reference-images#modes]]), a tutorial adds its player ([[plugins#in-app-player]]), a collection adds nothing. The
+[[reference-images#modes]]), a tutorial adds its player, its video tree and its notes ([[plugins#in-app-player]],
+[[plugins#video-tree]], [[plugins#video-notes-dock]]), a collection adds nothing. The
 images sub-dock doubles as the drop target of [[acquisition-tooling#drag-drop-aids]]. The surfaces are the
 viewer/editor pair ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and is the same
 shell the catalog browser later opens viewers into ([[plugins#browsers]]). See [[sequence-open-document]] and
@@ -315,8 +316,9 @@ released — the rebuild above, inside a document dock. It is **promoted** to an
 a double-click on its title, or by being asked for another `.rehu` while it has unsaved changes — nothing is lost or
 asked, and the other `.rehu` goes to a new preview. An edit alone does not promote, nor a saved one. Its title is the
 document's label in italic; its object name is `Preview-<n>`, numbered per preview because a promoted dock keeps the
-manager registry entry it was added under ([[appendices.qt-ads#dock-registry-keys]]). It is **transient**: never in the
-session, and in `Open recents` only once promoted. Each type's preview remembers **its own layout** under
+manager registry entry it was added under ([[appendices.qt-ads#dock-registry-keys]]). It is in `Open recents` only
+once promoted, and it is **restored** with the session as its own entry ([[plugins#session-restore]], #576) — it was
+transient until then. Each type's preview remembers **its own layout** under
 `preview_layout/<type>`, captured whenever the preview stops showing that type (a switch, a promotion, its close, app
 exit) and written at exit; a type with none opens with its default layout. That layout is implicit: the Layout button
 in a preview acts on the type's default layout, as in any document dock.
@@ -417,6 +419,36 @@ be locking what it is about to move. The same reasoning already keeps a watcher 
 and it runs off the GUI thread: neither that nor the record read is slow, and either blocks for the share timeout when
 the mount is away ([[mounts-and-storage#offline-mounts]]) — an unreachable folder says so rather than drawing an empty
 table over it (#245).
+
+### §13.2.6 Session restore
+
+[[[plugins#session-restore]]]
+
+- [#576: feat(agent): restore everything — the Documents preview, each browser's current row, the Root Catalog's current folder, every maximized dock, every maximized screenshot or video](https://github.com/borco/rehuco/issues/576)
+
+**Quitting and restarting brings the app back as it was closed.** The open documents and their layouts have been
+restored since #21; what was still lost at every start is restored too:
+
+- **The preview** ([[plugins#dock-shell]]) joins the session as its own entry — path, type, layout — rebuilt at
+  startup as a pending placeholder like every other document, read when its tab first reaches the screen. It is still
+  not in `Open recents`.
+- **Each browser's current row** and **the Root Catalog's current folder and expanded roots** are remembered with the
+  catalog's other per-machine state ([[plugins#browsers]]) and re-selected once their rows and listings load. The
+  selection-follow into the preview is off while that happens, so a restored row does not retarget the preview the
+  session restores alongside it.
+- **Maximized views**, and there can be several at once — one per document, since each lightbox and each maximized
+  player ([[plugins#player-maximized]]) belongs to its document. A document's entry records the kind, the image or
+  video key, the surface it was opened on and, for a lightbox, whether its info and its strip were shown. It is
+  restored once the document's deferred first read has loaded it, against the set as it is now — a key no longer in
+  the set restores nothing. Several documents' app-window or full-screen views stack in session order, the focused
+  document's on top.
+- **A maximized dock.** Layouts are captured unmaximized, since a capture taken while maximized is poisoned
+  ([[appendices.qt-ads#area-maximize]]); the maximized dock's name is therefore saved **beside** the layout at each of
+  the three managers — a document's sub-docks, the documents area, the main window — and re-applied after the layout
+  restores.
+
+Every addition keeps the state files' lenient read ([[appendices.settings-pages#state-files]]): a field that is
+missing or malformed costs only itself, so a session written by an older build restores as it did.
 
 ## §13.3 Plugin blocks: keyed, versioned, single-active-type
 
@@ -593,12 +625,21 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   ([[mounts-and-storage#rehuco-scope]]). The name defaults to the folder's: it is the field's placeholder, filled in
   when the first folder is chosen while the field is empty, left alone when another folder is chosen over a name that
   is there, put back by a button beside the field, and used when the dialog closes with the field empty; its *Scan after adding* checkbox, on by default and remembered however the dialog closes,
-  queues a scan of the new root once the file is saved (#542). When a **root** is current the details pane shows its editors in place of a type line: its **Name** (the
+  queues a scan of the new root once the file is saved (#542). **It becomes Add Roots** (#578) once a root is a
+  `.rehuroot` file of its own ([[mounts-and-storage#rehuroot]]): one dialog, two ways in — **existing `.rehuroot`
+  files**, a multi-select picker starting in the `.rehuco`'s folder, each joining the catalog with its own name and
+  location, unmapped if this machine cannot resolve where it is; or **a folder**, which makes a `.rehuroot` beside the
+  `.rehuco` with the folder's name as above, the location from the mount table, and a **layout chosen in a combo** of
+  the default root layouts kept in the settings ([[appendices.settings-pages#category-groups]]), whose last entry *New
+  layout…* adds one from the dialog. *Scan after adding* stays; storage is still detected, never asked.
+  When a **root** is current the details pane shows its editors in place of a type line: its **Name** (the
   label, which nothing on disk follows: saved as typed when the field is left, even empty -- the column then shows where
   the root is -- and shown in the column while it is typed; a button beside the field gives the root its default
   name, the one it was added with, which is also the empty field's placeholder) and,
   read-only, its **Storage** as detected — a local folder, a network share,
-  a removable drive or a CD or DVD, each with its own glyph — and its location. **A root this machine has not mapped**
+  a removable drive or a CD or DVD, each with its own glyph — and its location; with `.rehuroot` (#578), also its
+  **layouts** and **fallbacks**, editable and written to the root's file as the name is, and the file's path,
+  read-only. **A root this machine has not mapped**
   is listed in its place, greyed, with one row saying so, never read; its **Map…** action (the root's menu and its
   details pane) asks for the folder, and the *Map roots* question opens with the catalog for the roots nobody has
   answered for ([[mounts-and-storage#rehuco-scope]]). `F5` re-lists the visible columns: a
@@ -1008,8 +1049,17 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   The set is collision-checked whole before the first rename runs and rolled back if one
   of them fails, so a resource is never left split between two names ([[data-model#write-integrity]]) — and the one
   case a rollback cannot fix says so by name. Both scopes rename within a single directory and so are same-filesystem
-  by construction; the checksum-gated cross-filesystem move ([[mounts-and-storage#safe-move-rename]]) is a different
-  operation, reached from a destination-choosing UI that does not exist.
+  by construction.
+  **The suggestion list is two groups** (#579). First the **current names**: the type's Locations templates rendered
+  into a name, a rename within the record's folder as above. Then, under a separator, **one entry per root of the open
+  catalog whose layouts admit this record** ([[mounts-and-storage#rehuroot]]), labelled by the root's name and the
+  rendered path. The record's **own root** is a **rename in place** — the destination's parents created, the folder or
+  the file set moved atomically, same filesystem by construction — through the same coordinator and with the same
+  collision check and rollback. **Another root** is the checksum-gated verified move
+  ([[mounts-and-storage#safe-move-rename]]: verify, copy, verify at the target, delete), greyed *until #339 (0.4.1)*
+  lands. A root is absent from the list when its layouts name neither the record's type nor `*`, and offered greyed
+  with the reason when a placeholder the layout needs is empty and the root names no fallback for it, or when the
+  rendered destination already exists — the same marker as an occupied name below.
   A candidate **something already occupies** — another folder for a directory-scoped resource, another `.rehu` for a
   file-scoped one — is offered *disabled, with a trailing `⚿`* rather than as a click that could only fail. A marker
   rather than a color: the disabled palette fights a hue, a colorblind reader may not separate one, and Qt Style Sheets
@@ -1025,10 +1075,12 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   as an inline banner row on the document, not a modal: the resource is untouched and the candidate list that produced
   the name is still on screen.
 - **Follow** (a distinct mode from viewer/editor): sequential playback of the tutorial's files, recording watch progress
-  and duration; note-taking (create/view/edit); bookmarking. Progress — per file, a resume position and a *viewed*
+  and duration ([[plugins#in-app-player]]); the tutorial's videos as a tree with their progress and favorites
+  ([[plugins#video-tree]]); notes per video and for the tutorial, with timestamped lines as the bookmarks
+  ([[plugins#video-notes-dock]], [[field-schema#video-notes]]). Progress — per file, a resume position and a *viewed*
   flag — is [[field-schema#watch-progress]]; its sync follows [[sync#overview]]/[[mounts-and-storage#node-handoff]].
 - **Web**: search/browse tutorials the user has access to; follow a tutorial from the browser, with the same
-  progress/notes/bookmarks behavior as the desktop "follow" mode.
+  progress/notes/favorites behavior as the desktop "follow" mode, over the same core functions.
 
 ### The in-app player: libvlc or Qt Multimedia
 
@@ -1196,6 +1248,93 @@ A PySide6 folder holding Essentials and only those files played the whole codec 
 too — so a module a later Addons release adds is never shipped, which Briefcase's own `cleanup_paths`, able only to
 name what to remove, could not promise. How, and what it was measured to cost on each platform, is
 [[packaging-deployment#qt-multimedia]].
+
+### The video tree
+
+[[[plugins#video-tree]]]
+
+- [#572: feat(agent): the Tree sub-dock — the whole tutorial's videos with progress, favorite and the current marker, one VideoTreeModel](https://github.com/borco/rehuco/issues/572)
+
+A tutorial's third own sub-dock ([[plugins#dock-shell]]), **Tree**, hidden by default like the player and toggled
+from the toolbar: the whole tutorial's videos as a tree — every folder, natural path order, the playlist the player
+walks — with each video's **progress**, its **favorite** glyph and its length, and the video loaded in the player
+marked and kept in view as it changes. The Files sub-dock shows one folder at a time; this is where the tutorial's
+shape and what is left of it are read at a glance. The progress text is the Files rows' rule exactly
+([[plugins#files-subdock]]: `100%` once viewed, else position over length, nothing while the length is unknown; a
+folder's share duration-weighted), from one shared formatter, redrawn when the document says progress or notes
+changed. Missing videos are listed in their folder as the Files dock lists them. A double-click loads and plays the
+video in the document's player, showing the player dock as the Files route does. The row's actions, shown only where
+they apply: **Favorite** (a toggle, [[field-schema#video-notes]]), **Viewed** (a toggle), **Forget** on a missing row
+— one set of commands with the Files dock's. One tree model serves this dock and the player's `T` overlay
+([[plugins#player-maximized]]). No layout version bump: a layout that never names the dock restores and puts it back
+hidden ([[appendices.qt-ads#structural-layout]]).
+
+### The notes
+
+[[[plugins#video-notes-dock]]]
+
+- [#573: feat(agent): the Notes sub-dock — rendered markdown with an Edit toggle, Add note at time, rehuco-video: seek links, NotesPanel](https://github.com/borco/rehuco/issues/573)
+
+A tutorial's fourth own sub-dock, **Notes**, hidden by default: the current video's notes above the tutorial's, in a
+splitter whose sizes ride in the dock's own layout entry; the video part follows the player's loaded video, and with
+none loaded only the tutorial part shows. Both are **rendered markdown** by default — the Description View's
+renderer — with an **Edit** action on the title bar that swaps in the markdown editor and back. What is written is
+[[field-schema#video-notes]], writer-owned: the text goes to the user's sidecar through `record_notes` the moment
+editing ends — leaving edit, focus leaving the editor, the player switching video, the dock or the document closing,
+quitting — never dirtying the record, never asking for a save, and the notes stay editable while the video plays.
+
+**Links seek the player.** A `rehuco-video:<key>#t=<seconds>` link is a seek of the document's player — loading the
+video paused first if another is loaded, the rule previous and next follow — and without `#t` loads the video; any
+other link opens in the system's browser. It is the first custom link a markdown view handles in the agent; the
+`filter://` links of the viewer's fields ([[plugins#filter-urls]]) are the precedent for the dispatch.
+
+**Add note** sits on the player's transport bar and in the player's commands, so it works from the overlay too
+([[plugins#player-maximized]]): *Add note at* the current time pauses, appends a line `- [mm:ss](rehuco-video:…#t=…)`
+and a space to the video's notes and shows the dock in edit with the caret at the end; *Add note* appends a plain
+dash and a space for a note about the whole video. That line is the bookmark: there is no other.
+
+The panel — view, editor, toggle, link dispatch — is one widget; the dock and the player's `N` overlay each host
+an instance over the same model.
+
+### The player maximized, and its overlays
+
+[[[plugins#player-maximized]]]
+
+- [#574: feat(agent): maximize the player — double-click over document/window/screen per setting, click pauses, playback survives the move, I info overlay, the overlay surface shared with the lightbox](https://github.com/borco/rehuco/issues/574)
+- [#575: feat(agent): the player's T tree and N notes overlays](https://github.com/borco/rehuco/issues/575)
+
+The player stays the tutorial's sub-dock; this is how it gets big without a layout change, and how a big video keeps
+its navigation and its notes a key away.
+
+**A click pauses and resumes; a double-click maximizes or restores.** The single click runs on a one-shot timer of
+the system's double-click interval, and a double-click stops it, so a double-click never also toggles playback — the
+only plain way, since Qt delivers the first press before it knows a second is coming. The lightbox's *a single click
+does nothing* is deliberately not followed: the lightbox has nothing to toggle.
+
+**Maximizing** lifts the player's surface — the video widget and the still — and its transport bar into an overlay
+over the **document**, the **main window** or a frameless **full-screen** window, the three surfaces the lightbox
+offers ([[plugins#tutorial-plugin]]), chosen for videos by a *Maximize videos over* setting of their own on the
+`Videos` page ([[appendices.settings-pages#category-groups]]; the document by default; the next maximize uses a
+change, an open one is not moved), and puts them back on Esc, a double-click or the close button. The video widget's
+native window survives re-parenting with no call at all (#315), so **a playing video keeps playing through both
+moves**. The overlay host is the lightbox's own mechanics — the host per surface, the size-tracking event filter,
+focus held while up and returned within the document on dismiss, the corner controls — extracted into one base both
+viewers sit on, not copied. *Maximize current dock* (Ctrl+Shift+M) is unchanged: that is the dock within its
+document. A maximized player is restored with the session ([[plugins#session-restore]]).
+
+**Three overlays** sit over the video, docked or maximized, each a command of the player's focus group, so the
+Shortcuts page lists and rebinds them; one at a time, showing one hides another; their visibility is session state,
+not saved:
+
+- **`I` — info**, top-left in the lightbox's translucent box: the video's name, its pixel size (from `videos`, else
+  the sink's frame), its length, its progress and position, and where it stands in the playlist (`30/123`).
+- **`T` — tree**: a light tree over the same model as the Tree sub-dock — no header, name and progress only, the
+  current video marked and in view — in a translucent dark box with light text. A click loads that video; Esc or
+  `T` hides it. It takes the keyboard while up (Up, Down, Enter) and gives it back when it hides.
+- **`N` — notes**: the notes panel in the same style, editable, with the dock's write seams plus hiding the overlay;
+  *Add note* works from here.
+
+`I` and `T` mean what they mean in the lightbox; `N` is new; `[`, `]`, the arrows and Space stay the player's.
 
 ## §13.7 Reference images plugin
 
@@ -1368,4 +1507,5 @@ Renaming an entity **A** onto the name of an existing **B** of the same kind ([[
 want a **timed/sequential presentation** capability, just configured differently (tracked progress + notes/bookmarks vs.
 a fixed-duration rotating display + a session log). Worth designing this as one shared core capability that plugins
 configure, rather than reimplementing similar sequencing/timer logic independently in two plugins. The practice
-side's requirements are in [[reference-images#practice-sessions]].
+side's requirements are in [[reference-images#practice-sessions]]; the tutorial side's notes and bookmarks are now
+[[plugins#video-notes-dock]] and [[field-schema#video-notes]].
