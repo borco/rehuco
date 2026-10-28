@@ -43,6 +43,14 @@ doc is the detailed home and the entry here is a one-line pointer.
   URL extraction as the successor, per-site code never to return. Detail: [[acquisition-tooling#url-extract]] (and the
   predecessor
   [histories](../history/README.md) that carried it).
+- **A Qt Multimedia duration probe** (#522, dropped 2026-10-29). A third Videos-page backend, reading a video through
+  the in-app player's own `QMediaPlayer` so a length would match what the dock plays. Built and tested, then dropped:
+  it matched MediaInfo to the millisecond on MP4 and MKV and within 0.05 s on MPEG-TS, so it bought no difference a
+  whole-seconds total shows, while MediaInfo already reads every listed container. The cost was the thread seam. A
+  `QMediaPlayer` cannot be built on a measuring worker ([[appendices.code-conventions#worker-threads]]), so the one
+  player had to live on the GUI thread behind a request queue, a cross-thread ledger, a close hook at quit and two
+  misuse guards — and clearing a source stuck on an offline share could still block the GUI thread. MediaInfo (a
+  library call) and ffprobe (a subprocess) have no thread affinity at all. Detail: [[field-schema#duration-size]].
 
 ## Architecture
 

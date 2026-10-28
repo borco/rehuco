@@ -1173,7 +1173,7 @@ AV1 gap**: BtbN's `ffmpeg-n7.1.5-…-win64-lgpl-shared-7.1` carries `libdav1d` a
 and with hardware decoding off it played both AV1 10-bit clips at their full 30 fps in software, where Qt's own build
 gave no frame at all (its `av1` decoder logging *Get current frame error* per frame, and Qt raising nothing). The
 build must be `shared` and for the machine's architecture (`win64`, not `winarm64`); a plain `lgpl` build holds only
-executables, which serve conversion and probing (#520, #522) and any recent version does.
+executables, which serve conversion and the duration probe (#520, #521) and any recent version does.
 
 **The major moves with PySide6.** PySide6 6.12.0 bundles FFmpeg 9.0.1 (`avcodec-63`, `avformat-63`, `avutil-61`,
 `swresample-7`, `swscale-10`), still without software AV1; BtbN's `ffmpeg-n9.0-…-win64-lgpl-shared-9.0` swapped in the
