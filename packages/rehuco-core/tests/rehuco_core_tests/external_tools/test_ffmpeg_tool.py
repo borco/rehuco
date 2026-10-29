@@ -1,6 +1,7 @@
 """Tests for the FFmpeg descriptor: reading ``ffprobe -version`` and knowing where each OS keeps it (#521)."""
 
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Final
@@ -118,7 +119,8 @@ def test_each_os_has_its_own_places_to_look(
     assert {source for source, _ in FFMPEG_TOOL.search_patterns()} == sources
 
 
-def test_the_windows_patterns_expand_the_environment(mocker: MockerFixture, monkeypatch: MonkeyPatch) -> None:
+@mark.skipif(sys.platform != "win32", reason="only Windows' os.path expands %VAR%")
+def test_the_windows_patterns_expand_the_environment(monkeypatch: MonkeyPatch) -> None:
     """The patterns name folders under the user's profile, so the variables are expanded here.
 
     **Test steps:**
@@ -127,7 +129,6 @@ def test_the_windows_patterns_expand_the_environment(mocker: MockerFixture, monk
     * verify the winget pattern starts with it
     """
     monkeypatch.setenv("LOCALAPPDATA", "C:\\Users\\x\\AppData\\Local")
-    mocker.patch(f"{MODULE}.sys", SimpleNamespace(platform="win32"))
 
     patterns = dict(FFMPEG_TOOL.search_patterns())
 
