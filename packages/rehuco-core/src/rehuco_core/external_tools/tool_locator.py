@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import Path
 
-from .tool_descriptor import ToolCandidate, ToolDescriptor, ToolNotRunnableError, ToolStatus, best_candidate
+from .tool_descriptor import ToolCandidate, ToolDescriptor, ToolStatus, best_candidate
 
 
 class ToolLocator:
@@ -66,14 +66,16 @@ class ToolLocator:
     def verify(self, descriptor: ToolDescriptor, candidates: Iterable[ToolCandidate]) -> list[ToolCandidate]:
         """Keep the copies found earlier that are still there.
 
-        Only that the executables exist is checked: nothing is searched for and no version is read again, which is
-        what makes it cheap enough to do at every start. An update is noticed when a search is forced.
+        Only that the executables exist is checked -- or whatever else a descriptor can tell from the files alone --
+        nothing is searched for and no version is read again, which is what makes it cheap enough to do at every
+        start. An update is noticed when a search is forced.
 
         :param descriptor: the tool.
         :param candidates: copies found earlier.
         :returns: those whose folder still holds the tool, in their order.
         """
-        return [candidate for candidate in candidates if descriptor.resolve_folder(candidate.folder) is not None]
+        kept = (descriptor.verify_candidate(candidate) for candidate in candidates)
+        return [candidate for candidate in kept if candidate is not None]
 
     def resolve(
         self, descriptor: ToolDescriptor, configured: str = "", detected: Iterable[ToolCandidate] = ()
@@ -104,11 +106,7 @@ class ToolLocator:
         :param folder: the folder holding it.
         :returns: the candidate, its source left for the caller to set.
         """
-        try:
-            version = descriptor.read_version(folder)
-        except ToolNotRunnableError as error:
-            return ToolCandidate(folder, "", ToolStatus.NOT_RUNNABLE, reason=error.reason)
-        status, reason = descriptor.judge(version)
+        status, version, reason = descriptor.assess(folder)
         return ToolCandidate(folder, "", status, version, reason)
 
 

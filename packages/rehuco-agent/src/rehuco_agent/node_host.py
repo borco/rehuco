@@ -8,14 +8,13 @@ short grace before it is killed.
 """
 
 import logging
-import sys
 from collections.abc import Sequence
 from enum import StrEnum
-from pathlib import Path
 from typing import Final
 
 from PySide6.QtCore import QObject, QProcess, QTimer, Signal
 
+from .own_program import own_program
 from .settings.node_settings import NodeSettings
 from .settings.persistent_settings import settings_dir
 
@@ -52,9 +51,7 @@ def node_command() -> list[str]:
 
     :returns: the program and its arguments.
     """
-    launched = Path(sys.argv[0])
-    program = [sys.executable, "-m", "rehuco_agent"] if launched.suffix == ".py" else [str(launched.resolve())]
-    command = [*program, "--node"]
+    command = [*own_program(), "--node"]
     folder = settings_dir()
     if folder is not None:
         command += ["--settings-dir", str(folder)]

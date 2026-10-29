@@ -96,9 +96,11 @@ and Tasks docks get.
 "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
 Three settings the 0.4.0 video and root work adds to existing pages: **Videos** gains a *Playback* block (#318):
-*In-app player (or SHIFT+double-click)*, the default, and *External VLC*, gated on the Tools page's VLC the way
-*FFmpeg (external)* is, saved as `player` and read by the Files sub-dock at each double-click, so a change reaches
-open documents. **Videos** also gains *Maximize videos over* — the
+*Qt (bundled FFmpeg)*, the default and the player SHIFT+double-click always opens, *Qt with external FFmpeg libraries*
+(Windows only, #580) and *External VLC*, the last two gated on the Tools page's tool the way *FFmpeg (external)* is,
+saved as `player` and read by the Files sub-dock at each double-click, so a change of player reaches open documents.
+The libraries are loaded at start, so choosing them (or leaving them) says *Takes effect at the next start*, and a
+start that could not load a chosen build says why beside the choice. **Videos** also gains *Maximize videos over* — the
 document, the main window or full screen, the lightbox's three surfaces, chosen separately for the player
 ([[plugins#player-maximized]], #574); the next maximize uses a change, an open one is not moved. **Root Catalog**
 gains *Default root layouts* — a list of named entries, each a per-type layout map (one row per type or `*`) and a

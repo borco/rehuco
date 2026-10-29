@@ -550,17 +550,26 @@ choice, #318, launched by #319) joined it, and the conversion `ffmpeg` (#520) ar
   its reason. A version newer than any tested, or one that cannot be read (a git build), is **untested** and allowed:
   an allowlist would lock out everyone who updated.
 - **Status** per candidate: *usable*; *untested* (usable); *not runnable* (the executable does not start); *too old*;
-  *blocklisted*, with the reason; and, when VLC arrives, *wrong architecture* (a 32-bit `libvlc.dll` in a 64-bit
-  process) and *unusable in a sandbox* (a snap or flatpak VLC), each its own status rather than a version failure.
+  *blocklisted*, with the reason; for the playback libraries (#580) *no libraries* (a static build), *wrong major
+  version*, *incomplete* and *wrong architecture* (a 32-bit or ARM build in a 64-bit x86 process), each its own status
+  rather than a version failure; and, when it arrives, *unusable in a sandbox* (a snap or flatpak VLC).
   *Missing* is a path with nothing at it.
 - **The version is read without loading anything into the agent**: by running the tool (`ffprobe -version`), from the
   vendor's own metadata where the executable prints nothing, and for a library in a child process.
 - **A chosen path is judged when used**, its version read once and cached by path and modification time. A feature
   whose tool is unusable is disabled with the reason and a way to the Tools page, rather than failing at use; one that
   was usable and later breaks, as a tool updated or a share unmounted, fails with the candidate's own reason.
-- **Two kinds of FFmpeg.** The **program** takes any version at or above its minimum. The **playback libraries** replace
-  the FFmpeg Qt Multimedia bundles ([[plugins#in-app-player]]) and must match the major versions the shipped PySide6
-  bundles, read from its own DLL names; they are not built yet.
+- **Two kinds of FFmpeg.** The **program** takes any version at or above its minimum. The **playback libraries** (#580)
+  replace the FFmpeg Qt Multimedia bundles ([[plugins#in-app-player]]) and must match the major versions the shipped
+  PySide6 bundles, read from its own DLL names, never from a number in the code. They are a descriptor of their own,
+  `FfmpegLibrariesTool`, registered on Windows only, the one platform measured. A build is judged by its file names
+  first and then **tried in a child process**: the agent run again with a hidden `--probe-ffmpeg-libraries` flag that
+  loads the five libraries and writes its answer to the `--output` file, since the packaged exe prints nowhere and a
+  build that crashes the process it loads into must not be the agent. The agent loads a build, by full path in
+  `avutil`, `swresample`, `swscale`, `avcodec`, `avformat` order, only from `__main__` at start, ahead of the import of
+  Qt Multimedia, and only when the Videos page chose it (`PlaybackLibraries`); a build that is gone or will not load
+  leaves Qt's own in use, with the reason kept for the Videos page and the log. Qt's own folder, on `PATH` in a
+  development environment, is never listed as a build.
 - **Paths are machine-local, never remotely settable** ([[discovery-trust-access#remote-admin]]). A node locates its own
   tools through the same `ToolLocator`, configured from its own config, and never sees the agent's paths.
 

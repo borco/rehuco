@@ -95,6 +95,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     it to the real bar. The relay mirrors :attr:`document_focus_changed`'s own ``DocumentsDock`` ->
     ``MainWindow`` hop."""
 
+    tools_requested: Signal = Signal()
+    """Relays the player's request to set up the FFmpeg libraries up from each :class:`DocumentWidget` to
+    ``MainWindow``, which opens the Tools page (#580)."""
+
     filter_requested: Signal = Signal(str)
     """Relays a document field's clicked ``filter://`` link (a `FilterRequester`) up from each
     :class:`DocumentWidget` to ``MainWindow``, which hands it to the Root Catalog ([[plugins#filter-urls]])."""
@@ -634,6 +638,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         dock.document_widget.status_message.connect(self.status_message)
         # and its clicked filter links, which the window hands to the Root Catalog
         dock.document_widget.filter_requested.connect(self.filter_requested)
+        dock.document_widget.tools_requested.connect(self.tools_requested)
         # and relay its Files sub-dock's open requests the same way, up to the window that owns what
         # "open" means (#266)
         dock.document_widget.record_activated.connect(self.open_requested)

@@ -1090,6 +1090,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 - [#317: feat: in-app video player dock — Qt Multimedia surface, transport bar, keyboard, folder playlist, resume](https://github.com/borco/rehuco/issues/317)
 - [#318: feat: Videos settings — player choice (in-app / external VLC), VLC path, SHIFT+double-click override](https://github.com/borco/rehuco/issues/318)
 - [#521: feat: Tools settings page — optional external tools (ffprobe, VLC, ffmpeg): detect, browse, version gates, install instructions](https://github.com/borco/rehuco/issues/521)
+- [#580: feat: play videos with an external FFmpeg's libraries — a Playback choice beside Qt's bundled FFmpeg (AV1 in software)](https://github.com/borco/rehuco/issues/580)
 
 Two players can fill Follow's dock: **libvlc** from the user's own VLC, set up through the Tools page (#521), or
 **Qt Multimedia**, whose FFmpeg backend ships inside PySide6. The spike (#315) measured both on Windows 11 at 125 %
@@ -1237,8 +1238,10 @@ a ready video counts as a picture.
 not from Qt: its codec and scan type are read through MediaInfo off the GUI thread (`rehuco_core.read_video_format`,
 kept out of the `videos` map, since they are about the file as it is now). An **interlaced** video is noted at once;
 an **AV1** one when it has played for a second and a half and shown no frame, since whether the hardware decodes it
-cannot be asked beforehand. A banner in the dock carries the notice, and an error from the player. *Open in VLC* is
-not offered yet: VLC is set up through the Tools page (#521) and launched by #319.
+cannot be asked beforehand. A banner in the dock carries the notice, and an error from the player. Where the FFmpeg libraries can be set up
+(Windows) and this run is not using them (#580), the AV1 notice adds that an external FFmpeg's libraries with dav1d
+would play it, and carries a *Set up in Tools* button, which travels the document's usual hops up to the window
+that opens the Tools page. *Open in VLC* is not offered yet: VLC is set up through the Tools page (#521) and launched by #319.
 
 **The build keeps 20 MB of a 105 MB to 460 MB wheel.** The agent depends on `PySide6-Essentials`; Qt Multimedia is in
 `PySide6-Addons`, which is named again for it. Playback needs about 20 MB of that wheel: `QtMultimedia` and

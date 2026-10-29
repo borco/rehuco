@@ -22,6 +22,8 @@ from PySide6.QtCore import QSettings
 from rehuco_core import (
     DEFAULT_DURATION_PROBE,
     DURATION_PROBES,
+    EXTERNAL_TOOLS,
+    FFMPEG_LIBRARIES_TOOL,
     FFMPEG_TOOL,
     VIDEO_EXTENSIONS,
     VLC_TOOL,
@@ -48,8 +50,17 @@ IN_APP_PLAYER: Final = "in_app"
 VLC_PLAYER: Final = VLC_TOOL.ID
 """The user's own VLC, launched as a process of its own -- named after the tool that supplies it."""
 
-PLAYERS: Final = (IN_APP_PLAYER, VLC_PLAYER)
-"""Where a double-clicked video can open (#318): the names ``player`` may hold."""
+FFMPEG_LIBRARIES_PLAYER: Final = FFMPEG_LIBRARIES_TOOL.ID
+"""The in-app player decoding with an external FFmpeg's libraries (#580); applied at the next start, so a double-click
+opens it in the same player as :data:`IN_APP_PLAYER`."""
+
+PLAYERS: Final = (
+    IN_APP_PLAYER,
+    *((FFMPEG_LIBRARIES_PLAYER,) if FFMPEG_LIBRARIES_PLAYER in EXTERNAL_TOOLS else ()),
+    VLC_PLAYER,
+)
+"""Where a double-clicked video can open and what decodes it (#318, #580): the names ``player`` may hold. The libraries
+are Windows-only, as their tool is."""
 
 DEFAULT_PLAYER: Final = IN_APP_PLAYER
 
@@ -127,7 +138,8 @@ class VideosSettings:
     the shipped one rather than nothing."""
 
     player: str = DEFAULT_PLAYER
-    """Where a double-clicked video opens -- a member of :data:`PLAYERS`. The VLC's own path is the Tools page's."""
+    """Where a double-clicked video opens and what decodes it -- a member of :data:`PLAYERS`. The tools' own paths are
+    the Tools page's."""
 
     mark_file_viewed_at_end: bool = True
     """Reaching the end of a video marks it viewed ([[field-schema#watch-progress]])."""

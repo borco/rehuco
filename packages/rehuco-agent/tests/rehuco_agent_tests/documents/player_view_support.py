@@ -17,7 +17,7 @@ from PySide6.QtCore import QSize
 from PySide6.QtGui import QAction
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame, QVideoFrameFormat, QVideoSink
 from PySide6.QtMultimediaWidgets import QVideoWidget
-from PySide6.QtWidgets import QComboBox, QLabel, QSlider, QStackedWidget, QWidget
+from PySide6.QtWidgets import QComboBox, QLabel, QSlider, QStackedWidget, QToolButton, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -295,6 +295,17 @@ def shown_of(view: PlayerView) -> QWidget:
     stack = view.findChild(QStackedWidget, "surface_stack")
     assert isinstance(stack, QStackedWidget)
     return stack.currentWidget()
+
+
+def notice_buttons(view: PlayerView) -> list[QToolButton]:
+    """The remedies a view's banner offers.
+
+    :param view: the view.
+    :returns: the buttons of its rows.
+    """
+    banner = view.findChild(MessageBanner)
+    assert isinstance(banner, MessageBanner)
+    return banner.findChildren(QToolButton)
 
 
 def notices(view: PlayerView) -> list[str]:

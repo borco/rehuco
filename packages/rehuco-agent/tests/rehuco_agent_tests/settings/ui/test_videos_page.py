@@ -16,6 +16,7 @@ from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.videos_page import CHECKING_TEXT, NEEDS_FFMPEG_TOOLTIP, VideosPage
 from rehuco_agent.settings.videos_settings import VideosSettings, shared_videos_settings
 from rehuco_core import (
+    EXTERNAL_TOOLS,
     FFMPEG_TOOL,
     VIDEO_EXTENSIONS,
     FfprobeDurationProbe,
@@ -782,7 +783,7 @@ def test_showing_the_page_again_does_not_check_again(qtbot: QtBot, fake_tool_loc
     **Test steps:**
 
     * show the page, hide it and show it again
-    * verify the locator was asked once about each of FFmpeg and VLC
+    * verify the locator was asked once about each tool the page needs
     """
     page = VideosPage()
     qtbot.addWidget(page)
@@ -792,7 +793,7 @@ def test_showing_the_page_again_does_not_check_again(qtbot: QtBot, fake_tool_loc
     page.hide()
     page.show()
 
-    assert fake_tool_locator.resolve.call_count == 2
+    assert fake_tool_locator.resolve.call_count == len(EXTERNAL_TOOLS)
 
 
 def test_a_change_to_the_tool_checks_again_once_the_page_has_asked(qtbot: QtBot, fake_tool_locator: Any) -> None:
@@ -802,7 +803,7 @@ def test_a_change_to_the_tool_checks_again_once_the_page_has_asked(qtbot: QtBot,
 
     * check once, then find FFmpeg: record an install for it
     * verify the page checked again and now offers the choice
-    * change another tool and verify nothing more was asked
+    * change a tool the page does not use and verify nothing more was asked
     """
     page = VideosPage()
     qtbot.addWidget(page)
@@ -814,7 +815,7 @@ def test_a_change_to_the_tool_checks_again_once_the_page_has_asked(qtbot: QtBot,
 
     assert page_ui(page).ffprobe_probe_radio_button.isEnabled() is True
     calls = fake_tool_locator.resolve.call_count
-    shared_tools_settings().set_path("vlc", "/somewhere")
+    shared_tools_settings().set_path("unrelated", "/somewhere")
     assert fake_tool_locator.resolve.call_count == calls
 
 

@@ -71,25 +71,29 @@ Install VLC from [videolan.org](https://www.videolan.org/vlc/):
     sudo apt install vlc
     ```
 
-## Planned
+## FFmpeg libraries, for AV1 in the app's player {#ffmpeg-libraries}
 
-What follows is for features not built yet. It is kept here so that the settings page that will set them up has
-one place to point to.
+The app's own player decodes with the FFmpeg that ships inside Qt. That FFmpeg plays AV1 only on a graphics card
+that decodes AV1 itself: Nvidia RTX 30 or later, recent AMD and Intel graphics, Apple M3 or later. On other machines
+an AV1 video plays its sound with no picture. A **shared** FFmpeg build that includes the dav1d decoder fixes this:
+the app loads its libraries instead of Qt's.
 
-### FFmpeg libraries, for AV1 in the app's player {#ffmpeg-libraries}
-
-The app's own player will decode with the FFmpeg that ships inside Qt. That FFmpeg plays AV1 only on a graphics card
-that decodes AV1 itself: Nvidia RTX 30 or later, recent AMD and Intel graphics, Apple M3 or later. On other machines an
-AV1 video plays its sound with no picture. A **shared** FFmpeg build that includes the dav1d decoder fixes this: the
-app will load its libraries instead of Qt's.
+**Settings ▸ Videos ▸ Playback** chooses **Qt (bundled FFmpeg)** or **Qt with external FFmpeg libraries**. The
+second is available once **Settings ▸ Tools** lists a build that works; it lists every build found, each with its
+version and whether it works, and a build that cannot be used says why: a **static** build has no libraries to load,
+another **major version** than Qt's cannot stand in for it, and a build for another processor will not load. The
+libraries are loaded when the app starts, so a change takes effect at the **next start**; if the chosen build is gone
+or fails to load, the app plays with Qt's own FFmpeg and the Videos page says why. When an AV1 video shows no
+picture, the player's notice offers a button to the Tools page.
 
 The build must match the FFmpeg the app's Qt was built with, by **major version**, and the machine's architecture
-(`win64` on a 64-bit Intel or AMD Windows PC). A build that is not **shared** holds only `ffmpeg.exe` and `ffprobe.exe`,
-with no libraries to load.
+(`win64` on a 64-bit Intel or AMD Windows PC). A build that is not **shared** holds only `ffmpeg.exe` and
+`ffprobe.exe`, with no libraries to load.
 
 | The app's PySide6 | FFmpeg major | Libraries | Builds with dav1d |
 | --- | --- | --- | --- |
 | 6.11 | 7.1 | `avcodec-61.dll`, `avformat-61.dll`, `avutil-59.dll`, `swresample-5.dll`, `swscale-8.dll` | [BtbN 7.1.5 LGPL shared](https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-lgpl-shared-7.1.zip) (BtbN's last 7.1 build); [gyan.dev 7.1.1 full shared](https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-full_build-shared.zip) (GPL) |
 | 6.12 | 9.0 | `avcodec-63.dll`, `avformat-63.dll`, `avutil-61.dll`, `swresample-7.dll`, `swscale-10.dll` | [BtbN 9.0 LGPL shared](https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-win64-lgpl-shared-9.0.zip) |
 
-Only Windows has been tried. Unpack the archive anywhere; the libraries are in its `bin` folder.
+Only Windows has been tried, so only Windows offers the choice. Unpack the archive anywhere; the libraries are in its
+`bin` folder. Winget installs one too: `winget install BtbN.FFmpeg.LGPL.Shared.7.1`.

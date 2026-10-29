@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Final
 
+from rehuco_core import PROBE_FLAG, probe
+
 from rehuco_agent import __version__
 from rehuco_agent.archives import ARCHIVE_EXTENSIONS
 
@@ -78,6 +80,23 @@ def run_playback_check(clip: Path) -> int:
     return check_playback(clip)
 
 
+def run_probe(arguments: list[str]) -> int:
+    """Try an FFmpeg build's libraries in this child process and write what happened (#580).
+
+    Decided before the parser sees anything, like :data:`NODE_FLAG`, and without importing Qt: the agent that asked
+    must not load a build it has not chosen, so this process does it for the answer.
+
+    :param arguments: the process's arguments after the program name: :data:`PROBE_FLAG` and the build's
+        folder, then ``--output`` and the file to write.
+    :returns: the exit code.
+    """
+    folder, output = arguments[arguments.index(PROBE_FLAG) + 1], arguments[arguments.index("--output") + 1]
+    # pylint: disable-next=import-outside-toplevel
+    import PySide6
+
+    return probe(Path(folder), Path(PySide6.__file__).parent, Path(output))
+
+
 def resolve_settings_dir(flag: Path | None, environment: str | None) -> Path | None:
     """The folder this run keeps its settings, data and cache in (#494): the flag's, else the environment's.
 
@@ -142,7 +161,7 @@ def run_node(arguments: list[str]) -> int:
     return node_main([argument for argument in arguments if argument != NODE_FLAG])
 
 
-# pylint: disable-next=too-many-return-statements,too-many-branches,too-many-statements
+# pylint: disable-next=too-many-return-statements,too-many-branches,too-many-statements,too-many-locals
 def main() -> int:
     """Print version/registration info, register/unregister this app as the ``.rehu`` handler, or
     launch the GUI.
@@ -188,6 +207,8 @@ def main() -> int:
     """
     if NODE_FLAG in sys.argv[1:]:
         return run_node(sys.argv[1:])
+    if PROBE_FLAG in sys.argv[1:]:
+        return run_probe(sys.argv[1:])
 
     exe_path = Path(sys.argv[0]).resolve()
 
@@ -334,6 +355,13 @@ def main() -> int:
     # PySide6.QtCore/QtGui for the qrc, but never the dock shell) -- and on Windows it is what the
     # installer runs from a post-install script, where that second is a console window the user
     # watches ([[appendices.briefcase-packaging#windows]]).
+    # The external FFmpeg libraries, if chosen, are loaded now: Qt Multimedia binds its FFmpeg when it is first
+    # imported, which importing the app does ([[plugins#in-app-player]], #580).
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_agent.playback_libraries import shared_playback_libraries
+
+    shared_playback_libraries().load_at_start()
+
     # pylint: disable-next=import-outside-toplevel
     from rehuco_agent.app import run
 

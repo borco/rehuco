@@ -8,7 +8,9 @@ tests exercise the platform-agnostic and non-Windows paths, so they run on every
 import sys
 from pathlib import Path
 from typing import Final
+from unittest.mock import Mock
 
+import PySide6
 import pytest
 from pytest_mock import MockerFixture
 from rehuco_agent import __version__
@@ -17,6 +19,7 @@ from rehuco_agent.settings.persistent_settings import (
     APPLICATION_NAME,
     settings_dir,
 )
+from rehuco_core import PROBE_FLAG
 
 FAKE_ARGV0: Final = "/fake/rehuco-agent-dev"
 """No ``.exe``/drive-letter shape -- argv[0] isn't a Windows executable on this path."""
@@ -398,3 +401,40 @@ def test_node_flag_runs_the_node_instead_of_the_agent(
 
     assert capsys.readouterr().out.strip().startswith("version: ")
     run.assert_not_called()
+
+
+def test_the_probe_flag_tries_a_build_and_never_starts_the_gui(mocker: MockerFixture) -> None:
+    """``rehuco-agent --probe-ffmpeg-libraries FOLDER --output FILE`` is the child the Tools page asks about a build
+    (#580): it hands the folder, Qt's folder and the file to core's probe.
+
+    **Test steps:**
+
+    * run ``main`` with the flag, a folder and an output file
+    * verify the probe got those paths with PySide6's folder, and the GUI never launched
+    """
+    mocker.patch.object(sys, "argv", [FAKE_ARGV0, PROBE_FLAG, "/some/build", "--output", "/some/answer.json"])
+    probe = mocker.patch("rehuco_agent.__main__.probe", return_value=0)
+    run = mocker.patch("rehuco_agent.app.run")
+
+    assert main() == 0
+
+    probe.assert_called_once_with(Path("/some/build"), Path(PySide6.__file__).parent, Path("/some/answer.json"))
+    run.assert_not_called()
+
+
+def test_the_chosen_libraries_are_loaded_before_the_app_is_imported(mocker: MockerFixture) -> None:
+    """Qt Multimedia binds its FFmpeg when it is first imported, which importing the app does (#580).
+
+    **Test steps:**
+
+    * make a plain GUI launch with the load and the app's ``run`` recording their calls
+    * verify the load happened, and before ``run``
+    """
+    mocker.patch.object(sys, "argv", [FAKE_ARGV0])
+    calls = Mock()
+    mocker.patch("rehuco_agent.playback_libraries.shared_playback_libraries", calls.shared)
+    mocker.patch("rehuco_agent.app.run", calls.run)
+
+    main()
+
+    assert [call[0] for call in calls.mock_calls] == ["shared", "shared().load_at_start", "run"]

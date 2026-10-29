@@ -455,6 +455,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__documents_dock.filter_requested.connect(self.__on_filter_requested)
+        self.__documents_dock.tools_requested.connect(lambda: self.__settings_dialog.show_page("Tools"))
         self.__documents_dock.document_key_changed.connect(self.__on_document_key_changed)
         self.__documents_dock.open_requested.connect(self.__on_open_requested)
         self.__documents_dock.preview_promoted.connect(self.__on_preview_promoted)

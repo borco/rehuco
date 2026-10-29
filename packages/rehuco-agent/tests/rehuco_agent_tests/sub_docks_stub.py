@@ -24,6 +24,7 @@ class StubSubDocks(QObject):
 
     status_message: Signal = Signal(str)
     filter_requested: Signal = Signal(str)
+    tools_requested: Signal = Signal()
     record_activated: Signal = Signal(object)
 
     def __init__(self, model: RehuDocumentModel, _host: object, *, parent: QObject, **_kwargs: object) -> None:
