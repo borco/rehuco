@@ -24,6 +24,7 @@ from rehuco_core import (
     DURATION_PROBES,
     FFMPEG_TOOL,
     VIDEO_EXTENSIONS,
+    VLC_TOOL,
     DurationProbe,
     FfprobeDurationProbe,
     WatchRules,
@@ -36,9 +37,21 @@ from .tools_settings import shared_tools_settings
 GROUP: Final = "videos"
 ENGINE_KEY: Final = "engine"
 EXTENSIONS_KEY: Final = "extensions"
+PLAYER_KEY: Final = "player"
 MARK_FILE_VIEWED_KEY: Final = "mark_file_viewed_at_end"
 MARK_TUTORIAL_VIEWED_KEY: Final = "mark_tutorial_viewed_on_last_file"
 MATCH_RENAMED_BY_SIZE_KEY: Final = "match_renamed_by_size"
+
+IN_APP_PLAYER: Final = "in_app"
+"""The player dock a document hosts ([[plugins#in-app-player]])."""
+
+VLC_PLAYER: Final = VLC_TOOL.ID
+"""The user's own VLC, launched as a process of its own -- named after the tool that supplies it."""
+
+PLAYERS: Final = (IN_APP_PLAYER, VLC_PLAYER)
+"""Where a double-clicked video can open (#318): the names ``player`` may hold."""
+
+DEFAULT_PLAYER: Final = IN_APP_PLAYER
 
 
 def normalize_extensions(values: object) -> tuple[str, ...]:
@@ -83,6 +96,18 @@ def read_engine(value: object) -> str:
     return value if isinstance(value, str) and value in DURATION_PROBES else DEFAULT_DURATION_PROBE
 
 
+def read_player(value: object) -> str:
+    """Resolve a stored ``player`` value to a player this build knows.
+
+    An unrecognized name -- an ``.ini`` written by a newer version -- selects :data:`DEFAULT_PLAYER` rather than
+    raising, the way :func:`read_engine` treats ``engine``.
+
+    :param value: the raw stored value.
+    :returns: a member of :data:`PLAYERS`.
+    """
+    return value if isinstance(value, str) and value in PLAYERS else DEFAULT_PLAYER
+
+
 @dataclass
 class VideosSettings:
     """How a tutorial's videos are measured -- which backend reads a duration, and over which files -- and how
@@ -90,6 +115,8 @@ class VideosSettings:
 
     :attr:`engine` and :attr:`extensions` are stored as the page left them; what a scan consumes is
     :meth:`create_probe` and :attr:`video_extensions`, the values they resolve to.
+
+    :attr:`player` is read where a video is double-clicked, so a change applies to documents already open.
     """
 
     engine: str = DEFAULT_DURATION_PROBE
@@ -98,6 +125,9 @@ class VideosSettings:
     extensions: tuple[str, ...] = field(default_factory=tuple)
     """The recognized video extensions as stored -- empty on a fresh install, where the effective set is
     the shipped one rather than nothing."""
+
+    player: str = DEFAULT_PLAYER
+    """Where a double-clicked video opens -- a member of :data:`PLAYERS`. The VLC's own path is the Tools page's."""
 
     mark_file_viewed_at_end: bool = True
     """Reaching the end of a video marks it viewed ([[field-schema#watch-progress]])."""
@@ -143,13 +173,15 @@ class VideosSettings:
 
         A never-saved, empty or unreadable extension value comes back as no entries, which resolves to
         the shipped set rather than to no recognized formats at all (:func:`read_extensions`); an
-        unrecognized ``engine`` comes back as the default backend (:func:`read_engine`).
+        unrecognized ``engine`` comes back as the default backend (:func:`read_engine`), and an unrecognized
+        ``player`` as the default player (:func:`read_player`).
 
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(GROUP)
         self.engine = read_engine(settings.value(ENGINE_KEY))
         self.extensions = read_extensions(settings.value(EXTENSIONS_KEY))
+        self.player = read_player(settings.value(PLAYER_KEY))
         self.mark_file_viewed_at_end = cast(bool, settings.value(MARK_FILE_VIEWED_KEY, True, type=bool))
         self.mark_tutorial_viewed_on_last_file = cast(bool, settings.value(MARK_TUTORIAL_VIEWED_KEY, True, type=bool))
         self.match_renamed_by_size = cast(bool, settings.value(MATCH_RENAMED_BY_SIZE_KEY, True, type=bool))
@@ -163,6 +195,7 @@ class VideosSettings:
         settings.beginGroup(GROUP)
         settings.setValue(ENGINE_KEY, self.engine)
         settings.setValue(EXTENSIONS_KEY, list(self.extensions))
+        settings.setValue(PLAYER_KEY, self.player)
         settings.setValue(MARK_FILE_VIEWED_KEY, self.mark_file_viewed_at_end)
         settings.setValue(MARK_TUTORIAL_VIEWED_KEY, self.mark_tutorial_viewed_on_last_file)
         settings.setValue(MATCH_RENAMED_BY_SIZE_KEY, self.match_renamed_by_size)

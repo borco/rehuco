@@ -11,6 +11,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import FFMPEG_TOOL, ToolNotRunnableError, Version
 
 MODULE: Final = "rehuco_core.external_tools.ffmpeg_tool"
+RUNNER: Final = "rehuco_core.external_tools.tool_descriptor.subprocess.run"
 
 
 def run_printing(mocker: MockerFixture, stdout: str, returncode: int = 0) -> None:
@@ -20,7 +21,7 @@ def run_printing(mocker: MockerFixture, stdout: str, returncode: int = 0) -> Non
     :param stdout: what it prints.
     :param returncode: how it exits.
     """
-    mocker.patch(f"{MODULE}.subprocess.run", return_value=SimpleNamespace(stdout=stdout, returncode=returncode))
+    mocker.patch(RUNNER, return_value=SimpleNamespace(stdout=stdout, returncode=returncode))
 
 
 @mark.parametrize(
@@ -58,7 +59,7 @@ def test_the_version_is_asked_of_ffprobe_with_no_shell(mocker: MockerFixture) ->
     * read a version
     * verify what ran
     """
-    run = mocker.patch(f"{MODULE}.subprocess.run", return_value=SimpleNamespace(stdout="", returncode=0))
+    run = mocker.patch(RUNNER, return_value=SimpleNamespace(stdout="", returncode=0))
     FFMPEG_TOOL.read_version(Path("/opt/ffmpeg/bin"))
 
     command = run.call_args.args[0]
@@ -87,7 +88,7 @@ def test_a_copy_that_does_not_run_says_so(mocker: MockerFixture, error: Exceptio
     if error is None:
         run_printing(mocker, "", returncode)
     else:
-        mocker.patch(f"{MODULE}.subprocess.run", side_effect=error)
+        mocker.patch(RUNNER, side_effect=error)
 
     with raises(ToolNotRunnableError) as raised:
         FFMPEG_TOOL.read_version(Path("/opt/ffmpeg/bin"))

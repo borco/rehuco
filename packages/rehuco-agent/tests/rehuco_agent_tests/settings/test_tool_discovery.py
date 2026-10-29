@@ -4,12 +4,13 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import call
 
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.tool_discovery import ToolDiscovery, shared_tool_discovery
 from rehuco_agent.settings.tools_settings import ToolDetection, ToolsSettings
-from rehuco_core import FFMPEG_TOOL, ToolCandidate, ToolStatus
+from rehuco_core import EXTERNAL_TOOLS, FFMPEG_TOOL, VLC_TOOL, ToolCandidate, ToolStatus
 from shiboken6 import delete
 
 INSTALL = ToolCandidate(Path("/opt/ffmpeg/bin"), "winget", ToolStatus.USABLE, (7, 1, 1))
@@ -54,14 +55,14 @@ def test_a_tool_never_searched_for_is_searched_for_and_recorded(
     **Test steps:**
 
     * make the locator find an install and run
-    * verify the install was recorded as searched for, and nothing was only verified
+    * verify the install was recorded as searched for, every tool was searched for, and nothing was only verified
     """
     fake_tool_locator.detect.return_value = [INSTALL, OTHER]
 
     run(qtbot, discovery)
 
     assert tools.detection(FFMPEG_TOOL.ID) == ToolDetection(True, (INSTALL, OTHER))
-    fake_tool_locator.detect.assert_called_once_with(FFMPEG_TOOL)
+    assert fake_tool_locator.detect.call_args_list == [call(tool) for tool in EXTERNAL_TOOLS.values()]
     fake_tool_locator.verify.assert_not_called()
 
 
@@ -72,16 +73,17 @@ def test_a_tool_already_searched_for_is_only_verified(
 
     **Test steps:**
 
-    * store two installs, make verifying keep one, and run
+    * store two installs for FFmpeg and a search for VLC, make verifying keep one, and run
     * verify what is recorded is the one that is still there, and nothing was searched for
     """
     tools.set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (INSTALL, OTHER)))
+    tools.set_detection(VLC_TOOL.ID, ToolDetection(True, ()))
     fake_tool_locator.verify.return_value = [OTHER]
 
     run(qtbot, discovery)
 
     assert tools.detection(FFMPEG_TOOL.ID) == ToolDetection(True, (OTHER,))
-    fake_tool_locator.verify.assert_called_once_with(FFMPEG_TOOL, (INSTALL, OTHER))
+    fake_tool_locator.verify.assert_any_call(FFMPEG_TOOL, (INSTALL, OTHER))
     fake_tool_locator.detect.assert_not_called()
 
 
@@ -92,10 +94,11 @@ def test_a_tool_searched_for_and_not_found_is_not_searched_for_again(
 
     **Test steps:**
 
-    * store a search that found nothing and run
+    * store a search that found nothing for each tool and run
     * verify no search ran
     """
-    tools.set_detection(FFMPEG_TOOL.ID, ToolDetection(True, ()))
+    for tool_id in EXTERNAL_TOOLS:
+        tools.set_detection(tool_id, ToolDetection(True, ()))
     fake_tool_locator.verify.return_value = []
 
     run(qtbot, discovery)

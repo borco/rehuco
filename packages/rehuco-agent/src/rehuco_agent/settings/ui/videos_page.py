@@ -1,18 +1,24 @@
-"""Videos settings page: which backend measures a duration, over which files, and how watching is tracked
-(#225, #316, #521)."""
+"""Videos settings page: which backend measures a duration, over which files, where a video opens, and how watching
+is tracked (#225, #316, #318, #521)."""
 
 from typing import Final, override
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import QWidget
-from rehuco_core import FFMPEG_TOOL, VIDEO_EXTENSIONS, FfprobeDurationProbe, MediaInfoDurationProbe
+from rehuco_core import FFMPEG_TOOL, VIDEO_EXTENSIONS, VLC_TOOL, FfprobeDurationProbe, MediaInfoDurationProbe
 
 from ...documents.latest_runner import LatestRunner
 from ...item_action_icons import apply_item_action_icons
 from ..persistent_settings import persistent_settings
 from ..tools_settings import shared_tools_settings
-from ..videos_settings import VideosSettings, normalize_extensions, shared_videos_settings
+from ..videos_settings import (
+    IN_APP_PLAYER,
+    VLC_PLAYER,
+    VideosSettings,
+    normalize_extensions,
+    shared_videos_settings,
+)
 from .videos_page_ui import Ui_VideosPage
 
 AVAILABLE_TEMPLATE: Final = "{label} is ready."
@@ -24,16 +30,24 @@ NEEDS_FFMPEG_TOOLTIP: Final = "Needs FFmpeg -- set it up in Tools."
 CHECK_TAG: Final = "ffmpeg"
 CHECK_FAILED_TEMPLATE: Final = "Checking FFmpeg failed: {error}"
 
+NEEDS_VLC_TOOLTIP: Final = "Needs VLC -- set it up in Tools."
+VLC_CHECK_TAG: Final = "vlc"
+VLC_CHECK_FAILED_TEMPLATE: Final = "Checking VLC failed: {error}"
+
 
 class VideosPage(QWidget):
     """Configure how a tutorial's videos are measured (#224's parameters, made the user's).
 
-    Three blocks, the first two one per parameter `rehuco_core.rehu_content_duration.content_duration` takes:
+    Four blocks, the first and the third one per parameter `rehuco_core.rehu_content_duration.content_duration` takes:
 
     - **Duration probe** -- which backend reads a container. *FFmpeg (external)* is offered once FFmpeg is usable,
       and where FFmpeg is lives on the Tools page ([[packaging-deployment#external-tools]], #521), which a link
       here opens. A choice already made stays selected when its tool later goes missing, and the page says why
       rather than switching ([[appendices.settings-pages#persisting-changes]]).
+    - **Playback** -- where a double-clicked video opens: the app's own player, or VLC once one is set up on the
+      Tools page, which a link here opens when it is not. Gated like the FFmpeg choice, and a choice already made
+      stays selected when its VLC goes missing, with the reason shown; the Files sub-dock plays in the app's own
+      player meanwhile ([[plugins#in-app-player]], #318).
     - **Video extensions** -- which files a scan measures, a `StringListEditor` (#231) wearing this app's
       icons, exactly as the reference-images list on `ImagesFilesPage` is.
     - **Watch progress** -- the two auto-viewed rules and the size match for renamed files, which core's
@@ -58,6 +72,9 @@ class VideosPage(QWidget):
     availability_checked = Signal()
     """FFmpeg's availability was asked of the locator and the page now shows the answer."""
 
+    player_checked = Signal()
+    """VLC's availability was asked of the locator and the page now shows the answer."""
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__ui: Final = Ui_VideosPage()
@@ -65,7 +82,10 @@ class VideosPage(QWidget):
         self.__asked = False
         self.__ffmpeg_checked = False
         self.__ffmpeg_reason: str | None = None
+        self.__vlc_checked = False
+        self.__vlc_reason: str | None = None
         self.__checker: Final = LatestRunner(self)
+        self.__vlc_checker: Final = LatestRunner(self)
         # the probes name themselves: LABEL exists so the choice on screen tracks the registry rather
         # than a second copy of the same two names living in the .ui
         self.__ui.mediainfo_probe_radio_button.setText(MediaInfoDurationProbe.LABEL)
@@ -74,8 +94,11 @@ class VideosPage(QWidget):
         apply_item_action_icons(self.__ui.extensions_editor)
 
         self.__ui.ffprobe_probe_radio_button.toggled.connect(self.__on_probe_toggled)
+        self.__ui.vlc_player_radio_button.toggled.connect(self.__on_player_toggled)
         self.__ui.tools_link_label.linkActivated.connect(self.__on_tools_link_activated)
+        self.__ui.player_tools_link_label.linkActivated.connect(self.__on_tools_link_activated)
         self.__checker.read.connect(self.__on_checked)
+        self.__vlc_checker.read.connect(self.__on_vlc_checked)
         shared_tools_settings().tool_changed.connect(self.__on_tool_changed)
 
         self.drop_changes()
@@ -85,6 +108,7 @@ class VideosPage(QWidget):
         settings = shared_videos_settings()
         return (
             self.__staged_engine() != settings.engine
+            or self.__staged_player() != settings.player
             # normalized before the comparison, so a row saving would drop anyway is not yet a change
             # and auto-apply does not tear a fresh insert out from under its open cell (#53)
             or normalize_extensions(self.__ui.extensions_editor.values) != settings.video_extensions
@@ -103,6 +127,7 @@ class VideosPage(QWidget):
         """
         settings = shared_videos_settings()
         settings.engine = self.__staged_engine()
+        settings.player = self.__staged_player()
         settings.extensions = normalize_extensions(self.__ui.extensions_editor.values)
         settings.mark_file_viewed_at_end = self.__ui.mark_file_viewed_check_box.isChecked()
         settings.mark_tutorial_viewed_on_last_file = self.__ui.mark_tutorial_viewed_check_box.isChecked()
@@ -120,8 +145,8 @@ class VideosPage(QWidget):
 
     @override
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802  (Qt API name)
-        """Ask whether FFmpeg is usable the first time the page is shown; after that the Tools settings say when it
-        may have changed.
+        """Ask whether FFmpeg and VLC are usable the first time the page is shown; after that the Tools settings say
+        when either may have changed.
 
         :param event: the show event.
         """
@@ -130,7 +155,7 @@ class VideosPage(QWidget):
             self.refresh_availability()
 
     def refresh_availability(self) -> None:
-        """Ask whether the saved FFmpeg can be used, off the GUI thread; the page follows the answer.
+        """Ask whether the saved FFmpeg and VLC can be used, off the GUI thread; the page follows the answers.
 
         Nothing is searched for: an empty path means the best install `ToolDiscovery` recorded, and only a custom
         path is looked at, which reads its version once.
@@ -139,6 +164,7 @@ class VideosPage(QWidget):
         tools = shared_tools_settings()
         path, installs = tools.path(FFMPEG_TOOL.ID), tools.detection(FFMPEG_TOOL.ID).installs
         self.__checker.start(CHECK_TAG, lambda: FfprobeDurationProbe(path, installs).unavailable_reason())
+        self.__vlc_checker.start(VLC_CHECK_TAG, lambda: tools.unusable_reason(VLC_TOOL))
 
     def __show(self, settings: VideosSettings) -> None:
         """Fill every widget from ``settings``.
@@ -149,11 +175,16 @@ class VideosPage(QWidget):
             self.__ui.ffprobe_probe_radio_button.setChecked(True)
         else:
             self.__ui.mediainfo_probe_radio_button.setChecked(True)
+        if settings.player == VLC_PLAYER:
+            self.__ui.vlc_player_radio_button.setChecked(True)
+        else:
+            self.__ui.in_app_player_radio_button.setChecked(True)
         self.__ui.extensions_editor.values = settings.video_extensions
         self.__ui.mark_file_viewed_check_box.setChecked(settings.mark_file_viewed_at_end)
         self.__ui.mark_tutorial_viewed_check_box.setChecked(settings.mark_tutorial_viewed_on_last_file)
         self.__ui.match_renamed_by_size_check_box.setChecked(settings.match_renamed_by_size)
         self.__update_probe_controls()
+        self.__update_player_controls()
 
     def __staged_engine(self) -> str:
         """The backend currently selected in the radio buttons.
@@ -166,6 +197,14 @@ class VideosPage(QWidget):
         if self.__ui.ffprobe_probe_radio_button.isChecked():
             return FfprobeDurationProbe.NAME
         return MediaInfoDurationProbe.NAME
+
+    def __staged_player(self) -> str:
+        """The player currently selected in the radio buttons, read off the one radio as :meth:`__staged_engine` is.
+
+        :returns: :data:`~rehuco_agent.settings.videos_settings.VLC_PLAYER` or
+            :data:`~rehuco_agent.settings.videos_settings.IN_APP_PLAYER`.
+        """
+        return VLC_PLAYER if self.__ui.vlc_player_radio_button.isChecked() else IN_APP_PLAYER
 
     def __update_probe_controls(self) -> None:
         """Offer the FFmpeg choice only while it can be had, point to the Tools page when it cannot, and re-check the
@@ -180,6 +219,21 @@ class VideosPage(QWidget):
         radio.setToolTip("" if radio.isEnabled() else NEEDS_FFMPEG_TOOLTIP)
         self.__ui.tools_link_label.setVisible(self.__ffmpeg_checked and self.__ffmpeg_reason is not None)
         self.__show_availability()
+
+    def __update_player_controls(self) -> None:
+        """Offer VLC only while it can be had, and say why when the staged choice cannot be honoured.
+
+        As :meth:`__update_probe_controls` does for FFmpeg: **disabled rather than hidden**, a selected VLC stays
+        enabled, and the reason sits beside it -- the Files sub-dock plays in the app's own player meanwhile.
+        """
+        radio = self.__ui.vlc_player_radio_button
+        unusable = self.__vlc_checked and self.__vlc_reason is not None
+        radio.setEnabled((self.__vlc_checked and not unusable) or radio.isChecked())
+        radio.setToolTip("" if radio.isEnabled() else NEEDS_VLC_TOOLTIP)
+        self.__ui.player_tools_link_label.setVisible(unusable)
+        shown = unusable and radio.isChecked()
+        self.__ui.player_availability_label.setText((self.__vlc_reason or "") if shown else "")
+        self.__ui.player_availability_label.setVisible(shown)
 
     def __show_availability(self) -> None:
         """Report whether the staged backend can run here, in the words the probe itself gives."""
@@ -197,7 +251,7 @@ class VideosPage(QWidget):
 
         :param tool_id: the tool that changed.
         """
-        if tool_id == FFMPEG_TOOL.ID and self.__asked:
+        if tool_id in (FFMPEG_TOOL.ID, VLC_TOOL.ID) and self.__asked:
             self.refresh_availability()
 
     def __on_checked(self, tag: str, result: object) -> None:
@@ -214,6 +268,29 @@ class VideosPage(QWidget):
             self.__ffmpeg_reason = result if isinstance(result, str) else None
         self.__update_probe_controls()
         self.availability_checked.emit()
+
+    def __on_vlc_checked(self, tag: str, result: object) -> None:
+        """Take the answer of the VLC check.
+
+        :param tag: unused; this runner does one kind of work.
+        :param result: the reason VLC cannot be used, ``None`` when it can, or the error the check raised.
+        """
+        del tag
+        self.__vlc_checked = True
+        if isinstance(result, Exception):
+            self.__vlc_reason = VLC_CHECK_FAILED_TEMPLATE.format(error=result)
+        else:
+            self.__vlc_reason = result if isinstance(result, str) else None
+        self.__update_player_controls()
+        self.player_checked.emit()
+
+    def __on_player_toggled(self, checked: bool) -> None:
+        """Follow the player choice.
+
+        :param checked: whether the VLC radio is now checked; unused, the staged state is read back.
+        """
+        del checked
+        self.__update_player_controls()
 
     def __on_probe_toggled(self, checked: bool) -> None:
         """Follow the backend choice.

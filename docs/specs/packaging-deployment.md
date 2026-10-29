@@ -521,9 +521,9 @@ Some programs the app uses cannot ship with it: too large, GPL, or non-free. Eac
 `ToolDescriptor` in `rehuco-core` (Qt-free) says what it is for, which features need it, why it is not bundled, where
 each OS keeps it, how its version is read, its minimum and its blocklist. A `ToolLocator` turns a descriptor into
 candidates, each with a version and a status. One **Tools** settings page ([[appendices.settings-pages#tools-page]])
-sets them all up. The tracer has one tool, **FFmpeg** (`ffmpeg` and `ffprobe` in one folder, the duration probe's
-external backend, [[field-schema#duration-size]]); VLC (#318, #319) and the conversion `ffmpeg` (#520) arrive with the
-features that need them.
+sets them all up. The tracer had one tool, **FFmpeg** (`ffmpeg` and `ffprobe` in one folder, the duration probe's
+external backend, [[field-schema#duration-size]]); **VLC** (the `vlc` executable, the Videos page's external player
+choice, #318, launched by #319) joined it, and the conversion `ffmpeg` (#520) arrives with the feature that needs it.
 
 - **The app never downloads a tool.** The docs site's [External Tools](../external-tools.md) page says where each one
   comes from, one section per tool under a fixed anchor (`#ffmpeg`, `#vlc`, `#ffmpeg-libraries`); each tool's frame links

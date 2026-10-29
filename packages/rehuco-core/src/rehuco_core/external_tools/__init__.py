@@ -14,15 +14,18 @@ from .tool_descriptor import (
     version_text,
 )
 from .tool_locator import ToolLocator, shared_tool_locator
+from .vlc_tool import VlcTool
 
 FFMPEG_TOOL: Final = FfmpegTool()
+VLC_TOOL: Final = VlcTool()
 
-EXTERNAL_TOOLS: Final[dict[str, ToolDescriptor]] = {tool.ID: tool for tool in (FFMPEG_TOOL,)}
+EXTERNAL_TOOLS: Final[dict[str, ToolDescriptor]] = {tool.ID: tool for tool in (FFMPEG_TOOL, VLC_TOOL)}
 """The tools this build knows, by :attr:`~ToolDescriptor.ID` -- one frame each on the Tools page."""
 
 __all__ = [
     "EXTERNAL_TOOLS",
     "FFMPEG_TOOL",
+    "VLC_TOOL",
     "BlockedVersion",
     "FfmpegTool",
     "ToolCandidate",
@@ -31,6 +34,7 @@ __all__ = [
     "ToolNotRunnableError",
     "ToolStatus",
     "Version",
+    "VlcTool",
     "best_candidate",
     "shared_tool_locator",
     "version_text",

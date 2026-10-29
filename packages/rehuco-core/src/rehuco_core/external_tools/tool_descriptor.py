@@ -8,6 +8,7 @@ Tools page shows what these say, and a node, being another machine, asks the sam
 import glob
 import os
 import re
+import subprocess  # nosec B404  # only ever runs the executable a user chose, with a fixed flag
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -215,6 +216,36 @@ class ToolDescriptor(ABC):
         :returns: the version, or ``None`` when it prints one in no form that can be compared (a git build).
         :raises ToolNotRunnableError: if the executable does not start.
         """
+
+    @staticmethod
+    def read_printed_version(executable: Path, flag: str, timeout: float, pattern: re.Pattern[str]) -> Version | None:
+        """Run an executable with a version flag and read the version off the first line it prints.
+
+        Only the output stream is read: a tool may complain on the error stream and still print its version.
+
+        :param executable: the executable to run.
+        :param flag: the flag that makes it print its version.
+        :param timeout: how long it may take, in seconds.
+        :param pattern: matches the first line, with the numeric parts of the version as its groups.
+        :returns: the version, or ``None`` when the first line holds none (a git build, a nightly).
+        :raises ToolNotRunnableError: if the executable does not start, takes too long or exits with an error.
+        """
+        try:
+            completed = subprocess.run(  # nosec B603  # a chosen executable and a fixed flag, never a shell
+                [str(executable), flag],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ToolNotRunnableError(f"{executable} did not run: {error}") from error
+        if completed.returncode != 0:
+            raise ToolNotRunnableError(f"{executable} exited with an error.")
+        match = pattern.search(completed.stdout.partition("\n")[0])
+        if match is None:
+            return None
+        return tuple(int(part) for part in match.groups() if part is not None)
 
     def executable_files(self, folder: Path) -> list[Path]:
         """The tool's executables in a folder, whether or not they exist.

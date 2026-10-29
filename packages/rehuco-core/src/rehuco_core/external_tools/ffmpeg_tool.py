@@ -2,12 +2,11 @@
 
 import os
 import re
-import subprocess  # nosec B404  # only ever runs the ffprobe a user chose, with a fixed flag
 import sys
 from pathlib import Path
 from typing import Final, override
 
-from .tool_descriptor import ToolDescriptor, ToolNotRunnableError, Version
+from .tool_descriptor import ToolDescriptor, Version
 
 
 class FfmpegTool(ToolDescriptor):
@@ -66,20 +65,6 @@ class FfmpegTool(ToolDescriptor):
         :returns: the version, or ``None`` for a build that prints none.
         :raises ToolNotRunnableError: if ``ffprobe`` does not start or exits with an error.
         """
-        executable = self.executable_files(folder)[-1]
-        try:
-            completed = subprocess.run(  # nosec B603  # a chosen executable and a fixed flag, never a shell
-                [str(executable), "-version"],
-                capture_output=True,
-                text=True,
-                timeout=self.__TIMEOUT_SECONDS,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as error:
-            raise ToolNotRunnableError(f"{executable} did not run: {error}") from error
-        if completed.returncode != 0:
-            raise ToolNotRunnableError(f"{executable} exited with an error.")
-        match = self.__VERSION_PATTERN.search(completed.stdout.partition("\n")[0])
-        if match is None:
-            return None
-        return tuple(int(part) for part in match.groups() if part is not None)
+        return self.read_printed_version(
+            self.executable_files(folder)[-1], "-version", self.__TIMEOUT_SECONDS, self.__VERSION_PATTERN
+        )

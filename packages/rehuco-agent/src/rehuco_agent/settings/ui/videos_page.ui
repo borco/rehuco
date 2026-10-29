@@ -112,6 +112,77 @@
     </widget>
    </item>
    <item>
+    <widget class="QFrame" name="player_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="player_frame_layout">
+      <item>
+       <widget class="QLabel" name="player_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Playback</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="in_app_player_radio_button">
+        <property name="text">
+         <string>In-app player (or SHIFT+double-click)</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="vlc_player_radio_button">
+        <property name="text">
+         <string>External VLC</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="player_availability_label">
+        <property name="toolTip">
+         <string>Why the selected player cannot be used here, checked as you change it.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="player_tools_link_label">
+        <property name="text">
+         <string>&lt;a href=&quot;tools&quot;&gt;Set up VLC in Tools&lt;/a&gt;</string>
+        </property>
+        <property name="textInteractionFlags">
+         <set>Qt::TextInteractionFlag::LinksAccessibleByMouse</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="player_note_label">
+        <property name="text">
+         <string>Where a double-clicked video opens. Holding SHIFT opens it in the app's own player whichever is chosen. VLC is one this machine already has, set up on the Tools page; without it the app's player opens the video.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QFrame" name="extensions_frame">
      <property name="frameShape">
       <enum>QFrame::Shape::StyledPanel</enum>

@@ -10,7 +10,7 @@ from rehuco_agent.settings.tool_discovery import ToolDiscovery
 from rehuco_agent.settings.tools_settings import ToolDetection, ToolsSettings
 from rehuco_agent.settings.ui.tool_frame import NOT_FOUND_STATUS, ToolFrame, describe
 from rehuco_agent.settings.ui.tool_path_control import LOOKING_TEXT, NOT_FOUND_TEXT, WARNING_PROPERTY
-from rehuco_core import FFMPEG_TOOL, ToolCandidate, ToolStatus
+from rehuco_core import EXTERNAL_TOOLS, FFMPEG_TOOL, ToolCandidate, ToolStatus
 
 USABLE = ToolCandidate(Path("/opt/ffmpeg/bin"), "PATH", ToolStatus.USABLE, (7, 1, 1))
 TOO_OLD = ToolCandidate(Path("/old"), "Custom", ToolStatus.TOO_OLD, (3, 0), "Version 4.0 or newer is needed.")
@@ -210,10 +210,11 @@ def test_the_detect_button_forces_a_search_and_shows_the_result(
 
     **Test steps:**
 
-    * store a search that found nothing, make the locator find an install now, and click Detect
+    * store a search that found nothing for each tool, make the locator find an install now, and click Detect
     * verify the block says it is looking, then names the install, and the search ran although one was stored
     """
-    tools.set_detection(FFMPEG_TOOL.ID, ToolDetection(True, ()))
+    for tool_id in EXTERNAL_TOOLS:
+        tools.set_detection(tool_id, ToolDetection(True, ()))
     fake_tool_locator.verify.return_value = []
     fake_tool_locator.detect.return_value = [USABLE]
     frame = make_frame(qtbot, tools, discovery, fake_tool_locator)

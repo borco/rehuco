@@ -2559,6 +2559,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         view.record_activated.connect(self.record_activated)
         view.images_activated.connect(self.__on_folder_images_activated)
         view.video_activated.connect(self.__on_video_activated)
+        view.status_message.connect(self.status_message)
         return self.__add_hidden_inspection_dock(
             FILES_DOCK_NAME,
             FILES_DOCK_TITLE,
