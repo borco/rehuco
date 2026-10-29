@@ -12,15 +12,21 @@ from pytest_mock import MockerFixture
 from rehuco_agent.settings import videos_settings
 from rehuco_agent.settings.tools_settings import shared_tools_settings
 from rehuco_agent.settings.videos_settings import (
+    DEFAULT_PLAYER,
+    IN_APP_PLAYER,
+    PLAYERS,
+    VLC_PLAYER,
     VideosSettings,
     normalize_extensions,
     read_engine,
+    read_player,
     shared_videos_settings,
 )
 from rehuco_core import (
     DEFAULT_DURATION_PROBE,
     FFMPEG_TOOL,
     VIDEO_EXTENSIONS,
+    VLC_TOOL,
     FfprobeDurationProbe,
     MediaInfoDurationProbe,
     WatchRules,
@@ -402,6 +408,71 @@ def test_the_watch_settings_load_on_when_nothing_is_stored(settings: FakeSetting
     assert loaded.mark_file_viewed_at_end is True
     assert loaded.mark_tutorial_viewed_on_last_file is True
     assert loaded.match_renamed_by_size is True
+
+
+# endregion
+
+
+# region the player (#318)
+
+
+def test_the_player_is_the_apps_own_on_a_fresh_install(settings: FakeSettings) -> None:
+    """Nothing stored, and nothing configured, opens a video in the player dock.
+
+    **Test steps:**
+
+    * build a settings object and load another from empty storage
+    * verify both hold the app's own player
+    """
+    loaded = VideosSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert VideosSettings().player == IN_APP_PLAYER == DEFAULT_PLAYER
+    assert loaded.player == IN_APP_PLAYER
+
+
+def test_the_player_round_trips_through_storage(settings: FakeSettings) -> None:
+    """VLC, once chosen, is VLC after a restart.
+
+    **Test steps:**
+
+    * save a settings object that chose VLC
+    * load a second object from the same storage
+    * verify it holds VLC
+    """
+    VideosSettings(player=VLC_PLAYER).save(settings)  # type: ignore[arg-type]
+
+    loaded = VideosSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.player == VLC_PLAYER
+
+
+def test_the_players_are_the_two_the_page_offers() -> None:
+    """The names the setting may hold are the app's player and the VLC tool's own id.
+
+    **Test steps:**
+
+    * read the registry
+    * verify it names both, VLC by its tool's id
+    """
+    assert PLAYERS == (IN_APP_PLAYER, VLC_TOOL.ID)
+
+
+@mark.parametrize(
+    "value",
+    [None, "", "mpv", 42, ["vlc"]],
+    ids=["absent", "empty", "unknown-name", "int", "list"],
+)
+def test_a_player_this_build_lacks_falls_back_to_the_default(value: object) -> None:
+    """An ``.ini`` written by a newer version selects the app's player instead of raising.
+
+    **Test steps:**
+
+    * read back each value naming no known player
+    * verify the default player came out
+    """
+    assert read_player(value) == DEFAULT_PLAYER
 
 
 # endregion

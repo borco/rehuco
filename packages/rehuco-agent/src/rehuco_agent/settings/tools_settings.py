@@ -17,10 +17,11 @@ the window's close both call, so a discovery's progress is never a write of its 
 import json
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Final, cast
 
 from PySide6.QtCore import QObject, QSettings, Signal
-from rehuco_core import EXTERNAL_TOOLS, ToolCandidate
+from rehuco_core import EXTERNAL_TOOLS, ToolCandidate, ToolDescriptor, shared_tool_locator
 
 from .persistent_settings import persistent_settings
 
@@ -121,6 +122,44 @@ class ToolsSettings(QObject):
         if self.detection(tool_id) != detection:
             self.__detections = {**self.__detections, tool_id: detection}
             self.tool_changed.emit(tool_id)
+
+    def unusable_reason(self, tool: ToolDescriptor) -> str | None:
+        """Why a tool cannot be used as set up, searching for nothing.
+
+        A chosen path is judged by the locator, which runs the tool for its version only the first time it sees that
+        copy; an empty path reads what the detection holds.
+
+        :param tool: the tool.
+        :returns: ``None`` when a usable copy is set up, otherwise a sentence saying what is missing or wrong.
+        """
+        return self.__reason_of(tool, self.path(tool.ID))
+
+    def missing_reason(self, tool: ToolDescriptor) -> str | None:
+        """Why a tool cannot be used as set up, running nothing -- what a double-click on the GUI thread may ask.
+
+        A chosen path is only checked to still hold the executables: its version gate is the Tools page's, which reads
+        the version on a pool thread. An install the detection recorded carries the judgment it was found with, so for
+        an empty path the answer is :meth:`unusable_reason`'s.
+
+        :param tool: the tool.
+        :returns: ``None`` when a copy is there to use, otherwise a sentence saying what is missing.
+        """
+        path = self.path(tool.ID)
+        if path:
+            return None if tool.resolve_folder(Path(path)) is not None else f"No {tool.LABEL} at {path}."
+        return self.__reason_of(tool, "")
+
+    def __reason_of(self, tool: ToolDescriptor, path: str) -> str | None:
+        """Ask the locator about the copy a path names.
+
+        :param tool: the tool.
+        :param path: the path the user chose, or empty for the best install found.
+        :returns: ``None`` when it is usable, otherwise the reason.
+        """
+        candidate = shared_tool_locator().resolve(tool, path, self.detection(tool.ID).installs)
+        if candidate is None:
+            return f"No {tool.LABEL} was found, and none is set up."
+        return None if candidate.is_usable else candidate.reason
 
     def load(self, settings: QSettings) -> None:
         """Replace the current values with what's in persistent storage.

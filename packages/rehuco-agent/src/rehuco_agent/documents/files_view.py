@@ -24,7 +24,10 @@ do are each routed out of here rather than done here:
   document hands in;
 - **an image** -- opened maximized through :attr:`images_activated`, against **every image in the
   folder**, curated or not: this is a view of the folder, not of the lightbox's set, and a screenshot
-  someone curated out is exactly the one they may want to look at here.
+  someone curated out is exactly the one they may want to look at here;
+- **a video of a tutorial** -- played by the app's player through :attr:`video_activated`, or opened in VLC through
+  :attr:`external_video_requested` when the Videos page says so (#318). SHIFT held plays it in the app's player
+  whatever the page says, and so does a VLC that is chosen but not set up, with the reason in the status bar.
 
 Anything else is handed to the system's default handler, which is the only sensible thing to do with a
 video or a PDF and the one route that does not involve this app pretending to open it.
@@ -54,15 +57,16 @@ from borco_pyside.file_browser import reveal_in_file_browser
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QShowEvent
-from PySide6.QtWidgets import QHeaderView, QMenu, QToolBar, QToolButton, QWidget
-from rehuco_core import IMAGE_EXTENSIONS, FileKind, Relocation
+from PySide6.QtWidgets import QApplication, QHeaderView, QMenu, QToolBar, QToolButton, QWidget
+from rehuco_core import IMAGE_EXTENSIONS, VLC_TOOL, FileKind, Relocation
 from rehuco_core.access import KeyRelocation, ResourceKey
 
 from ..commands import REFRESH_FILES, shared_command_registry
 from ..resource_events import ResourceEvents
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
-from ..settings.videos_settings import shared_videos_settings
+from ..settings.tools_settings import shared_tools_settings
+from ..settings.videos_settings import VLC_PLAYER, shared_videos_settings
 from .file_row import FileRow, FilesRows
 from .files_progress import FilesProgress
 from .files_row_delegate import CHECKSUM_COLUMN_WIDTH, FilesRowDelegate
@@ -115,6 +119,9 @@ record that owns them and the one thing to do about it, which is the row right t
 
 TALLY_SUMMARY: Final = "{folders} folder{folders_plural}, {files} file{files_plural}"
 """The ordinary summary: how much is in this folder."""
+
+VLC_UNUSABLE_TEMPLATE: Final = "Playing in the app's player. {reason}"
+"""What the status bar says when the Videos page chooses VLC and a double-click cannot use it (#318)."""
 
 
 # the members are this surface's parts -- the model, the proxy, the loader, the document, the verify it
@@ -169,6 +176,14 @@ class FilesView(QWidget):
     double-click only says which video to jump to. The same owner-routed activation as :attr:`images_activated` -- the
     browser knows what a file *is*, and the document decides what plays it. Other videos -- those of a resource that
     records no progress -- still open in the system's player."""
+
+    external_video_requested: Signal = Signal(str)
+    """Emitted with the content key of a tutorial's video row that is double-clicked while the Videos page chooses VLC
+    and a usable VLC is set up, SHIFT not held (#318). The counterpart of :attr:`video_activated` for the external
+    launch (#319), with the same payload and for the same reason."""
+
+    status_message: Signal = Signal(str)
+    """Emitted with a line for the status bar, routed up by the owner as every other ``status_message`` is."""
 
     def __init__(
         self,
@@ -528,11 +543,32 @@ class FilesView(QWidget):
             if self.__verify is not None:
                 self.__verify()
         elif row.key is not None:
-            self.video_activated.emit(row.key)
+            self.__activate_video(row.key)
         elif row.path.suffix.lower() in IMAGE_EXTENSIONS:
             self.images_activated.emit(self.__folder_images(), row.path)
         else:
             QDesktopServices.openUrl(QUrl.fromLocalFile(row.path))
+
+    def __activate_video(self, key: str) -> None:
+        """Send a double-clicked video to the player the Videos page chooses, read now so a change applies to a document
+        that is already open (#318).
+
+        The app's own player is always there, so it is where every other case lands: SHIFT held, the app's player
+        chosen, or VLC chosen but not there -- the last with the reason in the status bar rather than silence. This runs
+        on the GUI thread, so VLC is only asked to be where it was set up (`ToolsSettings.missing_reason`), never run
+        for its version: that gate is the Tools page's.
+
+        :param key: the content key of the video.
+        """
+        if shared_videos_settings().player == VLC_PLAYER and not (
+            QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier
+        ):
+            reason = shared_tools_settings().missing_reason(VLC_TOOL)
+            if reason is None:
+                self.external_video_requested.emit(key)
+                return
+            self.status_message.emit(VLC_UNUSABLE_TEMPLATE.format(reason=reason))
+        self.video_activated.emit(key)
 
     def __folder_images(self) -> list[Path]:
         """Every image in the browsed folder, in the order the table draws them.

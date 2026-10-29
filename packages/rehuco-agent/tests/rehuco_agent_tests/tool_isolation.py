@@ -64,6 +64,6 @@ def fixture_fake_tool_locator(mocker: MockerFixture) -> Any:
     locator = mocker.Mock(spec=ToolLocator)
     locator.detect.return_value = []
     locator.resolve.return_value = None
-    for module in (tool_frame, tool_discovery, rehu_content_duration):
+    for module in (tool_frame, tool_discovery, tools_settings, rehu_content_duration):
         mocker.patch.object(module, "shared_tool_locator", return_value=locator)
     return locator

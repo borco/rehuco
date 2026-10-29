@@ -40,15 +40,18 @@ does. Any FFmpeg from version 4.0 on works.
 
 Other builds are listed on [ffmpeg.org](https://ffmpeg.org/download.html).
 
-## Planned
+## VLC, for opening videos in its own window {#vlc}
 
-What follows is for features not built yet. It is kept here so that the settings page that will set them up has
-one place to point to.
+**Settings ▸ Videos ▸ Playback** chooses where a double-clicked video opens: the app's own player, which is
+always there, or **External VLC**, with VLC's own window and controls. Holding SHIFT while double-clicking opens
+it in the app's own player whichever is chosen. The app looks for VLC once, in the background, together with
+FFmpeg, and **Settings ▸ Tools** lists every install found (on `PATH`, or in Program Files, scoop,
+`/Applications`, Homebrew or your distribution's places), each with its version and whether it works. The
+*External VLC* choice is available once one does, and a VLC that goes missing after it was chosen keeps the
+choice selected and says why, while videos open in the app's own player. If you install VLC later, press
+**Detect**. Any VLC from version 3.0 on works.
 
-### VLC, as an external player {#vlc}
-
-Tutorials will open either in the app's own player or in VLC, with VLC's own window and controls. Install VLC from
-[videolan.org](https://www.videolan.org/vlc/):
+Install VLC from [videolan.org](https://www.videolan.org/vlc/):
 
 === "Windows"
 
@@ -67,6 +70,11 @@ Tutorials will open either in the app's own player or in VLC, with VLC's own win
     ```bash
     sudo apt install vlc
     ```
+
+## Planned
+
+What follows is for features not built yet. It is kept here so that the settings page that will set them up has
+one place to point to.
 
 ### FFmpeg libraries, for AV1 in the app's player {#ffmpeg-libraries}
 

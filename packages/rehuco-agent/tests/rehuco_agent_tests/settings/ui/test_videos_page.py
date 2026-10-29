@@ -253,7 +253,7 @@ def test_the_check_asks_for_the_path_the_tools_page_saved(qtbot: QtBot, fake_too
 
     settle(qtbot, page)
 
-    fake_tool_locator.resolve.assert_called_once_with(FFMPEG_TOOL, "/opt/ffmpeg", ())
+    fake_tool_locator.resolve.assert_any_call(FFMPEG_TOOL, "/opt/ffmpeg", ())
 
 
 def test_choosing_a_backend_makes_the_page_dirty(qtbot: QtBot) -> None:
@@ -772,7 +772,7 @@ def test_the_check_is_given_what_the_discovery_found(qtbot: QtBot, fake_tool_loc
 
     settle(qtbot, page)
 
-    fake_tool_locator.resolve.assert_called_once_with(FFMPEG_TOOL, "", (USABLE_FFMPEG,))
+    fake_tool_locator.resolve.assert_any_call(FFMPEG_TOOL, "", (USABLE_FFMPEG,))
     fake_tool_locator.detect.assert_not_called()
 
 
@@ -782,17 +782,17 @@ def test_showing_the_page_again_does_not_check_again(qtbot: QtBot, fake_tool_loc
     **Test steps:**
 
     * show the page, hide it and show it again
-    * verify the locator was asked once
+    * verify the locator was asked once about each of FFmpeg and VLC
     """
     page = VideosPage()
     qtbot.addWidget(page)
 
-    with qtbot.waitSignal(page.availability_checked, timeout=5000):
+    with qtbot.waitSignals([page.availability_checked, page.player_checked], timeout=5000):
         page.show()
     page.hide()
     page.show()
 
-    fake_tool_locator.resolve.assert_called_once()
+    assert fake_tool_locator.resolve.call_count == 2
 
 
 def test_a_change_to_the_tool_checks_again_once_the_page_has_asked(qtbot: QtBot, fake_tool_locator: Any) -> None:

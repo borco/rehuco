@@ -5,7 +5,7 @@ from typing import Any
 
 from pytest import fixture, mark, param
 from rehuco_agent.settings.tools_settings import ToolDetection, ToolsSettings, shared_tools_settings
-from rehuco_core import FFMPEG_TOOL, ToolCandidate, ToolStatus
+from rehuco_core import FFMPEG_TOOL, VLC_TOOL, ToolCandidate, ToolStatus
 
 INSTALL = ToolCandidate(Path("/opt/ffmpeg/bin"), "winget", ToolStatus.USABLE, (7, 1, 1))
 """An install a search found."""
@@ -172,3 +172,52 @@ def test_the_shared_instance_is_one_object() -> None:
     * verify it is the same object
     """
     assert shared_tools_settings() is shared_tools_settings()
+
+
+def test_a_tool_is_unusable_for_the_reason_the_locator_gives(fake_tool_locator: Any) -> None:
+    """What a feature asks before it uses a tool: nothing, or a sentence it can show (#318, #521).
+
+    **Test steps:**
+
+    * ask with nothing found, then with a usable copy, then with one that is too old
+    * verify the answers are a sentence naming the tool, ``None``, and the copy's own reason
+    """
+    tools = ToolsSettings()
+    tools.set_path(VLC_TOOL.ID, "/opt/vlc")
+
+    assert tools.unusable_reason(VLC_TOOL) == "No VLC was found, and none is set up."
+
+    fake_tool_locator.resolve.return_value = ToolCandidate(Path("/opt/vlc"), "Custom", ToolStatus.USABLE, (3, 0, 23))
+    assert tools.unusable_reason(VLC_TOOL) is None
+
+    fake_tool_locator.resolve.return_value = ToolCandidate(
+        Path("/opt/vlc"), "Custom", ToolStatus.TOO_OLD, (2, 2), "Version 3.0 or newer is needed."
+    )
+    assert tools.unusable_reason(VLC_TOOL) == "Version 3.0 or newer is needed."
+    fake_tool_locator.resolve.assert_called_with(VLC_TOOL, "/opt/vlc", ())
+
+
+def test_a_tool_is_missing_without_being_run(tmp_path: Path, fake_tool_locator: Any) -> None:
+    """What a double-click asks on the GUI thread: a chosen path is only checked to hold the tool, an empty one reads
+    the detection, and nothing runs for a version (#318).
+
+    **Test steps:**
+
+    * point VLC at an empty folder, then at one holding its executable
+    * verify the first is missing by name and the second is there, with the locator never asked
+    * clear the path, with a usable install recorded, and verify the detection answers
+    """
+    tools = ToolsSettings()
+    tools.set_path(VLC_TOOL.ID, str(tmp_path))
+    assert tools.missing_reason(VLC_TOOL) == f"No VLC at {tmp_path}."
+
+    VLC_TOOL.executable_files(tmp_path)[0].touch()
+    assert tools.missing_reason(VLC_TOOL) is None
+    fake_tool_locator.resolve.assert_not_called()
+
+    tools.set_path(VLC_TOOL.ID, "")
+    install = ToolCandidate(tmp_path, "PATH", ToolStatus.USABLE, (3, 0, 23))
+    tools.set_detection(VLC_TOOL.ID, ToolDetection(True, (install,)))
+    fake_tool_locator.resolve.return_value = install
+    assert tools.missing_reason(VLC_TOOL) is None
+    fake_tool_locator.resolve.assert_called_once_with(VLC_TOOL, "", (install,))

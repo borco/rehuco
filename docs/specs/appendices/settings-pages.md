@@ -95,7 +95,10 @@ and Tasks docks get.
 "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar Extensions" (`ImagesFilesPage`) and
 "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
-Two settings the 0.4.0 video and root work adds to existing pages: **Videos** gains *Maximize videos over* — the
+Three settings the 0.4.0 video and root work adds to existing pages: **Videos** gains a *Playback* block (#318):
+*In-app player (or SHIFT+double-click)*, the default, and *External VLC*, gated on the Tools page's VLC the way
+*FFmpeg (external)* is, saved as `player` and read by the Files sub-dock at each double-click, so a change reaches
+open documents. **Videos** also gains *Maximize videos over* — the
 document, the main window or full screen, the lightbox's three surfaces, chosen separately for the player
 ([[plugins#player-maximized]], #574); the next maximize uses a change, an open one is not moved. **Root Catalog**
 gains *Default root layouts* — a list of named entries, each a per-type layout map (one row per type or `*`) and a
