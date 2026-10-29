@@ -31,6 +31,7 @@ from . import main_rc  # noqa: F401  # pylint: disable=unused-import  # register
 from .app_logging import shared_log_bridge
 from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
 from .main_window import MainWindow
+from .playback_libraries import shared_playback_libraries
 from .registration_linux import DESKTOP_FILE_NAME
 from .run_log import shared_run_log
 from .settings.persistent_settings import (
@@ -263,6 +264,7 @@ def run(argv: list[str]) -> int:
     try:
         QGuiApplication.setDesktopFileName(DESKTOP_FILE_NAME)
         LOG.info("Settings file: %s", Path(persistent_settings().fileName()))
+        shared_playback_libraries().log_outcome()
         app = Application(argv)
         singleton = ApplicationSingleton(app)
         # resolved here, in the launching process, rather than left to whichever process ends up opening

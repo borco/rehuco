@@ -68,6 +68,18 @@ class ToolStatus(StrEnum):
     BLOCKLISTED = "blocklisted"
     """A version known not to work, with the reason."""
 
+    NO_LIBRARIES = "no libraries"
+    """A build holding no shared libraries to load: a static one."""
+
+    WRONG_MAJOR = "wrong major version"
+    """Libraries of another major version than the ones the app's Qt was built with."""
+
+    INCOMPLETE = "incomplete"
+    """Some of the libraries a set needs are not there."""
+
+    WRONG_ARCHITECTURE = "wrong architecture"
+    """Libraries built for another processor than this process runs on."""
+
     @property
     def is_usable(self) -> bool:
         """Whether a feature may use a copy in this status."""
@@ -216,6 +228,29 @@ class ToolDescriptor(ABC):
         :returns: the version, or ``None`` when it prints one in no form that can be compared (a git build).
         :raises ToolNotRunnableError: if the executable does not start.
         """
+
+    def verify_candidate(self, candidate: ToolCandidate) -> ToolCandidate | None:
+        """Say whether a copy found earlier is still there, at a later start, reading no version.
+
+        :param candidate: the copy, as stored.
+        :returns: the copy to keep, or ``None`` when its folder no longer holds the tool.
+        """
+        return candidate if self.resolve_folder(candidate.folder) is not None else None
+
+    def assess(self, folder: Path) -> tuple[ToolStatus, Version | None, str]:
+        """Judge the copy in ``folder``: run it for its version, then :meth:`judge` that.
+
+        A tool with a stricter rule than a version overrides this.
+
+        :param folder: the folder holding the tool.
+        :returns: the status, the version when read, and the reason unless usable.
+        """
+        try:
+            version = self.read_version(folder)
+        except ToolNotRunnableError as error:
+            return ToolStatus.NOT_RUNNABLE, None, error.reason
+        status, reason = self.judge(version)
+        return status, version, reason
 
     @staticmethod
     def read_printed_version(executable: Path, flag: str, timeout: float, pattern: re.Pattern[str]) -> Version | None:

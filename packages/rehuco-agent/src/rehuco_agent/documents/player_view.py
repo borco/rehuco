@@ -8,11 +8,18 @@ from typing import Final, cast
 
 from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
 from borco_pyside.widgets import MessageBannerRow, MessageBannerSeverity
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
 from PySide6.QtWidgets import QToolButton, QWidget
-from rehuco_core import VideoFormat, content_path, read_video_format, tutorial_video_keys
+from rehuco_core import (
+    EXTERNAL_TOOLS,
+    FFMPEG_LIBRARIES_TOOL,
+    VideoFormat,
+    content_path,
+    read_video_format,
+    tutorial_video_keys,
+)
 
 from ..commands import (
     PLAYER_BACK,
@@ -36,6 +43,7 @@ from ..glyphs import (
     PLAYER_PLAY_GLYPH,
     PLAYER_PREVIOUS_GLYPH,
 )
+from ..playback_libraries import shared_playback_libraries
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.videos_settings import shared_videos_settings
 from .latest_runner import LatestRunner
@@ -75,6 +83,8 @@ AV1_NOTICE: Final = (
     "This video is AV1, and this computer's graphics hardware does not seem to decode it: the sound plays but there "
     "is no picture."
 )
+AV1_LIBRARIES_HINT: Final = " An external FFmpeg's libraries with the dav1d decoder would play it."
+TOOLS_ACTION_TEXT: Final = "Set up in Tools"
 ERROR_NOTICE: Final = "This video could not be played."
 LIST_ERROR_NOTICE: Final = "This tutorial's videos could not be listed."
 NO_VIDEOS_NOTICE: Final = "This tutorial has no videos."
@@ -131,6 +141,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     :param grab_ms: how long a video may be held open to take a frame of it.
     """
 
+    tools_requested = Signal()
+    """The user asked to set up the FFmpeg libraries an AV1 video needs; the window above opens the Tools page."""
+
     def __init__(
         self,
         model: RehuDocumentModel,
@@ -170,6 +183,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__av1 = False
         self.__listening = False
         self.__notices: Final[list[str]] = []
+        self.__tools_action: Final = self.__make_tools_action()
 
         self.__ui: Final = Ui_PlayerView()
         self.__ui.setupUi(self)
@@ -743,7 +757,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     def __on_no_frame(self) -> None:
         """Say why an AV1 video that plays shows nothing."""
         if not self.__frame_seen and self.__state == QMediaPlayer.PlaybackState.PlayingState:
-            self.__notice(AV1_NOTICE)
+            self.__notice(AV1_NOTICE + (AV1_LIBRARIES_HINT if self.__offers_libraries() else ""))
 
     def __on_format_read(self, key: str, result: object) -> None:
         """Explain what Qt cannot show well about the video, once its format is known.
@@ -801,6 +815,23 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         return self.__duration_ms / 1000 if self.__duration_ms > 0 else None
 
+    def __make_tools_action(self) -> QAction:
+        """The button an AV1 notice carries to the Tools page.
+
+        :returns: the action, which asks for that page.
+        """
+        action = QAction(TOOLS_ACTION_TEXT, self)
+        action.triggered.connect(self.tools_requested)
+        return action
+
+    @staticmethod
+    def __offers_libraries() -> bool:
+        """Whether an external FFmpeg's libraries could still be set up for this run.
+
+        :returns: ``True`` where the tool exists and this run is not already using it.
+        """
+        return FFMPEG_LIBRARIES_TOOL.ID in EXTERNAL_TOOLS and shared_playback_libraries().loaded_from is None
+
     def __notice(self, text: str) -> None:
         """Add a warning to the ones the player shows for this video.
 
@@ -813,7 +844,14 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     def __show_notices(self) -> None:
         """Show the video's warnings, or nothing."""
         self.__ui.notice_banner.set_rows(
-            [MessageBannerRow(MessageBannerSeverity.WARNING, text) for text in self.__notices]
+            [
+                MessageBannerRow(
+                    MessageBannerSeverity.WARNING,
+                    text,
+                    self.__tools_action if text.endswith(AV1_LIBRARIES_HINT) else None,
+                )
+                for text in self.__notices
+            ]
         )
 
     def __show_playing(self, playing: bool) -> None:

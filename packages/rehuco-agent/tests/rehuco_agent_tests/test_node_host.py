@@ -9,6 +9,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent import node_host
 from rehuco_agent.node_host import NodeHost, NodeState, node_command
+from rehuco_agent.own_program import own_program
 from rehuco_agent.settings.node_settings import NodeSettings
 
 # captured at import, before the autouse conftest fixture replaces it on the class for every test
@@ -301,3 +302,18 @@ def test_start_later_starts_only_if_still_enabled(qtbot: QtBot, settings: NodeSe
 
     assert host.pid > 0
     host.stop()
+
+
+def test_own_program_is_what_node_command_runs(mocker: MockerFixture) -> None:
+    """The probe child and the node are run the same way as this agent was (#580).
+
+    **Test steps:**
+
+    * make ``argv[0]`` an exe and then a ``.py`` file
+    * verify the program is the exe, then the interpreter running the module
+    """
+    mocker.patch.object(sys, "argv", ["C:\\apps\\Rehuco.exe"])
+    assert own_program() == [str(Path("C:\\apps\\Rehuco.exe").resolve())]
+
+    mocker.patch.object(sys, "argv", ["C:\\src\\rehuco_agent\\__main__.py"])
+    assert own_program() == [sys.executable, "-m", "rehuco_agent"]

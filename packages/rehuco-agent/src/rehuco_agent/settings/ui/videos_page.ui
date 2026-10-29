@@ -135,10 +135,17 @@
       <item>
        <widget class="QRadioButton" name="in_app_player_radio_button">
         <property name="text">
-         <string>In-app player (or SHIFT+double-click)</string>
+         <string>Qt (bundled FFmpeg), or SHIFT+double-click</string>
         </property>
         <property name="checked">
          <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="ffmpeg_libraries_player_radio_button">
+        <property name="text">
+         <string>Qt with external FFmpeg libraries</string>
         </property>
        </widget>
       </item>
@@ -160,9 +167,19 @@
        </widget>
       </item>
       <item>
+       <widget class="WrappingLabel" name="player_restart_label">
+        <property name="toolTip">
+         <string>The libraries are loaded before the player's code, so a change of decoder is made at the next start.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QLabel" name="player_tools_link_label">
         <property name="text">
-         <string>&lt;a href=&quot;tools&quot;&gt;Set up VLC in Tools&lt;/a&gt;</string>
+         <string>&lt;a href=&quot;tools&quot;&gt;Set up in Tools&lt;/a&gt;</string>
         </property>
         <property name="textInteractionFlags">
          <set>Qt::TextInteractionFlag::LinksAccessibleByMouse</set>
@@ -172,7 +189,7 @@
       <item>
        <widget class="WrappingLabel" name="player_note_label">
         <property name="text">
-         <string>Where a double-clicked video opens. Holding SHIFT opens it in the app's own player whichever is chosen. VLC is one this machine already has, set up on the Tools page; without it the app's player opens the video.</string>
+         <string>Where a double-clicked video opens, and what decodes it in the app's own player. Holding SHIFT opens it in the app's own player whichever is chosen. VLC and the FFmpeg libraries are ones this machine already has, set up on the Tools page; without them the app's player opens the video with Qt's own FFmpeg.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

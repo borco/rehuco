@@ -575,6 +575,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     ``DocumentWidget`` -> ``DocumentsDock`` -> ``MainWindow`` hop :attr:`status_message` makes, to the window that
     hands it to the Root Catalog ([[plugins#filter-urls]])."""
 
+    tools_requested: Signal = Signal()
+    """Relays the player's request to set up the FFmpeg libraries up the same ``DocumentWidget`` -> ``DocumentsDock``
+    -> ``MainWindow`` hop :attr:`status_message` makes, to the window that opens the Tools page (#580)."""
+
     record_activated: Signal = Signal(object)
     """Relays another resource's record, double-clicked in this document's Files sub-dock (#266), up to
     the window that knows how to open one.
@@ -1646,6 +1650,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             docks[CONTENT_IMAGES_DOCK_NAME] = self.__content_images_dock
         if PLAYER_DOCK_NAME in names:
             self.__player_view = PlayerView(self.__model, self.__watch_progress, self.__host.widget)
+            self.__player_view.tools_requested.connect(self.tools_requested)
             self.__player_dock = self.__add_player_dock(self.__player_view)
             docks[PLAYER_DOCK_NAME] = self.__player_dock
         return docks

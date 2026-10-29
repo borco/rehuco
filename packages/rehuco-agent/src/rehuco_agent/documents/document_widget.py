@@ -62,6 +62,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     would lazily create a stray bar that swallows the message); it bubbles up to ``DocumentsDock`` and on
     to the genuine top-level window instead."""
 
+    tools_requested: Signal = Signal()
+    """Re-emits the player's request to set up the FFmpeg libraries on up to ``DocumentsDock`` (#580)."""
+
     filter_requested: Signal = Signal(str)
     """Re-emits a field's clicked ``filter://`` link (a `FilterRequester`) on up to ``DocumentsDock``, the hop
     :attr:`status_message` makes ([[plugins#filter-urls]])."""
@@ -144,6 +147,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         old = self.__sub_docks
         old.status_message.disconnect(self.status_message)
         old.filter_requested.disconnect(self.filter_requested)
+        old.tools_requested.disconnect(self.tools_requested)
         old.record_activated.disconnect(self.record_activated)
         self.removeToolBar(old.toolbar)
         old.teardown()
@@ -166,6 +170,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         )
         sub_docks.status_message.connect(self.status_message)
         sub_docks.filter_requested.connect(self.filter_requested)
+        sub_docks.tools_requested.connect(self.tools_requested)
         sub_docks.record_activated.connect(self.record_activated)
         self.addToolBar(sub_docks.toolbar)
         return sub_docks

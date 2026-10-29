@@ -6,7 +6,7 @@ from typing import override
 
 from rehuco_core import ToolCandidate, ToolLocator, ToolNotRunnableError, ToolStatus, Version, shared_tool_locator
 
-from rehuco_core_tests.external_tools.sample_tool import SampleTool, make_install
+from rehuco_core_tests.external_tools.sample_tool import SAMPLE, SampleTool, make_install
 
 
 class ScriptedTool(SampleTool):
@@ -308,3 +308,18 @@ def test_the_shared_locator_is_one_object() -> None:
         assert isinstance(shared_tool_locator(), ToolLocator)
     finally:
         shared_tool_locator.cache_clear()
+
+
+def test_verifying_keeps_a_candidate_as_stored_when_its_folder_still_holds_the_tool(tmp_path: Path) -> None:
+    """The default re-check reads nothing: a copy still there is kept exactly as it was, one gone is dropped (#580).
+
+    **Test steps:**
+
+    * verify a stored copy whose folder holds the tool and one whose folder is empty
+    * verify the first is returned unchanged and the second is not
+    """
+    there = ToolCandidate(make_install(tmp_path / "there", SAMPLE.EXECUTABLES), "PATH", ToolStatus.USABLE, (5, 0))
+    (tmp_path / "gone").mkdir()
+    gone = ToolCandidate(tmp_path / "gone", "PATH", ToolStatus.USABLE, (5, 0))
+
+    assert ToolLocator().verify(SAMPLE, [there, gone]) == [there]

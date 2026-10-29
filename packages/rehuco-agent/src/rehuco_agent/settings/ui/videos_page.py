@@ -1,19 +1,31 @@
 """Videos settings page: which backend measures a duration, over which files, where a video opens, and how watching
 is tracked (#225, #316, #318, #521)."""
 
+from dataclasses import dataclass
 from typing import Final, override
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QShowEvent
-from PySide6.QtWidgets import QWidget
-from rehuco_core import FFMPEG_TOOL, VIDEO_EXTENSIONS, VLC_TOOL, FfprobeDurationProbe, MediaInfoDurationProbe
+from PySide6.QtWidgets import QRadioButton, QWidget
+from rehuco_core import (
+    FFMPEG_LIBRARIES_TOOL,
+    FFMPEG_TOOL,
+    VIDEO_EXTENSIONS,
+    VLC_TOOL,
+    FfprobeDurationProbe,
+    MediaInfoDurationProbe,
+    ToolDescriptor,
+)
 
 from ...documents.latest_runner import LatestRunner
 from ...item_action_icons import apply_item_action_icons
+from ...playback_libraries import shared_playback_libraries
 from ..persistent_settings import persistent_settings
 from ..tools_settings import shared_tools_settings
 from ..videos_settings import (
+    FFMPEG_LIBRARIES_PLAYER,
     IN_APP_PLAYER,
+    PLAYERS,
     VLC_PLAYER,
     VideosSettings,
     normalize_extensions,
@@ -31,8 +43,44 @@ CHECK_TAG: Final = "ffmpeg"
 CHECK_FAILED_TEMPLATE: Final = "Checking FFmpeg failed: {error}"
 
 NEEDS_VLC_TOOLTIP: Final = "Needs VLC -- set it up in Tools."
-VLC_CHECK_TAG: Final = "vlc"
-VLC_CHECK_FAILED_TEMPLATE: Final = "Checking VLC failed: {error}"
+NEEDS_LIBRARIES_TOOLTIP: Final = "Needs FFmpeg libraries -- set them up in Tools."
+PLAYER_CHECK_FAILED_TEMPLATE: Final = "Checking {label} failed: {error}"
+
+RESTART_TEXT: Final = "Takes effect at the next start."
+FALLBACK_TEMPLATE: Final = (
+    "This run plays with Qt's bundled FFmpeg; the libraries are tried again at the next start. {reason}"
+)
+
+
+@dataclass
+class PlayerChoice:
+    """A radio that is offered only while the tool behind it can be used, and what the page knows of that tool."""
+
+    player: str
+    """The :data:`~rehuco_agent.settings.videos_settings.PLAYERS` name the radio stands for."""
+
+    radio: QRadioButton
+    """The radio."""
+
+    tool: ToolDescriptor
+    """The external tool the choice needs."""
+
+    tooltip: str
+    """What a disabled radio says to do."""
+
+    checker: LatestRunner
+    """Asks the locator about the tool on the thread pool."""
+
+    checked: bool = False
+    """Whether the tool has been asked about."""
+
+    reason: str | None = None
+    """Why the tool cannot be used, ``None`` while it can."""
+
+    @property
+    def unusable(self) -> bool:
+        """Whether the tool was asked about and cannot be used."""
+        return self.checked and self.reason is not None
 
 
 class VideosPage(QWidget):
@@ -73,7 +121,8 @@ class VideosPage(QWidget):
     """FFmpeg's availability was asked of the locator and the page now shows the answer."""
 
     player_checked = Signal()
-    """VLC's availability was asked of the locator and the page now shows the answer."""
+    """The availability of VLC and of the FFmpeg libraries was asked of the locator and the page now shows the
+    answers."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -82,10 +131,23 @@ class VideosPage(QWidget):
         self.__asked = False
         self.__ffmpeg_checked = False
         self.__ffmpeg_reason: str | None = None
-        self.__vlc_checked = False
-        self.__vlc_reason: str | None = None
         self.__checker: Final = LatestRunner(self)
-        self.__vlc_checker: Final = LatestRunner(self)
+        self.__pending: set[str] = set()
+        self.__choices: Final = [
+            PlayerChoice(VLC_PLAYER, self.__ui.vlc_player_radio_button, VLC_TOOL, NEEDS_VLC_TOOLTIP, LatestRunner(self))
+        ]
+        if FFMPEG_LIBRARIES_PLAYER in PLAYERS:
+            self.__choices.append(
+                PlayerChoice(
+                    FFMPEG_LIBRARIES_PLAYER,
+                    self.__ui.ffmpeg_libraries_player_radio_button,
+                    FFMPEG_LIBRARIES_TOOL,
+                    NEEDS_LIBRARIES_TOOLTIP,
+                    LatestRunner(self),
+                )
+            )
+        else:
+            self.__ui.ffmpeg_libraries_player_radio_button.hide()
         # the probes name themselves: LABEL exists so the choice on screen tracks the registry rather
         # than a second copy of the same two names living in the .ui
         self.__ui.mediainfo_probe_radio_button.setText(MediaInfoDurationProbe.LABEL)
@@ -94,11 +156,12 @@ class VideosPage(QWidget):
         apply_item_action_icons(self.__ui.extensions_editor)
 
         self.__ui.ffprobe_probe_radio_button.toggled.connect(self.__on_probe_toggled)
-        self.__ui.vlc_player_radio_button.toggled.connect(self.__on_player_toggled)
+        for choice in self.__choices:
+            choice.radio.toggled.connect(self.__on_player_toggled)
+            choice.checker.read.connect(self.__on_player_checked)
         self.__ui.tools_link_label.linkActivated.connect(self.__on_tools_link_activated)
         self.__ui.player_tools_link_label.linkActivated.connect(self.__on_tools_link_activated)
         self.__checker.read.connect(self.__on_checked)
-        self.__vlc_checker.read.connect(self.__on_vlc_checked)
         shared_tools_settings().tool_changed.connect(self.__on_tool_changed)
 
         self.drop_changes()
@@ -164,7 +227,9 @@ class VideosPage(QWidget):
         tools = shared_tools_settings()
         path, installs = tools.path(FFMPEG_TOOL.ID), tools.detection(FFMPEG_TOOL.ID).installs
         self.__checker.start(CHECK_TAG, lambda: FfprobeDurationProbe(path, installs).unavailable_reason())
-        self.__vlc_checker.start(VLC_CHECK_TAG, lambda: tools.unusable_reason(VLC_TOOL))
+        self.__pending = {choice.player for choice in self.__choices}
+        for choice in self.__choices:
+            choice.checker.start(choice.player, lambda tool=choice.tool: tools.unusable_reason(tool))
 
     def __show(self, settings: VideosSettings) -> None:
         """Fill every widget from ``settings``.
@@ -175,8 +240,10 @@ class VideosPage(QWidget):
             self.__ui.ffprobe_probe_radio_button.setChecked(True)
         else:
             self.__ui.mediainfo_probe_radio_button.setChecked(True)
-        if settings.player == VLC_PLAYER:
-            self.__ui.vlc_player_radio_button.setChecked(True)
+        for choice in self.__choices:
+            if settings.player == choice.player:
+                choice.radio.setChecked(True)
+                break
         else:
             self.__ui.in_app_player_radio_button.setChecked(True)
         self.__ui.extensions_editor.values = settings.video_extensions
@@ -201,10 +268,9 @@ class VideosPage(QWidget):
     def __staged_player(self) -> str:
         """The player currently selected in the radio buttons, read off the one radio as :meth:`__staged_engine` is.
 
-        :returns: :data:`~rehuco_agent.settings.videos_settings.VLC_PLAYER` or
-            :data:`~rehuco_agent.settings.videos_settings.IN_APP_PLAYER`.
+        :returns: the name of the checked radio's player; ``IN_APP_PLAYER`` when no gated one is.
         """
-        return VLC_PLAYER if self.__ui.vlc_player_radio_button.isChecked() else IN_APP_PLAYER
+        return next((choice.player for choice in self.__choices if choice.radio.isChecked()), IN_APP_PLAYER)
 
     def __update_probe_controls(self) -> None:
         """Offer the FFmpeg choice only while it can be had, point to the Tools page when it cannot, and re-check the
@@ -221,19 +287,41 @@ class VideosPage(QWidget):
         self.__show_availability()
 
     def __update_player_controls(self) -> None:
-        """Offer VLC only while it can be had, and say why when the staged choice cannot be honoured.
+        """Offer VLC and the FFmpeg libraries only while they can be had, and say why when the staged choice cannot be
+        honoured, or when it waits for the next start.
 
-        As :meth:`__update_probe_controls` does for FFmpeg: **disabled rather than hidden**, a selected VLC stays
+        As :meth:`__update_probe_controls` does for FFmpeg: **disabled rather than hidden**, a selected one stays
         enabled, and the reason sits beside it -- the Files sub-dock plays in the app's own player meanwhile.
         """
-        radio = self.__ui.vlc_player_radio_button
-        unusable = self.__vlc_checked and self.__vlc_reason is not None
-        radio.setEnabled((self.__vlc_checked and not unusable) or radio.isChecked())
-        radio.setToolTip("" if radio.isEnabled() else NEEDS_VLC_TOOLTIP)
-        self.__ui.player_tools_link_label.setVisible(unusable)
-        shown = unusable and radio.isChecked()
-        self.__ui.player_availability_label.setText((self.__vlc_reason or "") if shown else "")
-        self.__ui.player_availability_label.setVisible(shown)
+        for choice in self.__choices:
+            choice.radio.setEnabled((choice.checked and not choice.unusable) or choice.radio.isChecked())
+            choice.radio.setToolTip("" if choice.radio.isEnabled() else choice.tooltip)
+        self.__ui.player_tools_link_label.setVisible(any(choice.unusable for choice in self.__choices))
+        shown = next((choice for choice in self.__choices if choice.unusable and choice.radio.isChecked()), None)
+        self.__ui.player_availability_label.setText((shown.reason or "") if shown is not None else "")
+        self.__ui.player_availability_label.setVisible(shown is not None)
+        restart = self.__restart_text()
+        self.__ui.player_restart_label.setText(restart)
+        self.__ui.player_restart_label.setVisible(bool(restart))
+
+    def __restart_text(self) -> str:
+        """What the staged decoder choice needs from the user: a restart, or a word about the last start's fallback.
+
+        The libraries load before the player's code does, so a change reaches only the next start; and a build that
+        could not be loaded at this start leaves Qt's own in use, whatever the page shows chosen.
+
+        Said only between the two Qt choices: VLC applies at once, and what is loaded stays for SHIFT+double-click.
+
+        :returns: the sentence, or an empty string when the staged choice is what this run applied.
+        """
+        libraries = shared_playback_libraries()
+        staged = self.__staged_player()
+        wanted = staged == FFMPEG_LIBRARIES_PLAYER
+        if wanted and libraries.requested and libraries.fallback_reason is not None:
+            return FALLBACK_TEMPLATE.format(reason=libraries.fallback_reason)
+        if staged == VLC_PLAYER:
+            return ""
+        return RESTART_TEXT if wanted != (libraries.loaded_from is not None) else ""
 
     def __show_availability(self) -> None:
         """Report whether the staged backend can run here, in the words the probe itself gives."""
@@ -251,7 +339,7 @@ class VideosPage(QWidget):
 
         :param tool_id: the tool that changed.
         """
-        if tool_id in (FFMPEG_TOOL.ID, VLC_TOOL.ID) and self.__asked:
+        if tool_id in (FFMPEG_TOOL.ID, VLC_TOOL.ID, FFMPEG_LIBRARIES_TOOL.ID) and self.__asked:
             self.refresh_availability()
 
     def __on_checked(self, tag: str, result: object) -> None:
@@ -269,25 +357,27 @@ class VideosPage(QWidget):
         self.__update_probe_controls()
         self.availability_checked.emit()
 
-    def __on_vlc_checked(self, tag: str, result: object) -> None:
-        """Take the answer of the VLC check.
+    def __on_player_checked(self, tag: str, result: object) -> None:
+        """Take the answer of one tool's check.
 
-        :param tag: unused; this runner does one kind of work.
-        :param result: the reason VLC cannot be used, ``None`` when it can, or the error the check raised.
+        :param tag: the player the tool serves.
+        :param result: the reason the tool cannot be used, ``None`` when it can, or the error the check raised.
         """
-        del tag
-        self.__vlc_checked = True
+        choice = next(choice for choice in self.__choices if choice.player == tag)
+        choice.checked = True
         if isinstance(result, Exception):
-            self.__vlc_reason = VLC_CHECK_FAILED_TEMPLATE.format(error=result)
+            choice.reason = PLAYER_CHECK_FAILED_TEMPLATE.format(label=choice.tool.LABEL, error=result)
         else:
-            self.__vlc_reason = result if isinstance(result, str) else None
+            choice.reason = result if isinstance(result, str) else None
         self.__update_player_controls()
-        self.player_checked.emit()
+        self.__pending.discard(tag)
+        if not self.__pending:
+            self.player_checked.emit()
 
     def __on_player_toggled(self, checked: bool) -> None:
         """Follow the player choice.
 
-        :param checked: whether the VLC radio is now checked; unused, the staged state is read back.
+        :param checked: whether the radio is now checked; unused, the staged state is read back.
         """
         del checked
         self.__update_player_controls()

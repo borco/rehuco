@@ -24,6 +24,8 @@ from rehuco_agent.settings.videos_settings import (
 )
 from rehuco_core import (
     DEFAULT_DURATION_PROBE,
+    EXTERNAL_TOOLS,
+    FFMPEG_LIBRARIES_TOOL,
     FFMPEG_TOOL,
     VIDEO_EXTENSIONS,
     VLC_TOOL,
@@ -448,15 +450,17 @@ def test_the_player_round_trips_through_storage(settings: FakeSettings) -> None:
     assert loaded.player == VLC_PLAYER
 
 
-def test_the_players_are_the_two_the_page_offers() -> None:
-    """The names the setting may hold are the app's player and the VLC tool's own id.
+def test_the_players_are_the_ones_the_page_offers() -> None:
+    """The names the setting may hold are the app's player, the FFmpeg libraries where that tool exists, and the VLC
+    tool's own id.
 
     **Test steps:**
 
     * read the registry
-    * verify it names both, VLC by its tool's id
+    * verify it names the app's player and VLC, and the libraries between them exactly when their tool is known
     """
-    assert PLAYERS == (IN_APP_PLAYER, VLC_TOOL.ID)
+    libraries = (FFMPEG_LIBRARIES_TOOL.ID,) if FFMPEG_LIBRARIES_TOOL.ID in EXTERNAL_TOOLS else ()
+    assert PLAYERS == (IN_APP_PLAYER, *libraries, VLC_TOOL.ID)
 
 
 @mark.parametrize(

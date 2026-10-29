@@ -10,7 +10,7 @@ from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.tool_discovery import ToolDiscovery, shared_tool_discovery
 from rehuco_agent.settings.tools_settings import ToolDetection, ToolsSettings
-from rehuco_core import EXTERNAL_TOOLS, FFMPEG_TOOL, VLC_TOOL, ToolCandidate, ToolStatus
+from rehuco_core import EXTERNAL_TOOLS, FFMPEG_TOOL, ToolCandidate, ToolStatus
 from shiboken6 import delete
 
 INSTALL = ToolCandidate(Path("/opt/ffmpeg/bin"), "winget", ToolStatus.USABLE, (7, 1, 1))
@@ -73,11 +73,13 @@ def test_a_tool_already_searched_for_is_only_verified(
 
     **Test steps:**
 
-    * store two installs for FFmpeg and a search for VLC, make verifying keep one, and run
+    * store two installs for FFmpeg and a search for every other tool, make verifying keep one, and run
     * verify what is recorded is the one that is still there, and nothing was searched for
     """
     tools.set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (INSTALL, OTHER)))
-    tools.set_detection(VLC_TOOL.ID, ToolDetection(True, ()))
+    for tool_id in EXTERNAL_TOOLS:
+        if tool_id != FFMPEG_TOOL.ID:
+            tools.set_detection(tool_id, ToolDetection(True, ()))
     fake_tool_locator.verify.return_value = [OTHER]
 
     run(qtbot, discovery)
