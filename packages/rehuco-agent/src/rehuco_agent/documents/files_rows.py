@@ -481,8 +481,8 @@ class FilesRowsReader:
 
 
 def missing_rows(record: Path, directory: Path, progress: FilesProgress) -> tuple[FileRow, ...]:
-    """The rows of the videos in ``directory`` that are gone and have progress kept ([[field-schema#watch-progress]],
-    #316) -- what the user forgets by hand.
+    """The rows of the videos in ``directory`` that are gone and have progress, a note or a favorite kept
+    ([[field-schema#watch-progress]], #316, [[field-schema#video-notes]], #571) -- what the user forgets by hand.
 
     :param record: the resource's record, which a key is resolved against.
     :param directory: the folder shown.
@@ -492,7 +492,7 @@ def missing_rows(record: Path, directory: Path, progress: FilesProgress) -> tupl
     if progress.video_keys is None:
         return ()
     rows: list[FileRow] = []
-    for key in missing_progress_keys(progress.video_keys, progress.entries):
+    for key in missing_progress_keys(progress.video_keys, progress.known_keys):
         if not is_valid_content_key(record, key):
             continue
         file = content_path(record, key)

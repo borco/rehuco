@@ -544,3 +544,41 @@ def test_a_sidecar_deleted_is_its_records_change_too(tmp_path: Path) -> None:
 
 
 # endregion
+
+
+# region Video notes and favorites ([[field-schema#video-notes]], #571)
+
+
+def test_a_users_notes_and_favorites_are_stored_in_their_sidecar_and_read_back(tmp_path: Path) -> None:
+    """The notes, favorites and sizes are whole per-user keys, so the split writes them to the user's sidecar and the
+    join gives them back with no code of their own.
+
+    **Test steps:**
+
+    * hold the three keys and a size in a document's per-user map and save it
+    * verify the record holds none of them, the sidecar holds all four, and a fresh load reads them back
+    """
+    record = tmp_path / "info.rehu"
+    bare_record(record)
+    document = RehuDocument.load(record, username="ioan")
+    fields = {
+        "notes": "About it",
+        "video_notes": {"a.mp4": "a note"},
+        "video_favorites": ["a.mp4"],
+        "video_sizes": {"a.mp4": 5},
+    }
+    for key, value in fields.items():
+        document.set_active_user_field(key, value)
+
+    document.save()
+
+    assert USERS not in read_json(record)["tutorial"]
+    assert read_json(tmp_path / "info.user-ioan.rehuser") == {
+        "format_version": CURRENT_REHUSER_VERSION,
+        "tutorial": fields,
+    }
+    reloaded = RehuDocument.load(record, username="ioan")
+    assert all(reloaded.active_user_field(key) == value for key, value in fields.items())
+
+
+# endregion

@@ -7,6 +7,11 @@ keyed by :func:`~rehuco_core.content_keys.content_key`: the shared ``videos`` le
 never stored (:func:`watch_totals`), and so is a file being *missing* (:func:`missing_progress_keys`): its entry
 stays until :func:`forget_progress` removes it by hand, or follows the file when it was renamed
 (:mod:`rehuco_core.progress_renames`, #411).
+
+The user's notes and favorites ([[field-schema#video-notes]], #571) live beside the progress and are written the same
+way, through :func:`record_notes`; a video's note, favorite and recorded size follow the file when it is renamed and go
+with :func:`forget_progress`, so everything a user keeps about one video is that video's *data*
+(:func:`video_data_keys`).
 """
 
 import logging
@@ -45,6 +50,19 @@ SIZE_KEY: Final = "size"
 """A progress entry's key holding the file's size in bytes when it was last played -- what tells its renamed self
 apart once the file is gone (#411)."""
 
+NOTES_KEY: Final = "notes"
+"""A user's key holding their markdown notes about the whole tutorial ([[field-schema#video-notes]], #571)."""
+
+VIDEO_NOTES_KEY: Final = "video_notes"
+"""A user's submap key holding their markdown notes per video, by content key."""
+
+VIDEO_FAVORITES_KEY: Final = "video_favorites"
+"""A user's key holding the sorted content keys of the videos they starred."""
+
+VIDEO_SIZES_KEY: Final = "video_sizes"
+"""A user's submap key holding, by content key, the size in bytes each noted or starred video had when it was last
+written -- what tells its renamed self apart once the file is gone, as :data:`SIZE_KEY` does for progress."""
+
 END_TOLERANCE_SECONDS: Final = 1.0
 """How close to its length a position counts as *the end*: a player stopping on the last frame reports a position a
 frame or two short of the container's duration."""
@@ -76,12 +94,11 @@ class ProgressEntry:
         :param raw: the stored entry.
         :returns: the entry.
         """
-        size = raw.get(SIZE_KEY)
         return cls(
             finite_seconds(raw.get(POSITION_KEY), allow_zero=True) or 0.0,
             finite_seconds(raw.get(DURATION_KEY)),
             raw.get(VIEWED_KEY) is True,
-            size if isinstance(size, int) and not isinstance(size, bool) and size >= 0 else None,
+            stored_size(raw.get(SIZE_KEY)),
         )
 
     def to_stored(self) -> dict[str, Any]:
@@ -180,6 +197,72 @@ def read_last_video(document: RehuDocument, username: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def read_notes(document: RehuDocument, username: str) -> str:
+    """Read ``username``'s notes about the whole tutorial.
+
+    :param document: the record.
+    :param username: whose.
+    :returns: the markdown, empty when none is recorded or the stored value is not text.
+    """
+    value = document.user_field(username, NOTES_KEY)
+    return value if isinstance(value, str) else ""
+
+
+def read_video_notes(document: RehuDocument, username: str) -> dict[str, str]:
+    """Read ``username``'s notes per video.
+
+    :param document: the record.
+    :param username: whose.
+    :returns: each note by key; a value that is not text is skipped and left on disk as it is.
+    """
+    raw = document.user_field(username, VIDEO_NOTES_KEY)
+    if not isinstance(raw, dict):
+        return {}
+    return {key: text for key, text in raw.items() if isinstance(text, str) and text}
+
+
+def read_video_favorites(document: RehuDocument, username: str) -> set[str]:
+    """Read the videos ``username`` starred.
+
+    :param document: the record.
+    :param username: whose.
+    :returns: their keys; an item that is not a key is skipped and left on disk as it is.
+    """
+    raw = document.user_field(username, VIDEO_FAVORITES_KEY)
+    if not isinstance(raw, list):
+        return set()
+    return {key for key in raw if isinstance(key, str) and key}
+
+
+def read_video_sizes(document: RehuDocument, username: str) -> dict[str, int]:
+    """Read the sizes ``username``'s notes and favorites recorded.
+
+    :param document: the record.
+    :param username: whose.
+    :returns: each size by key; a malformed one is skipped and left on disk as it is.
+    """
+    raw = document.user_field(username, VIDEO_SIZES_KEY)
+    if not isinstance(raw, dict):
+        return {}
+    sizes = {key: stored_size(value) for key, value in raw.items()}
+    return {key: size for key, size in sizes.items() if size is not None}
+
+
+def video_data_keys(document: RehuDocument, username: str) -> set[str]:
+    """Every video ``username`` keeps anything about: a progress entry, a note, a favorite or a recorded size.
+
+    :param document: the record.
+    :param username: whose.
+    :returns: the content keys, whether or not their files are on disk.
+    """
+    return {
+        *read_progress(document, username),
+        *read_video_notes(document, username),
+        *read_video_favorites(document, username),
+        *read_video_sizes(document, username),
+    }
+
+
 def tutorial_video_keys(
     rehu_path: Path,
     *,
@@ -209,13 +292,80 @@ def set_progress_entry(document: RehuDocument, username: str, key: str, entry: P
     :param key: the file's content key.
     :param entry: the new entry, or ``None`` to forget it; forgetting the last removes ``progress`` itself.
     """
-    raw = document.user_field(username, PROGRESS_KEY)
+    set_user_map_entry(document, username, PROGRESS_KEY, key, entry.to_stored() if entry is not None else None)
+
+
+def set_user_map_entry(document: RehuDocument, username: str, field: str, key: str, value: Any | None) -> None:
+    """Replace one entry of a per-user map keyed by content key, leaving the others as stored.
+
+    :param document: the record.
+    :param username: whose map.
+    :param field: the map's per-user key.
+    :param key: the entry's content key.
+    :param value: the new entry, or ``None`` to remove it; removing the last removes the map itself.
+    """
+    raw = document.user_field(username, field)
     entries: dict[str, Any] = dict(raw) if isinstance(raw, dict) else {}
-    if entry is None:
+    if value is None:
         entries.pop(key, None)
     else:
-        entries[key] = entry.to_stored()
-    document.set_user_field(username, PROGRESS_KEY, {name: entries[name] for name in sorted(entries)} or None)
+        entries[key] = value
+    document.set_user_field(username, field, {name: entries[name] for name in sorted(entries)} or None)
+
+
+def set_video_note(document: RehuDocument, username: str, key: str, text: str) -> None:
+    """Replace one of ``username``'s video notes.
+
+    :param document: the record.
+    :param username: whose.
+    :param key: the video's content key.
+    :param text: the markdown; empty removes the note.
+    """
+    set_user_map_entry(document, username, VIDEO_NOTES_KEY, key, text or None)
+
+
+def set_video_favorite(document: RehuDocument, username: str, key: str, favorite: bool) -> None:
+    """Star or unstar one video for ``username``.
+
+    :param document: the record.
+    :param username: whose.
+    :param key: the video's content key.
+    :param favorite: whether it is starred; unstarring the last removes the list itself. A write that changes
+        nothing leaves the list as stored, items this build cannot read included.
+    """
+    keys = read_video_favorites(document, username)
+    if favorite == (key in keys):
+        return
+    if favorite:
+        keys.add(key)
+    else:
+        keys.discard(key)
+    document.set_user_field(username, VIDEO_FAVORITES_KEY, sorted(keys) or None)
+
+
+def rekey_video_data(document: RehuDocument, username: str, old: str, new: str) -> bool:
+    """Move everything ``username`` keeps about one video -- progress, note, favorite and size -- to a new key, as
+    stored.
+
+    :param document: the record.
+    :param username: whose.
+    :param old: the key the data is under.
+    :param new: the key it moves to; the caller has made sure nothing is under it.
+    :returns: whether anything moved.
+    """
+    moved = False
+    for field in (PROGRESS_KEY, VIDEO_NOTES_KEY, VIDEO_SIZES_KEY):
+        raw = document.user_field(username, field)
+        if isinstance(raw, dict) and old in raw:
+            entries = dict(raw)
+            entries[new] = entries.pop(old)
+            document.set_user_field(username, field, {name: entries[name] for name in sorted(entries)})
+            moved = True
+    if old in read_video_favorites(document, username):
+        set_video_favorite(document, username, old, False)
+        set_video_favorite(document, username, new, True)
+        moved = True
+    return moved
 
 
 def reached_end(position: float, length: float | None) -> bool:
@@ -312,6 +462,70 @@ def record_progress(  # pylint: disable=too-many-arguments
     return written[0]
 
 
+def record_notes(  # pylint: disable=too-many-arguments
+    path: Path,
+    username: str,
+    *,
+    notes: str | None = None,
+    video_notes: Mapping[str, str] | None = None,
+    favorites: Mapping[str, bool] | None = None,
+    current_username: str = DEFAULT_CURRENT_USERNAME,
+    plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+) -> None:
+    """Record what ``username`` wrote about a tutorial and its videos -- the one write path for every notes view
+    ([[field-schema#video-notes]], #571).
+
+    A :func:`~rehuco_core.record_merge.merge_write` like :func:`record_progress`, without stamping ``updated``: a note
+    is the user's own state, never an edit of the resource. What is left out (``None``) is left as stored; an empty
+    text or a ``False`` removes. Each noted or starred video also gets the file's size, read off disk and the stored
+    one kept when the file cannot be read, so a rename can tell it apart ([[field-schema#watch-progress]]); a video
+    left with neither a note nor a favorite loses it.
+
+    :param path: the tutorial's record.
+    :param username: whose notes.
+    :param notes: the markdown about the whole tutorial, or ``None`` to leave it.
+    :param video_notes: the markdown of each video written, by content key.
+    :param favorites: whether each video is starred, by content key.
+    :param current_username: the identity the record is opened as (:func:`record_progress`'s).
+    :param plugins: the plugin registry to load with.
+    :raises ValueError: a key is not a content key, the record is not a tutorial, or it is locked against saving.
+    :raises OSError: the record could not be read or written.
+    :raises RehuFormatError: the record is not readable.
+    """
+    texts = video_notes or {}
+    stars = favorites or {}
+    touched = {*texts, *stars}
+    for key in touched:
+        if not is_valid_content_key(path, key):
+            raise ValueError(f"Not a content key of {path}: {key!r}")
+
+    def mutate(document: RehuDocument) -> None:
+        """Apply the write to the freshly read record.
+
+        :param document: the record as it is on disk now.
+        :raises ValueError: the record is not a tutorial.
+        """
+        if document.active_block_key != TUTORIAL_PLUGIN.key:
+            raise ValueError(f"Notes are recorded on tutorials only, not on {path}.")
+        if notes is not None:
+            document.set_user_field(username, NOTES_KEY, notes or None)
+        for key, text in texts.items():
+            set_video_note(document, username, key, text)
+        for key, favorite in stars.items():
+            set_video_favorite(document, username, key, favorite)
+        kept = {*read_video_notes(document, username), *read_video_favorites(document, username)}
+        stored_sizes = read_video_sizes(document, username)
+        for key in touched:
+            size = None
+            if key in kept:
+                size = file_size(content_path(path, key))
+                if size is None:
+                    size = stored_sizes.get(key)
+            set_user_map_entry(document, username, VIDEO_SIZES_KEY, key, size)
+
+    merge_write(path, mutate, username=current_username, plugins=plugins, touch_updated=False)
+
+
 def record_videos(
     path: Path,
     measured: Mapping[str, VideoFacts],
@@ -356,19 +570,20 @@ def forget_progress(
     current_username: str = DEFAULT_CURRENT_USERNAME,
     plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
 ) -> bool:
-    """Remove one of ``username``'s progress entries by hand -- the only way one is ever removed: a file that is
-    gone keeps its entry until the user forgets it ([[field-schema#watch-progress]], #411).
+    """Remove what ``username`` keeps about one video by hand -- the only way it is ever removed: a file that is
+    gone keeps its progress entry, note, favorite and size until the user forgets them
+    ([[field-schema#watch-progress]], #411, #571).
 
     A :func:`~rehuco_core.record_merge.merge_write` like :func:`record_progress`, without stamping ``updated``.
 
     :param path: the tutorial's record.
     :param username: whose progress.
-    :param relative: the entry's key as stored. Whether the file is on disk is not asked, and the key is not held
+    :param relative: the video's key as stored. Whether the file is on disk is not asked, and the key is not held
         to :func:`~rehuco_core.content_keys.is_valid_content_key`: forgetting resolves no path, and a key another
         build or a hand edit wrote wrong is exactly one the user needs to be able to remove.
     :param current_username: the identity the record is opened as (:func:`record_progress`'s).
     :param plugins: the plugin registry to load with.
-    :returns: whether there was an entry to remove; when there was none, the record is written back unchanged.
+    :returns: whether there was anything to remove; when there was none, the record is written back unchanged.
     :raises ValueError: the record is locked against saving.
     :raises OSError: the record could not be read or written.
     :raises RehuFormatError: the record is not readable.
@@ -380,23 +595,36 @@ def forget_progress(
 
         :param document: the record as it is on disk now.
         """
-        removed.append(relative in read_progress(document, username))
+        removed.append(relative in video_data_keys(document, username))
         if removed[0]:
             set_progress_entry(document, username, relative, None)
+            set_video_note(document, username, relative, "")
+            set_video_favorite(document, username, relative, False)
+            set_user_map_entry(document, username, VIDEO_SIZES_KEY, relative, None)
 
     merge_write(path, mutate, username=current_username, plugins=plugins, touch_updated=False)
     return removed[0]
 
 
-def missing_progress_keys(keys_on_disk: Iterable[str], entries: Mapping[str, ProgressEntry]) -> list[str]:
-    """The entries whose file is not on disk -- *missing*, derived when listing and never stored
-    ([[field-schema#watch-progress]], #411).
+def missing_progress_keys(keys_on_disk: Iterable[str], known: Iterable[str]) -> list[str]:
+    """The videos the user keeps data about whose file is not on disk -- *missing*, derived when listing and never
+    stored ([[field-schema#watch-progress]], #411).
 
     :param keys_on_disk: the content keys of the videos on disk now.
-    :param entries: the user's progress (:func:`read_progress`).
+    :param known: the keys the user keeps data under -- their progress (:func:`read_progress`), or everything
+        (:func:`video_data_keys`).
     :returns: the missing keys, sorted.
     """
-    return sorted(set(entries).difference(keys_on_disk))
+    return sorted(set(known).difference(keys_on_disk))
+
+
+def stored_size(value: object) -> int | None:
+    """Read a stored file size.
+
+    :param value: what the file holds.
+    :returns: the size in bytes, or ``None`` when it is not a non-negative integer.
+    """
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
 def file_size(path: Path) -> int | None:

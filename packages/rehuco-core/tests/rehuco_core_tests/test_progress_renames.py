@@ -11,12 +11,12 @@ from pytest import raises
 from rehuco_core import (
     ChecksumEntry,
     MissingFile,
-    ProgressEntry,
     RenameCandidate,
     VideoFacts,
     generate_checksums,
     plan_progress_renames,
     reattach_renamed_progress,
+    record_notes,
     record_progress,
     user_sidecar_paths,
 )
@@ -77,7 +77,7 @@ def test_an_equal_hash_moves_the_entry() -> None:
     * plan a missing file with a recorded hash against an equal-hashing candidate, the size rung off
     * verify the move
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10), checksum=hashed("a.mp4"))}
+    missing = {"a.mp4": MissingFile(10, checksum=hashed("a.mp4"))}
 
     plan = plan_progress_renames(
         missing, {"b.mp4": RenameCandidate(10)}, match_by_size=False, digest=FakeDigests({"b.mp4": DIGEST})
@@ -95,7 +95,7 @@ def test_a_different_hash_moves_nothing_even_with_the_size_rung_on() -> None:
     * plan a missing file with a recorded hash against one same-size candidate hashing differently
     * verify no move
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10), checksum=hashed("a.mp4"))}
+    missing = {"a.mp4": MissingFile(10, checksum=hashed("a.mp4"))}
 
     plan = plan_progress_renames(
         missing, {"b.mp4": RenameCandidate(10)}, match_by_size=True, digest=FakeDigests({"b.mp4": "f" * 16})
@@ -112,7 +112,7 @@ def test_the_hash_tells_equal_sizes_apart() -> None:
     * plan against two same-size candidates and one of another size
     * verify the equal-hashing one takes the entry and the other size was never read
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10), checksum=hashed("a.mp4"))}
+    missing = {"a.mp4": MissingFile(10, checksum=hashed("a.mp4"))}
     digests = FakeDigests({"b.mp4": "f" * 16, "c.mp4": DIGEST, "d.mp4": DIGEST})
     candidates = {"b.mp4": RenameCandidate(10), "c.mp4": RenameCandidate(10), "d.mp4": RenameCandidate(11)}
 
@@ -130,7 +130,7 @@ def test_a_recorded_hash_in_upper_case_still_matches() -> None:
     * plan with an upper-case recorded hash against a candidate hashing to its lower case
     * verify the move
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10), checksum=hashed("a.mp4", DIGEST.upper()))}
+    missing = {"a.mp4": MissingFile(10, checksum=hashed("a.mp4", DIGEST.upper()))}
 
     plan = plan_progress_renames(
         missing, {"b.mp4": RenameCandidate(10)}, match_by_size=False, digest=FakeDigests({"b.mp4": DIGEST})
@@ -148,7 +148,7 @@ def test_a_candidate_that_cannot_be_read_leaves_the_hash_rung_undecided() -> Non
     * plan against an equal-hashing candidate and an unreadable one of the same size
     * verify no move
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10), checksum=hashed("a.mp4"))}
+    missing = {"a.mp4": MissingFile(10, checksum=hashed("a.mp4"))}
     candidates = {"b.mp4": RenameCandidate(10), "c.mp4": RenameCandidate(10)}
 
     plan = plan_progress_renames(
@@ -167,8 +167,8 @@ def test_each_candidate_is_hashed_once_for_two_missing_files() -> None:
     * verify both move and each candidate was read once
     """
     missing = {
-        "a.mp4": MissingFile(ProgressEntry(1.0, size=10), checksum=hashed("a.mp4", "1" * 16)),
-        "b.mp4": MissingFile(ProgressEntry(1.0, size=10), checksum=hashed("b.mp4", "2" * 16)),
+        "a.mp4": MissingFile(10, checksum=hashed("a.mp4", "1" * 16)),
+        "b.mp4": MissingFile(10, checksum=hashed("b.mp4", "2" * 16)),
     }
     digests = FakeDigests({"x.mp4": "2" * 16, "y.mp4": "1" * 16})
 
@@ -192,7 +192,7 @@ def test_a_unique_size_moves_the_entry_with_the_setting_on() -> None:
     * plan a missing file with no hash against one same-size candidate, with the setting on and off
     * verify the move only with it on, and that nothing was hashed
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10))}
+    missing = {"a.mp4": MissingFile(10)}
     candidates = {"b.mp4": RenameCandidate(10), "c.mp4": RenameCandidate(11)}
     digests = FakeDigests({})
 
@@ -209,7 +209,7 @@ def test_two_candidates_of_the_same_size_move_nothing() -> None:
     * plan a missing file with no hash against two same-size candidates
     * verify no move
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10))}
+    missing = {"a.mp4": MissingFile(10)}
     candidates = {"b.mp4": RenameCandidate(10), "c.mp4": RenameCandidate(10)}
 
     assert not plan_progress_renames(missing, candidates, match_by_size=True, digest=FakeDigests({}))
@@ -223,7 +223,7 @@ def test_no_candidate_moves_nothing() -> None:
     * plan a missing file against no candidate, and against one of another size
     * verify no move
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10))}
+    missing = {"a.mp4": MissingFile(10)}
 
     assert not plan_progress_renames(missing, {}, match_by_size=True, digest=FakeDigests({}))
     assert not plan_progress_renames(missing, {"b.mp4": RenameCandidate(9)}, match_by_size=True, digest=FakeDigests({}))
@@ -239,7 +239,7 @@ def test_a_known_length_rules_out_a_same_size_candidate() -> None:
     * plan the same with the candidate's length within the tolerance, and with it unmeasured
     * verify only the first moves nothing
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, 100.0, size=10), facts=VideoFacts(60.0))}
+    missing = {"a.mp4": MissingFile(10, 100.0, facts=VideoFacts(60.0))}
 
     def plan(facts: VideoFacts | None) -> dict[str, str]:
         """Plan against one same-size candidate.
@@ -264,7 +264,7 @@ def test_the_entrys_length_decides_when_the_missing_file_was_never_measured() ->
     * plan a missing file known only by its entry's length against a candidate measured differently
     * verify no move
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, 100.0, size=10))}
+    missing = {"a.mp4": MissingFile(10, 100.0)}
 
     plan = plan_progress_renames(
         missing, {"b.mp4": RenameCandidate(10, VideoFacts(60.0))}, match_by_size=True, digest=FakeDigests({})
@@ -285,7 +285,7 @@ def test_an_entry_with_no_recorded_size_never_moves() -> None:
     * plan a missing file with no size and a recorded hash against an equal-hashing candidate
     * verify no move and no read
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0), checksum=hashed("a.mp4"))}
+    missing = {"a.mp4": MissingFile(None, checksum=hashed("a.mp4"))}
     digests = FakeDigests({"b.mp4": DIGEST})
 
     assert not plan_progress_renames(missing, {"b.mp4": RenameCandidate(10)}, match_by_size=True, digest=digests)
@@ -300,7 +300,7 @@ def test_one_candidate_claimed_by_two_missing_files_moves_neither() -> None:
     * plan two missing same-size files with no hash against one candidate
     * verify no move
     """
-    missing = {"a.mp4": MissingFile(ProgressEntry(1.0, size=10)), "b.mp4": MissingFile(ProgressEntry(2.0, size=10))}
+    missing = {"a.mp4": MissingFile(10), "b.mp4": MissingFile(10)}
 
     assert not plan_progress_renames(
         missing, {"c.mp4": RenameCandidate(10)}, match_by_size=True, digest=FakeDigests({})
@@ -549,6 +549,126 @@ def test_reattaching_refuses_a_record_that_is_not_a_tutorial(tmp_path: Path) -> 
 
     with raises(ValueError, match="tutorials only"):
         reattach_renamed_progress(path, "admin")
+
+
+# endregion
+
+
+# region reattach_renamed_progress -- notes and favorites ([[field-schema#video-notes]], #571)
+def test_a_noted_video_that_never_played_follows_its_rename_by_the_size_its_note_recorded(tmp_path: Path) -> None:
+    """A note and a favorite record the file's size, which is all the size rung needs: no progress entry is involved.
+
+    **Test steps:**
+
+    * note and star a video that has no progress entry
+    * rename the file
+    * reattach
+    * verify the note, the favorite and the size moved, and no progress entry appeared
+    """
+    folder = tmp_path / "t"
+    path = make_tutorial(folder, [])
+    (folder / "old.mp4").write_bytes(b"12345")
+    record_notes(path, "admin", video_notes={"old.mp4": "the trick"}, favorites={"old.mp4": True})
+    (folder / "old.mp4").rename(folder / "new.mp4")
+
+    assert reattach_renamed_progress(path, "admin") == {"old.mp4": "new.mp4"}
+
+    assert users_of(path)["admin"] == {
+        "video_notes": {"new.mp4": "the trick"},
+        "video_favorites": ["new.mp4"],
+        "video_sizes": {"new.mp4": 5},
+    }
+
+
+def test_progress_note_favorite_and_size_move_together_on_the_hash_rung(tmp_path: Path) -> None:
+    """Everything the user keeps about one video moves with it, told apart by its recorded hash.
+
+    **Test steps:**
+
+    * hash the resource, then keep progress, a note and a favorite on one of two same-size videos
+    * rename it and add a same-size stranger
+    * reattach with the size rung off
+    * verify all four moved to the renamed file and the stranger has none
+    """
+    folder = tmp_path / "t"
+    path = make_tutorial(folder, [])
+    (folder / "a.mp4").write_bytes(b"aaaa")
+    generate_checksums(path)
+    record_progress(path, "admin", "a.mp4", 1.0, None)
+    record_notes(path, "admin", video_notes={"a.mp4": "note"}, favorites={"a.mp4": True})
+    (folder / "a.mp4").rename(folder / "b.mp4")
+    (folder / "stranger.mp4").write_bytes(b"cccc")
+
+    assert reattach_renamed_progress(path, "admin", match_by_size=False) == {"a.mp4": "b.mp4"}
+
+    stored = users_of(path)["admin"]
+    assert list(stored["progress"]) == ["b.mp4"]
+    assert stored["video_notes"] == {"b.mp4": "note"}
+    assert stored["video_favorites"] == ["b.mp4"]
+    assert stored["video_sizes"] == {"b.mp4": 4}
+
+
+def test_a_video_with_only_a_note_is_not_a_rename_target(tmp_path: Path) -> None:
+    """A file on disk that already has data of the user's is never where another file's data lands.
+
+    **Test steps:**
+
+    * keep progress on a file that is then deleted, and a note on a same-size file on disk
+    * reattach
+    * verify nothing moved and both stay as stored
+    """
+    folder = tmp_path / "t"
+    path = make_tutorial(
+        folder, [], block={"users": {"admin": {"progress": {"gone.mp4": {"position": 1.0, "size": 3}}}}}
+    )
+    (folder / "noted.mp4").write_bytes(b"123")
+    record_notes(path, "admin", video_notes={"noted.mp4": "mine"})
+    before = users_of(path)
+
+    assert not reattach_renamed_progress(path, "admin")
+
+    assert users_of(path) == before
+
+
+def test_a_missing_file_keeps_its_note_and_favorite(tmp_path: Path) -> None:
+    """With no file to take them, a note and a favorite stay under the key of the file that is gone.
+
+    **Test steps:**
+
+    * note and star a video, then delete it
+    * reattach
+    * verify nothing moved and nothing was written
+    """
+    folder = tmp_path / "t"
+    path = make_tutorial(folder, [])
+    (folder / "a.mp4").write_bytes(b"123")
+    record_notes(path, "admin", video_notes={"a.mp4": "note"}, favorites={"a.mp4": True})
+    (folder / "a.mp4").unlink()
+    before = stored_bytes(path)
+
+    assert not reattach_renamed_progress(path, "admin")
+
+    assert stored_bytes(path) == before
+
+
+def test_a_move_onto_a_key_that_has_a_note_is_skipped(tmp_path: Path) -> None:
+    """The fresh record is judged at the write: a new key that gained a note since the plan was made is not taken.
+
+    **Test steps:**
+
+    * keep a note under one key and another under a second
+    * write a plan moving the first onto the second
+    * verify nothing applied and both notes stand
+    """
+    path = make_tutorial(tmp_path / "t", ["a.mp4", "b.mp4"])
+    record_notes(path, "admin", video_notes={"a.mp4": "one", "b.mp4": "two"})
+
+    applied = move_progress_entries(
+        path, "admin", {"a.mp4": "b.mp4"}, current_username="admin", plugins=DEFAULT_PLUGIN_REGISTRY
+    )
+
+    assert not applied
+    assert users_of(path)["admin"]["video_notes"] == {"a.mp4": "one", "b.mp4": "two"}
 
 
 # endregion

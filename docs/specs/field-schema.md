@@ -614,14 +614,16 @@ read against:
   single media file ([[data-model#single-file]]) — a tutorial of several files is a folder with its own `info.rehu`
   — and keys it by its name **with the stem removed**: `foo.rehu` describing `foo.mp4` keys it as `.mp4`, so renaming
   the stem ([[plugins#tutorial-plugin]]'s path row) keeps it too. The same rule keys `videos`.
-- **A file that is gone keeps its entry.** An entry whose file is not on disk is shown as *missing* — derived when
-  listing, never stored — and still counts in every total below. Archival removes videos on purpose
+- **A file that is gone keeps its entry.** An entry whose file is not on disk — or a note or favorite,
+  [[field-schema#video-notes]] — is shown as *missing* — derived when listing, never stored — and still counts in
+  every total below. Archival removes videos on purpose
   ([[borrowing#scheduled-archival]]), and the legacy habit was to delete videos as they were watched
   ([[field-schema#duration-size]]); erasing their progress would erase exactly the history worth keeping. The agent
   lists missing entries and offers to **forget** one by hand; nothing forgets one automatically.
-- **A renamed file takes its entry with it.** When a keyed file is missing and an unkeyed one is on disk anywhere in
-  the resource — a renamed folder moves every file in it — the strongest evidence available decides, among the
-  candidates whose size equals the one the entry recorded:
+- **A renamed file takes its entry with it.** When a keyed file is missing and one with no per-user data at all
+  (no entry, note or favorite, [[field-schema#video-notes]]) is on disk anywhere in the resource — a renamed folder
+  moves every file in it — the strongest evidence available decides, among the candidates whose size equals the one
+  the entry recorded:
   1. The missing file has a hash recorded in its `.checksum` ([[data-model#checksums]]) — the candidates are hashed,
      and only **exactly one** equal hash moves the entry; a candidate that cannot be read leaves it undecided. No
      setting is involved, and equal sizes are told apart here.
@@ -632,7 +634,8 @@ read against:
   3. Anything else — two candidates, no candidate, the setting off, an entry with no recorded size, one candidate
      matched by two missing files — moves nothing; the entry stays missing for the user to reattach or forget.
 
-  Only the entry moves, as stored, and only the listing user's; `videos` is the Measure's to rebuild.
+  Only the listing user's data moves, as stored — the entry, and the video's note, favorite and size with it
+  ([[field-schema#video-notes]]); `videos` is the Measure's to rebuild.
 - **Why a progress entry records the file's size.** Rename detection needs the missing file's size, and once the
   file is gone nothing else holds it — `.checksum` records hashes, not sizes, and a Measure drops a deleted video
   from `videos`. The player's write stats the file into its entry, keeping the old value when the file cannot be
@@ -686,14 +689,15 @@ read against:
 - [#571: feat(core): per-user video notes and favorites — notes, video_notes, video_favorites in the sidecar, record_notes, rename and Forget follow](https://github.com/borco/rehuco/issues/571)
 
 The notes and bookmarks Follow mode has always named ([[plugins#tutorial-plugin]], [[data-model#single-file]],
-[[sync#compare-and-swap]]), made concrete. Three more per-user keys beside `progress`, in the same `users` map and so
+[[sync#compare-and-swap]]), made concrete. Four more per-user keys beside `progress`, in the same `users` map and so
 in the same sidecar:
 
 ```json
 "tutorial": { "users": { "admin": {
   "notes": "Markdown about the whole tutorial",
   "video_notes": { "01 Basics/03 Brushes.mp4": "- [12:34](rehuco-video:01%20Basics/03%20Brushes.mp4#t=754) the smudge trick" },
-  "video_favorites": ["01 Basics/03 Brushes.mp4"]
+  "video_favorites": ["01 Basics/03 Brushes.mp4"],
+  "video_sizes": { "01 Basics/03 Brushes.mp4": 183500800 }
 } } }
 ```
 
@@ -702,17 +706,30 @@ in the same sidecar:
   standalone `.rehu`); **`video_favorites`** is the set of keys the user starred. An empty string or an empty list is
   removed, never stored. The tutorial's own `favorite` ([[field-schema#boolean-flags]]) is a different fact, about
   the resource.
+- **`video_sizes` is the file's size, kept for the rename detection** and written by the same call that writes a note or
+  a favorite: each noted or starred video records the size its file has then, the stored one kept when the file cannot
+  be read, and a video left with neither loses it. Why it exists is why a progress entry records its size
+  ([[field-schema#watch-progress]]): once the file is gone nothing else holds it, and a video noted but never played has
+  no progress entry to hold it.
 - **There is no bookmark schema.** A bookmark is a timestamped line in a video's notes: a link of the form
   `rehuco-video:<url-encoded key>#t=<seconds>`, which the agent's notes views turn into a seek of the player
   ([[plugins#video-notes-dock]]); without `#t` it loads the video. The full form is used everywhere, so a line pasted
   into the tutorial's notes still works. [[sync#compare-and-swap]]'s "bookmarks a union by position" is therefore
   answered by the notes rule: two sets of notes that collide keep both.
 - **A renamed file takes its notes and favorite with it**, by the rename detection that moves a progress entry, both
-  rungs; **a file that is gone keeps them**, as it keeps its progress; **forget** removes all three together.
+  rungs, on the size its entry or `video_sizes` recorded. Everything a user keeps about one video — entry, note,
+  favorite, size — is that video's *data*, and moves together; a file already holding data is never where another's
+  lands. **A file that is gone keeps them**, as it keeps its progress: deleting a video once watched and keeping
+  its notes is the ordinary workflow, so a missing video is listed, and its notes are shown and editable, as any
+  other's; **forget** removes all four together.
+- **The search for a renamed file's data** runs when the Files list is listed, at a video's first play, and at the first
+  note or favorite written on a video that has no data yet, so a renamed video is found before anything is written
+  under its new name. A view that shows a note should have searched before it shows the video's, or what it shows is
+  empty and what the user types over it replaces what the search then finds.
 - **Writer-owned, like progress.** The rule the code already implies, stated: **a per-user field is either
   editor-owned — shown as a field, staged, dirtying the document, saved by Save — or writer-owned — written the
   moment it is recorded, through the locked merge-write that never stamps `updated`, and never shown as an editor
-  field — and never both.** `progress` and `last_video` are writer-owned; so are these three. An open document takes
+  field — and never both.** `progress` and `last_video` are writer-owned; so are these four. An open document takes
   a write in without a reload and without becoming dirty, exactly as it takes progress in, and a write that lands while
   a save is out waits for it. So a note is never an edit and never asks for a save, and a field can never be edited
   in one view while another writes it. The asymmetry this leaves — a video's favorite saves at once while the

@@ -76,7 +76,9 @@ class ProgressWriter(QObject):
             return self.__stopped.wait_for(lambda: not self.__running, timeout)
 
     def submit(self, key: Hashable, work: Work, answer: Answer, scope: Hashable | None = None) -> None:
-        """Queue ``work`` to run on the writer's thread, replacing a write of the same ``key`` still waiting.
+        """Queue ``work`` to run on the writer's thread, replacing a write of the same ``key`` still waiting -- in its
+        place in the queue, so a write that must run before another (a search for a renamed video's data before the
+        first write under its new name, #571) is not moved behind it by being asked for again.
 
         :param key: what makes two writes the same one: the later replaces the earlier while that has not started.
         :param work: the write.
@@ -85,10 +87,11 @@ class ProgressWriter(QObject):
         """
         ticket = next(self.__tickets)
         with self.__lock:
-            replaced = self.__queue.pop(key, None)
+            replaced = self.__queue.get(key)
             if replaced is not None:
                 self.__waiting.pop(replaced[0], None)
             self.__waiting[ticket] = answer  # pylint: disable=unsupported-assignment-operation
+            # assigning an existing key keeps its place; only a new key goes to the end
             self.__queue[key] = (ticket, work, scope)  # pylint: disable=unsupported-assignment-operation
             if not self.__running:
                 self.__running = True

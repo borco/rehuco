@@ -17,7 +17,7 @@ from ..tc_conversion import convert_tc
 from ..tc_document import load_tc
 from ..tc_screenshots import ScreenshotNamePattern
 from ..user_sidecars import user_sidecar_paths
-from ..watch_progress import WatchRules, forget_progress, record_progress, record_videos
+from ..watch_progress import WatchRules, forget_progress, record_notes, record_progress, record_videos
 from .keys import ResourceKey
 from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
 
@@ -203,12 +203,46 @@ class Records:
         )
         return self.load(key, username=username, unknown_username=username)
 
-    def forget_progress(self, key: ResourceKey, *, username: str, relative: str) -> LoadedRecord:
-        """Remove one of ``username``'s progress entries, and read the record as it is after (#316).
+    def record_notes(
+        self,
+        key: ResourceKey,
+        *,
+        username: str,
+        notes: str | None,
+        video_notes: Mapping[str, str] | None,
+        favorites: Mapping[str, bool] | None,
+    ) -> LoadedRecord:
+        """Record what ``username`` wrote about a tutorial and its videos, and read the record as it is after
+        ([[field-schema#video-notes]], #571): :func:`~rehuco_core.record_notes` under the record's lock, so no writer
+        interleaves, and without stamping ``updated``.
 
         :param key: the tutorial's record.
-        :param username: whose progress, and the identity the record is opened as.
-        :param relative: the entry's key as stored.
+        :param username: whose notes, and the identity the record is opened as.
+        :param notes: the markdown about the whole tutorial, or ``None`` to leave it.
+        :param video_notes: the markdown of each video written, by content key.
+        :param favorites: whether each video is starred, by content key.
+        :returns: the record as read after the write.
+        :raises ValueError: a key is not a content key, the record is not a tutorial, or it is locked against saving.
+        :raises RecordLockedError: someone else held the record's lock for longer than a write waits.
+        :raises OSError: the record could not be read or written.
+        :raises RehuFormatError: the record is not readable.
+        """
+        record_notes(
+            key.path,
+            username,
+            notes=notes,
+            video_notes=video_notes,
+            favorites=favorites,
+            current_username=username,
+        )
+        return self.load(key, username=username, unknown_username=username)
+
+    def forget_progress(self, key: ResourceKey, *, username: str, relative: str) -> LoadedRecord:
+        """Remove what ``username`` keeps about one video, and read the record as it is after (#316, #571).
+
+        :param key: the tutorial's record.
+        :param username: whose data, and the identity the record is opened as.
+        :param relative: the video's key as stored.
         :returns: the record as read after the write.
         :raises ValueError: the record is locked against saving.
         :raises RecordLockedError: someone else held the record's lock for longer than a write waits.
