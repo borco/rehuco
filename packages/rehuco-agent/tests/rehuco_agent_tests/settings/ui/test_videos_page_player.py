@@ -517,3 +517,30 @@ def test_staging_vlc_says_nothing_about_a_restart(qtbot: QtBot, mocker: MockerFi
     ui.vlc_player_radio_button.setChecked(True)
 
     assert ui.player_restart_label.isHidden() is True
+
+
+def test_choosing_vlc_says_it_takes_effect_at_the_next_start_only_when_another_vlc_was_loaded(
+    qtbot: QtBot, mocker: MockerFixture, fake_tool_locator: Any
+) -> None:
+    """VLC applies at the next video selected; only another VLC's library already loaded this run waits for a start.
+
+    **Test steps:**
+
+    * find a usable VLC and choose it, with no library loaded this run; verify no note
+    * have this run's libvlc be another install's; verify the next-start note
+    """
+    find_vlc(fake_tool_locator)
+    restart = mocker.patch("rehuco_agent.settings.ui.videos_page.vlc_restart_needed", return_value=False)
+    page = VideosPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    settle_player(qtbot, page)
+
+    ui.vlc_player_radio_button.setChecked(True)
+    assert ui.player_restart_label.isHidden() is True
+
+    restart.return_value = True
+    ui.in_app_player_radio_button.setChecked(True)
+    ui.vlc_player_radio_button.setChecked(True)
+    assert ui.player_restart_label.isHidden() is False
+    assert ui.player_restart_label.text() == RESTART_TEXT

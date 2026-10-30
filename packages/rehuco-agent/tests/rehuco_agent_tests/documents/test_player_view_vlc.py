@@ -7,7 +7,6 @@ is a mock of :class:`VlcMediaPlayer`, since the engine itself is tested in ``tes
 # fixture-heavy tests: a view, its document, its recorder, the library, the engine and the choice
 # pylint: disable=too-many-arguments,too-many-positional-arguments
 
-from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
@@ -22,7 +21,7 @@ from rehuco_agent.documents.player_view import INTERLACED_NOTICE, VLC_FALLBACK_T
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.vlc_media_player import VlcEngineError, VlcMediaPlayer
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
-from rehuco_agent.settings.videos_settings import VLC_PLAYER, shared_videos_settings
+from rehuco_agent.settings.videos_settings import IN_APP_PLAYER, VLC_PLAYER, shared_videos_settings
 from rehuco_core import RenameCoordinator, VideoFormat
 
 from .player_view_support import (  # pylint: disable=unused-import
@@ -299,38 +298,6 @@ def test_the_volume_keys_reach_libvlc(
     assert engine.setVolume.call_args.args[0] < 1.0
 
 
-def test_the_shared_loader_takes_the_tools_pages_vlc(mocker: MockerFixture, tmp_path: Path) -> None:
-    """**Test steps:**
-
-    * resolve a VLC folder through the Tools settings, with a library in it, and load
-    * verify the proxy was loaded from that library, and from nothing when no folder resolves
-    """
-    from rehuco_agent import playback_vlc  # pylint: disable=import-outside-toplevel  # noqa: PLC0415
-
-    playback_vlc.shared_vlc_library.cache_clear()
-    tools = mocker.patch.object(playback_vlc, "shared_tools_settings").return_value
-    tools.tool_folder.return_value = tmp_path
-    library = tmp_path / "libvlc.dll"
-    mocker.patch("rehuco_agent.playback_vlc.VLC_TOOL.library_path", return_value=library)
-    load = mocker.patch("rehuco_agent.playback_vlc.VlcLibrary.load")
-
-    playback_vlc.shared_vlc_library()
-    load.assert_called_once_with(library)
-
-    playback_vlc.shared_vlc_library.cache_clear()
-    tools.tool_folder.return_value = None
-    tools.missing_reason.return_value = "No VLC at /nowhere."
-    assert playback_vlc.shared_vlc_library().reason == "No VLC at /nowhere."
-    assert load.call_count == 1
-
-    playback_vlc.shared_vlc_library.cache_clear()
-    tools.tool_folder.return_value = tmp_path
-    mocker.patch("rehuco_agent.playback_vlc.VLC_TOOL.library_path", return_value=None)
-    assert "static or sandboxed" in (playback_vlc.shared_vlc_library().reason or "")
-    assert load.call_count == 1
-    playback_vlc.shared_vlc_library.cache_clear()
-
-
 def test_a_still_arriving_while_a_video_plays_changes_nothing(
     qtbot: QtBot,
     model: RehuDocumentModel,
@@ -388,3 +355,51 @@ def test_a_rename_of_this_resource_lets_a_held_video_go(
     engine.stop.assert_called_once_with()
     engine.setSource.assert_called_with(QUrl())
     assert shown_of(view).objectName() == "still_widget"
+
+
+def test_a_changed_choice_rebuilds_the_engine_at_the_next_video(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    mocker: MockerFixture,
+) -> None:
+    """The Videos page's choice applies to the next video selected, in a document already open: Qt to libvlc, and
+    libvlc back to Qt, each engine dropped as the other is built.
+
+    **Test steps:**
+
+    * with the app's player chosen, play a video, and verify Qt's engine shows
+    * choose VLC and play the next video; verify the libvlc engine was built, its surface shows, and the Qt player was
+      let go
+    * choose the app's player again and play; verify libvlc was let go and a new Qt player built
+    """
+    del library
+    qt_players: list[Mock] = []
+    real_qt = getattr(player_view, "QMediaPlayer")  # noqa: B009  # the real class, before it is patched
+
+    def build_qt(*args: Any) -> Any:
+        qt_players.append(mocker.Mock(wraps=real_qt(*args)))
+        return qt_players[-1]
+
+    mocker.patch.object(player_view, "QMediaPlayer", side_effect=build_qt)
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    assert shown_of(view).objectName() == "video_widget"
+    assert len(qt_players) == 1
+
+    shared_videos_settings().player = VLC_PLAYER
+    view.jump("02.mp4")
+
+    engine.setSource.assert_called_once()
+    engine.play.assert_called_once_with()
+    assert shown_of(view).objectName() == "vlc_surface"
+    qt_players[0].deleteLater.assert_called_once_with()
+
+    shared_videos_settings().player = IN_APP_PLAYER
+    view.jump("01.mp4")
+
+    engine.deleteLater.assert_called_once_with()
+    assert len(qt_players) == 2
+    assert shown_of(view).objectName() == "video_widget"

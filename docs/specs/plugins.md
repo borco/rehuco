@@ -1100,7 +1100,8 @@ dock manager, as a document's sub-docks are; macOS and Linux are the open half. 
 default** (#317): nothing to install, every signal on the GUI thread, and its two gaps explained in the dock rather
 than shown black or combed. **The user's own libvlc is the other engine** (#319): chosen on the Videos page, loaded
 into the same dock through `python-vlc` once the Tools page has a VLC with its shared library, and speaking
-`QMediaPlayer`'s language (`VlcMediaPlayer`) so the view drives either without knowing which. It closes both gaps,
+`QMediaPlayer`'s language (`VlcMediaPlayer`) so the view drives either without knowing which; the choice applies to the
+next video selected, in every open document, the engine rebuilt in place. It closes both gaps,
 and it draws inside the dock, which is what lets the maximized player's overlays ([[plugins#player-maximized]])
 work over it. A VLC launched as a window of its own was built and dropped in #319 for that reason: no overlay, tree
 or notes can be drawn over another process's window ([[appendices.vlc]] keeps what was measured of it).

@@ -49,7 +49,8 @@ IN_APP_PLAYER: Final = "in_app"
 
 VLC_PLAYER: Final = VLC_TOOL.ID
 """The in-app player decoding with the user's own VLC, its libvlc loaded into the player dock (#319) -- named after the
-tool that supplies it. Read when a player is built, so it applies to the next document opened."""
+tool that supplies it. Read as a video is selected, so it applies to the next video played, in every open
+document."""
 
 FFMPEG_LIBRARIES_PLAYER: Final = FFMPEG_LIBRARIES_TOOL.ID
 """The in-app player decoding with an external FFmpeg's libraries (#580); applied at the next start, so a double-click

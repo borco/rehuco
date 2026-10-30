@@ -20,6 +20,7 @@ from rehuco_core import (
 from ...documents.latest_runner import LatestRunner
 from ...item_action_icons import apply_item_action_icons
 from ...playback_libraries import shared_playback_libraries
+from ...playback_vlc import vlc_restart_needed
 from ..persistent_settings import persistent_settings
 from ..tools_settings import shared_tools_settings
 from ..videos_settings import (
@@ -310,7 +311,8 @@ class VideosPage(QWidget):
         The libraries load before the player's code does, so a change reaches only the next start; and a build that
         could not be loaded at this start leaves Qt's own in use, whatever the page shows chosen.
 
-        Said only between the two Qt choices: VLC applies at once, and what is loaded stays for SHIFT+double-click.
+        Said between the two Qt choices; VLC applies at the next video selected, unless this run already loaded another
+        VLC's library, which python-vlc binds once per process (#319).
 
         :returns: the sentence, or an empty string when the staged choice is what this run applied.
         """
@@ -320,7 +322,7 @@ class VideosPage(QWidget):
         if wanted and libraries.requested and libraries.fallback_reason is not None:
             return FALLBACK_TEMPLATE.format(reason=libraries.fallback_reason)
         if staged == VLC_PLAYER:
-            return ""
+            return RESTART_TEXT if vlc_restart_needed() else ""
         return RESTART_TEXT if wanted != (libraries.loaded_from is not None) else ""
 
     def __show_availability(self) -> None:

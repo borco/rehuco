@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QImage, QPalette
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
 from PySide6.QtWidgets import QToolButton, QWidget
@@ -135,7 +135,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     **Two engines** ([[plugins#in-app-player]]). Qt Multimedia, always there; or the user's own libvlc, when the Videos
     page chooses VLC and the Tools page has one with its library (:class:`VlcMediaPlayer`, which speaks
     ``QMediaPlayer``'s language so nothing below cares which). The choice is read as the engine is built, so it
-    applies to the next document opened; a VLC chosen but not usable plays through Qt, and the banner says why.
+    applies to the next video selected, in every open document: an engine built for another choice is dropped and
+    the new one built in its place. A VLC chosen but not usable plays through Qt, and the banner says why.
     libvlc deinterlaces and decodes AV1 in software, so neither notice below is made under it.
 
     **Where it records.** Every position the player reports while a video plays goes to the recorder, which writes about
@@ -177,6 +178,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__vlc = False
         """Whether the engine built is libvlc, which shows what Qt cannot and whose still is its last frame."""
         self.__fallback_reason: str | None = None
+        self.__built_for: str | None = None
+        """The Videos page's choice the engine was built for; another choice rebuilds it at the next selection."""
         """Why the engine is Qt although VLC was chosen, or ``None``."""
         self.__audio: QAudioOutput | None = None
         self.__volume = 1.0
@@ -340,11 +343,16 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__update_actions()
 
     def __ensure_player(self) -> QMediaPlayer | VlcMediaPlayer:
-        """Build the engine on first use: libvlc when chosen and usable, else Qt Multimedia.
+        """Build the engine on first use, and again when the Videos page's choice changed since: libvlc when chosen
+        and usable, else Qt Multimedia.
 
         :returns: the player.
         """
+        choice = shared_videos_settings().player
+        if self.__player is not None and choice != self.__built_for:
+            self.__drop_player()
         if self.__player is None:
+            self.__built_for = choice
             player = self.__build_vlc_player() or self.__build_qt_player()
             player.setPlaybackRate(self.__speed())
             player.positionChanged.connect(self.__on_position_changed)
@@ -354,6 +362,21 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             player.errorOccurred.connect(self.__on_error)
             self.__player = player
         return self.__player
+
+    def __drop_player(self) -> None:
+        """Let the engine go, with whatever it was built for: the next selection builds the one chosen now.
+
+        Called with an engine built and no file held (a selection lets go of the video before it), so nothing is
+        playing through it.
+        """
+        cast(QObject, self.__player).deleteLater()
+        if self.__audio is not None:
+            self.__audio.deleteLater()
+        self.__player = None
+        self.__audio = None
+        self.__vlc = False
+        self.__fallback_reason = None
+        self.__surface = self.__ui.video_widget
 
     def __build_vlc_player(self) -> VlcMediaPlayer | None:
         """Build the libvlc engine, when the Videos page chooses VLC and the Tools page's VLC loads.
