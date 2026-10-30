@@ -376,10 +376,11 @@ later goes missing, and the page says why rather than switching to MediaInfo.
 
 One frame per external tool in `rehuco_core`'s registry ([[packaging-deployment#external-tools]]), each built by a
 `ToolFrame` controller from one `.ui`, a plain `QFrame` the controller hands out, as the platform frames are. A frame
-says what the tool is for, which features need it and why it is not bundled, links to its install instructions on the
-docs site, and **lists every install found, one radio each**, best first, each with its folder and, in
-parentheses, its version and status — an unusable one greyed, with the reason, so the user sees why it is not used —
-then a last **Custom** row, a path with **Browse…**. The best install is chosen by default.
+says what the tool is for in one line — which features need it and why it is not bundled are that line's tooltip (#592)
+— links to its install instructions on the docs site, and **lists every install found, one radio each**, best first,
+each with its folder, eliding at its start so the tail that tells two builds apart stays, and, in parentheses, its
+version and status — an unusable one greyed, with the reason, so the user sees why it is not used — then a last
+**Custom** row, a path with **Browse…**. The best install is chosen by default.
 
 **The stored value is one string.** Empty means *the best install found*, so a fresh install needs no Apply and a
 search that finds a newer build moves the choice with it; any other row stores its folder, which pins it; Custom
@@ -388,7 +389,8 @@ under Custom. **The Custom row carries the same parenthesis**, from inspecting i
 usable reads *not found* and is painted in the warning colour, so a choice that has gone is marked rather than dropped.
 **When nothing is found, Custom is the only row and is checked** — which is not an edit, the value being still empty,
 so the page is not dirty. A tool that resolves to nothing is *not set up*, and what needs it is disabled until it is.
-Below the list a status line says the same in full.
+A candidate's verdict is its row's parenthesis and nowhere else: the line below the list shows only what no row can
+say — *Looking…*, nothing found, or a typed path that could not be looked at — and is hidden otherwise (#592).
 
 **The page searches for nothing.** The rows are what the background discovery recorded
 ([[packaging-deployment#external-tools]]), shown at once, with *Looking…* until a tool's first result is in; the block

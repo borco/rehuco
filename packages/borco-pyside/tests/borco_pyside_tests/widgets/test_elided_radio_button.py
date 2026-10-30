@@ -1,4 +1,5 @@
-"""Tests for ElidedRadioButton: middle-eliding its caption to fit, and the full caption as a tooltip while shortened.
+"""Tests for ElidedRadioButton: eliding its caption to fit, the suffix whole, and the full caption as a tooltip while
+shortened.
 
 As for ``test_elided_label.py``, the tests that exercise *whether* the caption elides mock
 ``QFontMetrics.elidedText``: the offscreen platform's font metrics are unreliable, and measuring is Qt's job.
@@ -133,3 +134,22 @@ def test_the_suffix_takes_its_width_before_the_text_is_fitted(qtbot: QtBot, mock
     with_suffix = elided.call_args.args[2]
 
     assert without_suffix - with_suffix == button.fontMetrics().horizontalAdvance(SUFFIX)
+
+
+def test_the_text_elides_where_it_is_told_to(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A caption whose tail tells it apart from its neighbours elides at its start.
+
+    **Test steps:**
+
+    * make the metrics elide, and set a path eliding at its start
+    * verify the eliding was asked for that mode, and a later caption without one is back to the middle
+    """
+    elided = mocker.patch.object(QFontMetrics, "elidedText", return_value="…ELIDED")
+    button = ElidedRadioButton()
+    qtbot.addWidget(button)
+
+    button.set_text(PATH, mode=Qt.TextElideMode.ElideLeft)
+    assert elided.call_args.args[1] == Qt.TextElideMode.ElideLeft
+
+    button.set_text(PATH)
+    assert elided.call_args.args[1] == Qt.TextElideMode.ElideMiddle

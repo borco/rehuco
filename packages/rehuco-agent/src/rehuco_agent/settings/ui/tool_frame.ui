@@ -41,7 +41,7 @@
    <item>
     <widget class="WrappingLabel" name="status_label">
      <property name="toolTip">
-      <string>Whether the choice above can be used.</string>
+      <string>What the rows above cannot say: a search is going, nothing was found, or the path could not be looked at.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>

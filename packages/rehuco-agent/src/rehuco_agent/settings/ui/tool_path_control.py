@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Final
 
 from borco_pyside.widgets import ElidedRadioButton
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QAbstractButton, QButtonGroup, QFileDialog, QWidget
 from rehuco_core import ToolCandidate, ToolStatus, best_candidate, version_text
 
@@ -105,9 +105,10 @@ class ToolPathControl(QWidget):
         self.__candidates = tuple(candidates)
         self.__rows = []
         for candidate in self.__candidates:
-            # the folder elides, its parenthesis never does: the version is what tells two rows apart
+            # the folder elides at its start: its tail is what tells scoop's `ffmpeg` from its `ffmpeg-shared`, both
+            # under a `current\bin`; the parenthesis never elides
             row = ElidedRadioButton(self)
-            row.set_text(str(candidate.folder), f" ({summarize(candidate)})")
+            row.set_text(str(candidate.folder), f" ({summarize(candidate)})", mode=Qt.TextElideMode.ElideLeft)
             row.setEnabled(candidate.is_usable)
             self.__group.addButton(row)
             self.__ui.rows_layout.addWidget(row)

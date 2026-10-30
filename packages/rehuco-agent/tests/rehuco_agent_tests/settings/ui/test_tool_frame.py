@@ -4,11 +4,11 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from pytest import fixture, mark, param
+from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.tool_discovery import ToolDiscovery
 from rehuco_agent.settings.tools_settings import ToolDetection, ToolsSettings
-from rehuco_agent.settings.ui.tool_frame import NOT_FOUND_STATUS, ToolFrame, describe
+from rehuco_agent.settings.ui.tool_frame import NOT_FOUND_STATUS, ToolFrame
 from rehuco_agent.settings.ui.tool_path_control import LOOKING_TEXT, NOT_FOUND_TEXT, WARNING_PROPERTY
 from rehuco_core import EXTERNAL_TOOLS, FFMPEG_TOOL, ToolCandidate, ToolStatus
 
@@ -66,44 +66,6 @@ def make_frame(qtbot: QtBot, tools: ToolsSettings, discovery: ToolDiscovery, loc
     return frame
 
 
-@mark.parametrize(
-    ("candidate", "expected"),
-    [
-        param(USABLE, "Version 7.1.1, usable.", id="usable"),
-        param(
-            ToolCandidate(Path("/x"), "PATH", ToolStatus.UNTESTED, None, "The version could not be read."),
-            "Unknown version, untested. The version could not be read.",
-            id="untested-with-no-version",
-        ),
-        param(TOO_OLD, "Version 3.0, too old. Version 4.0 or newer is needed.", id="too-old"),
-        param(
-            ToolCandidate(Path("/x"), "Custom", ToolStatus.BLOCKLISTED, (5, 1), "5.1 crashes on start."),
-            "Version 5.1, blocklisted. 5.1 crashes on start.",
-            id="blocklisted-with-its-reason",
-        ),
-        param(
-            ToolCandidate(Path("/x"), "Custom", ToolStatus.MISSING, reason="No FFmpeg at /x."),
-            "No FFmpeg at /x.",
-            id="missing-is-its-reason-alone",
-        ),
-        param(
-            ToolCandidate(Path("/x"), "Custom", ToolStatus.NOT_RUNNABLE, reason="/x/ffprobe did not run."),
-            "/x/ffprobe did not run.",
-            id="not-runnable-is-its-reason-alone",
-        ),
-    ],
-)
-def test_a_candidate_is_described_by_its_version_and_status(candidate: ToolCandidate, expected: str) -> None:
-    """The status line reads the same for every tool.
-
-    **Test steps:**
-
-    * describe each kind of candidate
-    * verify the sentence
-    """
-    assert describe(candidate) == expected
-
-
 def test_the_block_is_named_after_its_tool_and_links_to_its_install_instructions(
     qtbot: QtBot, tools: ToolsSettings, discovery: ToolDiscovery, fake_tool_locator: Any
 ) -> None:
@@ -112,7 +74,8 @@ def test_the_block_is_named_after_its_tool_and_links_to_its_install_instructions
     **Test steps:**
 
     * build the block for FFmpeg
-    * verify the frame and label names, the title, the description and the link to its docs section
+    * verify the frame and label names, the title, the purpose line, the rest in its tooltip and the link to its docs
+      section
     """
     frame = make_frame(qtbot, tools, discovery, fake_tool_locator)
     ui = frame_ui(frame)
@@ -120,7 +83,9 @@ def test_the_block_is_named_after_its_tool_and_links_to_its_install_instructions
     assert frame.frame.objectName() == "ffmpeg_frame"
     assert ui.tool_frame_label.objectName() == "ffmpeg_frame_label"
     assert ui.tool_frame_label.text() == "FFmpeg"
-    assert FFMPEG_TOOL.PURPOSE in ui.description_label.text()
+    assert ui.description_label.text() == FFMPEG_TOOL.PURPOSE
+    assert FFMPEG_TOOL.FEATURES in ui.description_label.toolTip()
+    assert FFMPEG_TOOL.NOT_BUNDLED_BECAUSE in ui.description_label.toolTip()
     assert "external-tools/#ffmpeg" in ui.install_label.text()
 
 
@@ -151,7 +116,7 @@ def test_a_tool_found_earlier_is_shown_at_once_without_searching(
     **Test steps:**
 
     * store a search that found two installs, one unusable, and build the block
-    * verify both are listed, the usable one chosen, the status describes it, and nothing was searched for
+    * verify both are listed, the usable one chosen, no line repeats its row, and nothing was searched for
     """
     tools.set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (TOO_OLD, USABLE)))
 
@@ -159,7 +124,7 @@ def test_a_tool_found_earlier_is_shown_at_once_without_searching(
 
     assert frame.control.candidates == (TOO_OLD, USABLE)
     assert frame.control.chosen_candidate() == USABLE
-    assert frame_ui(frame).status_label.text() == "Version 7.1.1, usable."
+    assert frame_ui(frame).status_label.isHidden()
     assert frame.control.settings_value() == ""
     fake_tool_locator.detect.assert_not_called()
 
@@ -200,7 +165,7 @@ def test_the_block_follows_the_discovery_when_it_records_the_tool(
         discovery.start()
 
     assert frame.control.chosen_candidate() == USABLE
-    assert frame_ui(frame).status_label.text() == "Version 7.1.1, usable."
+    assert frame_ui(frame).status_label.isHidden()
 
 
 def test_the_detect_button_forces_a_search_and_shows_the_result(
@@ -253,7 +218,7 @@ def test_a_typed_path_is_inspected_and_its_status_shown(
 
     * make the locator judge any path too old
     * stage a custom path
-    * verify the locator was asked about that path and the status is its judgement
+    * verify the locator was asked about that path, the Custom row reads its judgement and no line repeats it
     """
     fake_tool_locator.inspect.return_value = TOO_OLD
     frame = make_frame(qtbot, tools, discovery, fake_tool_locator)
@@ -262,7 +227,8 @@ def test_a_typed_path_is_inspected_and_its_status_shown(
         frame.control.set_settings_value("/old")
 
     fake_tool_locator.inspect.assert_called_with(FFMPEG_TOOL, "/old")
-    assert frame_ui(frame).status_label.text() == "Version 3.0, too old. Version 4.0 or newer is needed."
+    assert control_ui(frame).custom_status_label.text() == "(3.0, too old: Version 4.0 or newer is needed.)"
+    assert frame_ui(frame).status_label.isHidden()
 
 
 def test_an_inspection_that_fails_is_reported(
@@ -282,6 +248,7 @@ def test_an_inspection_that_fails_is_reported(
         frame.control.set_settings_value("/old")
 
     assert frame_ui(frame).status_label.text() == "Looking for it failed: boom"
+    assert frame_ui(frame).status_label.isHidden() is False
 
 
 def test_a_pinned_install_that_has_gone_shows_under_custom_marked_not_found(
@@ -293,7 +260,7 @@ def test_a_pinned_install_that_has_gone_shows_under_custom_marked_not_found(
 
     * store a search that found one install, make inspecting any other path answer missing
     * stage a folder that is not listed
-    * verify Custom holds it, reads *not found*, is painted as a warning, and the status gives the reason
+    * verify Custom holds it, reads *not found*, is painted as a warning, and no line repeats that
     """
     tools.set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (USABLE,)))
     gone = ToolCandidate(Path("/gone/bin"), "Custom", ToolStatus.MISSING, reason="No FFmpeg at /gone/bin.")
@@ -307,7 +274,7 @@ def test_a_pinned_install_that_has_gone_shows_under_custom_marked_not_found(
     assert frame.control.chosen_candidate() is None
     assert ui.custom_status_label.text() == f"({NOT_FOUND_TEXT})"
     assert ui.path_edit.property(WARNING_PROPERTY) is True
-    assert frame_ui(frame).status_label.text() == "No FFmpeg at /gone/bin."
+    assert frame_ui(frame).status_label.isHidden()
 
 
 def test_choosing_a_listed_install_reads_nothing(
@@ -318,7 +285,7 @@ def test_choosing_a_listed_install_reads_nothing(
     **Test steps:**
 
     * store a search that found two installs, build the block and pin the second
-    * verify the status describes it and nothing was inspected
+    * verify no line repeats its row and nothing was inspected
     """
     other = ToolCandidate(Path("/other/bin"), "scoop", ToolStatus.USABLE, (6, 0))
     tools.set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (USABLE, other)))
@@ -326,5 +293,5 @@ def test_choosing_a_listed_install_reads_nothing(
 
     frame.control.rows[1].setChecked(True)
 
-    assert frame_ui(frame).status_label.text() == "Version 6.0, usable."
+    assert frame_ui(frame).status_label.isHidden()
     fake_tool_locator.inspect.assert_not_called()
