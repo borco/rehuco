@@ -32,16 +32,14 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 import mediapipe as mp
+import numpy as np
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
+from PIL import Image, ImageDraw, ImageFont
 
 MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/"
-    "face_landmarker.task"
+    "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 )
 POSE_MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/"
@@ -309,7 +307,10 @@ def main() -> int:
                     "via": via,
                 }
             )
-            print(f"{name} [{i}]: yaw {pose.yaw:+.0f} pitch {pose.pitch:+.0f} roll {pose.roll:+.0f} ({via})", file=sys.stderr)
+            print(
+                f"{name} [{i}]: yaw {pose.yaw:+.0f} pitch {pose.pitch:+.0f} roll {pose.roll:+.0f} ({via})",
+                file=sys.stderr,
+            )
         safe = name.replace("/", "__").replace("\\", "__")
         out.save(args.out_dir / f"{safe}.loomis.png")
 
