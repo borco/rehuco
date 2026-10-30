@@ -6,6 +6,7 @@
 # pylint: disable=too-many-lines
 
 import base64
+import gc
 import json
 import logging
 from collections.abc import Callable, Generator, Iterator
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QDialog,
+    QFrame,
     QMessageBox,
     QScrollArea,
     QSystemTrayIcon,
@@ -545,6 +547,30 @@ def test_registers_no_platform_frames_on_other_platforms(qtbot: QtBot, mocker: M
     qtbot.addWidget(window)
 
     assert platform_frame_names(system_integration_page(window)) == ["tray_frame", "node_frame"]
+
+
+def test_a_window_built_on_a_faked_platform_builds_no_real_platform_frame(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The stub pages stand in for every platform's frames, not only this platform's. A real frame built under a faked
+    ``sys.platform`` and handed to a stub page is never parented: a bare widget held only by its own signal
+    connections is left to the cyclic collector, which frees it on whichever thread allocates next, and ``~QObject``
+    on the tool-discovery thread deadlocks against the GUI thread (#529, #571).
+
+    **Test steps:**
+
+    * force ``sys.platform`` to ``"linux"`` and construct a window over the stub pages, the collector held off so
+      a frame it would have to free is still there to be seen
+    * verify no top-level widget is the real Linux registration frame
+    """
+    mocker.patch("rehuco_agent.main_window.sys.platform", "linux")
+    gc.disable()
+    try:
+        window = MainWindow()
+        qtbot.addWidget(window)
+        bare = [widget.objectName() for widget in QApplication.topLevelWidgets() if isinstance(widget, QFrame)]
+    finally:
+        gc.enable()
+
+    assert "RegistrationFrameLinux" not in bare
 
 
 @mark.usefixtures("real_settings_pages")

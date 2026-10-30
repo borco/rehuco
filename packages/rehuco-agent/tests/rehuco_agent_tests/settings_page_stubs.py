@@ -1,7 +1,6 @@
 """The stub settings pages and platform frames a `MainWindow` is built over in a test of anything but its settings
 pages (#545); with the fixtures that install them, imported by name into the package's ``conftest.py``."""
 
-import sys
 from typing import Final
 
 from PySide6.QtCore import Signal
@@ -86,6 +85,12 @@ def fixture_stub_settings_pages(request: FixtureRequest, mocker: MockerFixture) 
     frames, which it imports when it builds the page, at their own modules' -- why this is not used suite-wide, where
     the frames' own tests would get the stub.
 
+    **Every platform's frames are replaced, not this platform's alone**: a test fakes ``sys.platform`` to build the
+    window as another platform's, and a real frame built then is handed to a stub page that never parents it -- a
+    bare widget held only by its own signal connections, left to the cyclic collector, which frees it on whichever
+    thread allocates next, and ``~QObject`` on the tool-discovery thread deadlocks against the GUI thread (#529,
+    #571). A frame module this box cannot import is one the window cannot build here either, so it needs no stub.
+
     :param request: the test's request, to see whether it asked for the real pages.
     :param mocker: pytest-mock fixture.
     """
@@ -94,6 +99,7 @@ def fixture_stub_settings_pages(request: FixtureRequest, mocker: MockerFixture) 
     for name in SETTINGS_PAGE_CLASSES:
         mocker.patch(f"rehuco_agent.main_window.{name}", StubSettingsPage)
     for target in PLATFORM_FRAME_CLASSES:
-        module, _, _ = target.rpartition(".")
-        if module.endswith(f"_{sys.platform.replace('win32', 'windows')}"):
+        try:
             mocker.patch(target, StubPlatformFrame)
+        except ImportError:  # another platform's module, which this box cannot import
+            continue
