@@ -24,6 +24,11 @@ class ToolDiscovery(QObject):
     window closes (:meth:`~rehuco_agent.settings.tools_settings.ToolsSettings.save`). A search is forced for a tool by
     :meth:`start`'s ``force``, which is what the Tools page's Detect does.
 
+    **Only usable installs are recorded.** A search judges every copy it finds, and what it rejects -- a static build,
+    one too old, one that does not run -- is logged once at WARNING with its folder and reason, and not kept: nobody
+    acts on an unusable row in the Tools page, and seven greyed rows hid the one that mattered (#319, #592). A path the
+    user typed is judged elsewhere and shown with its reason, since they asked about that one.
+
     **A daemon thread**, with an event to stop it ([[appendices.code-conventions#worker-threads]]): a search can block
     on a disk or a share the app does not control, and quitting must not wait for it. The thread touches no Qt object
     and writes nothing: it only emits a signal, which Qt queues to the GUI thread, where the result is recorded.
@@ -106,11 +111,29 @@ class ToolDiscovery(QObject):
         try:
             if stored.searched and not forced:
                 return True, tuple(self.__locator.verify(tool, stored.installs))
-            return True, tuple(self.__locator.detect(tool))
+            return True, self.__usable_only(tool, self.__locator.detect(tool))
         except Exception:  # pylint: disable=broad-exception-caught
             # whatever the search raised, the other tools are still to be visited
             logger.warning("Searching for %s failed.", tool.LABEL, exc_info=True)
             return stored.searched, stored.installs
+
+    @staticmethod
+    def __usable_only(tool: ToolDescriptor, found: Iterable[ToolCandidate]) -> tuple[ToolCandidate, ...]:
+        """Keep the installs a feature may use, logging each of the others.
+
+        :param tool: the tool.
+        :param found: every copy the search judged.
+        :returns: the usable ones, in their order.
+        """
+        kept: list[ToolCandidate] = []
+        for candidate in found:
+            if candidate.is_usable:
+                kept.append(candidate)
+            else:
+                logger.warning(
+                    "%s at %s (%s) is not usable: %s", tool.LABEL, candidate.folder, candidate.source, candidate.reason
+                )
+        return tuple(kept)
 
     @Slot(int, str, bool, object)
     def __deliver(self, generation: int, tool_id: str, searched: bool, installs: object) -> None:

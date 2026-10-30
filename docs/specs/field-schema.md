@@ -659,9 +659,9 @@ read against:
 
   Dropping the copy was considered: it would need the Measure to keep entries for vanished files, and would leave
   played videos blank until measured. A few bytes per played file was judged cheaper than either.
-- **Recorded by rehuco's own players only** — the agent (an external VLC it launches and tracks counts as the agent,
-  #319) and the web UI ([[plugins#tutorial-plugin]]). A file opened in another player is not tracked; the agent edits
-  progress by hand for that case.
+- **Recorded by rehuco's own players only** — the agent's player dock, whichever engine decodes for it (Qt Multimedia
+  or the user's libvlc, #319), and the web UI ([[plugins#tutorial-plugin]]). A file opened in another player is not
+  tracked; the agent edits progress by hand for that case.
 - **Writes never bump `updated`** ([[field-schema#record-timestamps]]): that stamp describes the resource, not one
   person's viewing.
 - **Neither a progress write nor a Measure is an edit.** Progress is the user's own state, written to their sidecar the

@@ -45,6 +45,7 @@
       </sizepolicy>
      </property>
      <widget class="QVideoWidget" name="video_widget" native="true"/>
+     <widget class="VlcSurface" name="vlc_surface" native="true"/>
      <widget class="VideoStill" name="still_widget" native="true"/>
     </widget>
    </item>
@@ -244,6 +245,12 @@
    <class>VideoStill</class>
    <extends>QWidget</extends>
    <header>rehuco_agent.documents.video_still</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>VlcSurface</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.documents.vlc_surface</header>
    <container>1</container>
   </customwidget>
   <customwidget>

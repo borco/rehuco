@@ -24,7 +24,8 @@ from .tool_descriptor import (
     version_text,
 )
 from .tool_locator import ToolLocator, shared_tool_locator
-from .vlc_tool import VlcTool
+from .vlc_library import LIBRARY_PATH_VARIABLE, NOT_SET_UP, VlcLibrary, probe_libvlc
+from .vlc_tool import LIBVLC_PROBE_FLAG, NO_LIBRARY_REASON, VlcTool
 
 FFMPEG_TOOL: Final = FfmpegTool()
 VLC_TOOL: Final = VlcTool()
@@ -40,6 +41,10 @@ __all__ = [
     "EXTERNAL_TOOLS",
     "FFMPEG_LIBRARIES_TOOL",
     "FFMPEG_TOOL",
+    "LIBRARY_PATH_VARIABLE",
+    "LIBVLC_PROBE_FLAG",
+    "NO_LIBRARY_REASON",
+    "NOT_SET_UP",
     "PROBE_FLAG",
     "VLC_TOOL",
     "BlockedVersion",
@@ -52,6 +57,7 @@ __all__ = [
     "ToolNotRunnableError",
     "ToolStatus",
     "Version",
+    "VlcLibrary",
     "VlcTool",
     "best_candidate",
     "bundled_library_names",
@@ -59,6 +65,7 @@ __all__ = [
     "library_files",
     "load_libraries",
     "probe",
+    "probe_libvlc",
     "shared_tool_locator",
     "version_text",
 ]

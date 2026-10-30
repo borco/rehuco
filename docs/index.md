@@ -48,7 +48,8 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
 - **Plays a tutorial's videos.** Double-click a video in a tutorial's Files panel and it plays in a dock of its
   own: a seek bar, a speed choice, the keyboard, and previous and next through the whole tutorial. Opening the dock
   loads the video you watched last, paused where you left it; it marks a video watched when it ends, and says so
-  when a video will not show well here — AV1 on a machine with nothing to decode it, or interlaced footage.
+  when a video will not show well here — AV1 on a machine with nothing to decode it, or interlaced footage. With
+  VLC installed, a Settings choice has that same dock decode with VLC's own library instead, which plays both.
 - **Checks its files.** Generates and verifies checksums for one resource or a whole folder, remembering
   when each file was last checked so a re-run skips what is still fresh.
 - **Converts legacy `.tc` catalogs.** One file or a whole folder tree at once: reads the older format,

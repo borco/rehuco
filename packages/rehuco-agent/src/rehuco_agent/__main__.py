@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from rehuco_core import PROBE_FLAG, probe
+from rehuco_core import LIBVLC_PROBE_FLAG, PROBE_FLAG, probe, probe_libvlc
 
 from rehuco_agent import __version__
 from rehuco_agent.archives import ARCHIVE_EXTENSIONS
@@ -95,6 +95,21 @@ def run_probe(arguments: list[str]) -> int:
     import PySide6
 
     return probe(Path(folder), Path(PySide6.__file__).parent, Path(output))
+
+
+def run_libvlc_probe(arguments: list[str]) -> int:
+    """Load a libvlc through python-vlc in this child process and write what happened (#319).
+
+    Decided before the parser sees anything, like :data:`PROBE_FLAG`, and without importing Qt: ``import vlc`` can
+    exit the process it runs in ([[appendices.vlc#python-vlc-import]]), so the agent never makes it first.
+
+    :param arguments: the process's arguments after the program name: :data:`LIBVLC_PROBE_FLAG` and the library,
+        then ``--output`` and the file to write.
+    :returns: the exit code.
+    """
+    library = arguments[arguments.index(LIBVLC_PROBE_FLAG) + 1]
+    output = arguments[arguments.index("--output") + 1]
+    return probe_libvlc(Path(library), Path(output))
 
 
 def resolve_settings_dir(flag: Path | None, environment: str | None) -> Path | None:
@@ -209,6 +224,8 @@ def main() -> int:
         return run_node(sys.argv[1:])
     if PROBE_FLAG in sys.argv[1:]:
         return run_probe(sys.argv[1:])
+    if LIBVLC_PROBE_FLAG in sys.argv[1:]:
+        return run_libvlc_probe(sys.argv[1:])
 
     exe_path = Path(sys.argv[0]).resolve()
 
@@ -361,6 +378,12 @@ def main() -> int:
     from rehuco_agent.playback_libraries import shared_playback_libraries
 
     shared_playback_libraries().load_at_start()
+    # libvlc, by contrast, is loaded only when a player is built with VLC chosen; what is decided now is how the
+    # Tools page's child process proves a library loads (#319)
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_agent.playback_vlc import configure_vlc_probe
+
+    configure_vlc_probe()
 
     # pylint: disable-next=import-outside-toplevel
     from rehuco_agent.app import run
