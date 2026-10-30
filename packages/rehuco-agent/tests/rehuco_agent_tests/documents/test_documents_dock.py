@@ -2950,6 +2950,11 @@ def test_switching_documents_accumulates_nothing(mocker: MockerFixture, qtbot: Q
     registry = DocumentRegistry()
     dock = DocumentsDock(registry=registry)
     qtbot.addWidget(dock)
+    # shown, and wide enough that the toolbar never overflows: unshown, the preview is ~120 px wide, and macOS's Qt
+    # makes the toolbar's overflow menu at one layout and drops it at a later one, so the child count drifted by two
+    dock.resize(3000, 1000)
+    dock.show()
+    qtbot.waitExposed(dock)
     keys = (FAKE_KEY, OTHER_KEY, THIRD_KEY)
     models = [registry.acquire(key) for key in keys]
     held = [receivers(model) for model in models]

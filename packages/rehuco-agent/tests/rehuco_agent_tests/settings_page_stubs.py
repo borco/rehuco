@@ -101,5 +101,7 @@ def fixture_stub_settings_pages(request: FixtureRequest, mocker: MockerFixture) 
     for target in PLATFORM_FRAME_CLASSES:
         try:
             mocker.patch(target, StubPlatformFrame)
-        except ImportError:  # another platform's module, which this box cannot import
+        except ImportError, AttributeError:
+            # another platform's module, which this box cannot import: `pkgutil.resolve_name` swallows the import's
+            # own ImportError and reports the package's missing attribute instead
             continue
