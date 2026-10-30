@@ -149,6 +149,19 @@ class ToolsSettings(QObject):
             return None if tool.resolve_folder(Path(path)) is not None else f"No {tool.LABEL} at {path}."
         return self.__reason_of(tool, "")
 
+    def tool_folder(self, tool: ToolDescriptor) -> Path | None:
+        """The folder holding the copy of a tool a feature runs, running nothing -- what a GUI-thread launch asks.
+
+        :param tool: the tool.
+        :returns: the folder of the chosen path, or of the best install found when the path is empty; ``None`` when
+            there is none to use (:meth:`missing_reason` says why).
+        """
+        path = self.path(tool.ID)
+        if path:
+            return tool.resolve_folder(Path(path))
+        candidate = shared_tool_locator().resolve(tool, "", self.detection(tool.ID).installs)
+        return candidate.folder if candidate is not None and candidate.is_usable else None
+
     def __reason_of(self, tool: ToolDescriptor, path: str) -> str | None:
         """Ask the locator about the copy a path names.
 

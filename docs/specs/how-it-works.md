@@ -239,8 +239,9 @@ included — and stops it when it quits; the node writes a heartbeat file and a 
 all it does: no REST
 API, no discovery, no sync between machines, no accounts or access rules, no web or tablet interface.
 
-**One player.** A tutorial's videos play in the app's own player. Handing a video to VLC, which the design
-allows for, does not exist yet.
+**One player, two engines.** A tutorial's videos play in the app's own player dock: with Qt Multimedia, or, chosen on
+the Videos page, with the user's own VLC loaded into that same dock through its library. VLC's own window is never
+used.
 
 Past what runs, the design reaches toward machines sharing a catalog; whether that is worth building is a question
 the editor and the browser have to answer first.

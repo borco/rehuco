@@ -221,3 +221,31 @@ def test_a_tool_is_missing_without_being_run(tmp_path: Path, fake_tool_locator: 
     fake_tool_locator.resolve.return_value = install
     assert tools.missing_reason(VLC_TOOL) is None
     fake_tool_locator.resolve.assert_called_once_with(VLC_TOOL, "", (install,))
+
+
+def test_a_tool_folder_is_found_without_running_anything(tmp_path: Path, fake_tool_locator: Any) -> None:
+    """What a launch on the GUI thread asks: the folder of the chosen path, or of the best install found (#319).
+
+    **Test steps:**
+
+    * point VLC at an empty folder, then at one holding its executable, and verify the first has none and the second
+      is it
+    * clear the path, with no usable install, and verify there is none
+    * record a usable install and verify its folder, with the locator asked about it
+    """
+    tools = ToolsSettings()
+    tools.set_path(VLC_TOOL.ID, str(tmp_path))
+    assert tools.tool_folder(VLC_TOOL) is None
+    VLC_TOOL.executable_files(tmp_path)[0].touch()
+    assert tools.tool_folder(VLC_TOOL) == tmp_path
+
+    tools.set_path(VLC_TOOL.ID, "")
+    fake_tool_locator.resolve.return_value = None
+    assert tools.tool_folder(VLC_TOOL) is None
+    install = ToolCandidate(tmp_path, "PATH", ToolStatus.USABLE, (3, 0, 23))
+    fake_tool_locator.resolve.return_value = install
+    assert tools.tool_folder(VLC_TOOL) == tmp_path
+    fake_tool_locator.resolve.assert_called_with(VLC_TOOL, "", ())
+    unusable = ToolCandidate(tmp_path, "PATH", ToolStatus.TOO_OLD, (2, 0), "old")
+    fake_tool_locator.resolve.return_value = unusable
+    assert tools.tool_folder(VLC_TOOL) is None

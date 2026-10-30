@@ -25,8 +25,8 @@ from rehuco_agent.commands import (
     PLAYER_VOLUME_UP,
 )
 from rehuco_agent.documents import player_view
+from rehuco_agent.documents.player_notices import AV1_LIBRARIES_HINT
 from rehuco_agent.documents.player_view import (
-    AV1_LIBRARIES_HINT,
     AV1_NOTICE,
     ERROR_NOTICE,
     INTERLACED_NOTICE,

@@ -54,6 +54,7 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | | `appendices.task-queue` | Task Queue — Serial Work, Cooperative Stops, and Lifetime | [appendices/task-queue.md](appendices/task-queue.md) |
 | | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
 | | `appendices.theming_and_styling` | Theming and Styling | [appendices/theming_and_styling.md](appendices/theming_and_styling.md) |
+| | `appendices.vlc` | VLC — Command Line and RC Interface | [appendices/vlc.md](appendices/vlc.md) |
 | | `appendices.windows-dev-launcher` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
 
 **Numbering, briefly:** `§N`/`§N.M` (the core §1–§17 docs) are global and renumber-and-shift on

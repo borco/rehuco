@@ -97,7 +97,8 @@ and Tasks docks get.
 
 Three settings the 0.4.0 video and root work adds to existing pages: **Videos** gains a *Playback* block (#318):
 *Qt (bundled FFmpeg)*, the default and the player SHIFT+double-click always opens, *Qt with external FFmpeg libraries*
-(Windows only, #580) and *External VLC*, the last two gated on the Tools page's tool the way *FFmpeg (external)* is,
+(Windows only, #580) and *VLC (your own, in the app)* (#319), the last two gated on the Tools page's tool the way
+*FFmpeg (external)* is,
 saved as `player` and read by the Files sub-dock at each double-click, so a change of player reaches open documents.
 The libraries are loaded at start, so choosing them (or leaving them) says *Takes effect at the next start*, and a
 start that could not load a chosen build says why beside the choice. **Videos** also gains *Maximize videos over* — the

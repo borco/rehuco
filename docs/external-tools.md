@@ -40,16 +40,18 @@ does. Any FFmpeg from version 4.0 on works.
 
 Other builds are listed on [ffmpeg.org](https://ffmpeg.org/download.html).
 
-## VLC, for opening videos in its own window {#vlc}
+## VLC, for playing videos in the app with VLC's own decoding {#vlc}
 
-**Settings ▸ Videos ▸ Playback** chooses where a double-clicked video opens: the app's own player, which is
-always there, or **External VLC**, with VLC's own window and controls. Holding SHIFT while double-clicking opens
-it in the app's own player whichever is chosen. The app looks for VLC once, in the background, together with
-FFmpeg, and **Settings ▸ Tools** lists every install found (on `PATH`, or in Program Files, scoop,
-`/Applications`, Homebrew or your distribution's places), each with its version and whether it works. The
-*External VLC* choice is available once one does, and a VLC that goes missing after it was chosen keeps the
-choice selected and says why, while videos open in the app's own player. If you install VLC later, press
-**Detect**. Any VLC from version 3.0 on works.
+**Settings ▸ Videos ▸ Playback** chooses what decodes a video in the app's player: Qt's bundled FFmpeg, which
+is always there, or **VLC (your own, in the app)**, which plays everything VLC plays, deinterlaced, with AV1
+decoded in software on any graphics card. VLC's own window is not used: its library is loaded into the app's
+player dock. The app looks for VLC once, in the background, together with FFmpeg, and **Settings ▸ Tools**
+lists the usable installs found (on `PATH`, or in Program Files, scoop, `/Applications`, Homebrew or your
+distribution's places) with their versions; an install that cannot be used -- too old, or without its shared
+library, as a static or sandboxed build is -- is written to the log instead. The VLC choice is available once a
+usable install is there; a VLC that goes missing after it was chosen keeps the choice selected and says why,
+while videos play with Qt's decoding. If you install VLC later, press **Detect**. Any VLC from version 3.0 on
+works, as long as it comes with its `libvlc` library, which the installers below do.
 
 Install VLC from [videolan.org](https://www.videolan.org/vlc/):
 

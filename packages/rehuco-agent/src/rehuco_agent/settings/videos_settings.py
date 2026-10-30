@@ -48,7 +48,8 @@ IN_APP_PLAYER: Final = "in_app"
 """The player dock a document hosts ([[plugins#in-app-player]])."""
 
 VLC_PLAYER: Final = VLC_TOOL.ID
-"""The user's own VLC, launched as a process of its own -- named after the tool that supplies it."""
+"""The in-app player decoding with the user's own VLC, its libvlc loaded into the player dock (#319) -- named after the
+tool that supplies it. Read when a player is built, so it applies to the next document opened."""
 
 FFMPEG_LIBRARIES_PLAYER: Final = FFMPEG_LIBRARIES_TOOL.ID
 """The in-app player decoding with an external FFmpeg's libraries (#580); applied at the next start, so a double-click

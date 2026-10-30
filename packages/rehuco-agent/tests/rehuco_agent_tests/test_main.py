@@ -19,7 +19,7 @@ from rehuco_agent.settings.persistent_settings import (
     APPLICATION_NAME,
     settings_dir,
 )
-from rehuco_core import PROBE_FLAG
+from rehuco_core import LIBVLC_PROBE_FLAG, PROBE_FLAG
 
 FAKE_ARGV0: Final = "/fake/rehuco-agent-dev"
 """No ``.exe``/drive-letter shape -- argv[0] isn't a Windows executable on this path."""
@@ -419,6 +419,27 @@ def test_the_probe_flag_tries_a_build_and_never_starts_the_gui(mocker: MockerFix
     assert main() == 0
 
     probe.assert_called_once_with(Path("/some/build"), Path(PySide6.__file__).parent, Path("/some/answer.json"))
+    run.assert_not_called()
+
+
+def test_the_libvlc_probe_flag_loads_a_library_in_this_process_and_never_starts_the_gui(mocker: MockerFixture) -> None:
+    """``rehuco-agent --probe-libvlc LIBRARY --output FILE`` is the child the Tools page asks about a VLC's library
+    (#319): it hands the library and the file to core's probe, and imports no Qt for it.
+
+    **Test steps:**
+
+    * run ``main`` with the flag, a library and an output file
+    * verify the probe got those paths, and the GUI never launched
+    """
+    mocker.patch.object(
+        sys, "argv", [FAKE_ARGV0, LIBVLC_PROBE_FLAG, "/some/vlc/libvlc.dll", "--output", "/some/answer.json"]
+    )
+    probe = mocker.patch("rehuco_agent.__main__.probe_libvlc", return_value=0)
+    run = mocker.patch("rehuco_agent.app.run")
+
+    assert main() == 0
+
+    probe.assert_called_once_with(Path("/some/vlc/libvlc.dll"), Path("/some/answer.json"))
     run.assert_not_called()
 
 

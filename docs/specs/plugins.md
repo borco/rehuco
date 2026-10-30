@@ -1090,15 +1090,20 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 - [#317: feat: in-app video player dock — Qt Multimedia surface, transport bar, keyboard, folder playlist, resume](https://github.com/borco/rehuco/issues/317)
 - [#318: feat: Videos settings — player choice (in-app / external VLC), VLC path, SHIFT+double-click override](https://github.com/borco/rehuco/issues/318)
 - [#521: feat: Tools settings page — optional external tools (ffprobe, VLC, ffmpeg): detect, browse, version gates, install instructions](https://github.com/borco/rehuco/issues/521)
+- [#319: feat: VLC inside the player dock — libvlc as the in-app engine, behind a proxy that works without VLC](https://github.com/borco/rehuco/issues/319)
 - [#580: feat: play videos with an external FFmpeg's libraries — a Playback choice beside Qt's bundled FFmpeg (AV1 in software)](https://github.com/borco/rehuco/issues/580)
 
 Two players can fill Follow's dock: **libvlc** from the user's own VLC, set up through the Tools page (#521), or
 **Qt Multimedia**, whose FFmpeg backend ships inside PySide6. The spike (#315) measured both on Windows 11 at 125 %
 scaling — VLC 3.0.23 with `python-vlc` 3.0.21203, PySide6 and `PySide6-Addons` 6.11.1 — in a dock inside a nested
-dock manager, as a document's sub-docks are; macOS and Linux are the open half. **The dock is Qt Multimedia** (#317):
-nothing to install, every signal on the GUI thread, and its two gaps explained in the dock rather than shown black or
-combed, with *Open in VLC* offered for them. VLC stays the external player, launched as its own process (#319), so the
-agent loads nothing of VLC and needs no `python-vlc`.
+dock manager, as a document's sub-docks are; macOS and Linux are the open half. **The dock is Qt Multimedia by
+default** (#317): nothing to install, every signal on the GUI thread, and its two gaps explained in the dock rather
+than shown black or combed. **The user's own libvlc is the other engine** (#319): chosen on the Videos page, loaded
+into the same dock through `python-vlc` once the Tools page has a VLC with its shared library, and speaking
+`QMediaPlayer`'s language (`VlcMediaPlayer`) so the view drives either without knowing which. It closes both gaps,
+and it draws inside the dock, which is what lets the maximized player's overlays ([[plugins#player-maximized]])
+work over it. A VLC launched as a window of its own was built and dropped in #319 for that reason: no overlay, tree
+or notes can be drawn over another process's window ([[appendices.vlc]] keeps what was measured of it).
 
 | | libvlc | Qt Multimedia |
 | --- | --- | --- |
@@ -1110,7 +1115,7 @@ agent loads nothing of VLC and needs no `python-vlc`.
 | The codec matrix below | every file | every file, AV1 only with hardware |
 | AV1 without an AV1 decoder in the GPU | decoded in software | sound and no picture, with no error |
 | Interlaced video | deinterlaced by default | shown combed |
-| Not installed | the dock says in-app playback needs VLC | cannot happen |
+| Not installed | the dock plays through Qt Multimedia and says why | cannot happen |
 
 **The codec matrix** is every file the iPad refuses ([[nodes#web-playback]]), cut from one 1080p60 tutorial with
 `imageio-ffmpeg`. Both players decoded, showed, played the sound of and seeked in each:
@@ -1157,12 +1162,14 @@ from different instants, as a mean second vertical difference over the shown fra
 same pattern progressive, with the combing plain on every moving edge, and 0.8 under libvlc, which shows the fields
 at their own rate.
 
-**`python-vlc` is unsafe to import blind**, should libvlc ever be loaded in-process again. `import vlc` resolves
-libvlc at import time. With no VLC found it falls back to `.\libvlc.dll` in the working directory and raises
-`FileNotFoundError`, having tried to load a DLL from wherever the process stands; a `PYTHON_VLC_LIB_PATH` or
-`PYTHON_VLC_MODULE_PATH` that does not resolve makes it call `sys.exit(1)`. `vlc.Instance()` answers `None` to an
-unknown option rather than raising, and a file that does not exist ends in `Ended`, not `Error`. A libvlc found by the
-Tools page (#521) would be probed in a child process and passed by full path in `PYTHON_VLC_LIB_PATH`.
+**`python-vlc` is unsafe to import blind, so the agent never does** ([[appendices.vlc#python-vlc-import]]): `import vlc`
+resolves libvlc at import time, raises for a DLL in the working directory when no VLC is found, calls `sys.exit(1)`
+on a bad `PYTHON_VLC_LIB_PATH`, and changes the whole process's working directory while loading a VLC it found by
+itself. `rehuco_core.VlcLibrary` is the one place that imports it: by the full path of the library the Tools page
+resolved, inside a guard that turns anything the import does into a reason, and only after a child process
+(`--probe-libvlc`) imported the same library and got an instance of it. Without VLC the proxy is simply unavailable,
+with the reason, and the dock plays through Qt. **The Tools page lists only usable installs**: a static or sandboxed
+VLC (no `libvlc` to load), one too old or one that does not run is logged at WARNING when Detect runs, not shown.
 
 **Qt's FFmpeg can be replaced by a user's, of the same major version.** Qt 6.11.1 ships FFmpeg 7.1.3 as five DLLs
 (`avcodec-61`, `avformat-61`, `avutil-59`, `swresample-5`, `swscale-8`), and its FFmpeg plugin binds them by name.
@@ -1241,7 +1248,16 @@ an **AV1** one when it has played for a second and a half and shown no frame, si
 cannot be asked beforehand. A banner in the dock carries the notice, and an error from the player. Where the FFmpeg libraries can be set up
 (Windows) and this run is not using them (#580), the AV1 notice adds that an external FFmpeg's libraries with dav1d
 would play it, and carries a *Set up in Tools* button, which travels the document's usual hops up to the window
-that opens the Tools page. *Open in VLC* is not offered yet: VLC is set up through the Tools page (#521) and launched by #319.
+that opens the Tools page. Neither notice is made under libvlc, which deinterlaces and decodes AV1 in software.
+
+**Under libvlc** ([[appendices.vlc#python-vlc-events]]) the same rules hold with the engine's means: libvlc's events
+arrive on threads of its own and cross to the GUI thread through a queued signal, never a blocking one, since
+`stop()` joins the thread that raises them; `Playing` is the moment the view calls a video ready; after `EndReached`
+libvlc stays *Ended*, so a replay stops first. **A paused video is a stopped player** here too: a folder rename
+fails while libvlc plays or pauses, and succeeds after `stop()`. So a pause takes the still while the file is still
+held -- off the surface's window in memory on Windows, as a libvlc snapshot file elsewhere -- then stops; and a
+load for a still (libvlc decodes no frame without playing) plays muted until the first picture, takes it, and
+pauses, after which the view stops it as it would after a frame from Qt's sink. libvlc draws into a native widget of the dock's own (`VlcSurface`), handed over once by window id.
 
 **The build keeps 20 MB of a 105 MB to 460 MB wheel.** The agent depends on `PySide6-Essentials`; Qt Multimedia is in
 `PySide6-Addons`, which is named again for it. Playback needs about 20 MB of that wheel: `QtMultimedia` and

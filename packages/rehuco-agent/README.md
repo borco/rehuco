@@ -37,7 +37,8 @@ and Linux.
 - **Follows the disk** — a record added or edited outside the app is read into the catalog without a Scan, and an
   open document says when its file changed
 - **Plays a tutorial's videos** — double-click one in the Files panel: seek bar, speed, keyboard, previous and
-  next through the whole tutorial, and it opens on the video you watched last, paused where you stopped
+  next through the whole tutorial, and it opens on the video you watched last, paused where you stopped; with VLC
+  installed, the same dock can decode with VLC's own library
 - **Images out to other apps** — drag or copy an image from the app into a file manager, an image editor or a browser
 - **Rebindable shortcuts** — a Shortcuts page in Settings, with conflict detection
 - **Task queue** — background jobs (checksum sweeps, `.tc` imports, conversions) run through a

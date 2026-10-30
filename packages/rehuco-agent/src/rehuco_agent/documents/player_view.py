@@ -1,15 +1,15 @@
 """The tutorial's in-app video player: a Qt Multimedia surface, a transport bar and the player's keys
 ([[plugins#in-app-player]], #317)."""
 
+from collections.abc import Callable
 from enum import Enum, auto
 from functools import partial
 from pathlib import Path
 from typing import Final, cast
 
 from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
-from borco_pyside.widgets import MessageBannerRow, MessageBannerSeverity
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QPalette
+from PySide6.QtGui import QAction, QImage, QPalette
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
 from PySide6.QtWidgets import QToolButton, QWidget
 from rehuco_core import (
@@ -44,12 +44,15 @@ from ..glyphs import (
     PLAYER_PREVIOUS_GLYPH,
 )
 from ..playback_libraries import shared_playback_libraries
+from ..playback_vlc import shared_vlc_library
 from ..settings.excluded_files_settings import shared_excluded_files_settings
-from ..settings.videos_settings import shared_videos_settings
+from ..settings.videos_settings import VLC_PLAYER, shared_videos_settings
 from .latest_runner import LatestRunner
+from .player_notices import AV1_LIBRARIES_HINT, PlayerNotices
 from .player_playlist import PlayerPlaylist
 from .player_view_ui import Ui_PlayerView
 from .rehu_document_model import RehuDocumentModel
+from .vlc_media_player import VlcEngineError, VlcMediaPlayer
 from .watch_progress_recorder import WatchProgressRecorder
 
 SEEK_STEP_MS: Final = 5000
@@ -83,8 +86,8 @@ AV1_NOTICE: Final = (
     "This video is AV1, and this computer's graphics hardware does not seem to decode it: the sound plays but there "
     "is no picture."
 )
-AV1_LIBRARIES_HINT: Final = " An external FFmpeg's libraries with the dav1d decoder would play it."
-TOOLS_ACTION_TEXT: Final = "Set up in Tools"
+VLC_FALLBACK_TEMPLATE: Final = "Playing with Qt: {reason}"
+"""What the player says when VLC is chosen on the Videos page and its libvlc could not be used (#319)."""
 ERROR_NOTICE: Final = "This video could not be played."
 LIST_ERROR_NOTICE: Final = "This tutorial's videos could not be listed."
 NO_VIDEOS_NOTICE: Final = "This tutorial has no videos."
@@ -118,8 +121,14 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     **One player per document** ([[plugins#in-app-player]]) over **the whole tutorial's videos**, in every folder, in
     natural path order. Showing the dock loads the one watched last, paused where it was left (:meth:`load_last`);
     :meth:`jump` -- a double-click in the Files dock -- plays one at once. Previous and next load the neighbour paused:
-    at its recorded position when partly watched, at the start when never watched or watched to the end. The Qt
-    Multimedia player is built on the first video, so opening a tutorial never loads FFmpeg.
+    at its recorded position when partly watched, at the start when never watched or watched to the end. The engine is
+    built on the first video, so opening a tutorial loads neither FFmpeg nor libvlc.
+
+    **Two engines** ([[plugins#in-app-player]]). Qt Multimedia, always there; or the user's own libvlc, when the Videos
+    page chooses VLC and the Tools page has one with its library (:class:`VlcMediaPlayer`, which speaks
+    ``QMediaPlayer``'s language so nothing below cares which). The choice is read as the engine is built, so it
+    applies to the next document opened; a VLC chosen but not usable plays through Qt, and the banner says why.
+    libvlc deinterlaces and decodes AV1 in software, so neither notice below is made under it.
 
     **Where it records.** Every position the player reports while a video plays goes to the recorder, which writes about
     every five seconds; the moments that matter are flushed at once -- pause, a seek, switching video, :meth:`stop`.
@@ -127,9 +136,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     video watched last, as they were. Reaching the end records the full length, which is what marks the video viewed
     (:func:`~rehuco_core.reached_end`), and loads the next.
 
-    **What it explains.** Qt shows interlaced video combed, and plays AV1 with sound and no picture where the graphics
-    hardware has no AV1 decoder, raising no error. The file's codec and scan type are read off the GUI thread; an
-    interlaced file is noted at once, an AV1 one when no frame has shown within :data:`NO_FRAME_MS` of playing.
+    **What it explains, under Qt.** Qt shows interlaced video combed, and plays AV1 with sound and no picture where
+    the graphics hardware has no AV1 decoder, raising no error. The file's codec and scan type are read off the GUI
+    thread; an interlaced file is noted at once, an AV1 one when no frame has shown within :data:`NO_FRAME_MS` of
+    playing.
 
     **Keys** are the catalog's ``document.player.*`` commands, armed while focus is anywhere inside this widget; the
     seek slider, the speed combo and the buttons take no focus, so the arrows are never theirs.
@@ -155,7 +165,11 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         super().__init__(parent)
         self.__model: Final = model
         self.__recorder: Final = recorder
-        self.__player: QMediaPlayer | None = None
+        self.__player: QMediaPlayer | VlcMediaPlayer | None = None
+        self.__vlc = False
+        """Whether the engine built is libvlc, which shows what Qt cannot and takes its stills by snapshot."""
+        self.__fallback_reason: str | None = None
+        """Why the engine is Qt although VLC was chosen, or ``None``."""
         self.__audio: QAudioOutput | None = None
         self.__volume = 1.0
         self.__videos: list[tuple[str, Path]] | None = None
@@ -182,11 +196,13 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__frame_seen = False
         self.__av1 = False
         self.__listening = False
-        self.__notices: Final[list[str]] = []
-        self.__tools_action: Final = self.__make_tools_action()
 
         self.__ui: Final = Ui_PlayerView()
         self.__ui.setupUi(self)
+        self.__surface: QWidget = self.__ui.video_widget
+        """The page of the surface stack the engine draws on: Qt's video widget, or libvlc's native window."""
+        self.__notices: Final = PlayerNotices(self.__ui.notice_banner, self)
+        self.__notices.tools_requested.connect(self.tools_requested)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.__format_runner: Final = LatestRunner(self)
         self.__format_runner.setObjectName("format_runner")
@@ -194,14 +210,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__list_runner: Final = LatestRunner(self)
         self.__list_runner.setObjectName("list_runner")
         self.__list_runner.read.connect(self.__on_listed)
-        self.__no_frame_timer: Final = QTimer(self)
-        self.__no_frame_timer.setSingleShot(True)
-        self.__no_frame_timer.setInterval(no_frame_ms)
-        self.__no_frame_timer.timeout.connect(self.__on_no_frame)
-        self.__grab_timer: Final = QTimer(self)
-        self.__grab_timer.setSingleShot(True)
-        self.__grab_timer.setInterval(grab_ms)
-        self.__grab_timer.timeout.connect(self.__on_grab_timeout)
+        self.__no_frame_timer: Final = self.__single_shot(no_frame_ms, self.__on_no_frame)
+        self.__grab_timer: Final = self.__single_shot(grab_ms, self.__on_grab_timeout)
         self.__ui.video_widget.videoSink().videoFrameChanged.connect(self.__on_frame)
 
         self.__setup_actions()
@@ -245,6 +255,19 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     # endregion
 
     # region Setup
+
+    def __single_shot(self, interval_ms: int, slot: Callable[[], None]) -> QTimer:
+        """A stopped single-shot timer of this widget's.
+
+        :param interval_ms: how long it runs once started.
+        :param slot: what it calls.
+        :returns: the timer.
+        """
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.setInterval(interval_ms)
+        timer.timeout.connect(slot)
+        return timer
 
     def __setup_actions(self) -> None:
         """Bind the player's actions to its commands and put the transport ones on their buttons."""
@@ -308,17 +331,13 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__show_time(0)
         self.__update_actions()
 
-    def __ensure_player(self) -> QMediaPlayer:
-        """Build the Qt Multimedia player on first use.
+    def __ensure_player(self) -> QMediaPlayer | VlcMediaPlayer:
+        """Build the engine on first use: libvlc when chosen and usable, else Qt Multimedia.
 
         :returns: the player.
         """
         if self.__player is None:
-            player = QMediaPlayer(self)
-            audio = QAudioOutput(self)
-            audio.setVolume(self.__volume)
-            player.setAudioOutput(audio)
-            player.setVideoOutput(self.__ui.video_widget)
+            player = self.__build_vlc_player() or self.__build_qt_player()
             player.setPlaybackRate(self.__speed())
             player.positionChanged.connect(self.__on_position_changed)
             player.durationChanged.connect(self.__on_duration_changed)
@@ -326,8 +345,42 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             player.mediaStatusChanged.connect(self.__on_status_changed)
             player.errorOccurred.connect(self.__on_error)
             self.__player = player
-            self.__audio = audio
         return self.__player
+
+    def __build_vlc_player(self) -> VlcMediaPlayer | None:
+        """Build the libvlc engine, when the Videos page chooses VLC and the Tools page's VLC loads.
+
+        :returns: the player, or ``None`` with :attr:`__fallback_reason` set when VLC is chosen but cannot be used,
+            and ``None`` with none when it is not chosen.
+        """
+        if shared_videos_settings().player != VLC_PLAYER:
+            return None
+        library = shared_vlc_library()
+        try:
+            if not library.available:
+                raise VlcEngineError(library.reason or "libvlc is not available.")
+            player = VlcMediaPlayer(library, self.__ui.vlc_surface, self)
+        except VlcEngineError as error:
+            self.__fallback_reason = str(error)
+            return None
+        player.setVolume(self.__volume)
+        player.still_ready.connect(self.__on_still)
+        self.__vlc = True
+        self.__surface = self.__ui.vlc_surface
+        return player
+
+    def __build_qt_player(self) -> QMediaPlayer:
+        """Build the Qt Multimedia engine.
+
+        :returns: the player, its audio output kept in :attr:`__audio`.
+        """
+        player = QMediaPlayer(self)
+        audio = QAudioOutput(self)
+        audio.setVolume(self.__volume)
+        player.setAudioOutput(audio)
+        player.setVideoOutput(self.__ui.video_widget)
+        self.__audio = audio
+        return player
 
     # endregion
 
@@ -366,12 +419,12 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         intent, self.__intent = self.__intent, None
         path = self.__model.path
         if isinstance(result, Exception):
-            self.__notice(f"{LIST_ERROR_NOTICE} {result}")
+            self.__notices.add(f"{LIST_ERROR_NOTICE} {result}")
             return
         keys = cast(list[str], result)
         self.__videos = [(key, content_path(path, key)) for key in keys] if path is not None else []
         if not self.__videos:
-            self.__notice(NO_VIDEOS_NOTICE)
+            self.__notices.add(NO_VIDEOS_NOTICE)
         elif intent is not None:
             self.__select_from(self.__videos, *intent)
 
@@ -387,7 +440,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             last = self.__model.last_video()
             key = last if last in keys else keys[0]
         elif key not in keys:
-            self.__notice(MISSING_NOTICE)
+            self.__notices.add(MISSING_NOTICE)
             return
         self.__select(PlayerPlaylist(videos, key), play)
 
@@ -418,11 +471,14 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__show_position(self.__position_ms)
         self.__ui.title_label.set_text(video.key)
         self.__notices.clear()
-        self.__show_notices()
         self.__ui.still_widget.set_image(None)
         self.__ui.surface_stack.setCurrentWidget(self.__ui.still_widget)
+        # the engine before the format is read: whether a format needs explaining depends on which engine shows it
+        self.__ensure_player()
         self.__format_runner.start(video.key, partial(read_video_format, video.path))
         self.__open(Session.PLAY if play else Session.GRAB)
+        if self.__fallback_reason is not None:
+            self.__notices.add(VLC_FALLBACK_TEMPLATE.format(reason=self.__fallback_reason))
         self.__update_actions()
 
     def __step(self, delta: int) -> bool:
@@ -451,7 +507,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.still_widget.set_image(None)
         self.__ui.surface_stack.setCurrentWidget(self.__ui.still_widget)
         self.__notices.clear()
-        self.__show_notices()
         self.__show_playing(False)
         self.__update_actions()
 
@@ -476,7 +531,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         path = content_path(record_path, video.key) if record_path is not None else video.path
         player.setSource(QUrl.fromLocalFile(str(path)))
         if session is Session.PLAY:
-            self.__ui.surface_stack.setCurrentWidget(self.__ui.video_widget)
+            self.__ui.surface_stack.setCurrentWidget(self.__surface)
             player.play()
         else:
             player.pause()
@@ -550,7 +605,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             # already open to take a frame: carry on from there, the seek to where it is made as it buffers
             self.__grab_timer.stop()
             self.__session = Session.PLAY
-            self.__ui.surface_stack.setCurrentWidget(self.__ui.video_widget)
+            self.__ui.surface_stack.setCurrentWidget(self.__surface)
             self.__player.play()
             if self.__ready:
                 self.__played = True
@@ -565,7 +620,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if player is not None and self.__ready:
             self.__position_ms = player.position()
         self.__flush()
-        self.__ui.still_widget.set_image(self.__ui.video_widget.videoSink().videoFrame().toImage())
+        self.__ui.still_widget.set_image(self.__still_now())
         self.__release()
         self.__ui.surface_stack.setCurrentWidget(self.__ui.still_widget)
         self.__show_position(self.__position_ms)
@@ -622,6 +677,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__volume = min(max(self.__volume + delta, 0.0), 1.0)
         if self.__audio is not None:
             self.__audio.setVolume(self.__volume)
+        elif self.__vlc and self.__player is not None:
+            cast(VlcMediaPlayer, self.__player).setVolume(self.__volume)
 
     def __change_speed(self, delta: int) -> None:
         """Move the speed combo ``delta`` steps, within its range; its change reaches the player.
@@ -720,7 +777,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param _error: the kind of error.
         :param message: Qt's description of it.
         """
-        self.__notice(f"{ERROR_NOTICE} {message}".rstrip())
+        self.__notices.add(f"{ERROR_NOTICE} {message}".rstrip())
 
     def __on_frame(self, frame: QVideoFrame) -> None:
         """Take the picture the video shows: the frame a paused load was opened for, or proof an AV1 video is no silent
@@ -744,6 +801,25 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__frame_seen = True
             self.__no_frame_timer.stop()
 
+    def __on_still(self, image: QImage) -> None:
+        """Take the picture libvlc made of a paused load, and let the file go -- what a frame from Qt's sink does.
+
+        :param image: the still at the position the video was opened at.
+        """
+        if self.__session is Session.GRAB:
+            self.__ui.still_widget.set_image(image)
+            self.__release()
+
+    def __still_now(self) -> QImage | None:
+        """The picture the surface shows, as a video is paused: Qt's last frame, or a libvlc snapshot taken while the
+        file is still held.
+
+        :returns: the image, or ``None`` when there is none to take.
+        """
+        if self.__vlc and self.__player is not None:
+            return cast(VlcMediaPlayer, self.__player).grab_still() if self.__ready else None
+        return self.__ui.video_widget.videoSink().videoFrame().toImage()
+
     def __on_grab_timeout(self) -> None:
         """Let go of a video that gave no frame to show, without one. The timer runs for a paused load alone: playing
         or letting go stops it."""
@@ -757,7 +833,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     def __on_no_frame(self) -> None:
         """Say why an AV1 video that plays shows nothing."""
         if not self.__frame_seen and self.__state == QMediaPlayer.PlaybackState.PlayingState:
-            self.__notice(AV1_NOTICE + (AV1_LIBRARIES_HINT if self.__offers_libraries() else ""))
+            self.__notices.add(AV1_NOTICE + (AV1_LIBRARIES_HINT if self.__offers_libraries() else ""))
 
     def __on_format_read(self, key: str, result: object) -> None:
         """Explain what Qt cannot show well about the video, once its format is known.
@@ -765,10 +841,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param key: the video the format is of.
         :param result: its format, or ``None``, or the error reading it ended in -- the file could not be read.
         """
-        if key != self.__key or not isinstance(result, VideoFormat):
+        if key != self.__key or not isinstance(result, VideoFormat) or self.__vlc:
             return
         if result.interlaced:
-            self.__notice(INTERLACED_NOTICE)
+            self.__notices.add(INTERLACED_NOTICE)
         self.__av1 = result.is_av1
         self.__arm_no_frame_timer()
 
@@ -815,15 +891,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         return self.__duration_ms / 1000 if self.__duration_ms > 0 else None
 
-    def __make_tools_action(self) -> QAction:
-        """The button an AV1 notice carries to the Tools page.
-
-        :returns: the action, which asks for that page.
-        """
-        action = QAction(TOOLS_ACTION_TEXT, self)
-        action.triggered.connect(self.tools_requested)
-        return action
-
     @staticmethod
     def __offers_libraries() -> bool:
         """Whether an external FFmpeg's libraries could still be set up for this run.
@@ -831,28 +898,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :returns: ``True`` where the tool exists and this run is not already using it.
         """
         return FFMPEG_LIBRARIES_TOOL.ID in EXTERNAL_TOOLS and shared_playback_libraries().loaded_from is None
-
-    def __notice(self, text: str) -> None:
-        """Add a warning to the ones the player shows for this video.
-
-        :param text: what it says.
-        """
-        if text not in self.__notices:
-            self.__notices.append(text)
-            self.__show_notices()
-
-    def __show_notices(self) -> None:
-        """Show the video's warnings, or nothing."""
-        self.__ui.notice_banner.set_rows(
-            [
-                MessageBannerRow(
-                    MessageBannerSeverity.WARNING,
-                    text,
-                    self.__tools_action if text.endswith(AV1_LIBRARIES_HINT) else None,
-                )
-                for text in self.__notices
-            ]
-        )
 
     def __show_playing(self, playing: bool) -> None:
         """Give the play button the glyph of what pressing it does.

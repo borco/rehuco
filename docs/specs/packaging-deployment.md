@@ -522,8 +522,8 @@ Some programs the app uses cannot ship with it: too large, GPL, or non-free. Eac
 each OS keeps it, how its version is read, its minimum and its blocklist. A `ToolLocator` turns a descriptor into
 candidates, each with a version and a status. One **Tools** settings page ([[appendices.settings-pages#tools-page]])
 sets them all up. The tracer had one tool, **FFmpeg** (`ffmpeg` and `ffprobe` in one folder, the duration probe's
-external backend, [[field-schema#duration-size]]); **VLC** (the `vlc` executable, the Videos page's external player
-choice, #318, launched by #319) joined it, and the conversion `ffmpeg` (#520) arrives with the feature that needs it.
+external backend, [[field-schema#duration-size]]); **VLC** (the `vlc` executable and, what the app uses of it, its
+`libvlc` shared library, the Videos page's in-app VLC engine, #318, #319) joined it, and the conversion `ffmpeg` (#520) arrives with the feature that needs it.
 
 - **The app never downloads a tool.** The docs site's [External Tools](../external-tools.md) page says where each one
   comes from, one section per tool under a fixed anchor (`#ffmpeg`, `#vlc`, `#ffmpeg-libraries`); each tool's frame links
@@ -552,7 +552,9 @@ choice, #318, launched by #319) joined it, and the conversion `ffmpeg` (#520) ar
 - **Status** per candidate: *usable*; *untested* (usable); *not runnable* (the executable does not start); *too old*;
   *blocklisted*, with the reason; for the playback libraries (#580) *no libraries* (a static build), *wrong major
   version*, *incomplete* and *wrong architecture* (a 32-bit or ARM build in a 64-bit x86 process), each its own status
-  rather than a version failure; and, when it arrives, *unusable in a sandbox* (a snap or flatpak VLC).
+  rather than a version failure; for VLC, *no libraries* is a static or sandboxed install (a snap or flatpak VLC) whose
+  `libvlc` is not there to load, and *incomplete* one missing its core library or plugins. **Only usable installs
+  are kept** by a Detect; each rejected one is logged once at WARNING with its folder and reason (#319, #592).
   *Missing* is a path with nothing at it.
 - **The version is read without loading anything into the agent**: by running the tool (`ffprobe -version`), from the
   vendor's own metadata where the executable prints nothing, and for a library in a child process.

@@ -26,6 +26,9 @@ dependencies = [
     # user has to install first -- 3.3 MB on Windows, measured against PyAV's 67 MB, which is #211's
     # lesson (unexamined payload rides along unnoticed) applied before rather than after the fact.
     "pymediainfo",
+    # the ctypes bindings to the user's own libvlc, which the agent's player can decode with (#319). One pure-Python
+    # file under LGPL-2.1+, loading nothing until asked: the import is made only by VlcLibrary, by full path.
+    "python-vlc",
     "pyyaml",
     # the file notifier's share backend ([[mounts-and-storage#out-of-band]], #502, #511): CHANGE_NOTIFY on a session
     # of our own, which sees every writer on every client where the OS client's watcher drops events or is blind.

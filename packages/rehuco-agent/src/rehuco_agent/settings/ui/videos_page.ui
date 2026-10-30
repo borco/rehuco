@@ -152,7 +152,7 @@
       <item>
        <widget class="QRadioButton" name="vlc_player_radio_button">
         <property name="text">
-         <string>External VLC</string>
+         <string>VLC (your own, in the app)</string>
         </property>
        </widget>
       </item>

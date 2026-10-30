@@ -1,12 +1,13 @@
 """Tests for ToolDiscovery: the one background search for the external tools, and what it records (#521)."""
 
+import logging
 import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import call
 
-from pytest import fixture
+from pytest import LogCaptureFixture, fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.tool_discovery import ToolDiscovery, shared_tool_discovery
 from rehuco_agent.settings.tools_settings import ToolDetection, ToolsSettings
@@ -60,6 +61,8 @@ def test_a_tool_never_searched_for_is_searched_for_and_recorded(
     fake_tool_locator.detect.return_value = [INSTALL, OTHER]
 
     run(qtbot, discovery)
+    # the first tool's report is what ``run`` waits for; the thread is still visiting the others
+    qtbot.waitUntil(lambda: fake_tool_locator.detect.call_count == len(EXTERNAL_TOOLS))
 
     assert tools.detection(FFMPEG_TOOL.ID) == ToolDetection(True, (INSTALL, OTHER))
     assert fake_tool_locator.detect.call_args_list == [call(tool) for tool in EXTERNAL_TOOLS.values()]
@@ -237,3 +240,28 @@ def test_the_shared_discovery_is_one_object_over_the_shared_settings() -> None:
     * verify it is the same object
     """
     assert shared_tool_discovery() is shared_tool_discovery()
+
+
+def test_an_install_the_search_judged_unusable_is_logged_and_not_recorded(
+    qtbot: QtBot, tools: ToolsSettings, discovery: ToolDiscovery, fake_tool_locator: Any, caplog: LogCaptureFixture
+) -> None:
+    """Nobody acts on an unusable row in the Tools page, so a search keeps the usable installs and logs the rest
+    (#319, #592).
+
+    **Test steps:**
+
+    * make the search find a usable install, a static build and one too old
+    * verify only the usable one is recorded, and each of the others was logged at WARNING with its folder and reason
+    """
+    static = ToolCandidate(Path("/static/bin"), "scoop", ToolStatus.NO_LIBRARIES, None, "A static build.")
+    old = ToolCandidate(Path("/old/bin"), "PATH", ToolStatus.TOO_OLD, (2, 0), "Version 3.0 or newer is needed.")
+    fake_tool_locator.detect.return_value = [static, INSTALL, old]
+
+    with caplog.at_level(logging.WARNING, logger="rehuco_agent.settings.tool_discovery"):
+        run(qtbot, discovery)
+
+    assert tools.detection(FFMPEG_TOOL.ID) == ToolDetection(True, (INSTALL,))
+    said = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
+    assert any(str(static.folder) in line and "A static build." in line for line in said)
+    assert any(str(old.folder) in line and "3.0 or newer" in line for line in said)
+    assert not any(str(INSTALL.folder) in line for line in said)

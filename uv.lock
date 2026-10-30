@@ -1478,6 +1478,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-vlc"
+version = "3.0.21203"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/5b/f9ce6f0c9877b6fe5eafbade55e0dcb6b2b30f1c2c95837aef40e390d63b/python_vlc-3.0.21203.tar.gz", hash = "sha256:52d0544b276b11e58b6c0b748c3e0518f94f74b1b4cd328c83a59eacabead1ec", size = 162211, upload-time = "2024-10-07T14:39:54.755Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5b/ee/7d76eb3b50ccb1397621f32ede0fb4d17aa55a9aa2251bc34e6b9929fdce/python_vlc-3.0.21203-py3-none-any.whl", hash = "sha256:1613451a31b692ec276296ceeae0c0ba82bfc2d094dabf9aceb70f58944a6320", size = 87651, upload-time = "2024-10-07T14:39:50.021Z" },
+]
+
+[[package]]
 name = "pyyaml"
 version = "6.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1574,6 +1583,7 @@ dependencies = [
     { name = "borco-core" },
     { name = "pillow" },
     { name = "pymediainfo" },
+    { name = "python-vlc" },
     { name = "pyyaml" },
     { name = "smbprotocol" },
     { name = "watchdog" },
@@ -1585,6 +1595,7 @@ requires-dist = [
     { name = "borco-core", editable = "packages/borco-core" },
     { name = "pillow" },
     { name = "pymediainfo" },
+    { name = "python-vlc" },
     { name = "pyyaml" },
     { name = "smbprotocol", specifier = ">=1.15" },
     { name = "watchdog", specifier = ">=6" },
