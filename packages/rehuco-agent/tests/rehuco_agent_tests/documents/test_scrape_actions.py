@@ -234,6 +234,22 @@ def actions(
     return build_actions(doc_model, registry, SyncExecutor(), FakeFetcher(), image_downloads)
 
 
+def resolve(qtbot: QtBot, doc_actions: ScrapeActions, url_drop: UrlDrop) -> None:
+    """Submit a drop and wait until it has resolved -- no busy row left -- rather than for a fixed time: its
+    outcome lands two event-loop turns after ``changed`` first fires, the attempt's timer and then the relay's
+    queued answer.
+
+    :param qtbot: pytest-qt fixture.
+    :param doc_actions: the actions to submit to.
+    :param url_drop: the drop.
+    """
+    doc_actions.submit(url_drop)
+    qtbot.waitUntil(
+        lambda: all(row.severity is not MessageBannerSeverity.INFO for row in doc_actions.notice),
+        timeout=WAIT_TIMEOUT_MS,
+    )
+
+
 @fixture
 def image_downloads(mocker: MockerFixture) -> ImageDownloads:
     """A mock `ImageDownloads`, standing in for #73's image-acquisition seam this class hands its
@@ -250,9 +266,7 @@ def test_scraped_fields_land_and_dirty_the_model(qtbot: QtBot, image_downloads: 
     result = ScrapeResult(fields={"title": "New Title", "advertised_duration": 3600}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert doc_model.title == "New Title"
     assert doc_model.advertised_duration == 3600
@@ -266,9 +280,7 @@ def test_a_field_the_result_does_not_carry_is_left_untouched(qtbot: QtBot, image
     result = ScrapeResult(fields={"title": "New Title"}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert doc_model.released == "2020"
 
@@ -279,9 +291,7 @@ def test_a_field_the_type_does_not_declare_is_skipped(qtbot: QtBot, image_downlo
     result = ScrapeResult(fields={"title": "New Title", "level": ["beginner"]}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert doc_model.title == "New Title"
     assert doc_model.level == []
@@ -293,9 +303,7 @@ def test_the_description_gets_the_stem_substituted(qtbot: QtBot, image_downloads
     result = ScrapeResult(fields={}, description="See ![](#image-00) for reference.", images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     # PATH is "info.rehu" -- directory-scoped -- so the stem is the parent folder's name (#250)
     assert doc_model.description == "See ![](sculpting00) for reference."
@@ -307,9 +315,7 @@ def test_the_fields_description_is_used_when_the_result_has_none(qtbot: QtBot, i
     result = ScrapeResult(fields={"description": "Plain text, no images."}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert doc_model.description == "Plain text, no images."
 
@@ -319,9 +325,7 @@ def test_a_source_is_added_from_the_scraper_and_page(qtbot: QtBot, image_downloa
     doc_model = model()
     doc_actions = actions(doc_model, FakeScraper(publisher="Example Publisher"), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert doc_model.sources[-1]["url"] == URL
     assert doc_model.sources[-1]["publisher"] == "Example Publisher"
@@ -340,9 +344,7 @@ def test_a_scraped_url_field_becomes_primary_and_the_dropped_url_is_added_second
     result = ScrapeResult(fields={"url": canonical_url}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(publisher="ArtStation", result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert doc_model.url == canonical_url
     assert doc_model.sources[0]["url"] == canonical_url
@@ -363,9 +365,7 @@ def test_a_scraped_url_field_is_kept_beside_an_existing_primary_not_written_over
     result = ScrapeResult(fields={"url": canonical_url}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(publisher="ArtStation", result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert [source["url"] for source in doc_model.sources] == ["https://original.example", canonical_url, URL]
     assert doc_model.sources[0]["publisher"] == "Original Co"
@@ -383,9 +383,7 @@ def test_a_scraped_url_field_equal_to_the_dropped_url_adds_no_second_source(
     result = ScrapeResult(fields={"url": URL}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(publisher="ArtStation", result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert doc_model.url == URL
     assert doc_model.publisher == "ArtStation"
@@ -409,9 +407,7 @@ def test_a_drop_carrying_a_fragment_is_scraped_without_a_fetch(qtbot: QtBot, ima
     registry = FakeRegistry({URL: FragmentScraper()})
     doc_actions = build_actions(doc_model, registry, SyncExecutor(), RefusingFetcher(), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop(fragment="<h1>From the fragment</h1>"))
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop(fragment="<h1>From the fragment</h1>"))
 
     assert doc_model.title == "<h1>From the fragment</h1>"
 
@@ -427,9 +423,7 @@ def test_each_scraped_image_is_handed_to_image_downloads(qtbot: QtBot, image_dow
     result = ScrapeResult(fields={"title": "New Title"}, description=None, images=images)
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert doc_model.title == "New Title"
     assert image_downloads.submit.call_args_list == [  # type: ignore[attr-defined]
@@ -585,9 +579,7 @@ def test_a_no_match_gives_a_warning_row_naming_the_host(qtbot: QtBot, image_down
     doc_model = model()
     doc_actions = actions(doc_model, None, image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert len(doc_actions.notice) == 1
     assert doc_actions.notice[0].severity == MessageBannerSeverity.WARNING
@@ -636,9 +628,7 @@ def test_a_fetch_failure_gives_a_warning_row(qtbot: QtBot, image_downloads: Imag
 
     doc_actions = actions(doc_model, RaisingScraper(), image_downloads)
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert len(doc_actions.notice) == 1
     assert doc_actions.notice[0].severity == MessageBannerSeverity.WARNING
@@ -648,14 +638,10 @@ def test_the_next_drop_replaces_the_previous_failures_row(qtbot: QtBot, image_do
     """A new drop's outcome replaces the last one's row, not accumulates beside it (#272)."""
     doc_model = model()
     doc_actions = actions(doc_model, None, image_downloads)
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
     assert len(doc_actions.notice) == 1
 
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_actions.submit(drop())
-    qtbot.wait(20)
+    resolve(qtbot, doc_actions, drop())
 
     assert len(doc_actions.notice) == 1
 
