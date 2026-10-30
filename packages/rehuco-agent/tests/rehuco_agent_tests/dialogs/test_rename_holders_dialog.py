@@ -31,6 +31,8 @@ from rehuco_agent.dialogs.rename_holders_dialog import (
 from rehuco_agent.documents.rename_holders import FOLDER_HELD_BY_NOBODY, HELD_BY_REHUCO, HoldersFound
 from shiboken6 import isValid
 
+from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
 MODULE: Final = "rehuco_agent.dialogs.rename_holders_dialog"
 
 RECORD: Final = Path("/fake/library/pack/info.rehu")
@@ -76,13 +78,31 @@ def fixture_windows(mocker: MockerFixture) -> dict[str, MagicMock]:
     }
 
 
+@fixture(name="pool")
+def fixture_pool(mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown) -> QThreadPool:
+    """A pool of two threads standing in for the dialog's global one: a test that holds one answer needs the next
+    to run beside it, which the global pool cannot promise while other tests' jobs occupy it.
+
+    :param mocker: pytest-mock fixture.
+    :param delete_at_teardown: the conftest's teardown registry.
+    :returns: the pool.
+    """
+    pool = delete_at_teardown(QThreadPool())
+    pool.setMaxThreadCount(2)
+    mocker.patch(f"{MODULE}.QThreadPool").globalInstance.return_value = pool
+    return pool
+
+
 @fixture(name="dialog")
-def fixture_dialog(qtbot: QtBot, find: MagicMock, windows: dict[str, MagicMock]) -> Iterator[RenameHoldersDialog]:
+def fixture_dialog(
+    qtbot: QtBot, find: MagicMock, windows: dict[str, MagicMock], pool: QThreadPool
+) -> Iterator[RenameHoldersDialog]:
     """The dialog for :data:`RECORD`, its first answer listed; the pool drained at teardown so no job outlives it.
 
     :param qtbot: pytest-qt fixture.
     :param find: the question's stand-in.
     :param windows: the window and process stand-ins.
+    :param pool: the pool standing in for the global one.
     :yields: the dialog.
     """
     del find, windows
@@ -90,7 +110,7 @@ def fixture_dialog(qtbot: QtBot, find: MagicMock, windows: dict[str, MagicMock])
     qtbot.addWidget(dialog)
     qtbot.waitUntil(lambda: dialog.status != SEARCHING)
     yield dialog
-    QThreadPool.globalInstance().waitForDone()
+    pool.waitForDone()
 
 
 def button(row: HolderRow, name: str) -> QPushButton:
@@ -155,7 +175,9 @@ def test_every_other_program_is_listed_with_its_buttons(dialog: RenameHoldersDia
     assert not dialog.status
 
 
-def test_the_record_is_named_and_this_process_said_apart(qtbot: QtBot, find: MagicMock, windows: object) -> None:
+def test_the_record_is_named_and_this_process_said_apart(
+    qtbot: QtBot, find: MagicMock, windows: object, pool: QThreadPool
+) -> None:
     """The dialog names the resource it asks about, and a handle of Rehuco's own is said, never listed.
 
     **Test steps:**
@@ -164,7 +186,7 @@ def test_the_record_is_named_and_this_process_said_apart(qtbot: QtBot, find: Mag
     * verify the folder is named, the question was about the record, only Explorer is listed, and this process
       is said below
     """
-    del windows
+    del windows, pool
     find.return_value = holders_found(EXPLORER, rehuco=True)
 
     dialog = RenameHoldersDialog(RECORD)
@@ -179,7 +201,9 @@ def test_the_record_is_named_and_this_process_said_apart(qtbot: QtBot, find: Mag
     assert dialog.status == HELD_BY_REHUCO
 
 
-def test_a_question_that_failed_says_why_and_can_be_asked_again(dialog: RenameHoldersDialog, find: MagicMock) -> None:
+def test_a_question_that_failed_says_why_and_can_be_asked_again(
+    dialog: RenameHoldersDialog, find: MagicMock, pool: QThreadPool
+) -> None:
     """A refused question lists nobody and says why; Refresh asks again.
 
     **Test steps:**
@@ -192,7 +216,7 @@ def test_a_question_that_failed_says_why_and_can_be_asked_again(dialog: RenameHo
     find.side_effect = OSError("offline")
 
     dialog.refresh()
-    QThreadPool.globalInstance().waitForDone()
+    pool.waitForDone()
     QApplication.processEvents()
 
     assert not dialog.rows
@@ -202,14 +226,14 @@ def test_a_question_that_failed_says_why_and_can_be_asked_again(dialog: RenameHo
     refresh = dialog.findChild(QPushButton, "refresh_button")
     assert refresh is not None
     refresh.click()
-    QThreadPool.globalInstance().waitForDone()
+    pool.waitForDone()
     QApplication.processEvents()
 
     assert [row.holder for row in dialog.rows] == [EXPLORER, SCANNER]
 
 
 def test_an_answer_overtaken_by_a_newer_ask_is_dropped(
-    qtbot: QtBot, dialog: RenameHoldersDialog, find: MagicMock
+    qtbot: QtBot, dialog: RenameHoldersDialog, find: MagicMock, pool: QThreadPool
 ) -> None:
     """Only the latest ask is listed, whichever answer lands last.
 
@@ -233,7 +257,7 @@ def test_an_answer_overtaken_by_a_newer_ask_is_dropped(
     qtbot.waitUntil(lambda: [row.holder for row in dialog.rows] == [SCANNER])
 
     release.set()
-    QThreadPool.globalInstance().waitForDone()
+    pool.waitForDone()
     QApplication.processEvents()
 
     assert [row.holder for row in dialog.rows] == [SCANNER]
@@ -292,7 +316,7 @@ def test_end_task_waits_disabled_then_takes_the_program_off(
 
 
 def test_ending_the_last_program_says_nobody_holds_the_files(
-    qtbot: QtBot, find: MagicMock, windows: dict[str, MagicMock]
+    qtbot: QtBot, find: MagicMock, windows: dict[str, MagicMock], pool: QThreadPool
 ) -> None:
     """Once every program is ended, the dialog says what it says when nobody was found.
 
@@ -301,7 +325,7 @@ def test_ending_the_last_program_says_nobody_holds_the_files(
     * open the dialog over Explorer alone, and end it
     * verify the list is empty and the folder's nobody sentence is said
     """
-    del windows
+    del windows, pool
     find.return_value = holders_found(EXPLORER)
     dialog = RenameHoldersDialog(RECORD)
     qtbot.addWidget(dialog)
@@ -358,7 +382,7 @@ def test_a_program_that_outlived_the_wait_gets_its_button_back(
 
 
 def test_an_end_answered_after_a_refresh_dropped_its_row_changes_nothing(
-    qtbot: QtBot, dialog: RenameHoldersDialog, find: MagicMock, windows: dict[str, MagicMock]
+    qtbot: QtBot, dialog: RenameHoldersDialog, find: MagicMock, windows: dict[str, MagicMock], pool: QThreadPool
 ) -> None:
     """A program the latest ask no longer lists is not taken off a list it is not on.
 
@@ -377,7 +401,7 @@ def test_an_end_answered_after_a_refresh_dropped_its_row_changes_nothing(
     qtbot.waitUntil(lambda: len(dialog.rows) == 1)
 
     release.set()
-    QThreadPool.globalInstance().waitForDone()
+    pool.waitForDone()
     QApplication.processEvents()
 
     assert [row.holder for row in dialog.rows] == [EXPLORER]
