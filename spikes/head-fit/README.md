@@ -11,7 +11,7 @@ folder is removed (the convention `spikes/pyqtads-qml/` followed).
 ## Run
 
 ```bash
-uv run spikes/head-fit/main.py OUT_DIR SOURCE [SOURCE ...] [--max N]
+uv run spikes/head-fit/main.py OUT_DIR SOURCE [SOURCE ...] [--max N] [--every K]
 ```
 
 `SOURCE` is an image, a folder of images, or a reference pack's `.zip`/`.cbz` read in place. The script
@@ -41,8 +41,20 @@ landmarks the fit uses (magenta) and the measured yaw / pitch / roll. `summary.c
   face every time. The textbook proportion (brow on the sphere's centre, nose base on its bottom) drew the
   sphere too small and too low on every skull; adult averages (brow 0.2 r below the centre, face thirds of
   0.7 r — the constants at the top of `main.py`) fixed it in one pass. What remains is handle-sized.
-- **Small faces.** A family group whose faces were under about 60 px yielded no detection. The stage cannot
-  run on a 512 px working image of a full figure; it needs the face region from the original — an exception
-  to tier 2's no-crop rule, recorded in §18.15 for #587.
-- **Still to do.** Run it over a few of the collection's own packs (`uv run spikes/head-fit/main.py out
-  path/to/pack.zip --max 40`), look, adjust the verdict in §18.15 if they disagree, then delete this folder.
+- **The collection's packs** (one archive each, every 7th–11th image, 33–40 per pack):
+
+  | Pack | Faces found | Notes |
+  | --- | --- | --- |
+  | Expressions (head close-ups, 4000×6000) | 24 / 33 at full frame | yaw to 43°, pitch to 38°, all fitted well |
+  | Female poses, top angle (5760²) | 6 / 40 | heads small and often turned away |
+  | Male turnaround (3840×5760) | 0 / 40 full frame → 14 / 40 with the head crop | misses are profiles and backs |
+  | Warrior, sword (5600×8400) | 0 / 39 full frame → 14 / 39 with the head crop | misses are profiles and backs |
+
+- **Small faces, however many pixels.** The face detector downsizes the whole frame to a tiny input, so a
+  face that is a few percent of a full-figure photo is invisible to it at any resolution. The fallback here
+  runs MediaPipe Pose on a 1024 px copy, crops the head box from the original, detects on the crop and maps
+  the landmarks back — which is what #336's head box would hand #587's stage. Recorded in §18.15 as an
+  exception to tier 2's no-crop rule.
+- **Beyond ~60° of yaw and from behind** the landmarker gives nothing; the overlay must start from the pose
+  stage's coarse head angle (ears and nose) or by hand — the handles' job.
+- **Done.** Verdict is in §18.15; this folder goes when #586 is closed.

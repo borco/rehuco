@@ -843,11 +843,17 @@ transformation matrix read right by eye, and the centre line and brow line follo
 pose is a starting point, not the job. The textbook proportion (brow line through the sphere's centre, nose
 base on its bottom) drew the sphere too small and too low on every skull; adult averages — the brow 0.2 r
 below the centre, face thirds of 0.7 r — fixed it in one pass, and what remains is exactly what a scale or
-incline handle corrects. Two caveats for the stage (#587): the landmarker found **no face** in a family group
-whose faces were under about 60 px, so on a 512 px working image of a full figure it will fail — the stage
-needs the face region from the **original**, an exception to tier 2's no-crop rule; and MediaPipe's wheels stop
-at Python 3.12 while the workspace is on 3.14, which argues for an ONNX landmarker on `onnxruntime`. **Not yet
-run over this collection's own packs** — that run, and the code's deletion, are what still close #586.
+incline handle corrects. **Over the collection's own packs** (every 7th–11th image of one archive each, 33–40 per pack): an
+expressions pack found 24 of 33 faces with yaw to 43° and pitch to 38° and fitted every one of them well; a
+from-above pack, 6 of 40. Two full-figure packs — a male turnaround and a sword pack of 4000–8400 px images —
+found **nothing at full frame**, however many pixels the face had, because the detector downsizes the whole
+frame to a tiny input; cropping to the head box the whole-body pose gives (MediaPipe Pose in the spike, #336's
+rows in the design) and detecting on that crop rescued 14 of 40 in each, with the landmarks mapped back to the
+original correctly, to 63° of yaw. Every remaining miss was a true profile or a back view. So the stage (#587)
+takes the **face region cut from the original**, an exception to tier 2's no-crop rule; beyond about 60° of
+yaw and from behind, the overlay must start from the pose stage's coarse head angle (ears and nose) or by
+hand — which is what the handles are for. MediaPipe's wheels stop at Python 3.12 while the workspace is on
+3.14, which argues for an ONNX landmarker on `onnxruntime`. The spike's code is deleted once #586 is closed.
 
 ## §18.16 Open questions
 

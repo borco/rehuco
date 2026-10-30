@@ -11,7 +11,7 @@
 Throwaway. Runs outside the workspace (its own interpreter and dependencies via the PEP 723 header),
 so nothing lands in a package's ``pyproject.toml``::
 
-    uv run spikes/head-fit/main.py OUT_DIR SOURCE [SOURCE ...] [--max N]
+    uv run spikes/head-fit/main.py OUT_DIR SOURCE [SOURCE ...] [--max N] [--every K]
 
 A ``SOURCE`` is an image file, a folder of images, or a ``.zip``/``.cbz`` whose image members are read
 in place. Each image with a detected face gets ``<name>.loomis.png`` in ``OUT_DIR`` with the sphere, the
@@ -43,6 +43,13 @@ MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/"
     "face_landmarker.task"
 )
+POSE_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/"
+    "pose_landmarker_lite.task"
+)
+# Pose landmark indices (33-point layout) that bound the head.
+POSE_HEAD_POINTS = range(0, 11)  # nose, eyes, ears, mouth corners
+HEAD_CROP_MARGIN = 1.6  # half-size of the crop, in multiples of the head points' spread
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 # Landmark indices of the 468-point mesh used for the fit.
@@ -74,14 +81,55 @@ class Pose:
     rotation: np.ndarray  # 3x3, head-local → camera, y up, z toward the camera
 
 
-def model_path() -> Path:
+def model_path(url: str = MODEL_URL) -> Path:
     cache = Path(__file__).with_name(".cache")
     cache.mkdir(exist_ok=True)
-    path = cache / "face_landmarker.task"
+    path = cache / url.rsplit("/", 1)[1]
     if not path.exists():
-        print(f"downloading {MODEL_URL}", file=sys.stderr)
-        urllib.request.urlretrieve(MODEL_URL, path)  # noqa: S310 — fixed https URL
+        print(f"downloading {url}", file=sys.stderr)
+        urllib.request.urlretrieve(url, path)  # noqa: S310 — fixed https URL
     return path
+
+
+def make_pose_landmarker() -> mp_vision.PoseLandmarker:
+    options = mp_vision.PoseLandmarkerOptions(
+        base_options=mp_python.BaseOptions(model_asset_path=str(model_path(POSE_MODEL_URL))),
+        running_mode=mp_vision.RunningMode.IMAGE,
+        num_poses=1,
+    )
+    return mp_vision.PoseLandmarker.create_from_options(options)
+
+
+def head_crop(pose_landmarker: mp_vision.PoseLandmarker, image: Image.Image) -> tuple[int, int, int, int] | None:
+    """The head box the whole-body pose gives — what #336 would hand the face stage — as a crop of the original.
+
+    The face detector downsizes the whole frame to a tiny input, so a face that is a few percent of a
+    full-figure photo is invisible to it however many pixels it has; the crop is the remedy.
+    """
+    w, h = image.size
+    small = image.copy()
+    small.thumbnail((1024, 1024))
+    result = pose_landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.asarray(small)))
+    if not result.pose_landmarks:
+        return None
+    pts = np.array([[lm.x * w, lm.y * h] for i, lm in enumerate(result.pose_landmarks[0]) if i in POSE_HEAD_POINTS])
+    centre = pts.mean(axis=0)
+    spread = max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), 0.02 * max(w, h))
+    half = HEAD_CROP_MARGIN * spread
+    x0, y0 = max(0, int(centre[0] - half)), max(0, int(centre[1] - half))
+    x1, y1 = min(w, int(centre[0] + half)), min(h, int(centre[1] + half))
+    return x0, y0, x1, y1
+
+
+class _Shifted:
+    """A landmark re-expressed in full-image normalized coordinates after detection on a crop."""
+
+    def __init__(self, lm, box: tuple[int, int, int, int], size: tuple[int, int]) -> None:
+        x0, y0, x1, y1 = box
+        w, h = size
+        self.x = (x0 + lm.x * (x1 - x0)) / w
+        self.y = (y0 + lm.y * (y1 - y0)) / h
+        self.z = lm.z
 
 
 def make_landmarker() -> mp_vision.FaceLandmarker:
@@ -211,25 +259,43 @@ def main() -> int:
     parser.add_argument("out_dir", type=Path)
     parser.add_argument("sources", type=Path, nargs="+")
     parser.add_argument("--max", type=int, default=60, help="stop after this many images (default 60)")
+    parser.add_argument("--every", type=int, default=1, help="take every K-th image, to span a whole pack (default 1)")
     args = parser.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     landmarker = make_landmarker()
+    pose_landmarker = make_pose_landmarker()
     rows: list[dict[str, str]] = []
     seen = 0
-    for name, image in iter_sources(args.sources):
+    for index, (name, image) in enumerate(iter_sources(args.sources)):
+        if index % args.every:
+            continue
         if seen >= args.max:
             break
         seen += 1
         image = image.convert("RGB")
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.asarray(image))
         result = landmarker.detect(mp_image)
-        if not result.face_landmarks:
-            rows.append({"image": name, "faces": "0", "yaw": "", "pitch": "", "roll": "", "radius_px": ""})
-            print(f"{name}: no face", file=sys.stderr)
+        via = "full"
+        faces = list(zip(result.face_landmarks, result.facial_transformation_matrixes))
+        if not faces:
+            box = head_crop(pose_landmarker, image)
+            if box is not None:
+                crop = image.crop(box)
+                cropped = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.asarray(crop)))
+                faces = [
+                    ([_Shifted(lm, box, image.size) for lm in lms], matrix)
+                    for lms, matrix in zip(cropped.face_landmarks, cropped.facial_transformation_matrixes)
+                ]
+                via = f"head crop {box[2] - box[0]}px" if faces else "head crop, no face"
+            else:
+                via = "no pose"
+        if not faces:
+            rows.append({"image": name, "faces": "0", "yaw": "", "pitch": "", "roll": "", "radius_px": "", "via": via})
+            print(f"{name}: no face ({via})", file=sys.stderr)
             continue
         out = image
-        for i, (landmarks, matrix) in enumerate(zip(result.face_landmarks, result.facial_transformation_matrixes)):
+        for i, (landmarks, matrix) in enumerate(faces):
             pose = pose_from_matrix(matrix)
             out, radius = draw_loomis(out, landmarks, pose)
             rows.append(
@@ -240,14 +306,15 @@ def main() -> int:
                     "pitch": f"{pose.pitch:.1f}",
                     "roll": f"{pose.roll:.1f}",
                     "radius_px": f"{radius:.0f}",
+                    "via": via,
                 }
             )
-            print(f"{name} [{i}]: yaw {pose.yaw:+.0f} pitch {pose.pitch:+.0f} roll {pose.roll:+.0f}", file=sys.stderr)
+            print(f"{name} [{i}]: yaw {pose.yaw:+.0f} pitch {pose.pitch:+.0f} roll {pose.roll:+.0f} ({via})", file=sys.stderr)
         safe = name.replace("/", "__").replace("\\", "__")
         out.save(args.out_dir / f"{safe}.loomis.png")
 
     with (args.out_dir / "summary.csv").open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=["image", "faces", "yaw", "pitch", "roll", "radius_px"])
+        writer = csv.DictWriter(fh, fieldnames=["image", "faces", "yaw", "pitch", "roll", "radius_px", "via"])
         writer.writeheader()
         writer.writerows(rows)
     print(f"{len(rows)} rows → {args.out_dir / 'summary.csv'}", file=sys.stderr)
