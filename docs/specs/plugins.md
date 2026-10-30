@@ -1399,6 +1399,7 @@ resource. All three arrive with the catalog cache (CacheDB's `.rehudb` — their
 | **creator** | a credited name in `authors` ([[field-schema#authors]]); a source's `publisher` ([[field-schema#sources]]) | above its own resources, else the creators' home | one party, two roles; alias aggregation |
 | **collection** | member's `collections[]` | members' parent dir *when containment-shaped*, else the collections' home | dual placement |
 | **learning path** | member's `learning_paths[]` | the learning paths' home / owner's per-user state | owned per-user, shared by copy into the reserved `public` scope ([[field-schema#learning-path-ownership]]) |
+| **actor** | a face's nearest exemplar centroid in the cross-pack index, plus authored verdicts ([[reference-images#actors]]) | the actors' home | identity by embedding, not by name; portrait and representatives auto-picked with provenance, a user's choice wins |
 
 - **Discovered vs. genuine.** An entity needs no document to exist: the membership entries on resources alone define a
   *discovered* entity — browsable, weightless, derived. A *genuine* entity has its own `.rehu`. The rule for which is
@@ -1442,6 +1443,10 @@ resource. All three arrive with the catalog cache (CacheDB's `.rehudb` — their
   Until then two spellings that fold differently are two creators, and a rename onto the other merges them
   ([[plugins#entity-merge]]). Resources keep referencing creators by credited name; membership-by-identity (UUIDs on
   the references) follows the same later trajectory as collections ([[field-schema#deferred-items]]).
+- **Actor specifics.** An actor is discovered as a face cluster and becomes genuine when the user confirms it; its
+  block holds the exemplar face keys the assignment is derived from, the merge log that makes a split possible, and
+  the provenance of its auto-picked screenshots. Everything else — the face stage, the identity lanes for faceless
+  images, split and merge, the surfaces — is [[reference-images#actors]].
 - **Learning-path specifics.** Paths are per-user with a private/public toggle ([[field-schema#per-user-shared]]). A
   *private* path likely stays pure per-user state with **the entity document minted at publication** — privacy by
   non-existence beats privacy by access rule — decided finally when the plugin is built. v1 (single-user, no
