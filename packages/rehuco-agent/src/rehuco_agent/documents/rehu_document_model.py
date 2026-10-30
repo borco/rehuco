@@ -46,12 +46,16 @@ from rehuco_core import (
     put_paths,
     reached_end,
     read_last_video,
+    read_notes,
     read_progress,
+    read_video_favorites,
+    read_video_notes,
     read_videos,
     rehu_rename_conflict,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
+    video_data_keys,
 )
 from rehuco_core.access import FileSignature, KeyRelocation, LoadedRecord, Records, ResourceKey
 from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS
@@ -259,6 +263,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     -- at once, before it is written -- a write that landed and was taken in, an entry forgotten, a Measure written.
     Never a change to the document: progress is the user's own state beside the record, not an edit of it
     ([[field-schema#watch-progress]])."""
+
+    notes_changed = Signal()
+    """Fires when what :attr:`notes`, :meth:`video_notes_of` or :meth:`is_favorite` answers changed (#571): a note
+    recorded -- at once, before it is written -- a write that landed and was taken in, a video forgotten. Never a
+    change to the document, as :attr:`progress_changed` is not ([[field-schema#video-notes]])."""
 
     __videos_measured = Signal(object, object)
     """A Measure's lengths on their way to the GUI thread, with the record they were measured of
@@ -516,6 +525,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     record is locked or has no file, or the last write failed. What was recorded is kept in memory meanwhile
     (:meth:`progress_entries`), and the next write that lands clears this."""
 
+    notes_unsaved = SimpleProperty("")
+    """Why the notes and favorites recorded in this session are not being saved, in the banner's words, or empty
+    (#571): what :attr:`progress_unsaved` is for progress. What was recorded is kept in memory meanwhile, and this
+    clears once the record holds all of it."""
+
     upgradable = SimpleProperty(False)
     """Whether this document can be brought current by a plain save (#89, [[data-model#schema-version]]):
     the file on disk is older -- at the file-wide :data:`~rehuco_core.CURRENT_FORMAT_VERSION`, at the
@@ -565,6 +579,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__last_video_overlay: str | None = None
         """The video a player recorded last in this session, until a landed write takes it in: what :meth:`last_video`
         answers over the record's own."""
+        self.__notes_overlay: str | None = None
+        """The tutorial's notes recorded in this session that the record does not hold yet (#571)."""
+        self.__video_notes_overlay: Final[dict[str, str]] = {}
+        """The video notes recorded in this session that the record does not hold yet, by content key."""
+        self.__favorites_overlay: Final[dict[str, bool]] = {}
+        """The favorites set in this session that the record does not hold yet, by content key."""
         self.__read_serial = 0
         """Counts the reads asked for: an answer carrying an older count is for a read this model moved on from."""
         self.__read_out: RehuDocumentModel.OutstandingRead | None = None
@@ -1575,6 +1595,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param viewed: the file's flag set by hand, or ``None`` to let the Videos settings' rules decide.
         """
         rules = shared_videos_settings().watch_rules
+        if relative not in self.video_data_keys():
+            # the video's first write -- played, or ticked viewed by hand: it may be a renamed one, and its data is
+            # not found by its new name
+            self.reattach_renamed_progress()
         old = self.progress_of(relative)
         measured = self.measured_videos().get(relative)
         length = measured.duration if measured is not None else duration
@@ -1587,20 +1611,22 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         kept_duration = duration if duration is not None else (old.duration if old is not None else None)
         if viewed is None:
             self.__last_video_overlay = relative
-        self.__overlay[relative] = ProgressEntry(  # pylint: disable=unsupported-assignment-operation
-            float(position), kept_duration, now_viewed, old.size if old else None
-        )
+        entry = ProgressEntry(float(position), kept_duration, now_viewed, old.size if old else None)
+        self.__overlay[relative] = entry  # pylint: disable=unsupported-assignment-operation
         self.progress_changed.emit()
         self.__submit_progress(
-            ("progress", relative), report=True, work=self.__write_progress(relative, position, duration, viewed)
+            ("progress", relative),
+            report=self.__report_progress_unsaved,
+            work=self.__write_progress(relative, position, duration, viewed),
+            landed=lambda: self.__settle_progress(relative, entry, player=viewed is None),
         )
 
     def forget_progress(self, relative: str) -> None:
-        """Remove one of this user's progress entries, the way a missing video's is -- by hand, never automatically.
+        """Remove what this user keeps about one video -- progress, note and favorite -- the way a missing video's
+        is: by hand, never automatically.
 
-        :param relative: the entry's key as stored.
+        :param relative: the video's key as stored.
         """
-        self.__overlay.pop(relative, None)
         username = self.__document.username
         target = cast(ResourceKey, self.key)
 
@@ -1612,7 +1638,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             """
             return records.forget_progress(target, username=username, relative=relative)
 
-        self.__submit_progress(("forget", relative), report=True, work=forget)
+        def forgotten() -> None:
+            """Let go of what this session recorded about the video, now that the record holds nothing of it."""
+            self.__overlay.pop(relative, None)
+            self.__video_notes_overlay.pop(relative, None)
+            self.__favorites_overlay.pop(relative, None)
+            self.progress_changed.emit()
+            self.notes_changed.emit()
+
+        self.__submit_progress(
+            ("forget", relative), report=self.__report_progress_unsaved, work=forget, landed=forgotten
+        )
 
     def reattach_renamed_progress(self) -> None:
         """Move this user's progress onto the videos that were renamed, as listing the files does (#411). Silent where
@@ -1638,7 +1674,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 excluded_patterns=excluded,
             )
 
-        self.__submit_progress(("reattach",), report=False, work=reattach)
+        self.__submit_progress(("reattach",), report=None, work=reattach)
 
     def record_videos(self, measured: Mapping[str, VideoFacts]) -> None:
         """Write a Measure's lengths into the record, without a save and without making the document dirty. Silent where
@@ -1657,7 +1693,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             """
             return records.record_videos(target, measured, username=username)
 
-        self.__submit_progress(("videos",), report=False, work=write)
+        self.__submit_progress(("videos",), report=None, work=write)
 
     def post_measured_videos(self, key: ResourceKey | None, measured: Mapping[str, VideoFacts]) -> None:
         """Hand a Measure's lengths over from the worker thread that measured them: they are written into the record on
@@ -1752,43 +1788,65 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return ""
 
     def __submit_progress(
-        self, key: tuple[str, ...], *, report: bool, work: Callable[[Records], LoadedRecord | None]
+        self,
+        key: tuple[object, ...],
+        *,
+        report: Callable[[str, bool], None] | None,
+        work: Callable[[Records], LoadedRecord | None],
+        landed: Callable[[], None] | None = None,
     ) -> bool:
         """Hand a write to the writer, unless the record cannot be written now.
 
         :param key: what makes two writes the same one (:meth:`ProgressWriter.submit`).
-        :param report: say in :attr:`progress_unsaved` why it was not written, rather than say nothing.
+        :param report: told why it was not written, and whether it failed rather than was refused, or ``None`` to say
+            nothing.
         :param work: the write, given the records to reach the record through.
+        :param landed: called once the record the write left was taken into the document -- what lets go of the
+            overlay the write carried, and nothing else's.
         :returns: whether it was handed over.
         """
         reason = self.__progress_blocker()
         if reason:
-            if report:
-                self.progress_unsaved = f"Watch progress is not being saved: {reason}"
+            if report is not None:
+                report(reason, False)
             return False
         records = self.__records
         self.__writer.submit(
             key,
             lambda: work(records),
-            lambda outcome: self.__on_progress_written(outcome, report=report),
+            lambda outcome: self.__on_progress_written(outcome, report=report, landed=landed),
             self.path,
         )
         return True
 
-    def __on_progress_written(self, outcome: LoadedRecord | Exception | None, *, report: bool) -> None:
+    def __on_progress_written(
+        self,
+        outcome: LoadedRecord | Exception | None,
+        *,
+        report: Callable[[str, bool], None] | None,
+        landed: Callable[[], None] | None,
+    ) -> None:
         """Take in the outcome of a write (GUI thread): the record it left, taken into the open document without
         reloading it or touching its edits, or the failure, which keeps what was recorded and says so.
 
+        What the session recorded and the record does not hold yet stays shown: a landed write lets go of its own
+        overlay only, so a write that failed is still there for the next of its key to carry, and the banner that
+        says so stays until nothing is left unsaved.
+
         :param outcome: the record read after the write, the error it ended in, or ``None`` when it wrote nothing.
-        :param report: whether a failure is shown in :attr:`progress_unsaved`.
+        :param report: told of a failure, or ``None`` to say nothing.
+        :param landed: told the record was taken in, or ``None``.
         """
         if isinstance(outcome, Exception):
             LOG.warning("Watch progress not written to %s: %s", self.path, outcome)
-            if report:
-                self.progress_unsaved = f"Watch progress could not be saved: {self.__failure_reason(outcome)}"
+            if report is not None:
+                report(self.__failure_reason(outcome), True)
         elif outcome is not None:
             if self.__absorb_progress(outcome):
-                self.progress_unsaved = ""
+                if landed is not None:
+                    landed()
+                if not self.__overlay:
+                    self.progress_unsaved = ""
             else:
                 self.__signature_during_save = outcome.signature
         deferred = self.__signature_during_save
@@ -1828,11 +1886,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__version = record.version
         self.__base_data = copy.deepcopy(record.document.data)
         self.__disk_signature = record.signature
-        self.__overlay.clear()
-        self.__last_video_overlay = None
+        self.__settle_notes(record.document)
         with self.__seeding_guard():
             self.__seed_active_block_fields()
         self.progress_changed.emit()
+        self.notes_changed.emit()
         return True
 
     def __progress_unsettled(self, key: ResourceKey) -> bool:
@@ -1874,6 +1932,165 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__last_video_overlay = None
         self.progress_unsaved = ""
         self.progress_changed.emit()
+        self.__notes_overlay = None
+        self.__video_notes_overlay.clear()
+        self.__favorites_overlay.clear()
+        self.notes_unsaved = ""
+        self.notes_changed.emit()
+
+    def __settle_progress(self, relative: str, entry: ProgressEntry, *, player: bool) -> None:
+        """Let go of the entry one landed write carried, unless a later write of the video replaced it meanwhile.
+
+        :param relative: the video's content key.
+        :param entry: the entry the write carried.
+        :param player: whether the write was a player's, which also carried the video as the one watched last.
+        """
+        if self.__overlay.get(relative) is entry:
+            self.__overlay.pop(relative)
+        if player and self.__last_video_overlay == relative:
+            self.__last_video_overlay = None
+
+    def __report_progress_unsaved(self, reason: str, failed: bool) -> None:
+        """Say in :attr:`progress_unsaved` why progress was not written.
+
+        :param reason: why, in a phrase.
+        :param failed: whether the write was made and failed, rather than refused.
+        """
+        what = "could not be saved" if failed else "is not being saved"
+        self.progress_unsaved = f"Watch progress {what}: {reason}"
+
+    # endregion
+
+    # region Video notes ([[field-schema#video-notes]], #571)
+
+    @property
+    def notes(self) -> str:
+        """This user's notes about the whole tutorial: this session's own, over what the record holds."""
+        if self.__notes_overlay is not None:
+            return self.__notes_overlay
+        return read_notes(self.__document, self.__document.username)
+
+    def video_notes_of(self, relative: str) -> str:
+        """This user's notes on one video: this session's own, over what the record holds.
+
+        :param relative: the file's content key.
+        :returns: the markdown, empty when there is none.
+        """
+        written = self.__video_notes_overlay.get(relative)
+        if written is not None:
+            return written
+        return read_video_notes(self.__document, self.__document.username).get(relative, "")
+
+    def is_favorite(self, relative: str) -> bool:
+        """Whether this user starred one video: this session's own answer, over what the record holds.
+
+        :param relative: the file's content key.
+        :returns: whether it is starred.
+        """
+        starred = self.__favorites_overlay.get(relative)
+        if starred is not None:
+            return starred
+        return relative in read_video_favorites(self.__document, self.__document.username)
+
+    def record_notes(
+        self,
+        *,
+        notes: str | None = None,
+        video_notes: Mapping[str, str] | None = None,
+        favorites: Mapping[str, bool] | None = None,
+    ) -> None:
+        """Record what this user wrote about the tutorial and its videos: shown at once, written to the record without
+        a save and without making the document dirty, on the thread progress is written on.
+
+        A video with no data of this user's yet is looked for under its old name first, as its first play does, so a
+        note on a renamed file does not start a second life for it. When the record cannot hold the write -- no file,
+        locked, an unreadable sidecar of the user's own -- or it fails, what was recorded is kept for the session and
+        :attr:`notes_unsaved` says why.
+
+        :param notes: the markdown about the whole tutorial, or ``None`` to leave it; empty removes it.
+        :param video_notes: the markdown of each video written, by content key; empty removes a note.
+        :param favorites: whether each video is starred, by content key.
+        """
+        texts = dict(video_notes or {})
+        stars = dict(favorites or {})
+        started = [*(key for key, text in texts.items() if text), *(key for key, star in stars.items() if star)]
+        if started and not set(started) <= self.video_data_keys():
+            self.reattach_renamed_progress()
+        if notes is not None:
+            self.__notes_overlay = notes
+        self.__video_notes_overlay.update(texts)
+        self.__favorites_overlay.update(stars)
+        self.notes_changed.emit()
+        self.__submit_progress(
+            ("notes", notes is not None, tuple(sorted(texts)), tuple(sorted(stars))),
+            report=self.__report_notes_unsaved,
+            work=self.__write_notes(notes, texts, stars),
+        )
+
+    def video_data_keys(self) -> set[str]:
+        """Every video this user keeps anything about -- a progress entry, a note, a favorite or a recorded size, as
+        the rename search judges it (:func:`~rehuco_core.video_data_keys`) -- what this session recorded included.
+        A key whose file is gone is a *missing* video, listed with its notes kept and editable.
+
+        :returns: the content keys.
+        """
+        keys = video_data_keys(self.__document, self.__document.username)
+        keys.update(self.__overlay)
+        keys.update(key for key, text in self.__video_notes_overlay.items() if text)
+        keys.update(key for key, starred in self.__favorites_overlay.items() if starred)
+        return keys
+
+    def __write_notes(
+        self, notes: str | None, video_notes: Mapping[str, str], favorites: Mapping[str, bool]
+    ) -> Callable[[Records], LoadedRecord]:
+        """The write one :meth:`record_notes` makes, taken now, on the GUI thread.
+
+        :param notes: the markdown about the whole tutorial, or ``None``.
+        :param video_notes: the markdown of each video written.
+        :param favorites: whether each video is starred.
+        :returns: what the writer's thread calls with the records.
+        """
+        username = self.__document.username
+        key = cast(ResourceKey, self.key)
+
+        def write(records: Records) -> LoadedRecord:
+            """Write the notes (the writer's thread).
+
+            :param records: what the record is reached through.
+            :returns: the record as read after.
+            """
+            return records.record_notes(
+                key, username=username, notes=notes, video_notes=video_notes, favorites=favorites
+            )
+
+        return write
+
+    def __settle_notes(self, record: RehuDocument) -> None:
+        """Let go of what this session recorded that a record now agrees with -- what a landed write left -- and keep
+        what it does not: a write still waiting, or one that failed.
+
+        :param record: the record as read after a write.
+        """
+        username = self.__document.username
+        if self.__notes_overlay is not None and self.__notes_overlay == read_notes(record, username):
+            self.__notes_overlay = None
+        texts = read_video_notes(record, username)
+        for relative in [name for name, text in self.__video_notes_overlay.items() if texts.get(name, "") == text]:
+            self.__video_notes_overlay.pop(relative)
+        starred = read_video_favorites(record, username)
+        for relative in [name for name, flag in self.__favorites_overlay.items() if (name in starred) == flag]:
+            self.__favorites_overlay.pop(relative)
+        if self.__notes_overlay is None and not self.__video_notes_overlay and not self.__favorites_overlay:
+            self.notes_unsaved = ""
+
+    def __report_notes_unsaved(self, reason: str, failed: bool) -> None:
+        """Say in :attr:`notes_unsaved` why notes were not written.
+
+        :param reason: why, in a phrase.
+        :param failed: whether the write was made and failed, rather than refused.
+        """
+        what = "could not be saved" if failed else "are not being saved"
+        self.notes_unsaved = f"Notes {what}: {reason}"
 
     # endregion
 

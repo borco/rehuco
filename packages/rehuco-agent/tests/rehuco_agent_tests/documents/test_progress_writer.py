@@ -71,13 +71,13 @@ def test_a_write_is_answered_on_the_gui_thread_and_the_writer_is_then_idle(
 
 def test_a_write_still_waiting_is_replaced_by_a_later_one_of_its_key(qtbot: QtBot, writer: ProgressWriter) -> None:
     """A position every few seconds is the latest position, not a queue of them: the replaced write never runs and is
-    never answered, and a write of another key is not touched.
+    never answered, the later one takes its place in the queue, and a write of another key is not touched.
 
     **Test steps:**
 
-    * submit a write that holds the thread, then three more behind it: two of one key and one of another
+    * submit a write that holds the thread, then three more behind it: two of one key and one of another between
     * let the first finish and wait for the rest
-    * verify the earlier write of the shared key never ran, and the others ran in submission order
+    * verify the earlier write of the shared key never ran, and the later one ran in the earlier one's place
     """
     release = threading.Event()
     started = threading.Event()
@@ -103,8 +103,8 @@ def test_a_write_still_waiting_is_replaced_by_a_later_one_of_its_key(qtbot: QtBo
     release.set()
     qtbot.waitUntil(lambda: len(answered) == 3 and not writer.busy, timeout=WAIT_MS)
 
-    assert ran == ["holding", "videos", "second"]
-    assert answered == ["holding", "videos", "second"]
+    assert ran == ["holding", "second", "videos"]
+    assert answered == ["holding", "second", "videos"]
 
 
 def test_a_write_that_raises_is_answered_with_its_error_and_the_next_still_runs(

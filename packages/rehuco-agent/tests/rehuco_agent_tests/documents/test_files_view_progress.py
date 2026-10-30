@@ -383,6 +383,34 @@ def test_a_missing_video_is_listed_in_its_folder_and_forgotten_by_hand(
     assert view.forget_action.isVisible() is False
 
 
+def test_a_deleted_video_with_only_a_note_is_listed_as_missing_and_forgotten_by_hand(
+    model: RehuDocumentModel, view: FilesView
+) -> None:
+    """Deleting a video once watched and keeping its notes is the ordinary workflow ([[field-schema#video-notes]]):
+    a note or a favorite keeps the row as a progress entry does, and Forget takes them together.
+
+    **Test steps:**
+
+    * note and star a video that is not on disk, with no progress on it, and look at the top folder
+    * verify it is listed as *missing*
+    * select it and forget it
+    * verify the row, the note and the favorite are gone
+    """
+    model.record_notes(video_notes={"gone.mp4": "kept"}, favorites={"gone.mp4": True})
+
+    assert "gone.mp4" in names(view)
+    row = names(view).index("gone.mp4")
+    assert view.proxy.index(row, KIND_COLUMN).data() == "missing"
+
+    table = view.findChild(QTableView, "file_view")
+    assert table is not None
+    table.selectRow(row)
+    view.forget_action.trigger()
+
+    assert "gone.mp4" not in names(view)
+    assert (model.video_notes_of("gone.mp4"), model.is_favorite("gone.mp4")) == ("", False)
+
+
 # endregion
 
 

@@ -225,6 +225,7 @@ class FilesView(QWidget):
         model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
         self.__model_connections: Final = ConnectionList()
         self.__model_connections.connect(model.progress_changed, self.__apply_progress)
+        self.__model_connections.connect(model.notes_changed, self.__apply_progress)
         # whether the videos carry their keys is decided by the record's type: an open lists the folder before its
         # placeholder is read, and a type switch changes it, so the listing is read again then (#316)
         self.__model_connections.connect(model.active_block_changed, self.refresh)
@@ -325,7 +326,11 @@ class FilesView(QWidget):
         progress = None
         if path is not None and self.__model.watches_progress:
             progress = FilesProgress(
-                path.parent, self.__model.progress_entries(), self.__model.measured_videos(), rows.video_keys
+                path.parent,
+                self.__model.progress_entries(),
+                self.__model.measured_videos(),
+                rows.video_keys,
+                self.__model.video_data_keys(),
             )
         self.__rows.set_progress(progress)
         gone = () if path is None or progress is None else missing_rows(path, rows.directory, progress)

@@ -5,7 +5,7 @@ Pure: the sums are core's (:func:`~rehuco_core.watch_totals`), derived at the mo
 and this module only turns them into the words a row ends with.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -52,12 +52,21 @@ class FilesProgress:
     :param video_keys: the content key of every video on disk now, or ``None`` when that is not known -- a document
         that is not a tutorial, or a folder that would not list. Without it no total is claimed: a folder's share of
         files nobody counted would be a wrong number.
+    :param data_keys: every video the user keeps anything about -- progress, a note, a favorite
+        ([[field-schema#video-notes]], #571) -- which is what a video gone from disk is listed as *missing* by; the
+        entries' keys when not given.
     """
 
     root: Path
     entries: Mapping[str, ProgressEntry]
     measured: Mapping[str, VideoFacts]
     video_keys: tuple[str, ...] | None
+    data_keys: Collection[str] | None = None
+
+    @property
+    def known_keys(self) -> Collection[str]:
+        """The keys a missing video is one of: ``data_keys``, else the entries'."""
+        return self.data_keys if self.data_keys is not None else self.entries.keys()
 
     @cached_property
     def totals(self) -> dict[str, WatchTotals]:

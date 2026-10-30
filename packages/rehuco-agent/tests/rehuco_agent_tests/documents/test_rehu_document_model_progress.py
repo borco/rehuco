@@ -401,6 +401,32 @@ def test_the_files_own_change_by_a_write_is_not_taken_for_one_made_outside(
     assert model.progress_unsaved == ""
 
 
+def test_a_write_overtaken_by_a_newer_position_leaves_the_newer_one_shown(
+    tmp_path: Path, open_model: OpenModel, held_writes: HeldWrites
+) -> None:
+    """A landed write lets go of the entry it carried, not of one the player recorded while it was running.
+
+    **Test steps:**
+
+    * record a position, the write held, and run its work
+    * record a newer position before the first write's answer lands, then let it land
+    * verify the newer position is still shown, and the newer write is still waiting behind the search its first
+      write queued
+    """
+    path = write_tutorial(tmp_path / "t")
+    model = open_model(path)
+    model.record_progress("a.mp4", 4.0, 10.0)
+    work, answer = held_writes.waiting.pop(("progress", "a.mp4"))
+    outcome = work()
+    model.record_progress("a.mp4", 6.0, 10.0)
+
+    answer(outcome)
+
+    entry = model.progress_of("a.mp4")
+    assert entry is not None and entry.position == 6.0
+    assert held_writes.keys[-1] == ("progress", "a.mp4")
+
+
 def test_a_resource_edited_on_disk_meanwhile_is_left_to_the_changed_on_disk_rule(tmp_path: Path, open_model) -> None:
     """A write that finds the record's details moved on is not taken in over them: a clean model reloads, and shows
     both the new details and the progress.
