@@ -16,7 +16,7 @@ from PySide6.QtMultimedia import QMediaPlayer
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents import player_view
+from rehuco_agent.documents import player_engine
 from rehuco_agent.documents.player_view import INTERLACED_NOTICE, VLC_FALLBACK_TEMPLATE
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.vlc_media_player import VlcEngineError, VlcMediaPlayer
@@ -49,7 +49,7 @@ def fixture_library(mocker: MockerFixture) -> Mock:
     library = Mock()
     library.available = True
     library.reason = None
-    mocker.patch.object(player_view, "shared_vlc_library", return_value=library)
+    mocker.patch.object(player_engine, "shared_vlc_library", return_value=library)
     return library
 
 
@@ -66,7 +66,7 @@ def fixture_engine(mocker: MockerFixture) -> Mock:
     engine.still_ready = Mock()
     engine.position.return_value = 0
     engine.duration.return_value = 0
-    mocker.patch.object(player_view, "VlcMediaPlayer", return_value=engine)
+    mocker.patch.object(player_engine, "VlcMediaPlayer", return_value=engine)
     return engine
 
 
@@ -103,12 +103,12 @@ def test_vlc_chosen_and_loaded_builds_the_libvlc_engine_on_its_surface(
       surface is the page shown; no Qt player was made
     """
     del vlc_chosen
-    qt_player = mocker.patch.object(player_view, "QMediaPlayer")
+    qt_player = mocker.patch.object(player_engine, "QMediaPlayer")
     view = make_view(qtbot, model, recorder)
 
     view.jump("01.mp4")
 
-    built = getattr(player_view, "VlcMediaPlayer")  # noqa: B009  # the patched class
+    built = getattr(player_engine, "VlcMediaPlayer")  # noqa: B009  # the patched class
     assert built.call_args.args[0] is library
     assert built.call_args.args[1] is view.findChild(type(shown_of(view)), "vlc_surface")
     engine.setSource.assert_called_once()
@@ -152,7 +152,7 @@ def test_an_engine_libvlc_refuses_falls_back_the_same_way(
     * verify Qt plays and the banner says what libvlc refused
     """
     del library, vlc_chosen
-    mocker.patch.object(player_view, "VlcMediaPlayer", side_effect=VlcEngineError("libvlc gave no player."))
+    mocker.patch.object(player_engine, "VlcMediaPlayer", side_effect=VlcEngineError("libvlc gave no player."))
     view = make_view(qtbot, model, recorder)
 
     view.jump("01.mp4")
@@ -169,7 +169,7 @@ def test_qt_is_built_when_vlc_is_not_chosen_without_asking_for_the_library(
     * leave the app's player chosen and play a video
     * verify the library was never loaded
     """
-    loader = mocker.patch.object(player_view, "shared_vlc_library")
+    loader = mocker.patch.object(player_engine, "shared_vlc_library")
     view = make_view(qtbot, model, recorder)
 
     view.jump("01.mp4")
@@ -377,13 +377,13 @@ def test_a_changed_choice_rebuilds_the_engine_at_the_next_video(
     """
     del library
     qt_players: list[Mock] = []
-    real_qt = getattr(player_view, "QMediaPlayer")  # noqa: B009  # the real class, before it is patched
+    real_qt = getattr(player_engine, "QMediaPlayer")  # noqa: B009  # the real class, before it is patched
 
     def build_qt(*args: Any) -> Any:
         qt_players.append(mocker.Mock(wraps=real_qt(*args)))
         return qt_players[-1]
 
-    mocker.patch.object(player_view, "QMediaPlayer", side_effect=build_qt)
+    mocker.patch.object(player_engine, "QMediaPlayer", side_effect=build_qt)
     view = make_view(qtbot, model, recorder)
     view.jump("01.mp4")
     assert shown_of(view).objectName() == "video_widget"
@@ -403,3 +403,114 @@ def test_a_changed_choice_rebuilds_the_engine_at_the_next_video(
     engine.deleteLater.assert_called_once_with()
     assert len(qt_players) == 2
     assert shown_of(view).objectName() == "video_widget"
+
+
+def test_a_rename_of_this_resource_lets_a_playing_video_go_under_libvlc(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+    coordinator: RenameCoordinator,
+) -> None:
+    """A rename while the video plays pauses it and, under libvlc, releases the file the pause would have held.
+
+    **Test steps:**
+
+    * play under libvlc, buffer, then announce a rename of this resource while it plays
+    * verify the engine was stopped and its source cleared, with a still shown
+    """
+    del library, vlc_chosen
+    engine.grab_still.return_value = QImage(4, 3, QImage.Format.Format_RGB32)
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    deliver(engine, "mediaStatusChanged", QMediaPlayer.MediaStatus.BufferedMedia)
+    deliver(engine, "playbackStateChanged", QMediaPlayer.PlaybackState.PlayingState)
+
+    listener = coordinator.add_before_rename_listener.call_args.args[0]  # type: ignore[attr-defined]
+    listener(model.path)  # pylint: disable=not-callable  # a Mock's record
+
+    engine.stop.assert_called_once_with()
+    engine.setSource.assert_called_with(QUrl())
+    assert shown_of(view).objectName() == "still_widget"
+
+
+def test_a_vlc_set_up_after_the_fallback_is_taken_at_the_next_video(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * choose VLC with the library unavailable and play: Qt plays, with the reason
+    * make the library available and play the next video: verify the libvlc engine is built and the notice gone
+    """
+    del vlc_chosen
+    library.available = False
+    library.reason = "No VLC is set up on the Tools page."
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    assert shown_of(view).objectName() == "video_widget"
+
+    library.available = True
+    library.reason = None
+    view.jump("02.mp4")
+
+    engine.play.assert_called_once_with()
+    assert shown_of(view).objectName() == "vlc_surface"
+    assert notices(view) == []
+
+
+def test_stopping_the_view_closes_the_libvlc_engine(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """The dock closed, or the document: libvlc's threads and audio output go with it.
+
+    **Test steps:**
+
+    * play under libvlc, then stop the view
+    * verify the engine was closed and let go; play again and verify a new engine was built
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+
+    view.stop()
+
+    engine.close.assert_called_once_with()
+    engine.deleteLater.assert_called_once_with()
+    built = getattr(player_engine, "VlcMediaPlayer")  # noqa: B009  # the patched class
+    view.jump("01.mp4")
+    assert built.call_count == 2
+
+
+def test_stopping_a_view_that_built_no_engine_drops_nothing(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * stop a view before any video was selected
+    * verify no engine was built or closed
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+
+    view.stop()
+
+    engine.close.assert_not_called()
+    built = getattr(player_engine, "VlcMediaPlayer")  # noqa: B009  # the patched class
+    built.assert_not_called()

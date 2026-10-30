@@ -230,6 +230,10 @@ def test_on_linux_the_libraries_are_the_systems(mocker: MockerFixture, tmp_path:
     find.side_effect = [None, None]
     assert TOOL.library_path(tmp_path) is None
 
+    # the loader answers bare sonames, which it finds by its own search path: present, loaded by that name
+    find.side_effect = ["libvlc.so.5", "libvlccore.so.9"]
+    assert TOOL.library_path(tmp_path) == Path("libvlc.so.5")
+
 
 def test_a_static_install_has_no_library_and_is_not_usable(mocker: MockerFixture, tmp_path: Path) -> None:
     """A VLC whose executable is there but whose shared library is not cannot be loaded into the player.

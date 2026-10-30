@@ -9,15 +9,11 @@ chosen afterwards is taken at the next start, which the Videos page says (:func:
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Final
 
-from rehuco_core import NO_LIBRARY_REASON, VLC_TOOL, VlcLibrary
+from rehuco_core import NO_LIBRARY_REASON, NOT_SET_UP, VLC_TOOL, VlcLibrary
 
 from .own_program import own_program
 from .settings.tools_settings import shared_tools_settings
-
-NOT_SET_UP: Final = "No VLC is set up on the Tools page."
-"""The reason when the Tools settings give none of their own."""
 
 
 def configure_vlc_probe() -> None:

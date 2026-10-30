@@ -28,14 +28,18 @@ class VlcFrameSink(QObject):
     :param parent: optional Qt parent.
     """
 
-    frame_ready = Signal(QImage)
-    """A frame is due on screen; emitted on libvlc's thread, delivered on the receiver's."""
+    frame_ready = Signal(QImage, int)
+    """A frame is due on screen, with the :attr:`epoch` it was displayed under; emitted on libvlc's thread, delivered
+    on the receiver's."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__width = 0
         self.__height = 0
         self.__buffer: ctypes.Array[ctypes.c_char] | None = None
+        self.epoch = 0
+        """What the owner counts its sources by; read on libvlc's thread as a frame is displayed, so a frame queued
+        behind a change of source can be told from the new source's."""
 
     @property
     def size(self) -> tuple[int, int]:
@@ -67,12 +71,13 @@ class VlcFrameSink(QObject):
 
     def display(self) -> None:
         """A frame has been written and is due: copy it out and say so."""
-        if self.__buffer is None:
+        buffer = self.__buffer
+        if buffer is None:
             return
         pitch = self.__width * BYTES_PER_PIXEL
-        view = memoryview(self.__buffer).cast("B")
+        view = memoryview(buffer).cast("B")
         image = QImage(view, self.__width, self.__height, pitch, QImage.Format.Format_RGB32).copy()
         try:
-            self.frame_ready.emit(image)
+            self.frame_ready.emit(image, self.epoch)
         except RuntimeError:  # deleted while libvlc still had a thread going
             pass

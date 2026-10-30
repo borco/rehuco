@@ -24,7 +24,7 @@ from .tool_descriptor import (
     version_text,
 )
 from .tool_locator import ToolLocator, shared_tool_locator
-from .vlc_library import LIBRARY_PATH_VARIABLE, VlcLibrary, probe_libvlc
+from .vlc_library import LIBRARY_PATH_VARIABLE, NOT_SET_UP, VlcLibrary, probe_libvlc
 from .vlc_tool import LIBVLC_PROBE_FLAG, NO_LIBRARY_REASON, VlcTool
 
 FFMPEG_TOOL: Final = FfmpegTool()
@@ -44,6 +44,7 @@ __all__ = [
     "LIBRARY_PATH_VARIABLE",
     "LIBVLC_PROBE_FLAG",
     "NO_LIBRARY_REASON",
+    "NOT_SET_UP",
     "PROBE_FLAG",
     "VLC_TOOL",
     "BlockedVersion",

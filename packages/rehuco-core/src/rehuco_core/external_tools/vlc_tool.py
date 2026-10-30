@@ -105,12 +105,16 @@ class VlcTool(ToolDescriptor):
 
     @staticmethod
     def __is_there(file: Path) -> bool:
-        """Whether one of the library's files exists; an empty name (a library the loader did not find) never does.
+        """Whether one of the library's files is there: an empty name (a library the loader did not find) never is; a
+        bare name with no folder is one the loader did find by its own search path (``libvlc.so.5`` on Linux), which
+        python-vlc loads by that name.
 
-        :param file: the file, or an empty path.
+        :param file: the file, an empty path, or a bare name.
         :returns: whether it is there.
         """
-        return bool(file.name) and file.exists()
+        if not file.name:
+            return False
+        return True if file.parent == Path() else file.exists()
 
     @override
     def assess(self, folder: Path) -> tuple[ToolStatus, Version | None, str]:

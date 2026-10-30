@@ -44,7 +44,7 @@ def test_before_setup_there_is_no_buffer_and_nothing_is_displayed(
     """
     sink = delete_at_teardown(VlcFrameSink())
     frames: list[QImage] = []
-    sink.frame_ready.connect(frames.append)
+    sink.frame_ready.connect(lambda frame, _epoch: frames.append(frame))
 
     assert sink.lock() == 0
     sink.display()
@@ -69,11 +69,15 @@ def test_a_displayed_frame_is_a_copy_of_the_buffer_delivered_on_this_thread(
     frames: list[QImage] = []
     threads: list[str] = []
 
-    def deliver(frame: QImage) -> None:
+    epochs: list[int] = []
+
+    def deliver(frame: QImage, epoch: int) -> None:
         frames.append(frame)
+        epochs.append(epoch)
         threads.append(threading.current_thread().name)
 
     sink.frame_ready.connect(deliver)
+    sink.epoch = 7
 
     def libvlc_thread() -> None:
         ctypes.memset(sink.lock(), 0x80, pitch * lines)
@@ -89,6 +93,7 @@ def test_a_displayed_frame_is_a_copy_of_the_buffer_delivered_on_this_thread(
     assert threads == [threading.main_thread().name]
     assert (frame.width(), frame.height()) == (4, 2)
     assert frame.pixel(1, 1) & 0xFFFFFF == 0x808080
+    assert epochs == [7]
 
 
 def test_cleanup_lets_the_buffer_go(delete_at_teardown: DeleteAtTeardown) -> None:

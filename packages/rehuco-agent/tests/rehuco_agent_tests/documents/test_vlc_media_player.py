@@ -97,13 +97,29 @@ class FakeLibvlc:
         self.module: Final = Mock(EventType=EventType, CallbackDecorators=CallbackDecorators)
         self.player: Final = Mock()
         self.player.get_time.return_value = -1
+        self.player.is_playing.return_value = False
+        self.media: list[Mock] = []
         self.player.video_get_size.return_value = VISIBLE
         self.callbacks: dict[int, tuple[Callable[..., None], int]] = {}
         self.player.event_manager.return_value.event_attach.side_effect = self.__attach
         self.instance: Final = Mock()
         self.instance.media_player_new.return_value = self.player
-        self.instance.media_new.side_effect = lambda path: f"media:{path}"
+        self.instance.media_new.side_effect = self.__new_media
         self.__set_up = False
+
+    def releases(self, index: int) -> int:
+        """How often one of the media made was released.
+
+        :param index: which media, in the order made.
+        :returns: the count.
+        """
+        return self.media[index].release.call_count  # pylint: disable=no-member
+
+    def __new_media(self, path: str) -> Mock:
+        """A media wrapper, kept so a test can see it released."""
+        media = Mock(path=path)
+        self.media.append(media)
+        return media
 
     def __attach(self, kind: Kind, callback: Callable[..., None], *args: Any) -> None:
         """Keep a callback the way libvlc would call it."""
@@ -248,6 +264,8 @@ def test_the_engine_is_made_of_the_proxys_instance_and_player_rendering_into_mem
     library.instance.assert_called_once_with(*INSTANCE_OPTIONS)
     library.media_player.assert_called_once_with(libvlc.instance)
     assert set(libvlc.callbacks) == {kind.value for kind in EventType.members()} - {EventType.MediaPlayerVout.value}
+    # one event manager wrapper, kept: python-vlc keeps a callback alive through the wrapper it was attached on
+    libvlc.player.event_manager.assert_called_once_with()
     assert len(libvlc.video_callbacks) == 3
     assert len(libvlc.format_callbacks) == 2
     libvlc.player.set_hwnd.assert_not_called()
@@ -276,7 +294,7 @@ def test_a_source_is_a_media_of_the_instance_and_an_empty_one_lets_go(
     * verify the media was made of the file and set, then cleared, with the status following
     """
     _, status = states(engine)
-    assert libvlc.player.set_media.call_args.args[0].startswith("media:")  # pylint: disable=no-member
+    assert libvlc.player.set_media.call_args.args[0] is libvlc.media[0]
     assert engine.source().isLocalFile()
 
     engine.setSource(QUrl())
@@ -595,3 +613,137 @@ def test_a_frame_already_at_the_visible_size_is_shown_as_it_is(
     frame = surface.frame
     assert frame is not None
     assert (frame.width(), frame.height()) == PADDED
+
+
+def test_a_source_replaced_releases_the_media_before_it(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:
+    """**Test steps:**
+
+    * open a second file, then an empty URL
+    * verify the first media was released as the second was set, and the second as the source was cleared
+    """
+    engine.setSource(QUrl.fromLocalFile("C:/clips/b.mp4" if sys.platform == "win32" else "/clips/b.mp4"))
+    assert libvlc.releases(0) == 1
+    assert libvlc.releases(1) == 0
+
+    engine.setSource(QUrl())
+
+    assert libvlc.releases(1) == 1
+
+
+def test_a_frame_queued_behind_a_change_of_source_is_dropped(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, surface: VlcSurface, qtbot: QtBot
+) -> None:
+    """A frame of the video just left arrives after the next video was set; it must not be shown as the next one's.
+
+    **Test steps:**
+
+    * play, feed a frame, and set another source before the frame is delivered
+    * verify nothing is shown; then feed a frame of the new source and verify it is
+    """
+    engine.play()
+    libvlc.feed_frame(0x80)
+    engine.setSource(QUrl.fromLocalFile("C:/clips/b.mp4" if sys.platform == "win32" else "/clips/b.mp4"))
+    qtbot.wait(50)
+    assert surface.frame is None
+
+    engine.play()
+    libvlc.feed_frame(0x40)
+    qtbot.waitUntil(lambda: surface.frame is not None)
+
+
+def test_an_end_queued_behind_a_change_of_source_does_not_restart_the_next_video(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot
+) -> None:
+    """**Test steps:**
+
+    * play, fire the end, and set another source before the end is delivered; play, and play again
+    * verify no stop was made: the end was the old video's
+    """
+    engine.play()
+    libvlc.fire(EventType.MediaPlayerEndReached)
+    engine.setSource(QUrl.fromLocalFile("C:/clips/b.mp4" if sys.platform == "win32" else "/clips/b.mp4"))
+    qtbot.wait(50)
+
+    engine.play()
+    engine.play()
+
+    libvlc.player.stop.assert_not_called()
+    assert engine.mediaStatus() != QMediaPlayer.MediaStatus.EndOfMedia
+
+
+def test_a_paused_load_waits_for_the_frame_at_the_position_asked_for(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, surface: VlcSurface, qtbot: QtBot
+) -> None:
+    """The first frame libvlc decodes is the file's start, ahead of the seek; the still is the frame at the seek.
+
+    **Test steps:**
+
+    * pause (a paused load), seek to 5 s, and feed a frame while libvlc is still at 0
+    * verify the frame is shown but is no still, and libvlc was not paused
+    * feed a frame with libvlc at 5 s and verify the still arrives and libvlc pauses
+    """
+    stills: list[QImage] = []
+    engine.still_ready.connect(stills.append)
+    engine.pause()
+    engine.setPosition(5000)
+    libvlc.player.get_time.return_value = 0
+
+    libvlc.feed_frame(0x10)
+    qtbot.waitUntil(lambda: surface.frame is not None)
+    assert not stills
+    libvlc.player.set_pause.assert_not_called()
+
+    libvlc.player.get_time.return_value = 4800
+    libvlc.feed_frame(0x20)
+    qtbot.waitUntil(lambda: len(stills) == 1)
+    libvlc.player.set_pause.assert_called_once_with(1)
+
+
+def test_a_pause_asks_libvlc_whether_it_plays_rather_than_the_queued_state(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc
+) -> None:
+    """A pause right after a resume, before the playing event arrived, pauses rather than starting a muted load.
+
+    **Test steps:**
+
+    * have libvlc say it plays while the engine's state is still stopped, and pause
+    * verify it was paused, and no muted play began
+    """
+    libvlc.player.is_playing.return_value = True
+
+    engine.pause()
+
+    libvlc.player.set_pause.assert_called_once_with(1)
+    libvlc.player.play.assert_not_called()
+
+
+def test_closing_releases_everything_of_libvlcs(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:
+    """**Test steps:**
+
+    * close the engine, twice
+    * verify it stopped, detached each event from the one manager, released the media, the player and the instance,
+      once
+    """
+    engine.close()
+    engine.close()
+
+    libvlc.player.stop.assert_called_once_with()
+    detached = libvlc.player.event_manager.return_value.event_detach
+    assert detached.call_count == len(libvlc.callbacks)
+    assert libvlc.releases(0) == 1
+    libvlc.player.release.assert_called_once_with()
+    libvlc.instance.release.assert_called_once_with()
+
+
+def test_an_event_after_closing_changes_nothing(engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * close, then fire a playing event
+    * verify the state stays stopped
+    """
+    engine.close()
+
+    libvlc.fire(EventType.MediaPlayerPlaying)
+    qtbot.wait(50)
+
+    assert engine.playbackState() == QMediaPlayer.PlaybackState.StoppedState

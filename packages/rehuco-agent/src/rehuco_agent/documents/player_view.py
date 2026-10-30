@@ -1,5 +1,5 @@
-"""The tutorial's in-app video player: a Qt Multimedia surface, a transport bar and the player's keys
-([[plugins#in-app-player]], #317)."""
+"""The tutorial's in-app video player: a Qt Multimedia or libvlc engine, a transport bar and the player's keys
+([[plugins#in-app-player]], #317, #319)."""
 
 from collections.abc import Callable
 from enum import Enum, auto
@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Final, cast
 
 from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QImage, QPalette
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoFrame
+from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame
 from PySide6.QtWidgets import QToolButton, QWidget
 from rehuco_core import (
     EXTERNAL_TOOLS,
@@ -44,15 +44,15 @@ from ..glyphs import (
     PLAYER_PREVIOUS_GLYPH,
 )
 from ..playback_libraries import shared_playback_libraries
-from ..playback_vlc import shared_vlc_library
 from ..settings.excluded_files_settings import shared_excluded_files_settings
-from ..settings.videos_settings import VLC_PLAYER, shared_videos_settings
+from ..settings.videos_settings import shared_videos_settings
 from .latest_runner import LatestRunner
+from .player_engine import Engine, PlayerEngine
 from .player_notices import AV1_LIBRARIES_HINT, PlayerNotices
 from .player_playlist import PlayerPlaylist
 from .player_view_ui import Ui_PlayerView
 from .rehu_document_model import RehuDocumentModel
-from .vlc_media_player import VlcEngineError, VlcMediaPlayer
+from .vlc_media_player import VlcMediaPlayer
 from .watch_progress_recorder import WatchProgressRecorder
 
 SEEK_STEP_MS: Final = 5000
@@ -133,9 +133,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     built on the first video, so opening a tutorial loads neither FFmpeg nor libvlc.
 
     **Two engines** ([[plugins#in-app-player]]). Qt Multimedia, always there; or the user's own libvlc, when the Videos
-    page chooses VLC and the Tools page has one with its library (:class:`VlcMediaPlayer`, which speaks
-    ``QMediaPlayer``'s language so nothing below cares which). The choice is read as the engine is built, so it
-    applies to the next video selected, in every open document: an engine built for another choice is dropped and
+    page chooses VLC and the Tools page has one with its library (`PlayerEngine` builds :class:`VlcMediaPlayer`,
+    which speaks ``QMediaPlayer``'s language so nothing below cares which). The choice is read as the engine is built,
+    so it applies to the next video selected, in every open document: an engine built for another choice is dropped and
     the new one built in its place. A VLC chosen but not usable plays through Qt, and the banner says why.
     libvlc deinterlaces and decodes AV1 in software, so neither notice below is made under it.
 
@@ -174,14 +174,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         super().__init__(parent)
         self.__model: Final = model
         self.__recorder: Final = recorder
-        self.__player: QMediaPlayer | VlcMediaPlayer | None = None
-        self.__vlc = False
-        """Whether the engine built is libvlc, which shows what Qt cannot and whose still is its last frame."""
-        self.__fallback_reason: str | None = None
-        self.__built_for: str | None = None
-        """The Videos page's choice the engine was built for; another choice rebuilds it at the next selection."""
-        """Why the engine is Qt although VLC was chosen, or ``None``."""
-        self.__audio: QAudioOutput | None = None
         self.__volume = 1.0
         self.__videos: list[tuple[str, Path]] | None = None
         """The tutorial's videos as ``(content key, path)`` in play order, once listed; ``None`` before."""
@@ -210,17 +202,12 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         self.__ui: Final = Ui_PlayerView()
         self.__ui.setupUi(self)
-        self.__surface: QWidget = self.__ui.video_widget
-        """The page of the surface stack the engine draws on: Qt's video widget, or libvlc's native window."""
+        self.__engine: Final = PlayerEngine(self, self.__ui.video_widget, self.__ui.vlc_surface)
         self.__notices: Final = PlayerNotices(self.__ui.notice_banner, self)
         self.__notices.tools_requested.connect(self.tools_requested)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.__format_runner: Final = LatestRunner(self)
-        self.__format_runner.setObjectName("format_runner")
-        self.__format_runner.read.connect(self.__on_format_read)
-        self.__list_runner: Final = LatestRunner(self)
-        self.__list_runner.setObjectName("list_runner")
-        self.__list_runner.read.connect(self.__on_listed)
+        self.__format_runner: Final = self.__runner("format_runner", self.__on_format_read)
+        self.__list_runner: Final = self.__runner("list_runner", self.__on_listed)
         self.__no_frame_timer: Final = self.__single_shot(no_frame_ms, self.__on_no_frame)
         self.__grab_timer: Final = self.__single_shot(grab_ms, self.__on_grab_timeout)
         self.__ui.video_widget.videoSink().videoFrameChanged.connect(self.__on_frame)
@@ -262,10 +249,25 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__flush()
         self.__release()
         self.__close_video()
+        if self.__engine.vlc:
+            # libvlc's instance holds threads and an audio output: let them go with the dock; the next video builds anew
+            self.__engine.drop()
 
     # endregion
 
     # region Setup
+
+    def __runner(self, name: str, slot: Callable[[str, object], None]) -> LatestRunner:
+        """A runner of this widget's, named, with its answers going to a slot.
+
+        :param name: the runner's object name, which tests find it by.
+        :param slot: what takes ``(tag, result)``.
+        :returns: the runner.
+        """
+        runner = LatestRunner(self)
+        runner.setObjectName(name)
+        runner.read.connect(slot)
+        return runner
 
     def __single_shot(self, interval_ms: int, slot: Callable[[], None]) -> QTimer:
         """A stopped single-shot timer of this widget's.
@@ -342,76 +344,25 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__show_time(0)
         self.__update_actions()
 
-    def __ensure_player(self) -> QMediaPlayer | VlcMediaPlayer:
-        """Build the engine on first use, and again when the Videos page's choice changed since: libvlc when chosen
-        and usable, else Qt Multimedia.
+    def __ensure_player(self) -> Engine:
+        """The engine for the Videos page's choice as it is now, built or rebuilt by `PlayerEngine`.
 
         :returns: the player.
         """
-        choice = shared_videos_settings().player
-        if self.__player is not None and choice != self.__built_for:
-            self.__drop_player()
-        if self.__player is None:
-            self.__built_for = choice
-            player = self.__build_vlc_player() or self.__build_qt_player()
-            player.setPlaybackRate(self.__speed())
-            player.positionChanged.connect(self.__on_position_changed)
-            player.durationChanged.connect(self.__on_duration_changed)
-            player.playbackStateChanged.connect(self.__on_state_changed)
-            player.mediaStatusChanged.connect(self.__on_status_changed)
-            player.errorOccurred.connect(self.__on_error)
-            self.__player = player
-        return self.__player
+        return self.__engine.ensure(self.__volume, self.__speed(), self.__connect_engine)
 
-    def __drop_player(self) -> None:
-        """Let the engine go, with whatever it was built for: the next selection builds the one chosen now.
+    def __connect_engine(self, player: Engine) -> None:
+        """Listen to a new engine.
 
-        Called with an engine built and no file held (a selection lets go of the video before it), so nothing is
-        playing through it.
+        :param player: the engine just built.
         """
-        cast(QObject, self.__player).deleteLater()
-        if self.__audio is not None:
-            self.__audio.deleteLater()
-        self.__player = None
-        self.__audio = None
-        self.__vlc = False
-        self.__fallback_reason = None
-        self.__surface = self.__ui.video_widget
-
-    def __build_vlc_player(self) -> VlcMediaPlayer | None:
-        """Build the libvlc engine, when the Videos page chooses VLC and the Tools page's VLC loads.
-
-        :returns: the player, or ``None`` with :attr:`__fallback_reason` set when VLC is chosen but cannot be used,
-            and ``None`` with none when it is not chosen.
-        """
-        if shared_videos_settings().player != VLC_PLAYER:
-            return None
-        library = shared_vlc_library()
-        try:
-            if not library.available:
-                raise VlcEngineError(library.reason or "libvlc is not available.")
-            player = VlcMediaPlayer(library, self.__ui.vlc_surface, self)
-        except VlcEngineError as error:
-            self.__fallback_reason = str(error)
-            return None
-        player.setVolume(self.__volume)
-        player.still_ready.connect(self.__on_still)
-        self.__vlc = True
-        self.__surface = self.__ui.vlc_surface
-        return player
-
-    def __build_qt_player(self) -> QMediaPlayer:
-        """Build the Qt Multimedia engine.
-
-        :returns: the player, its audio output kept in :attr:`__audio`.
-        """
-        player = QMediaPlayer(self)
-        audio = QAudioOutput(self)
-        audio.setVolume(self.__volume)
-        player.setAudioOutput(audio)
-        player.setVideoOutput(self.__ui.video_widget)
-        self.__audio = audio
-        return player
+        player.positionChanged.connect(self.__on_position_changed)
+        player.durationChanged.connect(self.__on_duration_changed)
+        player.playbackStateChanged.connect(self.__on_state_changed)
+        player.mediaStatusChanged.connect(self.__on_status_changed)
+        player.errorOccurred.connect(self.__on_error)
+        if self.__engine.vlc:
+            cast(VlcMediaPlayer, player).still_ready.connect(self.__on_still)
 
     # endregion
 
@@ -508,8 +459,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ensure_player()
         self.__format_runner.start(video.key, partial(read_video_format, video.path))
         self.__open(Session.PLAY if play else Session.GRAB)
-        if self.__fallback_reason is not None:
-            self.__notices.add(VLC_FALLBACK_TEMPLATE.format(reason=self.__fallback_reason))
+        if self.__engine.fallback_reason is not None:
+            self.__notices.add(VLC_FALLBACK_TEMPLATE.format(reason=self.__engine.fallback_reason))
         self.__update_actions()
 
     def __step(self, delta: int) -> bool:
@@ -562,7 +513,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         path = content_path(record_path, video.key) if record_path is not None else video.path
         player.setSource(QUrl.fromLocalFile(str(path)))
         if session is Session.PLAY:
-            self.__ui.surface_stack.setCurrentWidget(self.__surface)
+            self.__ui.surface_stack.setCurrentWidget(self.__engine.surface)
             player.play()
         else:
             player.pause()
@@ -577,9 +528,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__session = Session.NONE
         self.__ready = False
         self.__state = QMediaPlayer.PlaybackState.StoppedState
-        if held and self.__player is not None:
-            self.__player.stop()
-            self.__player.setSource(QUrl())
+        if held and self.__engine.player is not None:
+            self.__engine.player.stop()
+            self.__engine.player.setSource(QUrl())
         self.__stop_listening()
 
     def __leave(self) -> None:
@@ -614,7 +565,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             return
         if self.__session is Session.PLAY:
             self.__pause()
-        elif self.__session in (Session.GRAB, Session.HELD):
+        if self.__session in (Session.GRAB, Session.HELD):
             self.__release()
 
     # endregion
@@ -632,13 +583,13 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __play_selected(self) -> None:
         """Play the selected video from where it is."""
-        if self.__session in (Session.GRAB, Session.HELD) and self.__player is not None:
+        if self.__session in (Session.GRAB, Session.HELD) and self.__engine.player is not None:
             # already open, for a frame or paused on one: carry on from there -- a held video on the very frame it
             # stopped on, a grabbed one with the seek to where it is made as it buffers
             self.__grab_timer.stop()
             self.__session = Session.PLAY
-            self.__ui.surface_stack.setCurrentWidget(self.__surface)
-            self.__player.play()
+            self.__ui.surface_stack.setCurrentWidget(self.__engine.surface)
+            self.__engine.player.play()
             if self.__ready:
                 self.__played = True
                 self.__arm_no_frame_timer()
@@ -649,12 +600,12 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Pause a video: where it is is recorded and a frame of it is kept on the surface. Under Qt its file is let go,
         so the folder can be renamed while it is paused; under libvlc the player holds it, paused on its frame
         (:attr:`Session.HELD`), and a rename lets it go when one is about to happen."""
-        player = self.__player
+        player = self.__engine.player
         if player is not None and self.__ready:
             self.__position_ms = player.position()
         self.__flush()
         self.__ui.still_widget.set_image(self.__still_now())
-        if self.__vlc and player is not None and self.__ready:
+        if self.__engine.vlc and player is not None and self.__ready:
             player.pause()
             self.__session = Session.HELD
         else:
@@ -683,8 +634,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :param delta_ms: how far forward, or back when negative.
         """
-        playing = self.__player is not None and self.__session is Session.PLAY and self.__ready
-        position = self.__player.position() if playing and self.__player is not None else self.__position_ms
+        playing = self.__engine.player is not None and self.__session is Session.PLAY and self.__ready
+        position = (
+            self.__engine.player.position() if playing and self.__engine.player is not None else self.__position_ms
+        )
         self.__seek_to(position + delta_ms)
 
     def __seek_to(self, position_ms: int) -> None:
@@ -700,8 +653,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             target = min(target, self.__duration_ms)
         self.__position_ms = target
         self.__show_position(target)
-        if self.__player is not None and self.__session is not Session.NONE and self.__ready:
-            self.__player.setPosition(target)
+        if self.__engine.player is not None and self.__session is not Session.NONE and self.__ready:
+            self.__engine.player.setPosition(target)
         if self.__session is Session.PLAY or self.__played:
             self.__recorder.position(self.__key, target / 1000, self.__duration_seconds())
             self.__recorder.flush()
@@ -712,10 +665,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param delta: the change, of a full scale of 1.
         """
         self.__volume = min(max(self.__volume + delta, 0.0), 1.0)
-        if self.__audio is not None:
-            self.__audio.setVolume(self.__volume)
-        elif self.__vlc and self.__player is not None:
-            cast(VlcMediaPlayer, self.__player).setVolume(self.__volume)
+        self.__engine.set_volume(self.__volume)
 
     def __change_speed(self, delta: int) -> None:
         """Move the speed combo ``delta`` steps, within its range; its change reaches the player.
@@ -734,8 +684,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __on_speed_changed(self) -> None:
         """Play at the speed the combo now shows."""
-        if self.__player is not None:
-            self.__player.setPlaybackRate(self.__speed())
+        if self.__engine.player is not None:
+            self.__engine.player.setPlaybackRate(self.__speed())
 
     # endregion
 
@@ -790,7 +740,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :param status: the player's new media status.
         """
-        player = self.__player
+        player = self.__engine.player
         if (
             status == QMediaPlayer.MediaStatus.BufferedMedia
             and not self.__ready
@@ -853,8 +803,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :returns: the image, or ``None`` when there is none to take.
         """
-        if self.__vlc and self.__player is not None:
-            return cast(VlcMediaPlayer, self.__player).grab_still() if self.__ready else None
+        if self.__engine.vlc and self.__engine.player is not None:
+            return cast(VlcMediaPlayer, self.__engine.player).grab_still() if self.__ready else None
         return self.__ui.video_widget.videoSink().videoFrame().toImage()
 
     def __on_grab_timeout(self) -> None:
@@ -878,7 +828,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param key: the video the format is of.
         :param result: its format, or ``None``, or the error reading it ended in -- the file could not be read.
         """
-        if key != self.__key or not isinstance(result, VideoFormat) or self.__vlc:
+        if key != self.__key or not isinstance(result, VideoFormat) or self.__engine.vlc:
             return
         if result.interlaced:
             self.__notices.add(INTERLACED_NOTICE)
@@ -910,7 +860,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __flush(self) -> None:
         """Record where a video that plays is, and write at once what is waiting for the recorder."""
-        player, key = self.__player, self.__key
+        player, key = self.__engine.player, self.__key
         if (
             self.__session is Session.PLAY
             and player is not None

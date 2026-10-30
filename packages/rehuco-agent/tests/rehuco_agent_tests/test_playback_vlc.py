@@ -9,14 +9,13 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent import playback_vlc
 from rehuco_agent.playback_vlc import (
-    NOT_SET_UP,
     VlcPlayback,
     configure_vlc_probe,
     shared_vlc_library,
     shared_vlc_playback,
     vlc_restart_needed,
 )
-from rehuco_core import LIBVLC_PROBE_FLAG, VLC_TOOL, VlcLibrary
+from rehuco_core import LIBVLC_PROBE_FLAG, NOT_SET_UP, VLC_TOOL, VlcLibrary
 
 
 @fixture(name="tools")
