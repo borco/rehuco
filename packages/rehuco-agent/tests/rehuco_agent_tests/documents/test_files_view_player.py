@@ -32,7 +32,7 @@ TOO_OLD_VLC: Final = ToolCandidate(
 """A VLC the locator found and judged unusable."""
 
 
-class Routing:
+class Routing:  # pylint: disable=too-few-public-methods
     """What a double-click on the tutorial's first video answered with."""
 
     def __init__(self, view: FilesView) -> None:

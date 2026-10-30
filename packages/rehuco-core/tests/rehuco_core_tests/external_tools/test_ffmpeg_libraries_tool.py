@@ -20,6 +20,7 @@ from rehuco_core import (
     ToolNotRunnableError,
     ToolStatus,
 )
+from rehuco_core.external_tools.tool_descriptor import EXECUTABLE_SUFFIX
 
 from .test_ffmpeg_libraries import QT_611, QT_612, make_files
 
@@ -28,6 +29,9 @@ RUNNER: Final = f"{MODULE}.subprocess.run"
 
 PROGRAM: Final = ("/opt/rehuco/rehuco-agent",)
 """What runs the app, as the agent would say."""
+
+FFMPEG: Final = f"ffmpeg{EXECUTABLE_SUFFIX}"
+"""The FFmpeg program's file name on this OS, which a build may hold beside its libraries."""
 
 
 @fixture(name="tool")
@@ -93,7 +97,7 @@ def test_a_folder_holding_any_part_of_a_build_is_one(tmp_path: Path, tool: Ffmpe
     * verify the folder holding the files, and none for the empty one
     """
     root = tmp_path / "ffmpeg-n7.1"
-    bin_folder = make_files(root / "bin", (*QT_612, "ffmpeg.exe"))
+    bin_folder = make_files(root / "bin", (*QT_612, FFMPEG))
 
     assert tool.resolve_folder(root) == bin_folder
     assert tool.resolve_folder(bin_folder) == bin_folder
@@ -109,15 +113,15 @@ def test_the_files_of_a_build_are_what_is_there(tmp_path: Path, tool: FfmpegLibr
     * list the files of a folder with libraries and a program
     * verify they are listed, and only those that exist
     """
-    build = make_files(tmp_path / "build", ("avcodec-61.dll", "ffmpeg.exe", "notes.txt"))
+    build = make_files(tmp_path / "build", ("avcodec-61.dll", FFMPEG, "notes.txt"))
 
-    assert tool.executable_files(build) == [build / "avcodec-61.dll", build / "ffmpeg.exe"]
+    assert tool.executable_files(build) == [build / "avcodec-61.dll", build / FFMPEG]
 
 
 @mark.parametrize(
     ("present", "status"),
     [
-        param(("ffmpeg.exe",), ToolStatus.NO_LIBRARIES, id="static"),
+        param((FFMPEG,), ToolStatus.NO_LIBRARIES, id="static"),
         param(QT_612, ToolStatus.WRONG_MAJOR, id="another-major"),
         param(QT_611[:2], ToolStatus.INCOMPLETE, id="incomplete"),
     ],
@@ -230,7 +234,7 @@ def test_the_version_is_read_through_the_same_judgement(
     assert tool.read_version(make_files(tmp_path / "build", QT_611)) == (7, 1, 5)
 
     with raises(ToolNotRunnableError) as caught:
-        tool.read_version(make_files(tmp_path / "static", ("ffmpeg.exe",)))
+        tool.read_version(make_files(tmp_path / "static", (FFMPEG,)))
     assert "static" in caught.value.reason
 
 
@@ -242,7 +246,7 @@ def test_the_locator_lists_a_static_build_as_unusable(tmp_path: Path, tool: Ffmp
     * inspect a static build through the locator
     * verify it is found, not usable, and says why
     """
-    candidate = ToolLocator().inspect(tool, make_files(tmp_path / "build", ("ffmpeg.exe",)))
+    candidate = ToolLocator().inspect(tool, make_files(tmp_path / "build", (FFMPEG,)))
 
     assert candidate.status is ToolStatus.NO_LIBRARIES
     assert not candidate.is_usable
