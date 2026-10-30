@@ -7,6 +7,7 @@
 [[[reference-images#overview]]]
 
 - [#221: feat: browse a reference-images resource's content images (read-only viewer)](https://github.com/borco/rehuco/issues/221)
+- [#581: feat(core): the cross-pack index — tag bitmaps, ANN over embeddings, text over tags, built from sidecars](https://github.com/borco/rehuco/issues/581)
 
 This document is the full treatment of what [[plugins#refimages-plugin]] lists in four bullets: tagging the
 images inside a reference-images resource's archives, using those tags to browse and search them, the
@@ -57,9 +58,9 @@ per-image data, and each already has a home in the data model.
 
 | Layer | Holds | Home | Ownership and sync class |
 | --- | --- | --- | --- |
-| **Machine-derived** | per-image tags with confidences, an image embedding, detected person / head / hand / foot boxes, detected blur boxes, keypoints and the posture and head-angle tags derived from them, 360° sequence membership, a ~512 px working image, and the model that produced each | the **scan sidecar** beside the `.rehu` ([[reference-images#scan-sidecar]]) | resource metadata: written only by the resource's primary node ([[mounts-and-storage#folder-add]]); travels with the folder; a bookkeeping suffix like `.checksum`, so it never counts as content ([[data-model#checksums]]). **Rebuildable in principle, at GPU-weeks cost — so retained and copied like screenshots, never treated as `.rehudb`-disposable** |
-| **Shared authored — the admin default** | an admin's corrections: regions and blur boxes added, moved, resized or deleted; manual 360° groupings; per-image shared tags | the `reference_images` block of the `.rehu`, inline, **sparse** (only images someone touched) | resource metadata: single writer, online-only edit in v1 ([[sync#overview]]); the layer every user sees by default |
-| **Per-user** | favorites (image keys), per-user region and blur overrides, the user's blur preference (on/off plus the per-class switches) | the block's `users.<name>` map ([[field-schema#per-user-shared]]), sparse | per-user state: mergeable, offline-editable, writable through any node |
+| **Machine-derived** | per-image tags with confidences, an image embedding, detected person / head / hand / foot boxes, detected blur boxes, keypoints and the posture and head-angle tags derived from them, face boxes with their landmarks and face embeddings, the continuous head pose ([[reference-images#construction-overlays]]), 360° sequence membership, a ~512 px working image, and the model that produced each | the **scan sidecar** beside the `.rehu` ([[reference-images#scan-sidecar]]) | resource metadata: written only by the resource's primary node ([[mounts-and-storage#folder-add]]); travels with the folder; a bookkeeping suffix like `.checksum`, so it never counts as content ([[data-model#checksums]]). **Rebuildable in principle, at GPU-weeks cost — so retained and copied like screenshots, never treated as `.rehudb`-disposable** |
+| **Shared authored — the admin default** | an admin's corrections: regions and blur boxes added, moved, resized or deleted; manual 360° groupings; per-image shared tags; actor verdicts on a face — *this is X*, *this is not X* ([[reference-images#actors]]) | the `reference_images` block of the `.rehu`, inline, **sparse** (only images someone touched) | resource metadata: single writer, online-only edit in v1 ([[sync#overview]]); the layer every user sees by default |
+| **Per-user** | favorites (image keys), per-user region and blur overrides, the user's blur preference (on/off plus the per-class switches), a construction overlay's fit per image ([[reference-images#construction-overlays]]) | the block's `users.<name>` map ([[field-schema#per-user-shared]]), sparse | per-user state: mergeable, offline-editable, writable through any node |
 
 **Render-time merge rule: the scan provides, the admin layer overrides, the current user's layer overrides
 that.** "Other users" is a *view* of their `users.<name>` entries and is never merged into anyone's rendering.
@@ -182,8 +183,8 @@ exists; what is firm is that it is one per-resource file of machine output, besi
   | Tier | Produces | Cost | Needs |
   | --- | --- | --- | --- |
   | **0** | member list from the central directory, image dimensions from headers | seconds per pack | nothing beyond the zip |
-  | **1** | XXH3, the working image, image embedding, tags with confidences, blur boxes, person boxes, 360° grouping | milliseconds per image | one decode per image; the tagger, detector and embedder |
-  | **2** | whole-body pose on the **working image**: keypoints → person / head / hand / foot boxes with their size in frame, posture tags (standing, sitting, kneeling, crouching, reclined, jumping, climbing, running, turning, leaning, arms raised, …), head yaw/pitch classes | tens of milliseconds per image | the pose model; runs only where tier 1 found a person; **no crop** (below) |
+  | **1** | XXH3, the working image, image embedding, tags with confidences, blur boxes, person boxes, 360° grouping; where a person box exists, face boxes with landmarks and a face embedding ([[reference-images#actors]]) | milliseconds per image | one decode per image; the tagger, detector, embedder and face stage |
+  | **2** | whole-body pose on the **working image**: keypoints → person / head / hand / foot boxes with their size in frame, posture tags (standing, sitting, kneeling, crouching, reclined, jumping, climbing, running, turning, leaning, arms raised, …), head yaw/pitch classes; the continuous head pose — yaw, pitch, roll, scale — for a face tier 1 found ([[reference-images#construction-overlays]]) | tens of milliseconds per image | the pose model and the face landmarker; run only where tier 1 found a person; **no crop** (below) |
   | optional | captions, prop boxes | up to hundreds of milliseconds | on demand, prioritized by the packs the user opens; may never complete |
 
   **Non-people images stop after tier 1 by construction**: no person detected means no region rows and no
@@ -230,6 +231,8 @@ deliberately not reproduced. What survives of them is above; the rest is impleme
 ## §18.6 The cross-pack index
 
 [[[reference-images#cross-pack-index]]]
+
+- [#581: feat(core): the cross-pack index — tag bitmaps, ANN over embeddings, text over tags, built from sidecars](https://github.com/borco/rehuco/issues/581)
 
 **Status: proposed.**
 
@@ -653,7 +656,9 @@ machine learning: natural-sort the members, segment by the regular filename patt
 confirm with the smoothness of consecutive embedding similarity, background constancy, and above all **loop
 closure** (a full turnaround's last frame is near-identical to its first, which is what separates it from a
 partial arc or a burst of similar poses). Manual groupings and corrections are an authored-layer field
-([[reference-images#layers]]). A detected sequence is what makes [[reference-images#dispatch]]'s collapsing
+([[reference-images#layers]]). **Identity is a sequence-level field**: the frames whose face is visible name the
+actor of the whole sequence, so a back view is browsed and tagged with its front view
+([[reference-images#actors]]). A detected sequence is what makes [[reference-images#dispatch]]'s collapsing
 possible.
 
 How sequences are *used* is not decided. Two ideas are recorded without commitment: surfacing a matching
@@ -661,7 +666,196 @@ sequence as a first-class result ahead of loose images for "head from different 
 practice drill that shows one frame, lets the user draw, then reveals a frame some degrees around to check
 the mental rotation.
 
-## §18.14 Open questions
+## §18.14 Actors
+
+[[[reference-images#actors]]]
+
+- [#582: feat(vision): face stage — detector, alignment and face embedding per person box; license-gated built-ins](https://github.com/borco/rehuco/issues/582)
+- [#583: feat(core): the actor entity — exemplar-derived assignment, verdicts, the merge log and split, portrait provenance](https://github.com/borco/rehuco/issues/583)
+- [#584: feat(core): the face lane of the cross-pack index — per-pack clustering, merge proposals, identity for faceless images](https://github.com/borco/rehuco/issues/584)
+- [#585: feat(agent): Actors in the Tag Browser and face click in the lightbox — confirm, merge, split, portrait and representatives](https://github.com/borco/rehuco/issues/585)
+- [#581: feat(core): the cross-pack index — tag bitmaps, ANN over embeddings, text over tags, built from sidecars](https://github.com/borco/rehuco/issues/581)
+
+**Status: proposed.** The data shape follows from sections already decided — the sidecar, the cross-pack
+index, the grouping-entity template and the duplicate-review verdict flow; what this section settles is how
+identity is seeded, how it spreads to images with no face in them, and how a mistake is undone. Nothing is
+built. The user's framing: search "man with bow", get a wall of images, click a face the way Pinterest lets
+you, and see every image of that person across the collection.
+
+An **actor** is a person who appears in the collection — the model of a pose pack, the sitter of a portrait
+set. Most packs are one model photographed in one shoot, which is the fact the whole design leans on:
+identity *within* a pack is nearly free and reliable, identity *across* packs is where the work and the
+human are.
+
+### The face stage
+
+- A tier-1 stage of [[reference-images#scan-sidecar]]: for each person box, a face detector, an alignment,
+  and a **face embedding**, all over the working image, stamped per row like every other model
+  ([[reference-images#model-contracts]]). The sidecar stores the face box, its landmarks, the embedding and
+  the stamp. Nothing else is written at scan time — the stage knows faces, not people.
+- **Licensing is the first gate**, not an afterthought: the best-known face-recognition weights (InsightFace's
+  `buffalo` family) are non-commercial, so they cannot be a built-in ([[packaging-deployment#licensing-policy]]).
+  Candidates to license-check are the MIT-licensed AdaFace, FaceNet ONNX exports and GhostFaceNets; a user may
+  point the stage at any ONNX file or endpoint, as for every stage.
+
+### Discovered and genuine actors
+
+The template is [[plugins#grouping-entities]], applied with one twist — an actor is identified by an
+embedding, not by a name:
+
+- A **discovered actor** is a face cluster the cross-pack index ([[reference-images#cross-pack-index]]) holds:
+  browsable, weightless, disposable with the index, and without a UUID. Clustering runs **per pack first**
+  (one model, one shoot: near-trivial), then proposes merges across packs by centroid similarity.
+- A **genuine actor** is an `actor` document — a metadata-only `.rehu` of its own type in the actors' home
+  ([[mounts-and-storage#rehuco-scope]]) — whose materialization **mints the UUID**. Its block holds the
+  **exemplar face keys** `(resource UUID, image key, face box)` and the centroid(s) derived from them. Its
+  name, description, URLs and portrait follow the template.
+- **Assignment is derived, never written per image.** A face belongs to the genuine actor whose centroid is
+  nearest above a threshold; the index recomputes this, so confirming an actor on a two-thousand-image
+  cluster writes one document, not two thousand rows. Only an explicit verdict — *this face is X*, *this
+  face is not X* — is an authored-layer row ([[reference-images#layers]]), and like every verdict it is
+  never re-asked ([[instances-and-dedup#duplicate-review]]).
+- A cross-pack **merge proposal** is the duplicate-review flow: propose, human verdict, never re-ask.
+
+### Identity where there is no face
+
+A face only *seeds* identity. Every person box receives an actor candidate as `(actor, confidence, source)`
+rows — probabilities, thresholded at render time like everything else — through a chain of context lanes,
+computed by the index build over sidecar rows rather than by the scan, in order of reliability:
+
+1. **Sequence inheritance** — a detected 360° sequence ([[reference-images#sequences]]) is named by the frames
+   whose face is visible; its back views inherit the name.
+2. **Pack purity** — count the distinct face clusters per pack and per folder inside it. One cluster means
+   every person box in that scope is that actor, at a confidence set by how many faces confirmed it; two or
+   three means the lanes below choose among them; many means no prior. This lane alone covers most back
+   views in the collection.
+3. **Shoot neighbourhood** — natural-order neighbours with high image-embedding similarity and a constant
+   background are one shoot, and identity flows along the run without the loop-closure test a sequence needs.
+4. **Body appearance** — a person re-identification embedding over the person box (clothing, build, skin,
+   hair from behind; OSNet/TransReID-class candidates, license-checked), or more cheaply the general image
+   embedding over the box. Reliable within a pack; across packs only ever a proposal.
+5. **Transitive expansion** — confirmed actors seed, unknown boxes are matched through the lanes above, each
+   new match widens the pool (more exemplars, more sequences named), until nothing changes. Each hop lowers
+   confidence; a verdict resets it to one.
+
+The actor's image wall shows face-confirmed images first and marks inferred ones with their source, so a
+wrong inheritance is visible and corrected in one click.
+
+### Splitting: the way back from a merge
+
+Because assignment is derived from exemplars, an actor *is* its exemplar set, and a split is a partition of
+that set — never a rewrite of per-image rows.
+
+- **Undo a merge.** Every merge is a logged event on the surviving document that keeps the absorbed actor's
+  UUID and exemplars. *Split merged actor* recreates it under its **old** UUID, so favorites, practice
+  sessions and verdicts that referenced it stay valid.
+- **Split by selection.** In the actor's wall the user selects faces — or whole sub-clusters, which the
+  index keeps so a wrongly merged person is usually one selectable group — and chooses *Split into new
+  actor*. The survivor keeps its UUID, the new one is minted, and the pair is recorded as *never merge*.
+
+### Portrait and representatives
+
+An actor is an ordinary document, so [[plugins#grouping-entities]]'s rule holds as-is: the portrait is the
+screenshot `<stem>01.jpg`, further representatives `02…`, and every surface that shows an actor renders them
+with no new mechanism. What is new is how they are chosen:
+
+- **Auto-pick on materialization** — the best frontal face: head yaw and pitch nearest zero, the largest face
+  box, the highest detector confidence, eyes open by the landmarks, no blur-class box overlapping; cropped
+  from the **original** with a margin and written as `01.jpg`. Then one representative per view class the
+  actor has — three-quarter, profile, back, full body — as `02…`.
+- **User override** — from any image of the actor, *Use as portrait* takes the whole image or a rubber-band
+  region of the lightbox takes a crop; *Add as representative* appends. The images editor manages the rest.
+- **Provenance** — each generated screenshot records `(resource UUID, image key, box)` in the actor block, so it
+  can be regenerated at another size, links back to its source on click, and is never mistaken for an
+  authored screenshot: auto-pick only ever fills an empty slot, and a user's choice stays.
+
+### Surfaces
+
+- An **Actors** branch in the Tag Browser ([[plugins#tag-browser]]), by letter, with portraits and counts;
+  selecting one filters the image browser to that actor's images.
+- **Face click**: in the lightbox and the grid a face box is a link, and clicking it filters to that actor —
+  the Pinterest gesture the user asked for.
+- Confirm, merge, split, portrait and representative actions from the pane and the lightbox's context menu.
+- Across packs, "man with bow" is [[reference-images#cross-pack-index]]'s tag-and-text query; the actor
+  filter is one more clause in it.
+
+## §18.15 Construction overlays
+
+[[[reference-images#construction-overlays]]]
+
+- [#586: spike: automatic head fit — MediaPipe face pose to a Loomis sphere over this collection's photos](https://github.com/borco/rehuco/issues/586)
+- [#587: feat(vision): face-landmark and continuous head-pose stage — yaw, pitch, roll and scale per face on the working image](https://github.com/borco/rehuco/issues/587)
+- [#588: feat(core): construction models, head family — Loomis, Reilly, Bridgman, cartoon, an original planar head; OBJ loading](https://github.com/borco/rehuco/issues/588)
+- [#589: feat(core): construction models, figure family — mannequin from keypoints, line of action, force-curve candidates](https://github.com/borco/rehuco/issues/589)
+- [#590: feat(agent): the Construction Overlay dock — a top-level view over the current image, head layers, handles, per-user fit](https://github.com/borco/rehuco/issues/590)
+- [#591: feat(agent): mannequin and gesture layers in the Construction Overlay dock, with joint handles](https://github.com/borco/rehuco/issues/591)
+
+**Status: proposed for the data, wish-list for the interaction.** A view for realist drawing practice: one
+image, and a drawing-construction method drawn over the head or the body, scaled, rotated and inclined to
+match the photo — fitted automatically from what the scan already knows, corrected by hand with handles.
+The handover that seeded it (a PySide6-over-Godot decision, MediaPipe for landmarks, numpy geometry
+projected and drawn with `QPainter`) is reproduced here only in what it decided.
+
+- **Methods.** Head: Loomis (sphere, side planes, brow / nose / chin lines), Reilly (rhythms and the
+  abstraction of planes), Bridgman (blocks and wedges), a planar head, a simple cartoon construction.
+  Figure: a wooden-style mannequin (ellipsoid head, block ribcage and pelvis, capsule limbs, joint spheres,
+  parametric proportions), the line of action, and force curves in the sense of Mattesi's *Force*; Burne
+  Hogarth's *Dynamic Figure Drawing* (wrapping, cylindrical forms) is a figure method, not a head method.
+  The "dynamic poses" method the handover left open is by name likelier Hogarth and by concept Mattesi;
+  both are listed. Every method is a **layer**, toggled on its own.
+- **Where the fit comes from.** The head needs a *continuous* head pose — yaw, pitch, roll, scale — which the
+  coarse view classes of tier 2 ([[reference-images#scan-sidecar]]) do not give, so a face-landmark stage adds
+  it, stamped per row like every stage ([[reference-images#model-contracts]]). Landmarks cover the face, not
+  the skull, so the Loomis sphere's size and position are estimated from proportions; the fit is reliable to
+  about 60° of yaw and weaker on profiles, heavy tilt, hair and occlusion. The body's mannequin is placed
+  from tier 2's keypoints, each part by its two joints, so no skinned rig is needed. **Depth is the weak
+  point** — a foreshortened limb can flip — and the fixes in order of effort are joint handles, a 3D lifter
+  model, SMPL fitting; only the first is in scope. Gesture and force curves are splines through head, spine,
+  pelvis and the weight-bearing leg, offered as **several candidates**, since there is no single right answer.
+- **The geometry is pure.** Each construction is 3D points and curves in numpy, projected with the fitted
+  pose and drawn as paths — a non-GUI module, testable without Qt and reusable by a web front later. Qt
+  Quick 3D only if shaded planes are ever wanted. A user-adjusted **fit** — pose, proportions, which layers
+  are visible — is **per-user state** per image, in the `users.<name>` layer like a favorite
+  ([[reference-images#layers]]), so a corrected overlay survives reopening.
+- **The surface.** A top-level dock beside the browsers, fed by the current image of an image browser or a
+  Content Images dock, so it needs no open document. It draws over the **original** image, never the working
+  image. Handles: translate, rotate, scale and incline for a head; joints for the mannequin.
+- **Drawing comparison** ([[plugins#refimages-plugin]]'s exploratory critique — landmarks on the reference and
+  on the user's drawing, deltas narrated) consumes the same landmark rows and belongs with this view when it
+  is ever built.
+
+**Legal notes, not legal advice.** Methods — Loomis, Reilly, Bridgman, Hogarth, Mattesi — are not
+copyrightable, and implementing them with original geometry is fine. The **Asaro head** is a copyrighted
+sculpture by John Asaro, and a wireframe of its geometry is still a copy of the form, so rehuco ships an
+**original planar head** derived from an open mesh (the MediaPipe canonical face mesh under Apache 2.0, or a
+MakeHuman / Blender base mesh) simplified to planes by hand, and lets the user load their own OBJ. The UE5
+mannequin's license restricts it to Unreal Engine, so the mannequin is rehuco's own. Face-recognition and
+landmark weights are license-checked like every built-in ([[reference-images#model-contracts]]).
+
+**The spike first.** Before any of the above is sized for real, one throwaway script answers one question:
+on *this* collection's photos — hair, three-quarter views, studio lighting — does the automatic head fit land
+close enough that handles are a correction rather than the whole job? Its verdict is written here; its code
+is deleted.
+
+**Verdict so far (#586, 2026-10-30, `spikes/head-fit/`).** On four public-domain portraits — a frontal, two
+three-quarter views (one a painting), one near-frontal under a beret — the yaw, pitch and roll from MediaPipe's
+transformation matrix read right by eye, and the centre line and brow line followed the face every time: the
+pose is a starting point, not the job. The textbook proportion (brow line through the sphere's centre, nose
+base on its bottom) drew the sphere too small and too low on every skull; adult averages — the brow 0.2 r
+below the centre, face thirds of 0.7 r — fixed it in one pass, and what remains is exactly what a scale or
+incline handle corrects. **Over the collection's own packs** (every 7th–11th image of one archive each, 33–40 per pack): an
+expressions pack found 24 of 33 faces with yaw to 43° and pitch to 38° and fitted every one of them well; a
+from-above pack, 6 of 40. Two full-figure packs — a male turnaround and a sword pack of 4000–8400 px images —
+found **nothing at full frame**, however many pixels the face had, because the detector downsizes the whole
+frame to a tiny input; cropping to the head box the whole-body pose gives (MediaPipe Pose in the spike, #336's
+rows in the design) and detecting on that crop rescued 14 of 40 in each, with the landmarks mapped back to the
+original correctly, to 63° of yaw. Every remaining miss was a true profile or a back view. So the stage (#587)
+takes the **face region cut from the original**, an exception to tier 2's no-crop rule; beyond about 60° of
+yaw and from behind, the overlay must start from the pose stage's coarse head angle (ears and nose) or by
+hand — which is what the handles are for. MediaPipe's wheels stop at Python 3.12 while the workspace is on
+3.14, which argues for an ONNX landmarker on `onnxruntime`. The spike's code is deleted once #586 is closed.
+
+## §18.16 Open questions
 
 [[[reference-images#open-questions]]]
 
@@ -699,3 +893,9 @@ Local to this document; the global list is [[appendices.open-questions#still-ope
 - Sampled rather than exhaustive human review: at ten million images one percent uncertainty is a hundred
   thousand images, so thresholds tune for recall, user deletions are the review signal, and no queue is
   ever worked through — recorded as a stance, not yet a design.
+- Actors ([[reference-images#actors]]): the assignment threshold and its calibration; which face and
+  re-identification weights pass the license check; whether the actor candidate rows live in `.rehudb` with
+  the rest of the cross-pack index or in a sibling file.
+- Construction overlays ([[reference-images#construction-overlays]]): MediaPipe's own runtime versus an ONNX
+  landmarker on `onnxruntime`; whether a per-document overlay surface is wanted beside the top-level dock;
+  how a fit is keyed when the same image appears in two packs.

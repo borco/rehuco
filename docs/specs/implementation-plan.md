@@ -220,6 +220,14 @@ issues (category `reference images`); the current sequencing lives in the work q
 rather than here. Order decided at filing: sidecar and vision skeleton first, then **redaction** and **search**
 interleave; 360° identification and practice mode are deliberately last.
 
+Two further waves ride on that substrate and are gathered under the GH release **`Release DrawingAtelier`** — a named
+release, not a numbered one, because their order is not decided: **actors** ([[reference-images#actors]] — a face
+stage, per-pack clustering then cross-pack merge with a human verdict, identity inherited by faceless images, an
+Actors branch and face-click in the browsers) and **construction overlays** ([[reference-images#construction-overlays]]
+— a head-pose stage, pure-numpy construction models, a top-level overlay dock with handles). Both are gated on the
+sidecar (#323), the vision skeleton (#324) and the pose stage (#336); the overlays start with a throwaway spike that
+asks whether the automatic head fit is good enough to be worth a stage.
+
 ## Deferred
 
 - **LLM URL extraction** — [[acquisition-tooling#llm-url-extract]], a fallback for hosts no scraper
