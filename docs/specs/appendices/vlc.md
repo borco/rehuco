@@ -198,16 +198,17 @@ PositionChanged, TimeChanged     then about every 500 ms
 - **A snapshot draws on the picture** unless told not to: VLC's on-screen display says *Snapshot taken* and shows a
   thumbnail of it over the video. The instance is made with `--no-osd` and `--no-snapshot-preview` (and
   `--no-video-title-show`), so nothing of VLC's is ever drawn on the dock's surface.
-- **The still is read off the window in memory on Windows.** `PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT)` on the
-  surface's native window returns libvlc's Direct3D picture -- playing and paused, on a monitor and moved off
-  every monitor -- in 5--11 ms for 640x400, with no file. That is the engine's still on Windows
-  (`borco_pyside.platforms.windows.window_picture`); libvlc's snapshot file is the fallback, and the only route
-  measured for nothing else.
+- **A native window's picture can be read in memory on Windows**: `PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT)`
+  returned libvlc's Direct3D picture -- playing and paused, on a monitor and off every monitor -- in 5--11 ms
+  for 640x400. Measured while the engine still drew into a native window; superseded by section 6, where
+  there is no window to read and the still is the last frame.
 - **`vlc.EventType` members are not integers**: they are ctypes enumerations, `int(member)` raises, and the number
   is in `member.value`. Found by the first live run of the engine, after a fake built on `IntEnum` had hidden it; the
   engine's tests now fake the members the same way.
-- **A folder rename is refused while libvlc plays or pauses, in the dock too** (the live run): the player view's
-  *paused is stopped* rule holds for this engine as it does for Qt's.
+- **A folder rename is refused while libvlc plays or pauses, in the dock too** (the live run). The view's *paused is
+  stopped* rule was applied to libvlc first, and **reopening and seeking landed a few frames off** on resume (seen by
+  the owner), so under libvlc a pause now holds the file, paused on its frame, and the rename coordinator's
+  before-rename call is what releases it.
 
 ### Drawing over the surface
 
@@ -224,8 +225,36 @@ surface and a screen grab of the window:
 | The same native sibling, translucent (`WA_TranslucentBackground`) | not shown at all |
 | A frameless, translucent top-level window placed over the surface | drawn over the video **with transparency** |
 
-So a translucent overlay over libvlc is a top-level window that follows the surface, or an opaque native child; a
-plain Qt widget is neither. `QVideoWidget` holds a native window too, so the Qt engine is in the same position, and
-the lightbox's overlay surface is the thing to measure next, under both engines. Rendering through memory instead
-(libvlc's `video_set_callbacks`, Qt's `QVideoSink` into a painted widget) would make the picture an ordinary widget,
-at the cost of a copy per frame.
+This is why libvlc renders into memory (section 6): the picture is then an ordinary widget and the table does not
+apply to it. It still describes `QVideoWidget`, which holds a native window too, so the Qt engine is where libvlc
+was until it, too, paints its frames (`QVideoSink` into the same painted surface) -- the thing to do before the
+overlays are built ([[plugins#player-maximized]]).
+
+## 6. Rendering into memory
+
+[[[appendices.vlc#memory-rendering]]]
+
+libvlc 3 has two outputs an application can use: a native window of its own (`set_hwnd`, `set_nsobject`,
+`set_xwindow`) and **memory** (`video_set_callbacks` with `video_set_format_callbacks`); the OpenGL callbacks are
+libvlc 4's. The dock uses memory, so that its picture is an ordinary widget.
+
+- **The format callback cannot be written through python-vlc's prototype**: `VideoFormatCb` declares the chroma
+  `c_char_p`, which ctypes hands over as copied bytes. A prototype of our own with `POINTER(c_char)`, cast to
+  python-vlc's type where it is passed, lets `memmove` write `RV32` into it (measured: the callback then saw
+  `640x384 I420` for a 640x360 clip and the frames came in 32-bit).
+- **The picture size libvlc gives is the decoder's, padded** -- 384 lines for 360 -- so the frame is cropped to
+  `video_get_size(0)` once that is known (it is `0x0` until the video plays).
+- **One picture in the pool** (`setup` returns 1) means libvlc locks, writes, unlocks and displays each frame in turn,
+  so copying the buffer inside the display callback, on libvlc's thread, is safe; the copy crosses to the GUI thread
+  as a `QImage` through a queued signal and is painted by `QPainter`, scaled to fit.
+- **Audio, the clock and subtitles stay libvlc's**: only the video output module is replaced. Frames are displayed at
+  their presentation time against libvlc's audio clock; subtitles and anything else the video-output core blends
+  arrive inside the frames (verified with an `.srt` beside a clip: its text was in the painted frame), which is why
+  the instance is made with `--no-osd`.
+- **The cost, measured** on a Ryzen 5 5600 with a 1080p60 clip in a window maximized on a 3440x1440 monitor
+  (2752x1081 of picture): **59.3 fps**, the paint **2.6 ms** a frame, the whole process -- decoding included --
+  **67 % of one core (6 % of the machine)**; 100 % of one core with smooth scaling, or with libvlc scaling to the
+  window itself (an 11 MB buffer). Memory is one buffer of the picture's size (8 MB at 1080p) and the copies in
+  flight.
+- **What it changes for the player**: no native window, so any widget can be drawn over the picture; the still of a
+  pause is the last frame, with no snapshot and no `PrintWindow`; and the engine is the same on every OS.

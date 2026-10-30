@@ -1254,10 +1254,16 @@ that opens the Tools page. Neither notice is made under libvlc, which deinterlac
 arrive on threads of its own and cross to the GUI thread through a queued signal, never a blocking one, since
 `stop()` joins the thread that raises them; `Playing` is the moment the view calls a video ready; after `EndReached`
 libvlc stays *Ended*, so a replay stops first. **A paused video is a stopped player** here too: a folder rename
-fails while libvlc plays or pauses, and succeeds after `stop()`. So a pause takes the still while the file is still
-held -- off the surface's window in memory on Windows, as a libvlc snapshot file elsewhere -- then stops; and a
-load for a still (libvlc decodes no frame without playing) plays muted until the first picture, takes it, and
-pauses, after which the view stops it as it would after a frame from Qt's sink. libvlc draws into a native widget of the dock's own (`VlcSurface`), handed over once by window id.
+fails while libvlc plays or pauses, and succeeds after `stop()`. **A pause under libvlc holds the file**, paused on its
+frame: reopening and seeking landed a few frames off, so the player stays where it stopped and resumes there, and the
+rename -- the one case the release exists for -- lets the file go through the rename coordinator when it is about to
+happen. A load for a still (libvlc decodes no frame without playing) plays muted until the first frame, keeps it,
+and pauses, after which the view stops it as it would after a frame from Qt's sink. **libvlc renders into memory**
+([[appendices.vlc#memory-rendering]]): it decodes into a buffer of the app's (`VlcFrameSink`) and each frame is painted
+by an ordinary widget (`VlcSurface`), so there is no native window, any widget can be drawn over the picture -- what
+the maximized player's overlays need -- and the engine is the same on every OS. Audio, the clock and subtitles stay
+libvlc's. Measured at 1080p60 in a window the size of a 3440x1440 monitor: 59 fps, about two thirds of one core for
+the whole process.
 
 **The build keeps 20 MB of a 105 MB to 460 MB wheel.** The agent depends on `PySide6-Essentials`; Qt Multimedia is in
 `PySide6-Addons`, which is named again for it. Playback needs about 20 MB of that wheel: `QtMultimedia` and

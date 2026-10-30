@@ -23,7 +23,7 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.vlc_media_player import VlcEngineError, VlcMediaPlayer
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
 from rehuco_agent.settings.videos_settings import VLC_PLAYER, shared_videos_settings
-from rehuco_core import VideoFormat
+from rehuco_core import RenameCoordinator, VideoFormat
 
 from .player_view_support import (  # pylint: disable=unused-import
     Listing,
@@ -204,7 +204,7 @@ def test_no_format_notice_is_made_under_libvlc(
     assert INTERLACED_NOTICE not in notices(view)
 
 
-def test_a_pause_takes_libvlcs_still_before_letting_go(
+def test_a_pause_under_libvlc_keeps_the_file_and_resumes_on_the_same_frame(
     qtbot: QtBot,
     model: RehuDocumentModel,
     recorder: WatchProgressRecorder,
@@ -212,10 +212,13 @@ def test_a_pause_takes_libvlcs_still_before_letting_go(
     engine: Mock,
     vlc_chosen: None,
 ) -> None:
-    """**Test steps:**
+    """Reopening and seeking landed a few frames off, so under libvlc the player stays paused on its frame.
+
+    **Test steps:**
 
     * play under libvlc, let it buffer, then pause
-    * verify the still was taken from the engine before it was stopped and its source cleared, and is shown
+    * verify the still was taken and shown, the engine paused rather than stopped, and the source kept
+    * press play again and verify the engine resumed without reopening
     """
     del library, vlc_chosen
     image = QImage(4, 3, QImage.Format.Format_RGB32)
@@ -226,16 +229,22 @@ def test_a_pause_takes_libvlcs_still_before_letting_go(
     view.jump("01.mp4")
     deliver(engine, "mediaStatusChanged", QMediaPlayer.MediaStatus.BufferedMedia)
     deliver(engine, "playbackStateChanged", QMediaPlayer.PlaybackState.PlayingState)
-    order: list[str] = []
-    engine.grab_still.side_effect = lambda: order.append("still") or image
-    engine.stop.side_effect = lambda: order.append("stop")
+    engine.setSource.reset_mock()
 
     view.findChild(type(view.actions()[0]), "play_pause_action").trigger()  # type: ignore[union-attr]
 
-    assert order == ["still", "stop"]
-    engine.setSource.assert_called_with(QUrl())
+    engine.grab_still.assert_called_once_with()
+    engine.pause.assert_called_once_with()
+    engine.stop.assert_not_called()
+    engine.setSource.assert_not_called()
     assert still_of(view).image is not None
     assert shown_of(view).objectName() == "still_widget"
+
+    view.findChild(type(view.actions()[0]), "play_pause_action").trigger()  # type: ignore[union-attr]
+
+    assert engine.play.call_count == 2
+    engine.setSource.assert_not_called()
+    assert shown_of(view).objectName() == "vlc_surface"
 
 
 def test_a_paused_load_shows_libvlcs_still_and_lets_go(
@@ -345,3 +354,37 @@ def test_a_still_arriving_while_a_video_plays_changes_nothing(
 
     engine.stop.assert_not_called()
     assert shown_of(view).objectName() == "vlc_surface"
+
+
+def test_a_rename_of_this_resource_lets_a_held_video_go(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+    coordinator: RenameCoordinator,
+) -> None:
+    """The one case the release exists for: the folder is about to be renamed, so the held file is let go, and the
+    video stays paused where it was, to be reopened there on the next play.
+
+    **Test steps:**
+
+    * play under libvlc, buffer, pause (held), then announce a rename of this resource
+    * verify the engine was stopped and its source cleared, and the still still shown
+    """
+    del library, vlc_chosen
+    engine.grab_still.return_value = QImage(4, 3, QImage.Format.Format_RGB32)
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    deliver(engine, "mediaStatusChanged", QMediaPlayer.MediaStatus.BufferedMedia)
+    deliver(engine, "playbackStateChanged", QMediaPlayer.PlaybackState.PlayingState)
+    view.findChild(type(view.actions()[0]), "play_pause_action").trigger()  # type: ignore[union-attr]
+    engine.stop.assert_not_called()
+
+    listener = coordinator.add_before_rename_listener.call_args.args[0]  # type: ignore[attr-defined]
+    listener(model.path)  # pylint: disable=not-callable  # a Mock's record
+
+    engine.stop.assert_called_once_with()
+    engine.setSource.assert_called_with(QUrl())
+    assert shown_of(view).objectName() == "still_widget"

@@ -4,52 +4,66 @@
 # QMediaPlayer's own method names, so the view calls either engine the same way
 # pylint: disable=invalid-name
 
-import sys
-import tempfile
-from pathlib import Path
+import ctypes
 from typing import Any, Final
 
 from PySide6.QtCore import QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtMultimedia import QMediaPlayer
-from PySide6.QtWidgets import QWidget
 from rehuco_core import VlcLibrary
 
-if sys.platform == "win32":
-    from borco_pyside.platforms.windows import window_picture
-else:  # pragma: no cover  (the other platforms' run)
-    window_picture = None  # pylint: disable=invalid-name
+from .vlc_frame_sink import CHROMA, VlcFrameSink
+from .vlc_surface import VlcSurface
 
-INSTANCE_OPTIONS: Final = ("--no-video-title-show", "--no-osd", "--no-snapshot-preview", "--quiet")
-"""How the libvlc instance is made: nothing drawn over the picture -- not the file name, not VLC's on-screen messages,
-not the thumbnail it shows after each snapshot (a pause takes one) -- and no console noise."""
+INSTANCE_OPTIONS: Final = ("--no-video-title-show", "--no-osd", "--quiet")
+"""How the libvlc instance is made: nothing drawn into the frames but the video and its subtitles -- not the file
+name, not VLC's on-screen messages -- and no console noise."""
+
+FORMAT_CALLBACK: Final = ctypes.CFUNCTYPE(
+    ctypes.c_uint,
+    ctypes.POINTER(ctypes.c_void_p),
+    ctypes.POINTER(ctypes.c_char),
+    ctypes.POINTER(ctypes.c_uint),
+    ctypes.POINTER(ctypes.c_uint),
+    ctypes.POINTER(ctypes.c_uint),
+    ctypes.POINTER(ctypes.c_uint),
+)
+"""``libvlc_video_format_cb`` with the chroma as a writable buffer: python-vlc's own prototype declares it
+``c_char_p``, which ctypes hands over as copied bytes, so the chroma could not be set through it (measured). The
+callback is cast to python-vlc's type where it is passed."""
 
 
 class VlcEngineError(Exception):
     """libvlc could not be made into a player: the reason is the message."""
 
 
-# one engine's whole state: the libvlc objects, the surface, the media and what it is known to be doing
+# one engine's whole state: the libvlc objects, its callbacks, the media and what it is known to be doing
 # pylint: disable-next=too-many-instance-attributes
 class VlcMediaPlayer(QObject):
     """A libvlc media player that answers the calls and emits the signals `PlayerView` makes of a ``QMediaPlayer``,
     with Qt's own enumerations, so the view's state machine does not know which engine it drives.
 
+    **libvlc renders into memory** ([[appendices.vlc#memory-rendering]]): it decodes into a buffer of this process's
+    (:class:`VlcFrameSink`) and each frame is painted by an ordinary widget (:class:`VlcSurface`), so there is no
+    native window, anything may be drawn over the picture, the still of a paused video is simply the last frame, and
+    the engine is the same on every OS. Audio, the clock the frames are timed by, and subtitles stay libvlc's;
+    subtitles arrive blended into the frames.
+
     **Events cross to the GUI thread through a queued signal**, never a blocking one: libvlc raises each on a thread of
-    its own, and ``stop()`` joins that thread, so a blocking connection deadlocks the first stop (#315). Two events are
-    raised on the calling thread -- the snapshot's and the stop's -- and the queue is right for those too.
+    its own, and ``stop()`` joins that thread, so a blocking connection deadlocks the first stop (#315). The frames
+    cross the same way.
 
     **The mapping.** ``Opening`` is ``LoadingMedia``; ``Playing`` is ``BufferedMedia`` and ``PlayingState``, the
     moment the view calls a video ready and seeks it; ``Paused`` is ``PausedState``; ``EndReached`` is ``EndOfMedia``
     and, since libvlc then stays *Ended* and ignores ``play()``, a stop is made before any replay;
     ``EncounteredError`` is ``errorOccurred``.
 
-    **A paused load** (:meth:`pause` before anything played) plays muted until the first picture, takes a still of it,
-    pauses, and emits :attr:`still_ready`; the view then lets the file go, as it does with a frame from Qt's sink.
-    **A pause while playing** keeps the file held, which is the view's business: it takes :meth:`grab_still` and stops.
+    **A paused load** (:meth:`pause` before anything played) plays muted until the first frame, pauses, and emits
+    :attr:`still_ready` with it; the view then lets the file go, as it does with a frame from Qt's sink. **A pause
+    while playing** keeps the file held, which is the view's business: it takes :meth:`grab_still` and stops.
 
     :param library: the loaded python-vlc.
-    :param surface: the native widget libvlc draws into.
+    :param surface: the widget the frames are painted on.
     :param parent: optional Qt parent.
     :raises VlcEngineError: if libvlc gives no instance or no player.
     """
@@ -60,12 +74,12 @@ class VlcMediaPlayer(QObject):
     mediaStatusChanged = Signal(QMediaPlayer.MediaStatus)  # noqa: N815
     errorOccurred = Signal(QMediaPlayer.Error, str)  # noqa: N815
     still_ready = Signal(QImage)
-    """A paused load has its picture: the frame at the position it was opened at."""
+    """A paused load has its picture: the first frame at the position it was opened at."""
 
     event_raised = Signal(int, object)
     """A libvlc event, ``(event type, value)``, emitted on libvlc's thread and delivered on this object's. Internal."""
 
-    def __init__(self, library: VlcLibrary, surface: QWidget, parent: QObject | None = None) -> None:
+    def __init__(self, library: VlcLibrary, surface: VlcSurface, parent: QObject | None = None) -> None:
         super().__init__(parent)
         module = library.module
         instance = library.instance(*INSTANCE_OPTIONS)
@@ -76,17 +90,21 @@ class VlcMediaPlayer(QObject):
         self.__instance: Final[Any] = instance
         self.__player: Final[Any] = player
         self.__surface: Final = surface
+        self.__sink: Final = VlcFrameSink(self)
         self.__source = QUrl()
         self.__media: Any | None = None
         self.__state = QMediaPlayer.PlaybackState.StoppedState
         self.__status = QMediaPlayer.MediaStatus.NoMedia
         self.__duration_ms = 0
+        self.__visible: tuple[int, int] | None = None
+        """The video's visible size, read once it plays; the decoder's buffer is padded past it."""
         self.__grabbing = False
-        """Whether a paused load is under way: playing muted until the first picture."""
+        """Whether a paused load is under way: playing muted until the first frame."""
         self.__ended = False
         self.event_raised.connect(self.__on_event, Qt.ConnectionType.QueuedConnection)
-        player.video_set_mouse_input(False)
-        player.video_set_key_input(False)
+        self.__sink.frame_ready.connect(self.__on_frame, Qt.ConnectionType.QueuedConnection)
+        # kept on the object: ctypes callbacks live exactly as long as their Python references
+        self.callbacks: Final = self.__make_callbacks()
         self.__attach_events()
 
     # region What QMediaPlayer answers
@@ -106,6 +124,7 @@ class VlcMediaPlayer(QObject):
         self.__player.set_media(self.__media)
         self.__ended = False
         self.__duration_ms = 0
+        self.__visible = None
         self.__set_status(QMediaPlayer.MediaStatus.LoadingMedia)
 
     def source(self) -> QUrl:
@@ -131,7 +150,7 @@ class VlcMediaPlayer(QObject):
         self.__player.play()
 
     def pause(self) -> None:
-        """Pause a playing file; before anything played, load it paused: play muted until the first picture."""
+        """Pause a playing file; before anything played, load it paused: play muted until the first frame."""
         if self.__media is None:
             return
         if self.__state == QMediaPlayer.PlaybackState.PlayingState:
@@ -142,10 +161,11 @@ class VlcMediaPlayer(QObject):
         self.__player.play()
 
     def stop(self) -> None:
-        """Stop, which lets the file go and closes the picture; costs tens of milliseconds on this thread."""
+        """Stop, which lets the file go, and show nothing; costs tens of milliseconds on this thread."""
         self.__grabbing = False
         self.__ended = False
         self.__player.stop()
+        self.__surface.set_frame(None)
         self.__set_state(QMediaPlayer.PlaybackState.StoppedState)
 
     def position(self) -> int:
@@ -198,30 +218,58 @@ class VlcMediaPlayer(QObject):
         self.__player.audio_set_volume(round(volume * 100))
 
     def grab_still(self) -> QImage | None:
-        """Take the picture shown now, while the file is still held.
+        """The picture shown now: the frame painted last.
 
-        On Windows it is read off the surface's native window in memory (``PrintWindow``, a few milliseconds,
-        [[appendices.vlc#python-vlc-events]]); elsewhere, where that was not measured, libvlc's own snapshot is
-        written to a temporary file and read back at once.
-
-        :returns: the image, or ``None`` when neither gives one.
+        :returns: the image, or ``None`` when no frame has arrived.
         """
-        image = window_picture.picture_of(self.__surface) if window_picture is not None else None
-        if image is not None:
-            return image
-        with tempfile.TemporaryDirectory(prefix="rehuco-still-") as scratch:
-            path = Path(scratch) / "still.png"
-            if self.__player.video_take_snapshot(0, str(path), 0, 0) != 0 or not path.is_file():
-                return None
-            image = QImage(str(path))
-        return None if image.isNull() else image
+        return self.__surface.frame
 
     # endregion
 
-    # region libvlc's events
+    # region libvlc's callbacks and events
+
+    def __make_callbacks(self) -> tuple[Any, ...]:
+        """Give libvlc the sink's three moments and the format, as ctypes callbacks it holds by address.
+
+        :returns: every callback object made, so they stay referenced for as long as this player (``callbacks``).
+        """
+        decorators = self.__vlc.CallbackDecorators
+        sink = self.__sink
+
+        def setup(_opaque: Any, chroma: Any, width: Any, height: Any, pitches: Any, lines: Any) -> int:
+            """Choose the chroma and allocate for the decoder's picture size; one picture in the pool."""
+            pitch, line_count = sink.setup(int(width[0]), int(height[0]))
+            ctypes.memmove(chroma, CHROMA, len(CHROMA))
+            pitches[0] = pitch
+            lines[0] = line_count
+            return 1
+
+        def lock(_opaque: Any, planes: Any) -> None:
+            """Point libvlc at the buffer."""
+            planes[0] = sink.lock()
+
+        def unlock(_opaque: Any, _picture: Any, _planes: Any) -> None:
+            """Nothing to do: the frame is read when it is displayed."""
+
+        def display(_opaque: Any, _picture: Any) -> None:
+            """The frame is due."""
+            sink.display()
+
+        def cleanup(_opaque: Any) -> None:
+            """The video is over."""
+            sink.cleanup()
+
+        setup_cb = FORMAT_CALLBACK(setup)
+        lock_cb = decorators.VideoLockCb(lock)
+        unlock_cb = decorators.VideoUnlockCb(unlock)
+        display_cb = decorators.VideoDisplayCb(display)
+        cleanup_cb = decorators.VideoCleanupCb(cleanup)
+        self.__player.video_set_callbacks(lock_cb, unlock_cb, display_cb, None)
+        self.__player.video_set_format_callbacks(ctypes.cast(setup_cb, decorators.VideoFormatCb), cleanup_cb)
+        return setup_cb, lock_cb, unlock_cb, display_cb, cleanup_cb
 
     def __attach_events(self) -> None:
-        """Have each event libvlc raises re-emitted as :attr:`event_raised`, and give libvlc the surface's window."""
+        """Have each event libvlc raises re-emitted as :attr:`event_raised`."""
         kinds = self.__vlc.EventType
         for kind in (
             kinds.MediaPlayerOpening,
@@ -232,16 +280,8 @@ class VlcMediaPlayer(QObject):
             kinds.MediaPlayerEncounteredError,
             kinds.MediaPlayerTimeChanged,
             kinds.MediaPlayerLengthChanged,
-            kinds.MediaPlayerVout,
         ):
             self.__player.event_manager().event_attach(kind, self.__relay, self.__number(kind))
-        window_id = int(self.__surface.winId())
-        if sys.platform == "win32":
-            self.__player.set_hwnd(window_id)
-        elif sys.platform == "darwin":
-            self.__player.set_nsobject(window_id)
-        else:
-            self.__player.set_xwindow(window_id)
 
     def __relay(self, event: Any, kind: int) -> None:
         """Re-emit an event; libvlc's thread, so nothing of Qt is touched here but the signal.
@@ -288,8 +328,24 @@ class VlcMediaPlayer(QObject):
         elif kind == self.__number(kinds.MediaPlayerLengthChanged) and isinstance(value, int) and value > 0:
             self.__duration_ms = value
             self.durationChanged.emit(value)
-        elif kind == self.__number(kinds.MediaPlayerVout) and self.__grabbing:
-            self.__finish_grab()
+
+    def __on_frame(self, frame: QImage) -> None:
+        """Show a frame, cropped to the video's visible size, and end a paused load on its first one.
+
+        :param frame: the frame, at the decoder's padded size.
+        """
+        if self.__visible is None:
+            width, height = self.__player.video_get_size(0)
+            if width > 0 and height > 0:
+                self.__visible = (int(width), int(height))
+        if self.__visible is not None and (frame.width(), frame.height()) != self.__visible:
+            frame = frame.copy(0, 0, *self.__visible)
+        self.__surface.set_frame(frame)
+        if self.__grabbing:
+            self.__grabbing = False
+            self.__player.set_pause(1)
+            self.__player.audio_set_mute(False)
+            self.still_ready.emit(frame)
 
     @staticmethod
     def __number(kind: Any) -> int:
@@ -300,15 +356,6 @@ class VlcMediaPlayer(QObject):
         :returns: its number.
         """
         return int(kind.value)
-
-    def __finish_grab(self) -> None:
-        """A paused load has its first picture: take it, pause, and say so."""
-        self.__grabbing = False
-        image = self.grab_still()
-        self.__player.set_pause(1)
-        self.__player.audio_set_mute(False)
-        if image is not None:
-            self.still_ready.emit(image)
 
     def __set_state(self, state: QMediaPlayer.PlaybackState) -> None:
         """Change the state, saying so when it changes.

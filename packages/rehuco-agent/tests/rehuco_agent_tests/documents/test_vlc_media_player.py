@@ -1,9 +1,10 @@
-"""Tests for libvlc as the player dock's engine: QMediaPlayer's language over python-vlc's events
-([[appendices.vlc#python-vlc-events]], #319)."""
+"""Tests for libvlc as the player dock's engine: QMediaPlayer's language over python-vlc's events, and its frames
+rendered into memory ([[appendices.vlc#python-vlc-events]], [[appendices.vlc#memory-rendering]], #319)."""
 
 # fixture-heavy tests, and small stand-ins for python-vlc's objects
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-few-public-methods
 
+import ctypes
 import sys
 import threading
 from collections.abc import Callable
@@ -13,14 +14,33 @@ from unittest.mock import Mock
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QImage
 from PySide6.QtMultimedia import QMediaPlayer
-from PySide6.QtWidgets import QWidget
-from pytest import fixture, mark, raises
-from pytest_mock import MockerFixture
+from pytest import fixture, raises
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.vlc_media_player import INSTANCE_OPTIONS, VlcEngineError, VlcMediaPlayer
+from rehuco_agent.documents.vlc_surface import VlcSurface
 from rehuco_core import VlcLibrary
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
+
+VideoLockCb = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))
+VideoUnlockCb = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))
+VideoDisplayCb = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+VideoCleanupCb = ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+VideoFormatCb = ctypes.CFUNCTYPE(
+    ctypes.c_uint,
+    ctypes.POINTER(ctypes.c_void_p),
+    ctypes.c_char_p,
+    ctypes.POINTER(ctypes.c_uint),
+    ctypes.POINTER(ctypes.c_uint),
+    ctypes.POINTER(ctypes.c_uint),
+    ctypes.POINTER(ctypes.c_uint),
+)
+"""python-vlc's callback prototypes, as ``vlc.CallbackDecorators`` declares them."""
+
+PADDED: Final = (640, 384)
+"""The decoder's picture size for a 640x360 video: padded to its alignment."""
+
+VISIBLE: Final = (640, 360)
 
 
 class Kind:
@@ -59,24 +79,31 @@ class EventType:
         return [value for value in vars(cls).values() if isinstance(value, Kind)]
 
 
-Fire = Callable[[Kind, Any], None]
+class CallbackDecorators:
+    """The prototypes a fake ``vlc`` module hands out."""
 
-ENGINE: Final = "rehuco_agent.documents.vlc_media_player"
+    VideoLockCb = VideoLockCb
+    VideoUnlockCb = VideoUnlockCb
+    VideoDisplayCb = VideoDisplayCb
+    VideoCleanupCb = VideoCleanupCb
+    VideoFormatCb = VideoFormatCb
 
 
 class FakeLibvlc:
-    """What the engine touches of python-vlc: the module's enumeration, an instance and a player recording its calls."""
+    """What the engine touches of python-vlc: the module's enumerations, an instance and a player recording its calls,
+    and the callbacks the engine registered, which a test calls the way libvlc would."""
 
     def __init__(self) -> None:
-        self.module: Final = Mock(EventType=EventType)
+        self.module: Final = Mock(EventType=EventType, CallbackDecorators=CallbackDecorators)
         self.player: Final = Mock()
         self.player.get_time.return_value = -1
-        self.player.video_take_snapshot.return_value = 0
+        self.player.video_get_size.return_value = VISIBLE
         self.callbacks: dict[int, tuple[Callable[..., None], int]] = {}
         self.player.event_manager.return_value.event_attach.side_effect = self.__attach
         self.instance: Final = Mock()
         self.instance.media_player_new.return_value = self.player
         self.instance.media_new.side_effect = lambda path: f"media:{path}"
+        self.__set_up = False
 
     def __attach(self, kind: Kind, callback: Callable[..., None], *args: Any) -> None:
         """Keep a callback the way libvlc would call it."""
@@ -95,16 +122,52 @@ class FakeLibvlc:
         thread.start()
         thread.join()
 
+    @property
+    def video_callbacks(self) -> tuple[Any, Any, Any]:
+        """The lock, unlock and display callbacks the engine registered."""
+        lock, unlock, display, _opaque = self.player.video_set_callbacks.call_args.args
+        return lock, unlock, display
 
-@fixture(autouse=True)
-def fixture_no_window_picture(mocker: MockerFixture) -> None:
-    """On Windows the still is read off the window first; here that gives nothing unless a test says otherwise,
-    so the snapshot path is what the other tests see.
+    @property
+    def format_callbacks(self) -> tuple[Any, Any]:
+        """The setup and cleanup callbacks the engine registered."""
+        setup, cleanup = self.player.video_set_format_callbacks.call_args.args
+        return setup, cleanup
 
-    :param mocker: pytest-mock fixture.
-    """
-    if sys.platform == "win32":
-        mocker.patch(f"{ENGINE}.window_picture.picture_of", return_value=None)
+    def set_up(self) -> tuple[bytes, int, int]:
+        """Call the format callback the way libvlc does, for a padded 640x384 picture.
+
+        :returns: the chroma the engine chose, the pitch and the lines it answered.
+        """
+        setup, _ = self.format_callbacks
+        chroma = ctypes.create_string_buffer(b"I420", 4)
+        width = (ctypes.c_uint * 1)(PADDED[0])
+        height = (ctypes.c_uint * 1)(PADDED[1])
+        pitches = (ctypes.c_uint * 1)()
+        lines = (ctypes.c_uint * 1)()
+        assert setup(None, chroma, width, height, pitches, lines) == 1
+        self.__set_up = True
+        return chroma.raw, pitches[0], lines[0]
+
+    def feed_frame(self, byte: int) -> None:
+        """Write one frame of one byte value and display it, on a thread of its own, as libvlc does.
+
+        :param byte: the value every byte of the frame takes.
+        """
+        if not self.__set_up:
+            self.set_up()
+        lock, unlock, display = self.video_callbacks
+
+        def libvlc_thread() -> None:
+            planes = (ctypes.c_void_p * 1)()
+            lock(None, planes)
+            ctypes.memset(planes[0], byte, PADDED[0] * 4 * PADDED[1])
+            unlock(None, None, planes)
+            display(None, None)
+
+        thread = threading.Thread(target=libvlc_thread, name="libvlc")
+        thread.start()
+        thread.join()
 
 
 @fixture(name="libvlc")
@@ -133,19 +196,19 @@ def fixture_library(libvlc: FakeLibvlc) -> Mock:
 
 
 @fixture(name="surface")
-def fixture_surface(qtbot: QtBot) -> QWidget:
-    """A native widget to draw into.
+def fixture_surface(qtbot: QtBot) -> VlcSurface:
+    """The widget the frames are painted on.
 
     :param qtbot: pytest-qt fixture.
-    :returns: the widget.
+    :returns: the surface.
     """
-    widget = QWidget()
-    qtbot.addWidget(widget)
-    return widget
+    surface = VlcSurface()
+    qtbot.addWidget(surface)
+    return surface
 
 
 @fixture(name="engine")
-def fixture_engine(library: Mock, surface: QWidget, delete_at_teardown: DeleteAtTeardown) -> VlcMediaPlayer:
+def fixture_engine(library: Mock, surface: VlcSurface, delete_at_teardown: DeleteAtTeardown) -> VlcMediaPlayer:
     """An engine over the fake, with a file opened.
 
     :param library: the proxy.
@@ -171,37 +234,26 @@ def states(engine: VlcMediaPlayer) -> tuple[list[QMediaPlayer.PlaybackState], li
     return playback, status
 
 
-@mark.parametrize("platform", ["win32", "darwin", "linux"])
-def test_the_engine_is_made_of_the_proxys_instance_and_player_with_input_off(
-    library: Mock,
-    libvlc: FakeLibvlc,
-    surface: QWidget,
-    delete_at_teardown: DeleteAtTeardown,
-    mocker: MockerFixture,
-    platform: str,
+def test_the_engine_is_made_of_the_proxys_instance_and_player_rendering_into_memory(
+    library: Mock, libvlc: FakeLibvlc, surface: VlcSurface, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """**Test steps:**
 
     * build an engine
-    * verify the instance was asked with the fixed options, the player made of it, mouse and key input turned off,
-      every event attached, and the surface's window handed over once for this OS
+    * verify the instance was asked with the fixed options, the player made of it, every event but the video
+      output's attached, the memory callbacks and the format callbacks registered, and no window handed over
     """
-    mocker.patch.object(sys, "platform", platform)
-
     delete_at_teardown(VlcMediaPlayer(library, surface))
 
     library.instance.assert_called_once_with(*INSTANCE_OPTIONS)
     library.media_player.assert_called_once_with(libvlc.instance)
-    libvlc.player.video_set_mouse_input.assert_called_once_with(False)
-    libvlc.player.video_set_key_input.assert_called_once_with(False)
-    assert set(libvlc.callbacks) == {kind.value for kind in EventType.members()}
-    handed = {"win32": libvlc.player.set_hwnd, "darwin": libvlc.player.set_nsobject}.get(
-        platform, libvlc.player.set_xwindow
-    )
-    handed.assert_called_once_with(int(surface.winId()))
+    assert set(libvlc.callbacks) == {kind.value for kind in EventType.members()} - {EventType.MediaPlayerVout.value}
+    assert len(libvlc.video_callbacks) == 3
+    assert len(libvlc.format_callbacks) == 2
+    libvlc.player.set_hwnd.assert_not_called()
 
 
-def test_a_proxy_with_no_player_is_an_engine_error(library: Mock, surface: QWidget) -> None:
+def test_a_proxy_with_no_player_is_an_engine_error(library: Mock, surface: VlcSurface) -> None:
     """**Test steps:**
 
     * have the proxy give no instance, carrying a reason
@@ -242,7 +294,7 @@ def test_libvlcs_events_arrive_on_the_gui_thread_as_qts_states(
 
     **Test steps:**
 
-    * play, and fire opening, length, playing, a time, paused, and end reached, each from another thread
+    * play, and fire opening, length, playing, a time, paused, stopped and end reached, each from another thread
     * verify the Qt signals in order, on this thread, and the duration and position kept
     """
     playback, status = states(engine)
@@ -311,18 +363,20 @@ def test_an_error_is_reported_as_qt_reports_one(engine: VlcMediaPlayer, libvlc: 
     assert QMediaPlayer.MediaStatus.InvalidMedia in status
 
 
-def test_a_pause_while_playing_pauses_and_a_stop_stops(
-    engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot
+def test_a_pause_while_playing_pauses_and_a_stop_stops_and_clears_the_picture(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, surface: VlcSurface, qtbot: QtBot
 ) -> None:
     """**Test steps:**
 
-    * play, see it playing, pause, then stop
-    * verify libvlc was paused, then stopped, and the state is stopped at once after the stop
+    * play, see it playing with a frame shown, pause, then stop
+    * verify libvlc was paused, then stopped, the state stopped at once, and the surface emptied
     """
     playback, _ = states(engine)
     engine.play()
     libvlc.fire(EventType.MediaPlayerPlaying)
     qtbot.waitUntil(lambda: QMediaPlayer.PlaybackState.PlayingState in playback)
+    libvlc.feed_frame(0x40)
+    qtbot.waitUntil(lambda: surface.frame is not None)
 
     engine.pause()
     libvlc.player.set_pause.assert_called_once_with(1)
@@ -330,37 +384,93 @@ def test_a_pause_while_playing_pauses_and_a_stop_stops(
     engine.stop()
     libvlc.player.stop.assert_called_once_with()
     assert engine.playbackState() == QMediaPlayer.PlaybackState.StoppedState
+    assert surface.frame is None
+    assert engine.grab_still() is None
 
 
-def test_a_paused_load_plays_muted_until_a_picture_then_gives_a_still_and_pauses(
+def test_the_format_callback_chooses_32_bit_pixels_at_the_decoders_size(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc
+) -> None:
+    """**Test steps:**
+
+    * call the format callback as libvlc does, with its padded picture size
+    * verify the chroma was changed to ``RV32`` and the pitch and lines answer that size
+    """
+    del engine
+    chroma, pitch, lines = libvlc.set_up()
+
+    assert chroma == b"RV32"
+    assert (pitch, lines) == (PADDED[0] * 4, PADDED[1])
+
+
+def test_a_frame_is_shown_cropped_to_the_videos_visible_size(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, surface: VlcSurface, qtbot: QtBot
+) -> None:
+    """The buffer is the decoder's padded picture; what the surface shows is the video.
+
+    **Test steps:**
+
+    * play and feed one grey frame from a libvlc thread, then a darker one
+    * verify the surface shows each at the visible size, in its grey, the size asked of libvlc once, and that the
+      still is the last frame
+    """
+    engine.play()
+
+    libvlc.feed_frame(0x80)
+    qtbot.waitUntil(lambda: surface.frame is not None)
+    first = surface.frame
+    libvlc.feed_frame(0x40)
+    qtbot.waitUntil(lambda: surface.frame is not first)
+
+    frame = surface.frame
+    assert first is not None and frame is not None
+    assert (first.width(), first.height()) == (frame.width(), frame.height()) == VISIBLE
+    assert first.pixel(10, 10) & 0xFFFFFF == 0x808080
+    assert frame.pixel(10, 10) & 0xFFFFFF == 0x404040
+    libvlc.player.video_get_size.assert_called_once_with(0)
+    assert engine.grab_still() is frame
+
+
+def test_a_frame_before_the_visible_size_is_known_is_shown_whole(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, surface: VlcSurface, qtbot: QtBot
+) -> None:
+    """**Test steps:**
+
+    * have libvlc not know the video's size yet and feed a frame
+    * verify the padded frame is shown as it is
+    """
+    libvlc.player.video_get_size.return_value = (0, 0)
+    engine.play()
+
+    libvlc.feed_frame(0x20)
+    qtbot.waitUntil(lambda: surface.frame is not None)
+
+    frame = surface.frame
+    assert frame is not None
+    assert (frame.width(), frame.height()) == PADDED
+
+
+def test_a_paused_load_plays_muted_until_the_first_frame_then_gives_the_still_and_pauses(
     engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot
 ) -> None:
-    """libvlc decodes no frame without playing, so a load for a still plays muted until the first picture.
+    """libvlc decodes no frame without playing, so a load for a still plays muted until the first frame.
 
     **Test steps:**
 
     * pause before anything played
     * verify libvlc was muted and told to play
-    * have the snapshot write a picture and fire the first video output
-    * verify the still arrives as an image, libvlc was paused and unmuted, and the state says paused once libvlc does
+    * feed the first frame
+    * verify the still arrives as that frame, libvlc was paused and unmuted
     """
-    picture = QImage(4, 3, QImage.Format.Format_RGB32)
-    picture.fill(0xFF336699)
-
-    def snapshot(_number: int, path: str, _width: int, _height: int) -> int:
-        picture.save(path)
-        return 0
-
-    libvlc.player.video_take_snapshot.side_effect = snapshot
-
     engine.pause()
 
     libvlc.player.audio_set_mute.assert_called_with(True)
     libvlc.player.play.assert_called_once_with()
     with qtbot.waitSignal(engine.still_ready, timeout=2000) as blocker:
-        libvlc.fire(EventType.MediaPlayerVout)
+        libvlc.feed_frame(0x60)
     assert blocker.args is not None
-    assert blocker.args[0].size() == picture.size()  # pylint: disable=no-member
+    still: QImage = blocker.args[0]
+    assert (still.width(), still.height()) == VISIBLE  # pylint: disable=no-member  # a signal's record
     libvlc.player.set_pause.assert_called_once_with(1)
     libvlc.player.audio_set_mute.assert_called_with(False)
 
@@ -380,17 +490,22 @@ def test_play_during_a_paused_load_carries_on_unmuted(engine: VlcMediaPlayer, li
     libvlc.player.set_pause.assert_called_once_with(0)
 
 
-def test_a_still_that_libvlc_cannot_take_is_none(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:
+def test_the_cleanup_callback_lets_the_buffer_go(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:
     """**Test steps:**
 
-    * have the snapshot fail, then succeed without writing a file
-    * verify ``None`` both times
+    * set up, then call the cleanup callback as libvlc does, then lock
+    * verify the lock answers no buffer
     """
-    libvlc.player.video_take_snapshot.return_value = -1
-    assert engine.grab_still() is None
+    del engine
+    libvlc.set_up()
+    _, cleanup = libvlc.format_callbacks
+    lock, _, _ = libvlc.video_callbacks
 
-    libvlc.player.video_take_snapshot.return_value = 0
-    assert engine.grab_still() is None
+    cleanup(None)
+
+    planes = (ctypes.c_void_p * 1)()
+    lock(None, planes)
+    assert planes[0] is None
 
 
 def test_position_rate_and_volume_reach_libvlc_in_its_units(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:
@@ -413,7 +528,7 @@ def test_position_rate_and_volume_reach_libvlc_in_its_units(engine: VlcMediaPlay
 
 
 def test_nothing_opened_plays_nothing(
-    library: Mock, libvlc: FakeLibvlc, surface: QWidget, delete_at_teardown: DeleteAtTeardown
+    library: Mock, libvlc: FakeLibvlc, surface: VlcSurface, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """**Test steps:**
 
@@ -429,7 +544,9 @@ def test_nothing_opened_plays_nothing(
     libvlc.player.set_pause.assert_not_called()
 
 
-def test_an_event_after_the_engine_is_deleted_is_dropped(library: Mock, libvlc: FakeLibvlc, surface: QWidget) -> None:
+def test_an_event_after_the_engine_is_deleted_is_dropped(
+    library: Mock, libvlc: FakeLibvlc, surface: VlcSurface
+) -> None:
     """libvlc may still have a thread going when the engine is gone; its callback must not raise.
 
     **Test steps:**
@@ -445,82 +562,36 @@ def test_an_event_after_the_engine_is_deleted_is_dropped(library: Mock, libvlc: 
     libvlc.fire(EventType.MediaPlayerPlaying)
 
 
-def test_a_paused_load_whose_picture_cannot_be_taken_gives_no_still(
-    engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot
+def test_a_length_of_nothing_is_not_a_duration(engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * fire a length change of 0, then one of 8000
+    * verify only the second is reported
+    """
+    durations: list[int] = []
+    engine.durationChanged.connect(durations.append)
+
+    libvlc.fire(EventType.MediaPlayerLengthChanged, 0)
+    libvlc.fire(EventType.MediaPlayerLengthChanged, 8000)
+    qtbot.waitUntil(lambda: durations == [8000])
+
+    assert engine.duration() == 8000
+
+
+def test_a_frame_already_at_the_visible_size_is_shown_as_it_is(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, surface: VlcSurface, qtbot: QtBot
 ) -> None:
     """**Test steps:**
 
-    * pause before anything played, with the snapshot failing, and fire the first video output
-    * verify libvlc was paused all the same and no still was emitted
+    * have the visible size equal the decoder's and feed a frame
+    * verify it is shown uncropped
     """
-    libvlc.player.video_take_snapshot.return_value = -1
-    stills: list[QImage] = []
-    engine.still_ready.connect(stills.append)
-    engine.pause()
-
-    libvlc.fire(EventType.MediaPlayerVout)
-    qtbot.waitUntil(lambda: libvlc.player.set_pause.called)
-
-    libvlc.player.set_pause.assert_called_once_with(1)
-    assert not stills
-
-
-def test_a_video_output_while_playing_is_not_a_grab(engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot) -> None:
-    """**Test steps:**
-
-    * play, and fire the video output event
-    * verify no snapshot was taken and nothing was paused
-    """
-    playback, _ = states(engine)
+    libvlc.player.video_get_size.return_value = PADDED
     engine.play()
-    libvlc.fire(EventType.MediaPlayerPlaying)
-    qtbot.waitUntil(lambda: QMediaPlayer.PlaybackState.PlayingState in playback)
 
-    libvlc.fire(EventType.MediaPlayerVout)
-    qtbot.wait(50)
+    libvlc.feed_frame(0x10)
+    qtbot.waitUntil(lambda: surface.frame is not None)
 
-    libvlc.player.video_take_snapshot.assert_not_called()
-    libvlc.player.set_pause.assert_not_called()
-
-
-@mark.windows
-def test_on_windows_the_still_is_the_windows_picture_and_no_snapshot_is_taken(
-    engine: VlcMediaPlayer, libvlc: FakeLibvlc, surface: QWidget, mocker: MockerFixture
-) -> None:
-    """**Test steps:**
-
-    * have the window picture answer an image
-    * verify the still is that image, taken of the surface, and libvlc was not asked for a snapshot
-    """
-    picture = QImage(6, 4, QImage.Format.Format_RGB32)
-    picture.fill(0xFF102030)
-    picture_of = mocker.patch(f"{ENGINE}.window_picture.picture_of", return_value=picture)
-
-    still = engine.grab_still()
-
-    assert still is not None and still.size() == picture.size()
-    picture_of.assert_called_once_with(surface)
-    libvlc.player.video_take_snapshot.assert_not_called()
-
-
-@mark.windows
-def test_on_windows_a_window_picture_refused_falls_back_to_the_snapshot(
-    engine: VlcMediaPlayer, libvlc: FakeLibvlc
-) -> None:
-    """**Test steps:**
-
-    * with the window picture giving nothing, have the snapshot write a file
-    * verify the still comes from the snapshot
-    """
-    picture = QImage(4, 3, QImage.Format.Format_RGB32)
-    picture.fill(0xFF336699)
-
-    def snapshot(_number: int, path: str, _width: int, _height: int) -> int:
-        picture.save(path)
-        return 0
-
-    libvlc.player.video_take_snapshot.side_effect = snapshot
-
-    still = engine.grab_still()
-
-    assert still is not None and still.size() == picture.size()
+    frame = surface.frame
+    assert frame is not None
+    assert (frame.width(), frame.height()) == PADDED

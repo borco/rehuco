@@ -106,6 +106,11 @@ class Session(Enum):
     PLAY = auto()
     """The video is playing, and the file is held for as long as it does."""
 
+    HELD = auto()
+    """The video is paused in the player with its file held, so it resumes on the very frame it stopped on -- the
+    libvlc engine's pause (#319), where reopening and seeking landed a few frames off. A rename of this resource
+    lets the file go first (:meth:`PlayerView.__on_before_rename`)."""
+
 
 class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     """One document's video player: a surface, a transport bar, and the keys that drive them, recording where the
@@ -115,8 +120,11 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     video, where, and a still of it -- with no source open in the Qt player, because the OS refuses to rename a folder
     with a video open in it and renaming a resource's folder is something the app does. Pausing records where the video
     is, keeps a frame of it on the surface, and lets go; playing opens it again at that position. A rename that begins
-    while one plays pauses it first (:meth:`__on_before_rename`). Loading a video to show -- the dock opened, previous,
-    next -- opens it for a moment (:attr:`Session.GRAB`) to take a frame and its length, and lets go.
+    while one plays pauses it first (:meth:`__on_before_rename`). **Under libvlc a pause holds the file**
+    (:attr:`Session.HELD`): reopening and seeking there landed a few frames off, so the player stays paused on its
+    frame and the rename, the one case the release exists for, lets the file go when it is about to happen. Loading a
+    video to show -- the dock opened, previous, next -- opens it for a moment (:attr:`Session.GRAB`) to take a frame and
+    its length, and lets go.
 
     **One player per document** ([[plugins#in-app-player]]) over **the whole tutorial's videos**, in every folder, in
     natural path order. Showing the dock loads the one watched last, paused where it was left (:meth:`load_last`);
@@ -167,7 +175,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__recorder: Final = recorder
         self.__player: QMediaPlayer | VlcMediaPlayer | None = None
         self.__vlc = False
-        """Whether the engine built is libvlc, which shows what Qt cannot and takes its stills by snapshot."""
+        """Whether the engine built is libvlc, which shows what Qt cannot and whose still is its last frame."""
         self.__fallback_reason: str | None = None
         """Why the engine is Qt although VLC was chosen, or ``None``."""
         self.__audio: QAudioOutput | None = None
@@ -583,7 +591,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             return
         if self.__session is Session.PLAY:
             self.__pause()
-        elif self.__session is Session.GRAB:
+        elif self.__session in (Session.GRAB, Session.HELD):
             self.__release()
 
     # endregion
@@ -601,8 +609,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __play_selected(self) -> None:
         """Play the selected video from where it is."""
-        if self.__session is Session.GRAB and self.__player is not None:
-            # already open to take a frame: carry on from there, the seek to where it is made as it buffers
+        if self.__session in (Session.GRAB, Session.HELD) and self.__player is not None:
+            # already open, for a frame or paused on one: carry on from there -- a held video on the very frame it
+            # stopped on, a grabbed one with the seek to where it is made as it buffers
             self.__grab_timer.stop()
             self.__session = Session.PLAY
             self.__ui.surface_stack.setCurrentWidget(self.__surface)
@@ -614,14 +623,19 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__open(Session.PLAY)
 
     def __pause(self) -> None:
-        """Pause a video by letting go of it: where it is is recorded, a frame of it is kept on the surface, and its
-        file is released, so the folder can be renamed while it is paused."""
+        """Pause a video: where it is is recorded and a frame of it is kept on the surface. Under Qt its file is let go,
+        so the folder can be renamed while it is paused; under libvlc the player holds it, paused on its frame
+        (:attr:`Session.HELD`), and a rename lets it go when one is about to happen."""
         player = self.__player
         if player is not None and self.__ready:
             self.__position_ms = player.position()
         self.__flush()
         self.__ui.still_widget.set_image(self.__still_now())
-        self.__release()
+        if self.__vlc and player is not None and self.__ready:
+            player.pause()
+            self.__session = Session.HELD
+        else:
+            self.__release()
         self.__ui.surface_stack.setCurrentWidget(self.__ui.still_widget)
         self.__show_position(self.__position_ms)
         self.__show_playing(False)
@@ -811,8 +825,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__release()
 
     def __still_now(self) -> QImage | None:
-        """The picture the surface shows, as a video is paused: Qt's last frame, or a libvlc snapshot taken while the
-        file is still held.
+        """The picture the surface shows, as a video is paused: the last frame of either engine, taken while the file
+        is still held.
 
         :returns: the image, or ``None`` when there is none to take.
         """
