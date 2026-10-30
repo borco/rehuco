@@ -386,13 +386,13 @@ number. The videos whose files are gone but whose progress is kept are listed in
 rows that open nothing.
 
 What can be done to the selected row is on its **context menu** and on the toolbar, behind a separator, each action
-**shown only where it applies** rather than disabled elsewhere: **Viewed**, a toggle ticked as the video is, on any video
-of the resource, and **Forget**, the only way a kept entry is ever removed, on a missing one. A row with neither opens no
-menu and shows no separator. There is no Measure button here: a video's length is known from the main editor's duration
-**Compute**, which probes every video once, fills the total and writes each video's length into the record, or from a
-player recording the file's length as it plays — so a video shows a percentage once it was measured or viewed, and
-nothing before. Everything redraws when the document model says progress changed, from what was already read, and
-listing the files is also when a renamed video takes its progress with it.
+**shown only where it applies** rather than disabled elsewhere: **Favorite** and **Viewed**, toggles ticked as the
+video is, on any video of the resource, and **Forget**, the only way a kept entry is ever removed, on a missing one. A
+row with none of them opens no menu and shows no separator. There is no Measure button here: a video's length is known
+from the main editor's duration **Compute**, which probes every video once, fills the total and writes each video's
+length into the record, or from a player recording the file's length as it plays — so a video shows a percentage once
+it was measured or viewed, and nothing before. Everything redraws when the document model says progress changed,
+from what was already read, and listing the files is also when a renamed video takes its progress with it.
 
 **The checksum column reports what *this* record claims, and nothing else.** Six verdicts and an empty cell: nothing
 at all for the record, a sidecar, a folder, content another record covers, or every file at all when this record
@@ -1288,12 +1288,22 @@ marked and kept in view as it changes. The Files sub-dock shows one folder at a 
 shape and what is left of it are read at a glance. The progress text is the Files rows' rule exactly
 ([[plugins#files-subdock]]: `100%` once viewed, else position over length, nothing while the length is unknown; a
 folder's share duration-weighted), from one shared formatter, redrawn when the document says progress or notes
-changed. Missing videos are listed in their folder as the Files dock lists them. A double-click loads and plays the
-video in the document's player, showing the player dock as the Files route does. The row's actions, shown only where
-they apply: **Favorite** (a toggle, [[field-schema#video-notes]]), **Viewed** (a toggle), **Forget** on a missing row
-— one set of commands with the Files dock's. One tree model serves this dock and the player's `T` overlay
-([[plugins#player-maximized]]). No layout version bump: a layout that never names the dock restores and puts it back
-hidden ([[appendices.qt-ads#structural-layout]]).
+changed — in place for progress, which the player writes every few seconds, so what the reader closed stays closed;
+a rebuild, keeping the closed rows and the selected video, for a change in the rows themselves. A video reads as its
+file's name without the extension. Missing videos are listed in their folder as the Files dock lists them, in italic,
+with their notes beneath them.
+
+**A video's notes are its children**, one row per non-empty line of its note ([[field-schema#video-notes]]), with the
+markup taken off: a bookmark `- [12:34](rehuco-video:…#t=754) the smudge trick` reads `12:34 the smudge trick`. The row
+is elided to the dock's width; its tooltip carries the line wrapped at 80 columns and cut after eight lines with an
+ellipsis, so a long note never covers the screen. A double-click on a video loads and plays it in the document's
+player, showing the player dock as the Files route does; on a bookmark line it plays the video its link names from the
+link's `#t`, and on any other line its own video from where it was left. A missing video plays nothing.
+
+The row's actions, shown only where they apply and also on the dock's title bar: **Favorite** (a toggle), **Viewed** (a
+toggle), **Forget** on a missing row — one set of commands, and one object, with the Files dock's. One tree model
+serves this dock and the player's `T` overlay ([[plugins#player-maximized]]). No layout version bump: a layout that
+never names the dock restores and puts it back hidden ([[appendices.qt-ads#structural-layout]]).
 
 ### The notes
 

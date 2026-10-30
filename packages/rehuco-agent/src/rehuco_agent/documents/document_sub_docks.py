@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogWidget
-from borco_pyside.qtads import QtAdsFocusTracker, QtAdsLayout, QtAdsMaximizeHandler
+from borco_pyside.qtads import QtAdsFocusTracker, QtAdsLayout, QtAdsMaximizeHandler, QtAdsTitleBarActionVisibility
 from borco_pyside.theming import ActionIconThemeHandler, GlyphActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QEvent, QMimeData, QObject, Qt, Signal, SignalInstance
@@ -80,6 +80,7 @@ from .rehu_document_model import USER_STATE_FIELD_NAMES, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .scrape_actions import ScrapeActions
 from .source_views import OnDiskView, SavePreviewView
+from .video_tree_view import VideoTreeView
 from .watch_progress_recorder import WatchProgressRecorder
 from .web_search_action import WebSearchAction
 
@@ -110,6 +111,7 @@ CHECKSUM_ICON_RESOURCE: Final = ":/icons/document_checksum.svg"
 FILES_ICON_RESOURCE: Final = ":/icons/document_file_browser.svg"
 CONTENT_IMAGES_ICON_RESOURCE: Final = ":/icons/document_content_reference_images.svg"
 PLAYER_ICON_RESOURCE: Final = ":/icons/document_content_tutorials.svg"
+TREE_ICON_RESOURCE: Final = ":/icons/document_video_tree.svg"
 DEFAULT_LAYOUT_ICON_RESOURCE: Final = ":/icons/document_default_layout.svg"
 
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
@@ -119,6 +121,7 @@ CHECKSUM_DOCK_NAME: Final = "checksums"
 FILES_DOCK_NAME: Final = "files"
 CONTENT_IMAGES_DOCK_NAME: Final = "content_images"
 PLAYER_DOCK_NAME: Final = "player"
+TREE_DOCK_NAME: Final = "tree"
 """Object names of the read-only inspection docks (#111), this resource's own log (#200), its
 per-file checksum table (#244), its own folder (#266), its content images (#221) and a tutorial's player (#317);
 namespaced apart from the ``viewer:``/``editor:`` docks, and the keys `restore_state` restores their
@@ -131,6 +134,7 @@ CHECKSUM_DOCK_TITLE: Final = "Checksums"
 FILES_DOCK_TITLE: Final = "Files"
 CONTENT_IMAGES_DOCK_TITLE: Final = "Content Images"
 PLAYER_DOCK_TITLE: Final = "Player"
+TREE_DOCK_TITLE: Final = "Tree"
 """Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
 write) and the verbatim on-disk file -- of this resource's own log (#200), of its own folder (#266), of
 its content images (#221, #392) and of a tutorial's player (#317)."""
@@ -140,6 +144,7 @@ CHECKSUM_DOCK_MIN_HEIGHT: Final = 90
 FILES_DOCK_MIN_HEIGHT: Final = 140
 CONTENT_IMAGES_DOCK_MIN_HEIGHT: Final = 160
 PLAYER_DOCK_MIN_HEIGHT: Final = 220
+TREE_DOCK_MIN_HEIGHT: Final = 160
 IMAGES_DOCK_MIN_HEIGHT: Final = 200
 """Size floors a splitter drag can't cross, chosen by eye against a real layout so each dock keeps its
 header and summary readable rather than being squeezed to a sliver."""
@@ -197,7 +202,7 @@ TOOLBAR_TITLE: Final = "View"
 TYPE_DOCK_NAMES: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
     {
         REFERENCE_IMAGES_PLUGIN.key: frozenset({CONTENT_IMAGES_DOCK_NAME}),
-        TUTORIAL_PLUGIN.key: frozenset({PLAYER_DOCK_NAME}),
+        TUTORIAL_PLUGIN.key: frozenset({PLAYER_DOCK_NAME, TREE_DOCK_NAME}),
     }
 )
 """The sub-docks each resource type adds to the common shell ([[plugins#dock-shell]], #320), keyed by
@@ -797,6 +802,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__content_images_dock: QtAds.CDockWidget | None = None
         self.__player_view: PlayerView | None = None
         self.__player_dock: QtAds.CDockWidget | None = None
+        self.__tree_view: VideoTreeView | None = None
         self.__awaiting_type = model.pending
         self.__type_docks: dict[str, QtAds.CDockWidget] = self.__add_type_docks(type_dock_names(self.layout_type))
         # the archives are found relative to the path, so a path change re-enumerates them; connected
@@ -1047,6 +1053,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         files_view = self.__files_dock.widget()
         if isinstance(files_view, FilesView):  # pragma: no branch -- the Files dock always holds one
             files_view.detach()
+        if self.__tree_view is not None:
+            self.__tree_view.detach()
 
     def stop_playback(self) -> None:
         """Stop the player, so it records where it stopped, and write at once what the recorder then holds (#317).
@@ -1617,6 +1625,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
                 continue
             if name == PLAYER_DOCK_NAME and self.__player_view is not None:
                 self.__player_view.stop()
+            if name == TREE_DOCK_NAME and self.__tree_view is not None:
+                self.__tree_view.detach()
             self.__hide_dock(dock)
             self.__toolbar.removeAction(dock.toggleViewAction())
             self.__dock_manager.removeDockWidget(dock)
@@ -1631,6 +1641,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             if name == PLAYER_DOCK_NAME:
                 self.__player_view = None
                 self.__player_dock = None
+            if name == TREE_DOCK_NAME:
+                self.__tree_view = None
 
     def __add_type_docks(self, names: frozenset[str]) -> dict[str, QtAds.CDockWidget]:
         """Build the docks ``names`` asks for, each hidden and stacked with the inspection set (#320).
@@ -1653,6 +1665,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__player_view.tools_requested.connect(self.tools_requested)
             self.__player_dock = self.__add_player_dock(self.__player_view)
             docks[PLAYER_DOCK_NAME] = self.__player_dock
+        if TREE_DOCK_NAME in names:
+            self.__tree_view = VideoTreeView(self.__model, self.__host.widget, self.__resource_events)
+            docks[TREE_DOCK_NAME] = self.__add_tree_dock(self.__tree_view)
         return docks
 
     @staticmethod
@@ -1981,19 +1996,21 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__viewer_follows_curation = False
             self.__open_image_viewer(self.__path_source(images), images.index(clicked))
 
-    def __on_video_activated(self, key: str) -> None:
-        """Play a video double-clicked in the Files sub-dock, in this document's one player (#317).
+    def __on_video_activated(self, key: str, position: float | None = None) -> None:
+        """Play a video double-clicked in the Files or Tree sub-dock, in this document's one player (#317, #572).
 
         It jumps to that video of the whole tutorial, whichever folder the browser is in, and plays it from where it
-        was left. Told first, so the dock that shows next finds the player already asked and does not load another; the
-        dock is then shown and made current, so a video started from the browser is seen playing. A second double-click
-        while one plays points the same player at the other video rather than opening another.
+        was left -- or from ``position``, a bookmark's time in the Tree. Told first, so the dock that shows next
+        finds the player already asked and does not load another; the dock is then shown and made current, so a
+        video started from the browser is seen playing. A second double-click while one plays points the same player
+        at the other video rather than opening another.
 
         :param key: the content key of the video to play.
+        :param position: where to start it, in seconds; ``None`` for where it was left.
         """
         if self.__player_view is None or self.__player_dock is None:
             return
-        self.__player_view.jump(key)
+        self.__player_view.jump(key, position)
         self.__player_dock.toggleView(True)
         self.__player_dock.setAsCurrentTab()
 
@@ -2645,6 +2662,31 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             min_content_height=PLAYER_DOCK_MIN_HEIGHT,
         )
         dock.viewToggled.connect(self.__on_player_toggled)
+        return dock
+
+    def __add_tree_dock(self, view: VideoTreeView) -> QtAds.CDockWidget:
+        """Build a tutorial's tree dock, stacked with the inspection docks and hidden (#572), and follow the player.
+
+        Its row actions sit on the dock's title bar, and a video or bookmark double-clicked in it plays in the
+        document's one player, as one double-clicked in the Files sub-dock does.
+
+        :param view: the tree.
+        :returns: the dock, hidden.
+        """
+        dock = self.__add_hidden_inspection_dock(
+            TREE_DOCK_NAME,
+            TREE_DOCK_TITLE,
+            TREE_ICON_RESOURCE,
+            view,
+            insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
+            min_content_height=TREE_DOCK_MIN_HEIGHT,
+        )
+        dock.setTitleBarActions(view.title_bar_actions)
+        QtAdsTitleBarActionVisibility(dock)
+        view.video_activated.connect(self.__on_video_activated)
+        if self.__player_view is not None:  # pragma: no branch -- a tutorial builds its player first
+            self.__player_view.video_changed.connect(view.set_current)
+            view.set_current(self.__player_view.current_key)
         return dock
 
     def __on_content_images_toggled(self, visible: bool) -> None:

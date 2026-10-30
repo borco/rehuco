@@ -82,9 +82,9 @@ from .files_rows import (
 )
 from .files_view_ui import Ui_FilesView
 from .rehu_document_model import RehuDocumentModel
+from .video_row_actions import VideoRowActions
 
 REFRESH_ICON_RESOURCE: Final = ":/icons/refresh.svg"
-FORGET_ICON_RESOURCE: Final = ":/icons/items_delete.svg"
 HOME_ICON_RESOURCE: Final = ":/icons/file_browser_home.svg"
 UP_ICON_RESOURCE: Final = ":/icons/file_browser_folder_parent.svg"
 """The up action wears the **parent-folder** glyph, which is also the ``..`` row's: the two are one act
@@ -218,6 +218,7 @@ class FilesView(QWidget):
         self.__loader: Final = FilesRowsLoader(self)
         self.__loader.loaded.connect(self.__show)
 
+        self.__row_actions: Final = VideoRowActions(model, self)
         self.__row_separator: Final = self.__setup_toolbar()
         self.__ui.file_view.doubleClicked.connect(self.__on_double_clicked)
         self.__ui.file_view.selectionModel().selectionChanged.connect(self.__update_row_actions)
@@ -583,7 +584,6 @@ class FilesView(QWidget):
             (ui.home_action, HOME_ICON_RESOURCE),
             (ui.up_action, UP_ICON_RESOURCE),
             (ui.refresh_action, REFRESH_ICON_RESOURCE),
-            (ui.forget_action, FORGET_ICON_RESOURCE),
         ):
             ActionIconThemeHandler(action, icon)
         # scoped to this widget's own subtree: every open document has a browser of its own (`REFRESH_FILES`)
@@ -593,8 +593,6 @@ class FilesView(QWidget):
         ui.up_action.triggered.connect(self.__on_up_triggered)
         ui.home_action.triggered.connect(self.__reset_to_root)
         ui.reveal_action.triggered.connect(self.__on_reveal_triggered)
-        ui.viewed_action.triggered.connect(self.__on_viewed_triggered)
-        ui.forget_action.triggered.connect(self.__on_forget_triggered)
 
         toolbar = QToolBar(self)
         # home first: leftmost is the longest jump, and the two are enabled and disabled together
@@ -603,12 +601,14 @@ class FilesView(QWidget):
         toolbar.addAction(ui.refresh_action)
         toolbar.addAction(ui.reveal_action)
         row_separator = toolbar.addSeparator()
-        toolbar.addAction(ui.viewed_action)
-        toolbar.addAction(ui.forget_action)
+        toolbar.addActions(self.__row_actions.actions)
         # no glyph of its own yet (design/icons#314); text keeps it visible until one is drawn
         reveal_button = toolbar.widgetForAction(ui.reveal_action)
-        viewed_button = toolbar.widgetForAction(ui.viewed_action)
-        for button in (reveal_button, viewed_button):
+        text_only = [
+            reveal_button,
+            *(toolbar.widgetForAction(a) for a in self.__row_actions.actions if a.icon().isNull()),
+        ]
+        for button in text_only:
             if isinstance(button, QToolButton):  # pragma: no cover  (a QToolBar always builds one)
                 button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         ui.main_layout.insertWidget(0, toolbar)
@@ -639,15 +639,9 @@ class FilesView(QWidget):
 
         :param _args: whatever the triggering signal carried; unused.
         """
-        ui = self.__ui
         row = self.__selected_row()
-        key = None if row is None else row.key
-        ui.viewed_action.setVisible(key is not None)
-        if key is not None:
-            entry = self.__model.progress_of(key)
-            ui.viewed_action.setChecked(entry is not None and entry.viewed)
-        ui.forget_action.setVisible(row is not None and row.missing)
-        self.__row_separator.setVisible(ui.viewed_action.isVisible() or ui.forget_action.isVisible())
+        self.__row_actions.show_for(None if row is None else row.key, missing=row is not None and row.missing)
+        self.__row_separator.setVisible(self.__row_actions.any_visible)
 
     def __on_context_menu(self, position: QPoint) -> None:
         """Offer the actions of the row under the cursor: it is selected first, so the menu and the toolbar speak of the
@@ -660,7 +654,7 @@ class FilesView(QWidget):
         if index.isValid():
             view.selectRow(index.row())
         self.__update_row_actions()
-        actions = [action for action in (self.__ui.viewed_action, self.__ui.forget_action) if action.isVisible()]
+        actions = [action for action in self.__row_actions.actions if action.isVisible()]
         if not actions:
             return
         menu = QMenu(self)
@@ -669,23 +663,6 @@ class FilesView(QWidget):
             menu.exec(view.viewport().mapToGlobal(position))
         finally:
             menu.deleteLater()
-
-    def __on_viewed_triggered(self, viewed: bool) -> None:
-        """Record the selected video's *viewed* flag as the action now says, keeping the position it was left at.
-
-        :param viewed: the new state.
-        """
-        row = self.__selected_row()
-        if row is None or row.key is None:  # pragma: no cover -- a hidden action cannot be triggered
-            return
-        entry = self.__model.progress_of(row.key)
-        self.__model.record_progress(row.key, entry.position if entry is not None else 0.0, None, viewed=viewed)
-
-    def __on_forget_triggered(self) -> None:
-        """Forget the progress kept for the selected missing video."""
-        row = self.__selected_row()
-        if row is not None and row.key is not None:  # pragma: no branch -- a hidden action cannot be triggered
-            self.__model.forget_progress(row.key)
 
     # endregion
 
@@ -708,15 +685,20 @@ class FilesView(QWidget):
         return self.__ui.up_action
 
     @property
+    def favorite_action(self) -> QAction:
+        """Stars the selected video, or not; checked as it is. Shown only for a video of the resource."""
+        return self.__row_actions.favorite_action
+
+    @property
     def viewed_action(self) -> QAction:
         """Marks the selected video watched to the end, or not; checked as it is. Shown only for a video of the
         resource."""
-        return self.__ui.viewed_action
+        return self.__row_actions.viewed_action
 
     @property
     def forget_action(self) -> QAction:
-        """Forgets the progress kept for the selected missing video. Shown only for a missing one."""
-        return self.__ui.forget_action
+        """Forgets what is kept about the selected missing video. Shown only for a missing one."""
+        return self.__row_actions.forget_action
 
     @property
     def reveal_action(self) -> QAction:

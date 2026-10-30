@@ -11,6 +11,7 @@ from .qtads_maximize_handler import QtAdsMaximizeHandler
 from .qtads_pin_guard import QtAdsPinGuard
 from .qtads_pin_side_handler import QtAdsPinSideHandler
 from .qtads_tab_context_actions import QtAdsTabContextActions
+from .qtads_title_bar_action_visibility import QtAdsTitleBarActionVisibility
 from .qtads_widgets import tab_close_button, tab_label, tab_maximize_button
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "QtAdsPinGuard",
     "QtAdsPinSideHandler",
     "QtAdsTabContextActions",
+    "QtAdsTitleBarActionVisibility",
     "remove_dock_widget",
     "tab_close_button",
     "tab_label",

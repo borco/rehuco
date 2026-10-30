@@ -46,6 +46,7 @@ from ..glyphs import (
 from ..playback_libraries import shared_playback_libraries
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.videos_settings import shared_videos_settings
+from .clock_text import clock_text
 from .latest_runner import LatestRunner
 from .player_engine import Engine, PlayerEngine
 from .player_notices import AV1_LIBRARIES_HINT, PlayerNotices
@@ -163,6 +164,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     tools_requested = Signal()
     """The user asked to set up the FFmpeg libraries an AV1 video needs; the window above opens the Tools page."""
 
+    video_changed = Signal(object)
+    """Emitted with the content key of the video now selected, or ``None`` when the player shows none -- what the
+    tutorial's tree marks as the current video (#572)."""
+
     def __init__(
         self,
         model: RehuDocumentModel,
@@ -177,9 +182,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__volume = 1.0
         self.__videos: list[tuple[str, Path]] | None = None
         """The tutorial's videos as ``(content key, path)`` in play order, once listed; ``None`` before."""
-        self.__intent: tuple[str | None, bool] | None = None
-        """What to do with the list being read: the video to select (``None`` for the one watched last) and whether to
-        play it. Replaced by a later request, so a double-click overrides a dock still listing."""
+        self.__intent: tuple[str | None, bool, float | None] | None = None
+        """What to do with the list being read: the video to select (``None`` for the one watched last), whether to
+        play it, and where to start it (``None`` for where it was left). Replaced by a later request, so a double-click
+        overrides a dock still listing."""
         self.__playlist: PlayerPlaylist | None = None
         self.__key: str | None = None
         """The content key of the video selected: what its positions are recorded under. Not the playlist's current
@@ -227,13 +233,19 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             return
         self.__request(None, play=False)
 
-    def jump(self, key: str) -> None:
-        """Play a video of the tutorial from where it was left, and take the keyboard -- what a double-click in the
-        Files dock does.
+    @property
+    def current_key(self) -> str | None:
+        """The content key of the video selected, or ``None`` when the player shows none."""
+        return self.__key
+
+    def jump(self, key: str, position: float | None = None) -> None:
+        """Play a video of the tutorial and take the keyboard -- what a double-click in the Files dock does, and one on
+        a bookmark in the tree.
 
         :param key: the video's content key.
+        :param position: where to start it, in seconds; ``None`` for where it was left.
         """
-        self.__request(key, play=True)
+        self.__request(key, play=True, position=position)
         self.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def stop(self) -> None:
@@ -368,19 +380,26 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     # region Choosing a video
 
-    def __request(self, key: str | None, *, play: bool) -> None:
+    def __request(self, key: str | None, *, play: bool, position: float | None = None) -> None:
         """Select a video of the tutorial, listing its videos first unless they are known to hold it.
 
         :param key: the video's content key, or ``None`` for the one watched last.
         :param play: whether to play it, rather than load it paused.
+        :param position: where to start it, in seconds; ``None`` for where it was left.
         """
         path = self.__model.path
         if path is None:
             return
-        if self.__videos is not None and (key is None or any(known == key for known, _ in self.__videos)):
-            self.__select_from(self.__videos, key, play)
+        if position is not None and key is not None and key == self.__key:
+            # already selected: go to the time and play, without selecting (and so reopening) it again
+            self.__seek_to(round(position * 1000))
+            if self.__session is not Session.PLAY:
+                self.__play_selected()
             return
-        self.__intent = (key, play)
+        if self.__videos is not None and (key is None or any(known == key for known, _ in self.__videos)):
+            self.__select_from(self.__videos, key, play, position)
+            return
+        self.__intent = (key, play, position)
         settings = shared_videos_settings()
         self.__list_runner.start(
             LIST_TAG,
@@ -410,12 +429,15 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         elif intent is not None:
             self.__select_from(self.__videos, *intent)
 
-    def __select_from(self, videos: list[tuple[str, Path]], key: str | None, play: bool) -> None:
+    def __select_from(
+        self, videos: list[tuple[str, Path]], key: str | None, play: bool, position: float | None = None
+    ) -> None:
         """Select a video of the list.
 
         :param videos: the tutorial's videos.
         :param key: the video's content key, or ``None`` for the one watched last, else the first.
         :param play: whether to play it, rather than load it paused.
+        :param position: where to start it, in seconds; ``None`` for where it was left.
         """
         keys = [known for known, _ in videos]
         if key is None:
@@ -424,9 +446,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         elif key not in keys:
             self.__notices.add(MISSING_NOTICE)
             return
-        self.__select(PlayerPlaylist(videos, key), play)
+        self.__select(PlayerPlaylist(videos, key), play, position)
 
-    def __select(self, playlist: PlayerPlaylist, play: bool) -> None:
+    def __select(self, playlist: PlayerPlaylist, play: bool, position: float | None = None) -> None:
         """Make the playlist's current video the one selected, leaving the one before with its position recorded.
 
         It starts where it was left, or at the beginning when never watched or watched to the end, and the bar shows
@@ -435,6 +457,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :param playlist: the playlist, positioned on the video to select.
         :param play: whether to play it, rather than load it paused.
+        :param position: where to start it, in seconds; ``None`` for where it was left.
         """
         self.__leave()
         video = playlist.current
@@ -448,7 +471,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         measured = self.__model.measured_videos().get(video.key)
         length = measured.duration if measured is not None else (entry.duration if entry is not None else None)
         self.__duration_ms = round(length * 1000) if length else 0
-        self.__position_ms = round(PlayerPlaylist.start_position(entry, length) * 1000)
+        start = position if position is not None else PlayerPlaylist.start_position(entry, length)
+        self.__position_ms = round(start * 1000)
         self.__ui.position_slider.setRange(0, self.__duration_ms)
         self.__show_position(self.__position_ms)
         self.__ui.title_label.set_text(video.key)
@@ -462,6 +486,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if self.__engine.fallback_reason is not None:
             self.__notices.add(VLC_FALLBACK_TEMPLATE.format(reason=self.__engine.fallback_reason))
         self.__update_actions()
+        self.video_changed.emit(video.key)
 
     def __step(self, delta: int) -> bool:
         """Load the video ``delta`` places on in the playlist, paused, unless that is past either end.
@@ -491,6 +516,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__notices.clear()
         self.__show_playing(False)
         self.__update_actions()
+        self.video_changed.emit(None)
 
     # endregion
 
@@ -910,21 +936,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :param position_ms: where the video is.
         """
-        clock = self.__clock(position_ms)
+        clock = clock_text(position_ms)
         if self.__duration_ms > 0:
-            clock = f"{clock} / {self.__clock(self.__duration_ms)}"
+            clock = f"{clock} / {clock_text(self.__duration_ms)}"
         self.__ui.time_label.setText(clock)
-
-    @staticmethod
-    def __clock(milliseconds: int) -> str:
-        """Spell a time as ``m:ss``, or ``h:mm:ss`` from an hour on.
-
-        :param milliseconds: the time.
-        :returns: the clock text.
-        """
-        minutes, seconds = divmod(max(milliseconds, 0) // 1000, 60)
-        hours, minutes = divmod(minutes, 60)
-        return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
 
     def __update_actions(self) -> None:
         """Enable the actions a selected video allows: none while nothing is, and no step past either end."""
