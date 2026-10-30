@@ -13,9 +13,10 @@ class ElidedRadioButton(QRadioButton):
 
     The `ElidedLabel` arrangement on a radio: the horizontal size policy is ``Ignored`` and the minimum width is the
     indicator's alone, so the layout decides the width and the caption shortens to fit. The caption is two parts: the
-    text, which elides in the middle, and an optional **suffix that never does** -- a version in parentheses after a
-    path stays whole however narrow the button gets. Set them with :meth:`set_text`, not ``setText``; while the text
-    is shortened, the full caption is the tooltip.
+    text, which elides -- in the middle by default, or at its start where its tail is what tells two captions apart --
+    and an optional **suffix that never does** -- a version in parentheses after a path stays whole however narrow the
+    button gets. Set them with :meth:`set_text`, not ``setText``; while the text is shortened, the full caption is the
+    tooltip.
 
     :param parent: optional Qt parent.
     """
@@ -24,6 +25,7 @@ class ElidedRadioButton(QRadioButton):
         super().__init__(parent)
         self.__full = ""
         self.__suffix = ""
+        self.__mode = Qt.TextElideMode.ElideMiddle
         policy = self.sizePolicy()
         policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         self.setSizePolicy(policy)
@@ -32,14 +34,16 @@ class ElidedRadioButton(QRadioButton):
         """The caption as set, suffix included, before any eliding."""
         return self.__full + self.__suffix
 
-    def set_text(self, text: str, suffix: str = "") -> None:
+    def set_text(self, text: str, suffix: str = "", mode: Qt.TextElideMode = Qt.TextElideMode.ElideMiddle) -> None:
         """Set the caption, then show it elided to the current width.
 
         :param text: the part that elides.
         :param suffix: the part shown whole after it, however narrow the button.
+        :param mode: where the text elides.
         """
         self.__full = text
         self.__suffix = suffix
+        self.__mode = mode
         self.__render()
 
     @override
@@ -63,10 +67,10 @@ class ElidedRadioButton(QRadioButton):
         )
 
     def __render(self) -> None:
-        """Show the text middle-elided to the width the indicator and the suffix leave, then the suffix, with the full
-        caption as the tooltip only while the text is shortened."""
+        """Show the text elided to the width the indicator and the suffix leave, then the suffix, with the full caption
+        as the tooltip only while the text is shortened."""
         metrics = self.fontMetrics()
         available = max(0, self.width() - self.__indicator_width() - metrics.horizontalAdvance(self.__suffix))
-        elided = metrics.elidedText(self.__full, Qt.TextElideMode.ElideMiddle, available)
+        elided = metrics.elidedText(self.__full, self.__mode, available)
         self.setText(elided + self.__suffix)
         self.setToolTip(self.full_text() if elided != self.__full else "")

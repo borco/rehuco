@@ -8,9 +8,7 @@ from rehuco_core import (
     ToolCandidate,
     ToolDescriptor,
     ToolLocator,
-    ToolStatus,
     shared_tool_locator,
-    version_text,
 )
 
 from ...documents.latest_runner import LatestRunner
@@ -27,20 +25,6 @@ NOT_FOUND_STATUS: Final = (
     "Nothing was found. Install it from the instructions above and press Detect, or choose Custom."
 )
 UNREADABLE_STATUS: Final = "Looking for it failed: {error}"
-
-
-def describe(candidate: ToolCandidate) -> str:
-    """Say what a candidate is and whether it can be used, in a sentence.
-
-    :param candidate: the copy to describe.
-    :returns: its version and status and, when there is one, the reason; for a copy that is missing or does not run,
-        the reason alone.
-    """
-    if candidate.status in (ToolStatus.MISSING, ToolStatus.NOT_RUNNABLE):
-        return candidate.reason
-    version = f"Version {version_text(candidate.version)}" if candidate.version else "Unknown version"
-    reason = f" {candidate.reason}" if candidate.reason else ""
-    return f"{version}, {candidate.status}.{reason}"
 
 
 class ToolFrame(QObject):  # pylint: disable=too-many-instance-attributes
@@ -85,9 +69,8 @@ class ToolFrame(QObject):  # pylint: disable=too-many-instance-attributes
         frame.setObjectName(f"{tool.ID}_frame")
         self.__ui.tool_frame_label.setObjectName(f"{tool.ID}_frame_label")
         self.__ui.tool_frame_label.setText(tool.LABEL)
-        self.__ui.description_label.setText(
-            f"{tool.PURPOSE} Needed by: {tool.FEATURES} Not bundled: {tool.NOT_BUNDLED_BECAUSE}"
-        )
+        self.__ui.description_label.setText(tool.PURPOSE)
+        self.__ui.description_label.setToolTip(f"Needed by: {tool.FEATURES}\nNot bundled: {tool.NOT_BUNDLED_BECAUSE}")
         self.__ui.install_label.setText(f'<a href="{DOCS_URL}#{tool.DOCS_ANCHOR}">How to install {tool.LABEL}</a>')
         self.__ui.path_control.browse_title = f"Locate {tool.LABEL}"
 
@@ -138,19 +121,28 @@ class ToolFrame(QObject):  # pylint: disable=too-many-instance-attributes
         self.__show_detection()
         self.answered.emit()
 
+    def __show_status(self, text: str) -> None:
+        """Show the line under the control, or hide it: a candidate's verdict is its row's parenthesis, so the line
+        says only what no row can -- a search is going, nothing was found, or a typed path could not be looked at.
+
+        :param text: the line; empty hides the label.
+        """
+        self.__ui.status_label.setText(text)
+        self.__ui.status_label.setVisible(bool(text))
+
     def __update_status(self) -> None:
-        """Say whether the staged choice can be used: a listed install as it was found, a custom path inspected."""
+        """Judge the staged choice: a listed install as it was found, a custom path by inspecting it."""
         control = self.__ui.path_control
-        if (chosen := control.chosen_candidate()) is not None:
+        if control.chosen_candidate() is not None:
             self.__inspector.discard()
             control.set_custom_status(None)
-            self.__ui.status_label.setText(describe(chosen))
+            self.__show_status("")
             return
         path = str(control.settings_value())
         if not path:
             self.__inspector.discard()
             control.set_custom_status(None)
-            self.__ui.status_label.setText(LOOKING_TEXT if self.__looking else NOT_FOUND_STATUS)
+            self.__show_status(LOOKING_TEXT if self.__looking else NOT_FOUND_STATUS)
             return
         tool, locator = self.__tool, self.__locator
         self.__inspector.start(INSPECT_TAG, lambda: locator.inspect(tool, path))
@@ -164,8 +156,8 @@ class ToolFrame(QObject):  # pylint: disable=too-many-instance-attributes
         del tag
         if isinstance(result, ToolCandidate):
             self.__ui.path_control.set_custom_status(result)
-            self.__ui.status_label.setText(describe(result))
+            self.__show_status("")
         else:
             self.__ui.path_control.set_custom_status(None)
-            self.__ui.status_label.setText(UNREADABLE_STATUS.format(error=result))
+            self.__show_status(UNREADABLE_STATUS.format(error=result))
         self.answered.emit()
