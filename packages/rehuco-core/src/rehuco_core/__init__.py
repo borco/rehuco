@@ -444,6 +444,7 @@ from .user_sidecars import (
     user_slug,
 )
 from .video_format import VideoFormat, read_video_format
+from .video_note_lines import NoteLine, note_lines, seek_seconds, video_link
 from .watch_progress import (
     END_TOLERANCE_SECONDS,
     LAST_VIDEO_KEY,
@@ -641,6 +642,7 @@ __all__ = [
     "Moved",
     "NOTES_KEY",
     "NoTrashBinError",
+    "NoteLine",
     "ORGANIZATION_FOLDER_NAME",
     "ROOT_MAPPINGS_FILE_NAME",
     "OverridableDeleter",
@@ -859,6 +861,7 @@ __all__ = [
     "natural_path_sort_key",
     "natural_sort_key",
     "new_checksum_record",
+    "note_lines",
     "original_path",
     "originals_to_back_up",
     "other_record_stems",
@@ -916,6 +919,7 @@ __all__ = [
     "screenshot_name_patterns_state",
     "seed_checksum_record",
     "seed_from_legacy_manifest",
+    "seek_seconds",
     "set_progress_entry",
     "set_videos",
     "shared_tool_locator",
@@ -937,6 +941,7 @@ __all__ = [
     "verify_checksums",
     "version_text",
     "video_data_keys",
+    "video_link",
     "visible_learning_paths",
     "watch_totals",
     "with_titled_index",

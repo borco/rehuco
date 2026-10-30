@@ -1,6 +1,7 @@
 """Generic reusable PySide6 widgets."""
 
 from .action_button_column import ActionButtonColumn
+from .band_tree_view import BandTreeView
 from .card_list import (
     CARD_LIST_COMMANDS,
     BuddyButtonStrip,
@@ -61,6 +62,7 @@ __all__ = [
     "CARD_LIST_COMMANDS",
     "LIST_EDITOR_COMMANDS",
     "ActionButtonColumn",
+    "BandTreeView",
     "BuddyButtonStrip",
     "Card",
     "CardContent",

@@ -27,6 +27,9 @@ POSITIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Fill")
 NEGATIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Bold")
 """Negative-rating stars -- see :data:`POSITIVE_RATING_GLYPH`."""
 
+FAVORITE_GLYPH: Final = Glyph("\ue46a", "Phosphor-Fill")
+"""The star on a video the user starred, in the video tree (#572)."""
+
 LIGHTBOX_CLOSE_GLYPH: Final = Glyph("\ue4f6", "Phosphor-Bold")
 """Close affordance in the maximized image viewer (`ImageLightbox`, #160). The same codepoint as
 :data:`TAB_CLOSE_GLYPH`, kept as its own name because it is drawn a fixed white on the viewer's dark

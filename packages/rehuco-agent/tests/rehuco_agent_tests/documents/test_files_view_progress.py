@@ -274,6 +274,29 @@ def test_the_viewed_action_is_ticked_as_the_video_is_and_records_what_is_toggled
     assert entry is not None and (entry.position, entry.viewed) == (30.0, False)
 
 
+def test_the_favorite_action_is_ticked_as_the_video_is_and_records_what_is_toggled(
+    model: RehuDocumentModel, view: FilesView
+) -> None:
+    """The toolbar and menu action shows whether the video is starred, and toggling it records that.
+
+    **Test steps:**
+
+    * select a video never starred and verify the action is shown and not ticked
+    * trigger it, and verify the model reports a favorite and the action is ticked
+    * trigger it again, and verify the star is gone
+    """
+    select(view, "a.mp4")
+    assert view.favorite_action.isVisible() is True
+    assert view.favorite_action.isChecked() is False
+
+    view.favorite_action.trigger()
+    assert model.is_favorite("a.mp4") is True
+    assert view.favorite_action.isChecked() is True
+
+    view.favorite_action.trigger()
+    assert model.is_favorite("a.mp4") is False
+
+
 def test_a_video_never_opened_is_marked_viewed_from_its_start(model: RehuDocumentModel, view: FilesView) -> None:
     """A video watched elsewhere can be marked without being played.
 
@@ -298,8 +321,9 @@ def test_the_context_menu_offers_what_the_toolbar_shows_and_nothing_for_a_row_wi
     **Test steps:**
 
     * right-click below the last row and verify no menu opened
-    * right-click a video, with the menu's exec patched to capture its actions, and verify only *Viewed* is listed
-    * make the video's progress missing, right-click its row, and verify *Viewed* and *Forget* are listed
+    * right-click a video, with the menu's exec patched to capture its actions, and verify only *Favorite* and
+      *Viewed* are listed
+    * make the video's progress missing, right-click its row, and verify *Favorite*, *Viewed* and *Forget* are listed
     * right-click a folder and verify no menu was opened
     """
     shown: list[list[str]] = []
@@ -335,7 +359,7 @@ def test_the_context_menu_offers_what_the_toolbar_shows_and_nothing_for_a_row_wi
     count = len(shown)
     right_click("01 Basics")
 
-    assert shown == [["Viewed"], ["Viewed", "Forget"]]
+    assert shown == [["Favorite", "Viewed"], ["Favorite", "Viewed", "Forget"]]
     assert len(shown) == count
     del qtbot
 

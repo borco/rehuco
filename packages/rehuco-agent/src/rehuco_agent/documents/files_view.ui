@@ -99,25 +99,6 @@
     <string>Go to the folder above this one.</string>
    </property>
   </action>
-  <action name="viewed_action">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Viewed</string>
-   </property>
-   <property name="toolTip">
-    <string>Mark the selected video as watched to the end, or not.</string>
-   </property>
-  </action>
-  <action name="forget_action">
-   <property name="text">
-    <string>Forget</string>
-   </property>
-   <property name="toolTip">
-    <string>Forget the progress kept for the selected missing file.</string>
-   </property>
-  </action>
   <action name="reveal_action">
    <property name="text">
     <string>Reveal</string>

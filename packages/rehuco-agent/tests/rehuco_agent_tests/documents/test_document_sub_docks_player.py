@@ -187,7 +187,7 @@ def test_a_video_double_clicked_in_the_files_dock_is_jumped_to_in_the_player_and
 
     assert dock.toggleViewAction().isChecked() is True
     assert dock.isCurrentTab() is True  # type: ignore[attr-defined]
-    jump.assert_called_once_with("02.mp4")
+    jump.assert_called_once_with("02.mp4", None)
     # the jump comes first, so a dock shown by it finds the player already asked
     assert load_last.call_count == 1
 
@@ -207,7 +207,7 @@ def test_a_second_double_click_points_the_same_player_at_the_other_video(
     files_view_of(widget).widget().video_activated.emit("01.mp4")  # type: ignore[union-attr]
     files_view_of(widget).widget().video_activated.emit("02.mp4")  # type: ignore[attr-defined]
 
-    assert jump.call_args_list == [call("01.mp4"), call("02.mp4")]
+    assert jump.call_args_list == [call("01.mp4", None), call("02.mp4", None)]
     assert len(widget.findChildren(PlayerView)) == 1
 
 
