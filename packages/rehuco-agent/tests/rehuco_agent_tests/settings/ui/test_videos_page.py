@@ -833,3 +833,27 @@ def test_a_tool_change_before_the_page_asked_does_not_check(qtbot: QtBot, fake_t
     shared_tools_settings().set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (USABLE_FFMPEG,)))
 
     fake_tool_locator.resolve.assert_not_called()
+
+
+def test_the_add_note_choice_is_staged_saved_and_dropped(qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * verify the choice starts on and the page is clean
+    * clear it and verify the page is dirty, then save and verify the shared settings hold it off
+    * tick it and drop the change and verify it is off again
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+    box = page_ui(page).add_note_edits_check_box
+
+    assert box.isChecked() is True
+    assert page.is_dirty() is False
+
+    box.setChecked(False)
+    assert page.is_dirty() is True
+    page.save_changes()
+    assert shared_videos_settings().add_note_edits is False
+
+    box.setChecked(True)
+    page.drop_changes()
+    assert box.isChecked() is False

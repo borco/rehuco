@@ -172,6 +172,10 @@ class FilesView(QWidget):
     browser knows what a file *is*, and the document decides what plays it. Other videos -- those of a resource that
     records no progress -- still open in the system's player."""
 
+    video_clicked: Signal = Signal(str)
+    """Emitted with the content key of a tutorial's video row that is clicked, present or missing (#573): the notes
+    dock shows that video's notes, without the player loading it."""
+
     status_message: Signal = Signal(str)
     """Emitted with a line for the status bar, routed up by the owner as every other ``status_message`` is."""
 
@@ -221,6 +225,7 @@ class FilesView(QWidget):
         self.__row_actions: Final = VideoRowActions(model, self)
         self.__row_separator: Final = self.__setup_toolbar()
         self.__ui.file_view.doubleClicked.connect(self.__on_double_clicked)
+        self.__ui.file_view.clicked.connect(self.__on_clicked)
         self.__ui.file_view.selectionModel().selectionChanged.connect(self.__update_row_actions)
         self.__ui.file_view.customContextMenuRequested.connect(self.__on_context_menu)
         model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
@@ -515,6 +520,15 @@ class FilesView(QWidget):
         """
         folder_parts = Relocation.path_parts(folder)
         return Relocation.path_parts(path)[: len(folder_parts)] == folder_parts
+
+    def __on_clicked(self, index: QModelIndex | QPersistentModelIndex) -> None:
+        """Report the video of the row the reader clicked, for its notes (#573).
+
+        :param index: the clicked *proxy* index.
+        """
+        row = index.data(FilesTableModel.ROW_ROLE)
+        if isinstance(row, FileRow) and row.key is not None:
+            self.video_clicked.emit(row.key)
 
     def __on_double_clicked(self, index: QModelIndex | QPersistentModelIndex) -> None:
         """Act on the row the reader double-clicked, by what it is.

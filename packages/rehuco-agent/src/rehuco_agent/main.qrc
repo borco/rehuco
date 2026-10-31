@@ -32,6 +32,7 @@
         <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
         <file alias="icons/document_save_preview.svg">../../../../design/icons/document_save_preview.svg</file>
         <file alias="icons/document_video_tree.svg">../../../../design/icons/document_video_tree.svg</file>
+        <file alias="icons/document_video_notes.svg">../../../../design/icons/document_video_notes.svg</file>
         <file alias="icons/document_viewer_description.svg">../../../../design/icons/document_viewer_description.svg</file>
         <file alias="icons/document_viewer_main.svg">../../../../design/icons/document_viewer_main.svg</file>
         <file alias="icons/web_search.svg">../../../../design/icons/web_search.svg</file>

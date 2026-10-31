@@ -116,6 +116,11 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   the event loop, and holds it across the constructor, `connect` and the destructor, each of which takes a signal-slot
   mutex; a player has to live on the GUI thread, which is what made a Qt Multimedia duration probe not worth its keep
   ([[appendices.post-mortem#ui-and-deployment]]).
+- **Qt's own threads can wait for the GIL under a signal-slot mutex too** (#573): Qt Multimedia's FFmpeg renderer,
+  destroyed on its own thread as a video's source is cleared, disconnects from the Python-built `QAudioOutput`, whose
+  wrapper asks for the GIL. So the GUI thread makes no connection in that moment, and a `QToolButton` never holds an
+  action that changes: its default action is applied again, with a new connection, at every change of icon or text.
+  The player's buttons are connected once (`clicked` → `trigger`) and copy what the action shows.
 - **A `QObject` gets a parent, usually `self`, or an explicit delete** (#529). One held only in an attribute, once in
   a reference cycle, is destroyed by the cyclic collector on whichever thread allocates next, and on a pool thread
   `~QObject` takes a signal-slot mutex and then waits for the GIL the GUI thread may hold. With no natural parent,

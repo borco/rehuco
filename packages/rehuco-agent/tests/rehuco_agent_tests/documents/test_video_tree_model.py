@@ -122,32 +122,33 @@ def test_a_video_with_only_data_is_listed_in_its_folder_as_missing(model: RehuDo
 def test_a_video_with_a_note_and_no_progress_is_listed_missing_too(model: RehuDocumentModel) -> None:
     """**Test steps:**
 
-    * write a note for a video that is not on disk
-    * verify the video is listed, missing, with its note beneath it
+    * write a bookmark for a video that is not on disk
+    * verify the video is listed, missing, with its bookmark beneath it
     """
-    model.record_notes(video_notes={"gone.mp4": "kept"})
+    model.record_notes(video_notes={"gone.mp4": "- [0:01](rehuco-video:gone.mp4#t=1) kept"})
     tree = tree_of(model)
 
-    assert rows(tree) == ["01 Basics", "  b", "  c", "02 More", "  d", "a", "gone", "  kept"]
+    assert rows(tree) == ["01 Basics", "  b", "  c", "02 More", "  d", "a", "gone", "  0:01 kept"]
     assert cell(tree, "gone.mp4", NAME_COLUMN, MISSING_ROLE) is True
 
 
-def test_a_video_notes_are_its_children_one_per_line(model: RehuDocumentModel) -> None:
-    """**Test steps:**
+def test_a_videos_bookmarks_are_its_children_sorted_by_time(model: RehuDocumentModel) -> None:
+    """The notes may be in any order -- the user edits them -- so the tree sorts them; a line with no time is not a row.
 
-    * write a note of a plain line, a bookmark and a blank line
-    * verify a child per non-blank line, the bookmark reading its time and text
-    * verify a bookmark row answers its link's video and time, a plain one its own video and no time
+    **Test steps:**
+
+    * write a note of a later bookmark, a plain line, a blank line and an earlier bookmark
+    * verify a child per bookmark, earliest first, each reading its time and text, and none for the plain line
+    * verify a bookmark row answers its link's video and time
     """
-    model.record_notes(video_notes={"a.mp4": f"plain\n\n{BOOKMARK}"})
+    model.record_notes(video_notes={"a.mp4": f"- [0:09](rehuco-video:a.mp4#t=9) later\nplain\n\n{BOOKMARK}"})
     tree = tree_of(model)
 
-    assert rows(tree)[-3:] == ["a", "  plain", "  1:05 the first trick"]
+    assert rows(tree)[-3:] == ["a", "  0:09 later", "  1:05 the first trick"]
     video = tree.index_of_video("a.mp4")
-    plain, bookmark = tree.index(0, NAME_COLUMN, video), tree.index(1, NAME_COLUMN, video)
-    assert (plain.data(KIND_ROLE), plain.data(KEY_ROLE), plain.data(SECONDS_ROLE)) == (NodeKind.NOTE, "a.mp4", None)
-    assert (bookmark.data(KEY_ROLE), bookmark.data(SECONDS_ROLE)) == ("a.mp4", 65.0)
-    assert tree.rowCount(plain) == 0
+    first = tree.index(0, NAME_COLUMN, video)
+    assert (first.data(KIND_ROLE), first.data(KEY_ROLE), first.data(SECONDS_ROLE)) == (NodeKind.NOTE, "a.mp4", 9.0)
+    assert tree.rowCount(first) == 0
     assert tree.index(0, PROGRESS_COLUMN, video).data() == ""
 
 
@@ -171,7 +172,7 @@ def test_a_long_note_line_has_a_capped_tooltip(model: RehuDocumentModel) -> None
     * verify its tooltip is cut to the allowed lines of the allowed width, ending in an ellipsis
     * verify a short line is shown whole
     """
-    model.record_notes(video_notes={"a.mp4": "word " * 1000})
+    model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) " + "word " * 1000})
     tree = tree_of(model)
 
     tooltip = str(tree.index(0, NAME_COLUMN, tree.index_of_video("a.mp4")).data(Qt.ItemDataRole.ToolTipRole))
@@ -289,12 +290,14 @@ def test_a_change_in_the_rows_resets_the_model(model: RehuDocumentModel, qtbot: 
     tree = tree_of(model)
 
     with qtbot.waitSignal(tree.modelReset):
-        model.record_notes(video_notes={"a.mp4": "one"})
-    assert rows(tree)[-2:] == ["a", "  one"]
+        model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) one"})
+    assert rows(tree)[-2:] == ["a", "  0:01 one"]
 
     with qtbot.waitSignal(tree.modelReset):
-        model.record_notes(video_notes={"a.mp4": "two\nthree"})
-    assert rows(tree)[-3:] == ["a", "  two", "  three"]
+        model.record_notes(
+            video_notes={"a.mp4": "- [0:02](rehuco-video:a.mp4#t=2) two\n- [0:03](rehuco-video:a.mp4#t=3) three"}
+        )
+    assert rows(tree)[-3:] == ["a", "  0:02 two", "  0:03 three"]
 
     with qtbot.waitSignal(tree.modelReset):
         model.record_notes(video_notes={"a.mp4": ""})

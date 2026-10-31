@@ -101,7 +101,7 @@ class VideoTreeNode:
 
 
 class VideoTreeModel(QAbstractItemModel):
-    """A tutorial's videos in natural path order, under their folders, each with the lines of its notes beneath it.
+    """A tutorial's videos in natural path order, under their folders, each with the bookmarks of its notes beneath it.
 
     The rows are the videos on disk (:meth:`set_videos`) and the ones only the user's data remembers -- listed in
     their folder as *missing* ([[field-schema#video-notes]]). The progress words are the Files rows' own
@@ -238,7 +238,8 @@ class VideoTreeModel(QAbstractItemModel):
         return root
 
     def __add_video(self, parent: VideoTreeNode, name: str, key: str, *, missing: bool) -> None:
-        """Put a video under its folder, with a row for each line of its notes beneath it.
+        """Put a video under its folder, with a row for each bookmark of its notes beneath it, by time; a line with
+        no time is the notes dock's to show.
 
         :param parent: the folder's row.
         :param name: what the row reads: the file's name without its extension.
@@ -246,7 +247,9 @@ class VideoTreeModel(QAbstractItemModel):
         :param missing: whether its file is gone.
         """
         video = self.__attach(parent, VideoTreeNode(NodeKind.VIDEO, name, key, missing=missing))
-        for line in note_lines(self.__model.video_notes_of(key)):
+        lines = note_lines(self.__model.video_notes_of(key))
+        bookmarks = [(line.seconds, index, line) for index, line in enumerate(lines) if line.seconds is not None]
+        for _, _, line in sorted(bookmarks):
             self.__attach(video, VideoTreeNode(NodeKind.NOTE, line.text, line.key, line=line))
 
     @staticmethod
@@ -410,7 +413,9 @@ class VideoTreeModel(QAbstractItemModel):
         :returns: the words, or ``None`` for a row that has none.
         """
         progress, path = self.__progress, self.__model.path
-        if progress is None or path is None or node.key is None:
+        if (
+            progress is None or path is None or node.key is None
+        ):  # pragma: no cover  (rows exist only for a listed record, and every folder, video and bookmark has a key)
             return None
         if node.kind is NodeKind.FOLDER:
             return progress.for_folder(path.parent / node.key)

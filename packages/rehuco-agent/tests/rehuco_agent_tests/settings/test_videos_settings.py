@@ -480,3 +480,21 @@ def test_a_player_this_build_lacks_falls_back_to_the_default(value: object) -> N
 
 
 # endregion
+
+
+def test_adding_a_note_edits_by_default_and_the_choice_round_trips(settings: FakeSettings) -> None:
+    """**Test steps:**
+
+    * verify a fresh object, and storage that never held the choice, load it on
+    * save it off, load a second object, and verify it is off
+    """
+    assert VideosSettings().add_note_edits is True
+    fresh = VideosSettings(add_note_edits=False)
+    fresh.load(settings)  # type: ignore[arg-type]
+    assert fresh.add_note_edits is True
+
+    VideosSettings(add_note_edits=False).save(settings)  # type: ignore[arg-type]
+    loaded = VideosSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.add_note_edits is False

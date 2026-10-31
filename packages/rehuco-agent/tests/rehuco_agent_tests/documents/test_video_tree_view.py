@@ -155,24 +155,20 @@ def test_a_video_double_click_reports_it_with_no_position(view: VideoTreeView, q
     assert signal.args == ["01 Basics/b.mp4", None]
 
 
-def test_a_bookmark_double_click_reports_its_video_and_time_and_a_plain_note_its_video(
+def test_a_bookmark_double_click_reports_its_video_and_time(
     view: VideoTreeView, model: RehuDocumentModel, qtbot: QtBot
 ) -> None:
     """**Test steps:**
 
-    * write a bookmark and a plain line under one video
+    * write a bookmark under one video, linking another
     * double-click the bookmark and verify the link's video and time are reported
-    * double-click the plain line and verify its own video is reported with no time
     """
-    model.record_notes(video_notes={"a.mp4": f"{BOOKMARK}\nplain"})
+    model.record_notes(video_notes={"a.mp4": BOOKMARK})
 
     with qtbot.waitSignal(view.video_activated) as bookmark:
         double_click(view, index_named(view, "a", "1:05 the trick"))
-    with qtbot.waitSignal(view.video_activated) as plain:
-        double_click(view, index_named(view, "a", "plain"))
 
     assert bookmark.args == ["01 Basics/c.mp4", 65.0]
-    assert plain.args == ["a.mp4", None]
 
 
 def test_a_folder_double_click_opens_and_closes_it_and_a_missing_video_reports_nothing(
@@ -208,14 +204,14 @@ def test_what_the_reader_closed_stays_closed_and_the_selection_stays_across_a_no
     * edit a note, which resets the tree
     * verify the closed rows are still closed, the others open, and the selection stayed
     """
-    model.record_notes(video_notes={"a.mp4": "one"})
+    model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) one"})
     tree = tree_of(view)
     tree.collapse(index_named(view, "01 Basics"))
     tree.collapse(index_named(view, "a"))
     tree.setCurrentIndex(index_named(view, "02 More", "d"))
 
     with qtbot.waitSignal(view.tree.modelReset):
-        model.record_notes(video_notes={"a.mp4": "two"})
+        model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) two"})
 
     assert tree.isExpanded(index_named(view, "01 Basics")) is False
     assert tree.isExpanded(index_named(view, "a")) is False
@@ -236,7 +232,7 @@ def test_a_reader_opening_a_row_again_forgets_it_was_closed(
     tree.expand(index_named(view, "01 Basics"))
 
     with qtbot.waitSignal(view.tree.modelReset):
-        model.record_notes(video_notes={"a.mp4": "x"})
+        model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) x"})
 
     assert tree.isExpanded(index_named(view, "01 Basics")) is True
 
@@ -268,7 +264,7 @@ def test_the_row_actions_follow_the_selection(view: VideoTreeView, model: RehuDo
     * select a missing video and verify Forget shows too
     """
     model.record_progress("gone.mp4", 1.0, 10.0)
-    model.record_notes(video_notes={"a.mp4": "one"})
+    model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) one"})
     view.refresh()
     tree = tree_of(view)
     actions = view.row_actions
@@ -280,7 +276,7 @@ def test_the_row_actions_follow_the_selection(view: VideoTreeView, model: RehuDo
     assert (actions.favorite_action.isVisible(), actions.forget_action.isVisible()) == (True, False)
 
     model.record_notes(favorites={"a.mp4": True})
-    tree.setCurrentIndex(index_named(view, "a", "one"))
+    tree.setCurrentIndex(index_named(view, "a", "0:01 one"))
     assert actions.favorite_action.isChecked() is True
 
     tree.setCurrentIndex(view.tree.index_of_video("gone.mp4"))
@@ -359,7 +355,7 @@ def test_a_detached_view_stops_following_the_document(view: VideoTreeView, model
     view.detach()
     before = view.tree.rowCount(view.tree.index_of_video("a.mp4"))
 
-    model.record_notes(video_notes={"a.mp4": "one"})
+    model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) one"})
 
     assert view.tree.rowCount(view.tree.index_of_video("a.mp4")) == before
 
@@ -424,7 +420,7 @@ def test_a_closed_folder_below_the_top_stays_closed_and_a_forgotten_one_and_its_
     tree.collapse(index_named(view, "01 Basics", "deep"))
 
     with qtbot.waitSignal(view.tree.modelReset):
-        model.record_notes(video_notes={"a.mp4": "one"})
+        model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) one"})
     assert tree.isExpanded(index_named(view, "01 Basics", "deep")) is False
 
     with qtbot.waitSignal(view.tree.modelReset):
@@ -465,7 +461,7 @@ def test_a_selected_bookmark_stays_with_its_own_video_across_a_rebuild(
     tree_of(view).setCurrentIndex(index_named(view, "a", "1:05 the trick"))
 
     with qtbot.waitSignal(view.tree.modelReset):
-        model.record_notes(video_notes={"02 More/d.mp4": "x"})
+        model.record_notes(video_notes={"02 More/d.mp4": "- [0:01](rehuco-video:02%20More/d.mp4#t=1) x"})
 
     assert tree_of(view).currentIndex().data(KEY_ROLE) == "a.mp4"
 
@@ -485,7 +481,31 @@ def test_a_rebuild_keeps_the_readers_place_rather_than_the_players(
     scroll = mocker.spy(tree, "scrollTo")
 
     with qtbot.waitSignal(view.tree.modelReset):
-        model.record_notes(video_notes={"a.mp4": "x"})
+        model.record_notes(video_notes={"a.mp4": "- [0:01](rehuco-video:a.mp4#t=1) x"})
 
     assert tree.isExpanded(index_named(view, "01 Basics")) is False
     assert scroll.call_count == 0
+
+
+def test_a_click_reports_the_video_of_a_row_or_of_a_line_of_its_notes_and_a_folder_none(
+    view: VideoTreeView, model: RehuDocumentModel, qtbot: QtBot
+) -> None:
+    """**Test steps:**
+
+    * write a bookmark under one video
+    * click the video and the bookmark and verify each reported its own video -- the bookmark's the video whose notes
+      hold it, not the one its link names
+    * click a folder and verify nothing was reported
+    """
+    model.record_notes(video_notes={"a.mp4": BOOKMARK})
+    tree = tree_of(view)
+
+    with qtbot.waitSignal(view.video_clicked) as video:
+        tree.clicked.emit(index_named(view, "01 Basics", "b"))
+    with qtbot.waitSignal(view.video_clicked) as note:
+        tree.clicked.emit(index_named(view, "a", "1:05 the trick"))
+    with qtbot.assertNotEmitted(view.video_clicked):
+        tree.clicked.emit(index_named(view, "01 Basics"))
+
+    assert video.args == ["01 Basics/b.mp4"]
+    assert note.args == ["a.mp4"]

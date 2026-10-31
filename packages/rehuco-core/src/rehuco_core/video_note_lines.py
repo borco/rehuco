@@ -7,7 +7,7 @@ the same ``rehuco-video:`` links.
 import re
 from dataclasses import dataclass
 from typing import Final
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 VIDEO_LINK_SCHEME: Final = "rehuco-video:"
 """What a link to a video of the tutorial starts with; ``#t=<seconds>`` after the key seeks."""
@@ -55,6 +55,38 @@ def note_lines(text: str) -> list[NoteLine]:
     return lines
 
 
+def insert_bookmark(text: str, line: str, seconds: float) -> tuple[str, int]:
+    """Put a bookmark line beside the bookmarks nearest it in time, whatever order a note's lines are in.
+
+    A note is the user's to edit, and its bookmarks may be in any order, so the ones already there are anchors rather
+    than a sorted list: the line goes after the latest bookmark at or before its time -- and after the lines that follow
+    that bookmark up to the next one, which belong to it -- else just before the earliest bookmark after it, else at the
+    end. No other line moves.
+
+    :param text: the note.
+    :param line: the bookmark line, without its newline.
+    :param seconds: the time it seeks to.
+    :returns: the note with the line in it, and where the line ends in it, as a character offset.
+    """
+    lines = text.split("\n")
+    times = [video_link(raw)[1] for raw in lines]
+    marked = [(at, index) for index, at in enumerate(times) if at is not None]
+    earlier = [(at, index) for at, index in marked if at <= seconds]
+    later = [(at, index) for at, index in marked if at > seconds]
+    position: int | None = None
+    if earlier:
+        _, anchor = max(earlier)
+        position = next((index for index in range(anchor + 1, len(lines)) if times[index] is not None), None)
+    elif later:
+        _, position = min(later)
+    if position is None:
+        lead = "" if not text or text.endswith("\n") else "\n"
+        joined = f"{text}{lead}{line}"
+        return joined, len(joined)
+    lines.insert(position, line)
+    return "\n".join(lines), len("\n".join(lines[: position + 1]))
+
+
 def video_link(markdown: str) -> tuple[str | None, float | None]:
     """The first link of a text that names a video.
 
@@ -63,15 +95,39 @@ def video_link(markdown: str) -> tuple[str | None, float | None]:
         link has no valid ``#t``.
     """
     for found in LINK_PATTERN.finditer(markdown):
-        target = found.group(2)
-        if not target.startswith(VIDEO_LINK_SCHEME):
-            continue
-        key, _, fragment = target[len(VIDEO_LINK_SCHEME) :].partition("#")
-        key = unquote(key)
-        if not key:
-            continue
-        return key, seek_seconds(fragment)
+        parsed = parse_video_href(found.group(2))
+        if parsed is not None:
+            return parsed
     return None, None
+
+
+def parse_video_href(href: str) -> tuple[str, float | None] | None:
+    """The video a link's target names.
+
+    :param href: a link's target, such as ``rehuco-video:01%20Basics/03%20Brushes.mp4#t=754``.
+    :returns: the video's content key and the time to seek to -- ``None`` when the target has no valid ``#t`` -- or
+        ``None`` when the target is not a ``rehuco-video:`` link or names no key.
+    """
+    if not href.startswith(VIDEO_LINK_SCHEME):
+        return None
+    key, _, fragment = href[len(VIDEO_LINK_SCHEME) :].partition("#")
+    key = unquote(key)
+    if not key:
+        return None
+    return key, seek_seconds(fragment)
+
+
+def video_href(key: str, seconds: float | None = None) -> str:
+    """The target of a link to a video.
+
+    :param key: the video's content key.
+    :param seconds: the time the link seeks to, rounded down; none for a link that only loads the video.
+    :returns: the link's target, which :func:`parse_video_href` reads back.
+    """
+    href = f"{VIDEO_LINK_SCHEME}{quote(key)}"
+    if seconds is None:
+        return href
+    return f"{href}#t={int(seconds)}"
 
 
 def seek_seconds(fragment: str) -> float | None:

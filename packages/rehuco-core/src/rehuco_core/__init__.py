@@ -444,7 +444,16 @@ from .user_sidecars import (
     user_slug,
 )
 from .video_format import VideoFormat, read_video_format
-from .video_note_lines import NoteLine, note_lines, seek_seconds, video_link
+from .video_note_lines import (
+    VIDEO_LINK_SCHEME,
+    NoteLine,
+    insert_bookmark,
+    note_lines,
+    parse_video_href,
+    seek_seconds,
+    video_href,
+    video_link,
+)
 from .watch_progress import (
     END_TOLERANCE_SECONDS,
     LAST_VIDEO_KEY,
@@ -767,6 +776,7 @@ __all__ = [
     "UserSidecarError",
     "VIDEO_EXTENSIONS",
     "VIDEO_FAVORITES_KEY",
+    "VIDEO_LINK_SCHEME",
     "VIDEO_NOTES_KEY",
     "VIDEO_SIZES_KEY",
     "VLC_TOOL",
@@ -823,6 +833,7 @@ __all__ = [
     "free_libraries",
     "generate_checksums",
     "hand_over_claims",
+    "insert_bookmark",
     "is_checksum_fresh",
     "is_conversion_backup",
     "is_directory_scoped",
@@ -869,6 +880,7 @@ __all__ = [
     "owned_learning_paths",
     "parse_checksum_entry",
     "parse_staged_name",
+    "parse_video_href",
     "paths_overlap",
     "payload_changes",
     "plan_progress_renames",
@@ -941,6 +953,7 @@ __all__ = [
     "verify_checksums",
     "version_text",
     "video_data_keys",
+    "video_href",
     "video_link",
     "visible_learning_paths",
     "watch_totals",
