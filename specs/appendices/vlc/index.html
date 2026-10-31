@@ -1,0 +1,3136 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/appendices/vlc/">
+      
+      
+        <link rel="prev" href="../theming_and_styling/">
+      
+      
+        <link rel="next" href="../windows-dev-launcher/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>VLC - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#vlc-python-vlc-command-line-and-rc-interface" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              VLC
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../external-tools/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  External Tools
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLC
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-launching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Launching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-playlist-file-is-one-element-until-it-plays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The playlist file is one element until it plays
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-rc-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The RC protocol
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. The RC protocol">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-poll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The poll
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-input-uri" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The input URI
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-behaviours-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Behaviours worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-python-vlc-and-libvlc-in-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. python-vlc and libvlc in-process
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. python-vlc and libvlc in-process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-import-is-the-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The import is the search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#events-and-their-threads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Events and their threads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#drawing-over-the-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drawing over the surface
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-rendering-into-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Rendering into memory
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../external-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-launching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Launching
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-playlist-file-is-one-element-until-it-plays" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The playlist file is one element until it plays
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-rc-protocol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The RC protocol
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. The RC protocol">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-poll" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The poll
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-input-uri" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The input URI
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-behaviours-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Behaviours worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-python-vlc-and-libvlc-in-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. python-vlc and libvlc in-process
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. python-vlc and libvlc in-process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-import-is-the-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The import is the search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#events-and-their-threads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Events and their threads
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#drawing-over-the-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Drawing over the surface
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-rendering-into-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Rendering into memory
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="vlc-python-vlc-command-line-and-rc-interface">VLC — python-vlc, Command Line and RC Interface</h1>
+<p><span class="slug-ref">[[[appendices.vlc]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[appendices.vlc#overview]]]</span></p>
+<p>What was measured of the user's VLC 3.0.23 on Windows 11, for <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/319" title="GitHub Issue: borco/rehuco #319">#319</a> (<span class="slug-ref">[[plugins#in-app-player]]</span>). Two uses were
+measured, and one of them was dropped:</p>
+<ul>
+<li><strong>libvlc in the player dock, through python-vlc</strong> (section 5): what ships. python-vlc's import behaviour, the
+  events and their threads, the snapshot that serves the paused still, what holds a file, and replaying after the end.</li>
+<li><strong>VLC launched as a process of its own and followed over its RC interface</strong> (sections 1–4): built in <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/319" title="GitHub Issue: borco/rehuco #319">#319</a> and
+  removed in the same issue, once it was clear a separate window could carry none of the player's overlays. Kept
+  for the record, since the facts were paid for and the RC route may be wanted elsewhere one day.</li>
+</ul>
+<p>Everything was read with scratch scripts over three 8-second clips named <code>a one</code>, <code>b#two</code> and <code>c_ünï</code>, in a folder
+with a <code>#</code> in its name. Transcripts are verbatim bar the file URI's folder, shortened to <code>F:/</code>. macOS and Linux are
+untested.</p>
+<h2 id="1-launching">1. Launching</h2>
+<p><span class="slug-ref">[[[appendices.vlc#launch]]]</span></p>
+<div class="highlight"><pre><span></span><code>vlc --no-one-instance --no-playlist-enqueue --qt-continue=0 --no-loop --no-repeat
+    --extraintf=rc --rc-host=127.0.0.1:&lt;port&gt; --rc-quiet &lt;playlist.m3u8&gt;
+</code></pre></div>
+<ul>
+<li><strong><code>--no-one-instance</code></strong> opens a window of its own even when a VLC runs; without it the playlist would be handed to
+  that VLC and the RC socket never opens. <strong><code>--no-playlist-enqueue</code></strong> keeps the playlist from joining another's.</li>
+<li><strong><code>--qt-continue=0</code></strong> (<em>Never</em>) turns off VLC's own <em>continue where you left off</em> prompt, so it never fights the
+  position the playlist starts each entry at.</li>
+<li><strong><code>--no-loop --no-repeat</code>.</strong> Left out, the playlist wraps: after the last entry ends, entry 1 starts again. With
+  them the last entry ends in <em>stopped</em>.</li>
+<li><strong><code>--rc-quiet</code></strong> is a Windows option (<em>Do not open a DOS command box interface</em>); it is passed only there.</li>
+<li><strong>The playlist</strong> is UTF-8 <code>.m3u8</code>: <code>#EXTM3U</code>, then per entry <code>#EXTVLCOPT:start-time=&lt;seconds&gt;</code> and the file's URI
+  (<code>Path.as_uri()</code>, which escapes <code>#</code> and spaces and spells a UNC path as <code>file://server/share/...</code>). The start time
+  is honoured: an entry given <code>2.5</code> reported <code>get_time</code> 3 a second and a half after <code>goto</code>.</li>
+<li><strong>Cold start.</strong> The RC port opened <strong>12 s</strong> after the launch on the first run, while VLC rebuilt its plugin cache,
+  and <strong>0.27 s</strong> on later ones. Waiting for it has to be generous (30 s, as <code>VlcTool</code> allows the version read).</li>
+</ul>
+<h2 id="2-the-playlist-file-is-one-element-until-it-plays">2. The playlist file is one element until it plays</h2>
+<p><span class="slug-ref">[[[appendices.vlc#playlist-file]]]</span></p>
+<p>Neither <code>--no-playlist-autostart</code> nor <code>--start-paused</code> can hold playback while the clicked entry is chosen. VLC
+expands a playlist file only when it plays it: with autostart off, <code>goto 2</code> answers <code>Playlist has only 1 element</code>, and
+with <code>--start-paused</code> the first entry opens paused and the <code>goto</code> is lost. So VLC starts on entry 1 and <code>goto &lt;n&gt;</code>
+moves it once the socket connects. <strong>Entry 1 can be heard briefly</strong> before that, for as long as the port takes to open.
+Nothing it plays is recorded: the tracker records an entry only after it has been seen to be the one asked for.
+<strong>A <code>goto</code> sent too early is lost</strong>: connecting warm, within a fraction of a second, RC can answer before VLC has
+expanded the file, and the <code>goto</code> is accepted (<code>returned 0</code>) but does nothing. The tracker therefore sends it again on
+each poll until the entry asked for is the one named.</p>
+<h2 id="3-the-rc-protocol">3. The RC protocol</h2>
+<p><span class="slug-ref">[[[appendices.vlc#rc-protocol]]]</span></p>
+<ul>
+<li><strong>No greeting, no prompt.</strong> With <code>--rc-quiet</code> nothing is sent on connect, and no <code>&gt;</code> prompt follows an answer.</li>
+<li><strong>Lines end in <code>\r\n</code>.</strong> A command is a line ending in <code>\n</code>; several can be sent at once and answer in order.</li>
+<li><strong>Every command ends its answer with <code>&lt;command&gt;: returned 0 (no error)</code>.</strong> <code>get_time</code>, <code>get_length</code> and <code>is_playing</code>
+  are the exceptions: they answer a bare integer.</li>
+<li><strong>Asynchronous <code>status change: ( ... )</code> lines are mixed in anywhere</strong>, before or after an answer: a new input, a
+  play-state number, the volume, a pause, <code>( time: 6s )</code> after a seek. The numbers after <code>play state:</code> are not stable
+  across a pause and a seek (<code>3</code> while playing, <code>2: Play</code> after a resume, <code>4: End</code> as an entry ends), so they are not
+  read.</li>
+<li><strong><code>goto &lt;n&gt;</code> is 1-based</strong>, the order of the playlist. <code>seek &lt;seconds&gt;</code> takes whole seconds. <code>get_time</code> and
+  <code>get_length</code> answer whole seconds.</li>
+<li><strong><code>quit</code></strong> closes the socket (measured). VLC's window being closed was not measured; the tracker treats any closed
+  socket as VLC having gone.</li>
+</ul>
+<h3 id="the-poll">The poll</h3>
+<p><span class="slug-ref">[[[appendices.vlc#rc-poll]]]</span></p>
+<p>One request, <code>status\nis_playing\nget_time\nget_length\n</code>, answers in three shapes. Playing, entry 2:</p>
+<div class="highlight"><pre><span></span><code>status change: ( new input: F:/b%23two.mp4 )
+status change: ( play state: 3 )
+status: returned 0 (no error)
+1
+3
+8
+</code></pre></div>
+<p>(the <code>1</code> is <code>is_playing</code>, then <code>get_time</code> 3, <code>get_length</code> 8). Paused: the answer names <strong>no input</strong>, and says so with
+a line that is no <code>status change</code>:</p>
+<div class="highlight"><pre><span></span><code>status change: ( pause state: 4 )
+Type &#39;pause&#39; to continue.
+status: returned 0 (no error)
+0
+4
+8
+</code></pre></div>
+<p>Stopped, whether by <code>stop</code> or by the last entry ending: a <code>stop state: 5</code> line, no input, and zeros.</p>
+<div class="highlight"><pre><span></span><code>status change: ( audio volume: 243 )
+status change: ( stop state: 5 )
+status: returned 0 (no error)
+0
+0
+0
+</code></pre></div>
+<p>So the parser reads: the <strong>last <code>new input:</code> line</strong> is the input; a <code>stop state: 5</code> line <strong>after</strong> it clears it and
+means <em>stopped</em>; the <strong>three bare integers</strong> are <code>is_playing</code>, time and length. An answer with no input and not stopped
+is a paused one, whose input stays the one before. An entry that has ended and been replaced shows as the next input,
+with the <code>new input</code> line twice in one answer.</p>
+<h3 id="the-input-uri">The input URI</h3>
+<p><span class="slug-ref">[[[appendices.vlc#input-uri]]]</span></p>
+<p><code>new input:</code> repeats the playlist's URI as VLC holds it: <code>file:///C:/.../clips%20%231/b%23two.mp4</code> and
+<code>.../c_%C3%BCn%C3%AF.mp4</code>, percent-encoded as <code>Path.as_uri()</code> wrote them. It is matched to an entry by decoding it
+(<code>urllib.parse.unquote</code>, <code>url2pathname</code>) and comparing the paths, case-folded on Windows. A UNC path was not measured;
+the same decoding spells <code>file://server/share/x</code> as <code>//server/share/x</code>.</p>
+<h2 id="4-behaviours-worth-knowing">4. Behaviours worth knowing</h2>
+<p><span class="slug-ref">[[[appendices.vlc#behaviours]]]</span></p>
+<ul>
+<li><strong>An entry ending moves on by itself</strong>, and the poll sees the next input. The last position seen of the entry left is
+  within one poll interval of its length, which is why reaching the end is judged with a tolerance, as the in-app
+  player's is (<span class="slug-ref">[[field-schema#watch-progress]]</span>).</li>
+<li><strong><code>prev</code></strong> (VLC's button; <code>next</code> is the same) changes the input the same way <code>goto</code> does.</li>
+<li><strong><code>seek</code> and <code>pause</code> toggle at once</strong>; a <code>pause</code> while paused resumes.</li>
+<li><strong>A closed socket</strong> is how the tracker learns VLC has gone; it makes its last flush there.</li>
+</ul>
+<h2 id="5-python-vlc-and-libvlc-in-process">5. python-vlc and libvlc in-process</h2>
+<p><span class="slug-ref">[[[appendices.vlc#python-vlc]]]</span></p>
+<p>python-vlc 3.0.21203, LGPL-2.1+ by its metadata, is one file of <code>ctypes</code> bindings; it ships no VLC code and loads the
+user's own <code>libvlc</code>. The agent reaches it only through <code>rehuco_core.VlcLibrary</code>, never by a plain <code>import vlc</code>,
+because of what the import does.</p>
+<h3 id="the-import-is-the-search">The import is the search</h3>
+<p><span class="slug-ref">[[[appendices.vlc#python-vlc-import]]]</span></p>
+<p><code>find_lib()</code> runs at module import, and its outcomes were measured in child processes:</p>
+<ul>
+<li><strong><code>PYTHON_VLC_LIB_PATH</code> set to the full <code>libvlc.dll</code> path</strong>: a clean import, no search, no chdir, <code>vlc.dll._name</code>
+  is that path. This is the only way the app imports it.</li>
+<li><strong>No variable, VLC installed</strong>: found through the registry, PATH or <code>%ProgramFiles%\VideoLan\VLC</code>; while the DLL
+  loads, python-vlc <strong><code>os.chdir</code>s the whole process</strong> into VLC's folder and back. A second thread saw the VLC folder
+  as its working directory during the import. In a process with pool threads that is a race.</li>
+<li><strong>No variable, no VLC findable</strong> (registry key absent, no PATH entry, <code>PROGRAMFILES</code> pointing nowhere): it ends in
+  <code>ctypes.CDLL(".\libvlc.dll")</code> relative to the working directory, and raises <code>FileNotFoundError</code> for
+  <code>&lt;cwd&gt;\libvlc.dll</code>.</li>
+<li><strong><code>PYTHON_VLC_LIB_PATH</code> naming a file that does not load</strong>: <code>logger.error</code> and <strong><code>sys.exit(1)</code></strong> from inside the
+  import. <strong><code>PYTHON_VLC_MODULE_PATH</code> naming no folder</strong>: the same.</li>
+<li><strong>No <code>ProgramFiles</code> in the environment</strong>: <code>KeyError</code> from inside the import.</li>
+<li><code>vlc.Instance("--no-such-option")</code> answers <code>None</code>, not an exception (VLC prints <em>unknown option</em> to stderr).</li>
+</ul>
+<p>So the proxy sets <code>PYTHON_VLC_LIB_PATH</code> to the library the Tools page resolved, imports inside
+<code>try/except BaseException</code>, and a child process has imported the same library first, so a library that kills its
+process kills the probe, not the app.</p>
+<h3 id="events-and-their-threads">Events and their threads</h3>
+<p><span class="slug-ref">[[[appendices.vlc#python-vlc-events]]]</span></p>
+<p>Measured with <code>set_hwnd</code> on a native <code>QWidget</code>, mouse and key input off, audio muted. Each event arrives on a
+<strong>libvlc thread of its own</strong> (python-vlc's callbacks show as <code>Dummy-N</code>, a new one per event), except two that are
+raised <strong>synchronously on the thread that calls</strong>: <code>MediaPlayerSnapshotTaken</code> inside <code>video_take_snapshot</code>, and
+<code>MediaPlayerStopped</code> inside <code>stop()</code>. The order on <code>play()</code> of a local file:</p>
+<div class="highlight"><pre><span></span><code>play() -&gt; 0                      (returns at once)
+Opening                          +1 ms
+Buffering                        (many, with a percent)
+LengthChanged                    +15 ms
+Playing                          +17 ms
+Vout                             +215 ms   first picture
+PositionChanged, TimeChanged     then about every 500 ms
+</code></pre></div>
+<ul>
+<li><strong>The snapshot is synchronous and works while paused</strong>: <code>video_take_snapshot(0, path, 0, 0)</code> returned <code>0</code> after
+  42 ms playing and 19 ms paused, the file written and the event raised before the call returned. So the paused still
+  is taken on the pause, before the stop that lets the file go.</li>
+<li><strong>What holds the file</strong>: renaming the clip's <em>folder</em> failed (<em>Access is denied</em>) while playing <strong>and while
+  paused</strong>, and succeeded right after <code>stop()</code>, with the media still set, and after <code>set_media(None)</code>. Renaming the
+  <em>file itself</em> succeeded even while paused (VLC opens it with delete sharing), which is not the case that matters:
+  the app renames folders. So a paused video in the dock is a stopped player, as it is with Qt Multimedia.</li>
+<li><strong><code>stop()</code> cost on the GUI thread</strong>: 40–44 ms here (80–115 ms in <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/315" title="GitHub Issue: borco/rehuco #315">#315</a>'s spike under a stream of time changes).</li>
+<li><strong>After the end</strong>: <code>EndReached</code>, then <code>Vout</code> and <code>Stopped</code>; <code>get_state()</code> is <code>Ended</code>. A <code>play()</code> in that state
+  returned <code>0</code> and did nothing (still <code>Ended</code> a second later). <code>stop()</code> then <code>play()</code> replays from the start.</li>
+<li><strong><code>set_time()</code></strong> takes effect at once and raises its <code>TimeChanged</code> on the calling thread.</li>
+<li><strong>A snapshot draws on the picture</strong> unless told not to: VLC's on-screen display says <em>Snapshot taken</em> and shows a
+  thumbnail of it over the video. The instance is made with <code>--no-osd</code> and <code>--no-snapshot-preview</code> (and
+  <code>--no-video-title-show</code>), so nothing of VLC's is ever drawn on the dock's surface.</li>
+<li><strong>A native window's picture can be read in memory on Windows</strong>: <code>PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT)</code>
+  returned libvlc's Direct3D picture -- playing and paused, on a monitor and off every monitor -- in 5--11 ms
+  for 640x400. Measured while the engine still drew into a native window; superseded by section 6, where
+  there is no window to read and the still is the last frame.</li>
+<li><strong><code>vlc.EventType</code> members are not integers</strong>: they are ctypes enumerations, <code>int(member)</code> raises, and the number
+  is in <code>member.value</code>. Found by the first live run of the engine, after a fake built on <code>IntEnum</code> had hidden it; the
+  engine's tests now fake the members the same way.</li>
+<li><strong>A folder rename is refused while libvlc plays or pauses, in the dock too</strong> (the live run). The view's <em>paused is
+  stopped</em> rule was applied to libvlc first, and <strong>reopening and seeking landed a few frames off</strong> on resume (seen by
+  the owner), so under libvlc a pause now holds the file, paused on its frame, and the rename coordinator's
+  before-rename call is what releases it.</li>
+</ul>
+<h3 id="drawing-over-the-surface">Drawing over the surface</h3>
+<p><span class="slug-ref">[[[appendices.vlc#overlay]]]</span></p>
+<p>What the maximized player's <code>I</code>, <code>T</code> and <code>N</code> overlays (<span class="slug-ref">[[plugins#player-maximized]]</span>) will meet: libvlc draws into a
+native child window, and Windows composes native windows, not Qt widgets. Measured with a label raised over a playing
+surface and a screen grab of the window:</p>
+<table>
+<thead>
+<tr>
+<th>Overlay</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>An ordinary Qt widget, sibling of the surface</td>
+<td><strong>a black hole</strong>: the video is cut out under it and the label is not drawn</td>
+</tr>
+<tr>
+<td>A sibling with a native window of its own, opaque</td>
+<td>drawn over the video, opaque</td>
+</tr>
+<tr>
+<td>The same native sibling, translucent (<code>WA_TranslucentBackground</code>)</td>
+<td>not shown at all</td>
+</tr>
+<tr>
+<td>A frameless, translucent top-level window placed over the surface</td>
+<td>drawn over the video <strong>with transparency</strong></td>
+</tr>
+</tbody>
+</table>
+<p>This is why libvlc renders into memory (section 6): the picture is then an ordinary widget and the table does not
+apply to it. It still describes <code>QVideoWidget</code>, which holds a native window too, so the Qt engine is where libvlc
+was until it, too, paints its frames (<code>QVideoSink</code> into the same painted surface) -- the thing to do before the
+overlays are built (<span class="slug-ref">[[plugins#player-maximized]]</span>).</p>
+<h2 id="6-rendering-into-memory">6. Rendering into memory</h2>
+<p><span class="slug-ref">[[[appendices.vlc#memory-rendering]]]</span></p>
+<p>libvlc 3 has two outputs an application can use: a native window of its own (<code>set_hwnd</code>, <code>set_nsobject</code>,
+<code>set_xwindow</code>) and <strong>memory</strong> (<code>video_set_callbacks</code> with <code>video_set_format_callbacks</code>); the OpenGL callbacks are
+libvlc 4's. The dock uses memory, so that its picture is an ordinary widget.</p>
+<ul>
+<li><strong>The format callback cannot be written through python-vlc's prototype</strong>: <code>VideoFormatCb</code> declares the chroma
+  <code>c_char_p</code>, which ctypes hands over as copied bytes. A prototype of our own with <code>POINTER(c_char)</code>, cast to
+  python-vlc's type where it is passed, lets <code>memmove</code> write <code>RV32</code> into it (measured: the callback then saw
+  <code>640x384 I420</code> for a 640x360 clip and the frames came in 32-bit).</li>
+<li><strong>The picture size libvlc gives is the decoder's, padded</strong> -- 384 lines for 360 -- so the frame is cropped to
+  <code>video_get_size(0)</code> once that is known (it is <code>0x0</code> until the video plays).</li>
+<li><strong>One picture in the pool</strong> (<code>setup</code> returns 1) means libvlc locks, writes, unlocks and displays each frame in turn,
+  so copying the buffer inside the display callback, on libvlc's thread, is safe; the copy crosses to the GUI thread
+  as a <code>QImage</code> through a queued signal and is painted by <code>QPainter</code>, scaled to fit.</li>
+<li><strong>Audio, the clock and subtitles stay libvlc's</strong>: only the video output module is replaced. Frames are displayed at
+  their presentation time against libvlc's audio clock; subtitles and anything else the video-output core blends
+  arrive inside the frames (verified with an <code>.srt</code> beside a clip: its text was in the painted frame), which is why
+  the instance is made with <code>--no-osd</code>.</li>
+<li><strong>The cost, measured</strong> on a Ryzen 5 5600 with a 1080p60 clip in a window maximized on a 3440x1440 monitor
+  (2752x1081 of picture): <strong>59.3 fps</strong>, the paint <strong>2.6 ms</strong> a frame, the whole process -- decoding included --
+  <strong>67 % of one core (6 % of the machine)</strong>; 100 % of one core with smooth scaling, or with libvlc scaling to the
+  window itself (an 11 MB buffer). Memory is one buffer of the picture's size (8 MB at 1080p) and the copies in
+  flight.</li>
+<li><strong>What it changes for the player</strong>: no native window, so any widget can be drawn over the picture; the still of a
+  pause is the last frame, with no snapshot and no <code>PrintWindow</code>; and the engine is the same on every OS.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../theming_and_styling/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Theming &amp; Styling">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Theming & Styling
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../windows-dev-launcher/" class="md-footer__link md-footer__link--next" aria-label="Next: Windows Dev Launcher">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Windows Dev Launcher
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
