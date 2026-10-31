@@ -239,13 +239,19 @@ def test_an_answer_overtaken_by_a_newer_ask_is_dropped(
 
     **Test steps:**
 
-    * hold the next answer (Explorer alone), and refresh
+    * hold the next answer (Explorer alone), refresh, and wait for that ask to be waiting on it
     * refresh again, answered at once (the scanner alone), and wait for it to be listed
     * release the held answer and let it land
     * verify the scanner alone is still listed
     """
     slow, release = held(holders_found(EXPLORER))
-    answers = iter((slow, lambda _record: holders_found(SCANNER)))
+    holding = threading.Event()
+
+    def held_and_told(record: Path) -> object:
+        holding.set()
+        return slow(record)
+
+    answers = iter((held_and_told, lambda _record: holders_found(SCANNER)))
 
     def answer_in_turn(record: Path) -> object:
         return next(answers)(record)
@@ -253,6 +259,9 @@ def test_an_answer_overtaken_by_a_newer_ask_is_dropped(
     find.side_effect = answer_in_turn
 
     dialog.refresh()
+    # the pool runs both asks side by side: the second may only ask once the first holds the slow answer, or the
+    # newer ask is the one held and nothing is ever listed
+    qtbot.waitUntil(holding.is_set)
     dialog.refresh()
     qtbot.waitUntil(lambda: [row.holder for row in dialog.rows] == [SCANNER])
 
