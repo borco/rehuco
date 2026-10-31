@@ -1311,7 +1311,7 @@ never names the dock restores and puts it back hidden ([[appendices.qt-ads#struc
 
 [[[plugins#video-notes-dock]]]
 
-- [#573: feat(agent): the Notes sub-dock — rendered markdown with an Edit toggle, Add note at time, rehuco-video: seek links, NotesPanel](https://github.com/borco/rehuco/issues/573)
+- [#573: feat(agent): the Notes sub-dock — rendered markdown with an Edit toggle, B bookmarks in time order, rehuco-video: seek links, bookmarks sorted in the Tree, slider ticks](https://github.com/borco/rehuco/issues/573)
 
 A tutorial's fourth own sub-dock, **Notes**, hidden by default: the current video's notes above the tutorial's, in a
 splitter whose sizes ride in the dock's own layout entry; the video part follows the player's loaded video, and with

@@ -95,7 +95,7 @@ and Tasks docks get.
 "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar Extensions" (`ImagesFilesPage`) and
 "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
-Three settings the 0.4.0 video and root work adds to existing pages: **Videos** gains a *Playback* block (#318):
+Four settings the 0.4.0 video and root work adds to existing pages: **Videos** gains a *Playback* block (#318):
 *Qt (bundled FFmpeg)*, the default and the player SHIFT+double-click always opens, *Qt with external FFmpeg libraries*
 (Windows only, #580) and *VLC (your own, in the app)* (#319, applied to the next video selected -- unless another VLC's
 library was already loaded this run, which python-vlc binds once, and the same *next start* note shows -- where the
@@ -105,7 +105,11 @@ saved as `player` and read by the Files sub-dock at each double-click, so a chan
 The libraries are loaded at start, so choosing them (or leaving them) says *Takes effect at the next start*, and a
 start that could not load a chosen build says why beside the choice. **Videos** also gains *Maximize videos over* — the
 document, the main window or full screen, the lightbox's three surfaces, chosen separately for the player
-([[plugins#player-maximized]], #574); the next maximize uses a change, an open one is not moved. **Root Catalog**
+([[plugins#player-maximized]], #574); the next maximize uses a change, an open one is not moved. **Videos** also
+gains a *Notes* frame (#573) with one box, *Adding a note pauses the video and opens the notes for editing*, on by
+default and saved as `add_note_edits`: off, the player's `B` only adds its bookmark, and playback and the notes dock
+stay as they are ([[plugins#video-notes-dock]]); it is read at each `B`, so a change reaches open documents.
+**Root Catalog**
 gains *Default root layouts* — a list of named entries, each a per-type layout map (one row per type or `*`) and a
 fallback map, seeded with *Current name* (`{"*": "*"}`), which the Add Roots dialog offers in its combo and can add
 to from the dialog ([[mounts-and-storage#rehuroot]], #578). The per-type Locations pages keep their single-name
