@@ -65,6 +65,7 @@ from ..settings.image_viewer_settings import ImageViewerSettings, shared_image_v
 from ..settings.logs_settings import shared_logs_settings
 from ..settings.persistent_settings import staging_folder
 from ..settings.reference_images_settings import shared_reference_images_settings
+from ..settings.videos_settings import shared_videos_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
 from .content_images import ContentDisplayFlags, ContentImagesModel, ContentImagesPanel, ContentImagesView
@@ -73,6 +74,7 @@ from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPT
 from .files_view import FilesView
 from .image_downloads import ImageDownloads
 from .name_suggestion_model import NameSuggestionModel
+from .notes_panel import NotesPanel
 from .pending_saves import PendingSaves
 from .player_view import PlayerView
 from .rehu_document_image_organizer import RehuDocumentImageOrganizer
@@ -112,6 +114,7 @@ FILES_ICON_RESOURCE: Final = ":/icons/document_file_browser.svg"
 CONTENT_IMAGES_ICON_RESOURCE: Final = ":/icons/document_content_reference_images.svg"
 PLAYER_ICON_RESOURCE: Final = ":/icons/document_content_tutorials.svg"
 TREE_ICON_RESOURCE: Final = ":/icons/document_video_tree.svg"
+NOTES_ICON_RESOURCE: Final = ":/icons/document_video_notes.svg"
 DEFAULT_LAYOUT_ICON_RESOURCE: Final = ":/icons/document_default_layout.svg"
 
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
@@ -122,6 +125,7 @@ FILES_DOCK_NAME: Final = "files"
 CONTENT_IMAGES_DOCK_NAME: Final = "content_images"
 PLAYER_DOCK_NAME: Final = "player"
 TREE_DOCK_NAME: Final = "tree"
+NOTES_DOCK_NAME: Final = "notes"
 """Object names of the read-only inspection docks (#111), this resource's own log (#200), its
 per-file checksum table (#244), its own folder (#266), its content images (#221) and a tutorial's player (#317);
 namespaced apart from the ``viewer:``/``editor:`` docks, and the keys `restore_state` restores their
@@ -135,6 +139,7 @@ FILES_DOCK_TITLE: Final = "Files"
 CONTENT_IMAGES_DOCK_TITLE: Final = "Content Images"
 PLAYER_DOCK_TITLE: Final = "Player"
 TREE_DOCK_TITLE: Final = "Tree"
+NOTES_DOCK_TITLE: Final = "Notes"
 """Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
 write) and the verbatim on-disk file -- of this resource's own log (#200), of its own folder (#266), of
 its content images (#221, #392) and of a tutorial's player (#317)."""
@@ -145,6 +150,7 @@ FILES_DOCK_MIN_HEIGHT: Final = 140
 CONTENT_IMAGES_DOCK_MIN_HEIGHT: Final = 160
 PLAYER_DOCK_MIN_HEIGHT: Final = 220
 TREE_DOCK_MIN_HEIGHT: Final = 160
+NOTES_DOCK_MIN_HEIGHT: Final = 160
 IMAGES_DOCK_MIN_HEIGHT: Final = 200
 """Size floors a splitter drag can't cross, chosen by eye against a real layout so each dock keeps its
 header and summary readable rather than being squeezed to a sliver."""
@@ -202,7 +208,7 @@ TOOLBAR_TITLE: Final = "View"
 TYPE_DOCK_NAMES: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
     {
         REFERENCE_IMAGES_PLUGIN.key: frozenset({CONTENT_IMAGES_DOCK_NAME}),
-        TUTORIAL_PLUGIN.key: frozenset({PLAYER_DOCK_NAME, TREE_DOCK_NAME}),
+        TUTORIAL_PLUGIN.key: frozenset({PLAYER_DOCK_NAME, TREE_DOCK_NAME, NOTES_DOCK_NAME}),
     }
 )
 """The sub-docks each resource type adds to the common shell ([[plugins#dock-shell]], #320), keyed by
@@ -803,6 +809,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__player_view: PlayerView | None = None
         self.__player_dock: QtAds.CDockWidget | None = None
         self.__tree_view: VideoTreeView | None = None
+        self.__notes_panel: NotesPanel | None = None
         self.__awaiting_type = model.pending
         self.__type_docks: dict[str, QtAds.CDockWidget] = self.__add_type_docks(type_dock_names(self.layout_type))
         # the archives are found relative to the path, so a path change re-enumerates them; connected
@@ -1055,6 +1062,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             files_view.detach()
         if self.__tree_view is not None:
             self.__tree_view.detach()
+        if self.__notes_panel is not None:
+            self.__notes_panel.detach()
 
     def stop_playback(self) -> None:
         """Stop the player, so it records where it stopped, and write at once what the recorder then holds (#317).
@@ -1064,6 +1073,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         if self.__player_view is not None:
             self.__player_view.stop()
+        if self.__notes_panel is not None:
+            self.__notes_panel.flush()
         self.__watch_progress.flush()
 
     def teardown(self) -> None:
@@ -1627,6 +1638,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
                 self.__player_view.stop()
             if name == TREE_DOCK_NAME and self.__tree_view is not None:
                 self.__tree_view.detach()
+            if name == NOTES_DOCK_NAME and self.__notes_panel is not None:
+                self.__notes_panel.detach()
             self.__hide_dock(dock)
             self.__toolbar.removeAction(dock.toggleViewAction())
             self.__dock_manager.removeDockWidget(dock)
@@ -1643,6 +1656,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
                 self.__player_dock = None
             if name == TREE_DOCK_NAME:
                 self.__tree_view = None
+            if name == NOTES_DOCK_NAME:
+                self.__notes_panel = None
 
     def __add_type_docks(self, names: frozenset[str]) -> dict[str, QtAds.CDockWidget]:
         """Build the docks ``names`` asks for, each hidden and stacked with the inspection set (#320).
@@ -1668,6 +1683,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if TREE_DOCK_NAME in names:
             self.__tree_view = VideoTreeView(self.__model, self.__host.widget, self.__resource_events)
             docks[TREE_DOCK_NAME] = self.__add_tree_dock(self.__tree_view)
+        if NOTES_DOCK_NAME in names:
+            self.__notes_panel = NotesPanel(self.__model, self.__host.widget)
+            docks[NOTES_DOCK_NAME] = self.__add_notes_dock(self.__notes_panel)
         return docks
 
     @staticmethod
@@ -2013,6 +2031,64 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__player_view.jump(key, position)
         self.__player_dock.toggleView(True)
         self.__player_dock.setAsCurrentTab()
+        self.__on_video_clicked(key)
+
+    def __on_video_clicked(self, key: str) -> None:
+        """Show the notes of a video clicked in the Files or Tree sub-dock, without loading it in the player (#573).
+
+        :param key: the content key of the video.
+        """
+        if self.__notes_panel is not None:  # pragma: no branch -- a tutorial has its notes whenever it has these docks
+            self.__notes_panel.set_video(key)
+
+    def __on_surface_clicked(self) -> None:
+        """Show the notes of the video the player has loaded again, after a click on its picture (#573)."""
+        if (
+            self.__notes_panel is not None and self.__player_view is not None
+        ):  # pragma: no branch -- a tutorial has both
+            self.__notes_panel.set_video(self.__player_view.current_key)
+
+    def __on_video_link(self, key: str, position: float | None) -> None:
+        """Take the player to the video a link in a note names, at the time it gives (#573).
+
+        A video already loaded goes to the time and plays or stays paused as it was; another is loaded paused there,
+        as previous and next load theirs. The player is shown, so the reader sees where the link led.
+
+        :param key: the content key of the video.
+        :param position: the time in seconds, or ``None`` for none.
+        """
+        if self.__player_view is None or self.__player_dock is None:  # pragma: no cover  (a tutorial has both)
+            return
+        self.__player_view.seek(key, position)
+        self.__player_dock.toggleView(True)
+        self.__player_dock.setAsCurrentTab()
+        self.__on_video_clicked(key)
+
+    def __on_note_requested(self, key: str, position: float) -> None:
+        """Add a bookmark to a video's notes, as the player's *Add note at* asks (#573): shown in the notes dock in
+        edit, or only recorded, as the Videos page's setting says.
+
+        :param key: the content key of the video.
+        :param position: the time in seconds the bookmark is at.
+        """
+        dock = self.__type_docks.get(NOTES_DOCK_NAME)
+        if (
+            self.__notes_panel is None or dock is None
+        ):  # pragma: no cover  (the player and the dock come and go together)
+            return
+        edit = shared_videos_settings().add_note_edits
+        if edit:
+            dock.toggleView(True)
+            dock.setAsCurrentTab()
+        self.__notes_panel.add_note(key, position, edit=edit)
+
+    def __on_notes_toggled(self, visible: bool) -> None:
+        """Write what was typed as the notes dock is closed (#573).
+
+        :param visible: whether the dock is now shown.
+        """
+        if not visible and self.__notes_panel is not None:
+            self.__notes_panel.flush()
 
     def __on_player_toggled(self, visible: bool) -> None:
         """Load the video watched last as the player's dock is shown, and stop the player as it is closed (#317).
@@ -2581,6 +2657,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         view.record_activated.connect(self.record_activated)
         view.images_activated.connect(self.__on_folder_images_activated)
         view.video_activated.connect(self.__on_video_activated)
+        view.video_clicked.connect(self.__on_video_clicked)
         view.status_message.connect(self.status_message)
         return self.__add_hidden_inspection_dock(
             FILES_DOCK_NAME,
@@ -2684,9 +2761,38 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         dock.setTitleBarActions(view.title_bar_actions)
         QtAdsTitleBarActionVisibility(dock)
         view.video_activated.connect(self.__on_video_activated)
+        view.video_clicked.connect(self.__on_video_clicked)
         if self.__player_view is not None:  # pragma: no branch -- a tutorial builds its player first
             self.__player_view.video_changed.connect(view.set_current)
             view.set_current(self.__player_view.current_key)
+        return dock
+
+    def __add_notes_dock(self, panel: NotesPanel) -> QtAds.CDockWidget:
+        """Build a tutorial's notes dock, stacked with the inspection docks and hidden (#573), and follow the player.
+
+        Its *Edit* action sits on the dock's title bar. The panel shows the notes of the video the player has loaded,
+        its links take the player to a time, and the player's *Add note* opens it in edit.
+
+        :param panel: the notes panel.
+        :returns: the dock, hidden.
+        """
+        dock = self.__add_hidden_inspection_dock(
+            NOTES_DOCK_NAME,
+            NOTES_DOCK_TITLE,
+            NOTES_ICON_RESOURCE,
+            panel,
+            insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
+            min_content_height=NOTES_DOCK_MIN_HEIGHT,
+        )
+        dock.setTitleBarActions(panel.title_bar_actions)
+        QtAdsTitleBarActionVisibility(dock)
+        dock.viewToggled.connect(self.__on_notes_toggled)
+        panel.video_link_activated.connect(self.__on_video_link)
+        if self.__player_view is not None:  # pragma: no branch -- a tutorial builds its player first
+            self.__player_view.video_changed.connect(panel.set_video)
+            self.__player_view.note_requested.connect(self.__on_note_requested)
+            self.__player_view.surface_clicked.connect(self.__on_surface_clicked)
+            panel.set_video(self.__player_view.current_key)
         return dock
 
     def __on_content_images_toggled(self, visible: bool) -> None:

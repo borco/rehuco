@@ -269,6 +269,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     recorded -- at once, before it is written -- a write that landed and was taken in, a video forgotten. Never a
     change to the document, as :attr:`progress_changed` is not ([[field-schema#video-notes]])."""
 
+    rename_search_finished = Signal()
+    """Fires once a search for renamed videos' data (:meth:`reattach_renamed_progress`) has answered, whether or not it
+    moved anything (#573): what showed a video's notes while the search was out may use them now."""
+
     __videos_measured = Signal(object, object)
     """A Measure's lengths on their way to the GUI thread, with the record they were measured of
     (:meth:`post_measured_videos`)."""
@@ -1650,9 +1654,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             ("forget", relative), report=self.__report_progress_unsaved, work=forget, landed=forgotten
         )
 
-    def reattach_renamed_progress(self) -> None:
+    def reattach_renamed_progress(self) -> bool:
         """Move this user's progress onto the videos that were renamed, as listing the files does (#411). Silent where
-        progress cannot be written, and when nothing moved."""
+        progress cannot be written, and when nothing moved.
+
+        :returns: whether a search was handed to the writer: :attr:`rename_search_finished` fires once it answers.
+            ``False`` where progress cannot be written now, and nothing will fire.
+        """
         username = self.__document.username
         settings = shared_videos_settings()
         match_by_size = settings.match_renamed_by_size
@@ -1674,7 +1682,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 excluded_patterns=excluded,
             )
 
-        self.__submit_progress(("reattach",), report=None, work=reattach)
+        return self.__submit_progress(("reattach",), report=None, work=reattach, done=self.rename_search_finished.emit)
 
     def record_videos(self, measured: Mapping[str, VideoFacts]) -> None:
         """Write a Measure's lengths into the record, without a save and without making the document dirty. Silent where
@@ -1794,6 +1802,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         report: Callable[[str, bool], None] | None,
         work: Callable[[Records], LoadedRecord | None],
         landed: Callable[[], None] | None = None,
+        done: Callable[[], None] | None = None,
     ) -> bool:
         """Hand a write to the writer, unless the record cannot be written now.
 
@@ -1803,6 +1812,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param work: the write, given the records to reach the record through.
         :param landed: called once the record the write left was taken into the document -- what lets go of the
             overlay the write carried, and nothing else's.
+        :param done: called once the write has answered, however it ended -- never for a write a later one of its key
+            replaced, whose answer is the one that comes.
         :returns: whether it was handed over.
         """
         reason = self.__progress_blocker()
@@ -1814,7 +1825,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__writer.submit(
             key,
             lambda: work(records),
-            lambda outcome: self.__on_progress_written(outcome, report=report, landed=landed),
+            lambda outcome: self.__on_progress_written(outcome, report=report, landed=landed, done=done),
             self.path,
         )
         return True
@@ -1825,6 +1836,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         *,
         report: Callable[[str, bool], None] | None,
         landed: Callable[[], None] | None,
+        done: Callable[[], None] | None = None,
     ) -> None:
         """Take in the outcome of a write (GUI thread): the record it left, taken into the open document without
         reloading it or touching its edits, or the failure, which keeps what was recorded and says so.
@@ -1836,6 +1848,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param outcome: the record read after the write, the error it ended in, or ``None`` when it wrote nothing.
         :param report: told of a failure, or ``None`` to say nothing.
         :param landed: told the record was taken in, or ``None``.
+        :param done: told the write answered, last of all, or ``None``.
         """
         if isinstance(outcome, Exception):
             LOG.warning("Watch progress not written to %s: %s", self.path, outcome)
@@ -1853,6 +1866,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if deferred is not None and not self.__writer.busy and not self.saving:
             self.__signature_during_save = None
             self.note_file_signature(*deferred)
+        if done is not None:
+            done()
 
     def __absorb_progress(self, record: LoadedRecord) -> bool:
         """Take a record a progress write or a Measure left into this document, as a save takes the file's per-user

@@ -12,7 +12,7 @@ from pytest import mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_core import SaveRecordJob, user_sidecar_path
+from rehuco_core import RehuDocument, SaveRecordJob, user_sidecar_path
 from rehuco_core.access import Records
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
@@ -426,6 +426,46 @@ def test_clearing_or_unstarring_a_video_with_no_data_searches_nothing(
     model.record_notes(video_notes={"a.mp4": ""}, favorites={"b.mp4": False})
 
     assert search.call_count == 0
+
+
+# endregion
+
+
+# region the rename search's answer (#573)
+
+
+def test_the_rename_search_says_when_it_answered_even_with_nothing_moved(
+    tmp_path: Path, open_model: OpenModel, held_writes: HeldWrites, qtbot: QtBot
+) -> None:
+    """What shows a video's notes while the search is out needs to know when it is over, found or not.
+
+    **Test steps:**
+
+    * ask for the search while the writer holds its writes, and verify it was handed over and has not answered
+    * let it run, on a tutorial where nothing was renamed, and verify it says it answered
+    """
+    path = write_tutorial(tmp_path / "t")
+    model = open_model(path)
+
+    assert model.reattach_renamed_progress() is True
+    assert held_writes.keys == [("reattach",)]
+
+    with qtbot.waitSignal(model.rename_search_finished, timeout=1000):
+        held_writes.release_all()
+
+
+def test_a_rename_search_the_record_cannot_take_is_refused_and_never_answers(
+    qtbot: QtBot, delete_at_teardown: DeleteAtTeardown
+) -> None:
+    """**Test steps:**
+
+    * ask for the search on a document with no file
+    * verify it was not handed over and nothing fires
+    """
+    model = delete_at_teardown(RehuDocumentModel(RehuDocument({"type": "Tutorial"})))
+
+    with qtbot.assertNotEmitted(model.rename_search_finished):
+        assert model.reattach_renamed_progress() is False
 
 
 # endregion

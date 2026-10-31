@@ -179,6 +179,7 @@ class VideosPage(QWidget):
             or self.__ui.mark_file_viewed_check_box.isChecked() != settings.mark_file_viewed_at_end
             or self.__ui.mark_tutorial_viewed_check_box.isChecked() != settings.mark_tutorial_viewed_on_last_file
             or self.__ui.match_renamed_by_size_check_box.isChecked() != settings.match_renamed_by_size
+            or self.__ui.add_note_edits_check_box.isChecked() != settings.add_note_edits
         )
 
     def save_changes(self) -> None:
@@ -196,6 +197,7 @@ class VideosPage(QWidget):
         settings.mark_file_viewed_at_end = self.__ui.mark_file_viewed_check_box.isChecked()
         settings.mark_tutorial_viewed_on_last_file = self.__ui.mark_tutorial_viewed_check_box.isChecked()
         settings.match_renamed_by_size = self.__ui.match_renamed_by_size_check_box.isChecked()
+        settings.add_note_edits = self.__ui.add_note_edits_check_box.isChecked()
         settings.save(persistent_settings())
         self.drop_changes()
 
@@ -251,6 +253,7 @@ class VideosPage(QWidget):
         self.__ui.mark_file_viewed_check_box.setChecked(settings.mark_file_viewed_at_end)
         self.__ui.mark_tutorial_viewed_check_box.setChecked(settings.mark_tutorial_viewed_on_last_file)
         self.__ui.match_renamed_by_size_check_box.setChecked(settings.match_renamed_by_size)
+        self.__ui.add_note_edits_check_box.setChecked(settings.add_note_edits)
         self.__update_probe_controls()
         self.__update_player_controls()
 

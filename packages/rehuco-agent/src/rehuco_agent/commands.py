@@ -174,6 +174,14 @@ PLAYER_TO_END: Final = Command(
     PLAYER_SCOPE,
     PLAYER_FOCUS_GROUP,
 )
+PLAYER_ADD_NOTE_AT: Final = Command(
+    "document.player.add_note_at",
+    "Add note at the current time",
+    "Add a note to the video at the time it is at",
+    ("B",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
 PLAYER_VOLUME_UP: Final = Command(
     "document.player.volume_up", "Volume up", "Raise the volume", ("Up",), PLAYER_SCOPE, PLAYER_FOCUS_GROUP
 )
@@ -242,6 +250,7 @@ COMMANDS: Final = (
     PLAYER_NEXT,
     PLAYER_TO_START,
     PLAYER_TO_END,
+    PLAYER_ADD_NOTE_AT,
     PLAYER_VOLUME_UP,
     PLAYER_VOLUME_DOWN,
     PLAYER_SPEED_UP,

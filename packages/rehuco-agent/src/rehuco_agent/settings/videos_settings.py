@@ -43,6 +43,7 @@ PLAYER_KEY: Final = "player"
 MARK_FILE_VIEWED_KEY: Final = "mark_file_viewed_at_end"
 MARK_TUTORIAL_VIEWED_KEY: Final = "mark_tutorial_viewed_on_last_file"
 MATCH_RENAMED_BY_SIZE_KEY: Final = "match_renamed_by_size"
+ADD_NOTE_EDITS_KEY: Final = "add_note_edits"
 
 IN_APP_PLAYER: Final = "in_app"
 """The player dock a document hosts ([[plugins#in-app-player]])."""
@@ -152,6 +153,10 @@ class VideosSettings:
     match_renamed_by_size: bool = True
     """A renamed video takes its progress by size alone when no checksum is recorded for it."""
 
+    add_note_edits: bool = True
+    """Adding a note from the player (#573) pauses the video and opens the notes for editing; off, it only adds the line
+    and leaves playback and the notes dock as they are."""
+
     @property
     def video_extensions(self) -> tuple[str, ...]:
         """The effective extension set the duration scan is handed ([[field-schema#duration-size]]):
@@ -199,6 +204,7 @@ class VideosSettings:
         self.mark_file_viewed_at_end = cast(bool, settings.value(MARK_FILE_VIEWED_KEY, True, type=bool))
         self.mark_tutorial_viewed_on_last_file = cast(bool, settings.value(MARK_TUTORIAL_VIEWED_KEY, True, type=bool))
         self.match_renamed_by_size = cast(bool, settings.value(MATCH_RENAMED_BY_SIZE_KEY, True, type=bool))
+        self.add_note_edits = cast(bool, settings.value(ADD_NOTE_EDITS_KEY, True, type=bool))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -213,6 +219,7 @@ class VideosSettings:
         settings.setValue(MARK_FILE_VIEWED_KEY, self.mark_file_viewed_at_end)
         settings.setValue(MARK_TUTORIAL_VIEWED_KEY, self.mark_tutorial_viewed_on_last_file)
         settings.setValue(MATCH_RENAMED_BY_SIZE_KEY, self.match_renamed_by_size)
+        settings.setValue(ADD_NOTE_EDITS_KEY, self.add_note_edits)
         settings.endGroup()
 
 

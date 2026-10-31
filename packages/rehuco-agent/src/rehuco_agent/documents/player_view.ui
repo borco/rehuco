@@ -117,7 +117,7 @@
       </widget>
      </item>
      <item>
-      <widget class="QSlider" name="position_slider">
+      <widget class="BookmarkSlider" name="position_slider">
        <property name="focusPolicy">
         <enum>Qt::FocusPolicy::NoFocus</enum>
        </property>
@@ -136,6 +136,19 @@
       <widget class="QLabel" name="time_label">
        <property name="text">
         <string notr="true">0:00 / 0:00</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QToolButton" name="add_note_button">
+       <property name="focusPolicy">
+        <enum>Qt::FocusPolicy::NoFocus</enum>
+       </property>
+       <property name="toolButtonStyle">
+        <enum>Qt::ToolButtonStyle::ToolButtonTextOnly</enum>
+       </property>
+       <property name="autoRaise">
+        <bool>true</bool>
        </property>
       </widget>
      </item>
@@ -192,6 +205,14 @@
     <string>Play the next video of the folder.</string>
    </property>
   </action>
+  <action name="add_note_at_action">
+   <property name="text">
+    <string>Add note at 0:00</string>
+   </property>
+   <property name="toolTip">
+    <string>Add a note to the video at the time it is at.</string>
+   </property>
+  </action>
   <action name="to_start_action">
    <property name="text">
     <string>To the start</string>
@@ -230,6 +251,11 @@
   </action>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>BookmarkSlider</class>
+   <extends>QSlider</extends>
+   <header>rehuco_agent.documents.bookmark_slider</header>
+  </customwidget>
   <customwidget>
    <class>MessageBanner</class>
    <extends>QWidget</extends>

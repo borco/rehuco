@@ -56,6 +56,10 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
     """Emitted ``(content key, seconds or None)`` for a double-click on a video, or on a line of its notes: the video
     to play and where to start it, ``None`` for where it was left. The document decides what plays it."""
 
+    video_clicked = Signal(str)
+    """Emitted with the content key of the video a click landed on -- its row, or a bookmark of its notes -- present
+    or missing (#573): the notes dock shows that video's notes, without the player loading it."""
+
     def __init__(
         self,
         model: RehuDocumentModel,
@@ -89,6 +93,7 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         view.doubleClicked.connect(self.__on_double_clicked)
+        view.clicked.connect(self.__on_clicked)
         view.customContextMenuRequested.connect(self.__on_context_menu)
         view.selectionModel().selectionChanged.connect(self.__update_actions)
         view.expanded.connect(self.__on_expanded)
@@ -396,6 +401,17 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
             menu.exec(view.viewport().mapToGlobal(position))
         finally:
             menu.deleteLater()
+
+    def __on_clicked(self, index: QModelIndex) -> None:
+        """Report the video of the row the reader clicked, for its notes: a bookmark's is the video whose notes hold
+        it, whichever video its link names; a folder names none.
+
+        :param index: the clicked row.
+        """
+        kind = index.data(KIND_ROLE)
+        key = (index.parent() if kind == NodeKind.NOTE else index).data(KEY_ROLE)
+        if kind != NodeKind.FOLDER and isinstance(key, str):
+            self.video_clicked.emit(key)
 
     def __on_double_clicked(self, index: QModelIndex) -> None:
         """Play the video of the row the reader double-clicked, from the bookmark's time on a bookmark line.

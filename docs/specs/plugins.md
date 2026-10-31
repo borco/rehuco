@@ -1293,12 +1293,14 @@ a rebuild, keeping the closed rows and the selected video, for a change in the r
 file's name without the extension. Missing videos are listed in their folder as the Files dock lists them, in italic,
 with their notes beneath them.
 
-**A video's notes are its children**, one row per non-empty line of its note ([[field-schema#video-notes]]), with the
-markup taken off: a bookmark `- [12:34](rehuco-video:…#t=754) the smudge trick` reads `12:34 the smudge trick`. The row
-is elided to the dock's width; its tooltip carries the line wrapped at 80 columns and cut after eight lines with an
-ellipsis, so a long note never covers the screen. A double-click on a video loads and plays it in the document's
-player, showing the player dock as the Files route does; on a bookmark line it plays the video its link names from the
-link's `#t`, and on any other line its own video from where it was left. A missing video plays nothing.
+**A video's bookmarks are its children**, sorted by time ([[field-schema#video-notes]]): one row per line of its note
+that carries a time, with the markup taken off — `- [12:34](rehuco-video:…#t=754) the smudge trick` reads
+`12:34 the smudge trick`. The note is the user's to edit and may be in any order, so the tree sorts what it finds; a
+line with no time is not a row, and is read and edited in the notes dock (#573). The row is elided to the dock's width;
+its tooltip carries the line wrapped at 80 columns and cut after eight lines with an ellipsis, so a long note never
+covers the screen. A double-click on a video loads and plays it in the document's player, showing the player dock as
+the Files route does; on a bookmark it plays the video its link names from the link's `#t`. A missing video plays
+nothing.
 
 The row's actions, shown only where they apply and also on the dock's title bar: **Favorite** (a toggle), **Viewed** (a
 toggle), **Forget** on a missing row — one set of commands, and one object, with the Files dock's. One tree model
@@ -1314,20 +1316,37 @@ never names the dock restores and puts it back hidden ([[appendices.qt-ads#struc
 A tutorial's fourth own sub-dock, **Notes**, hidden by default: the current video's notes above the tutorial's, in a
 splitter whose sizes ride in the dock's own layout entry; the video part follows the player's loaded video, and with
 none loaded only the tutorial part shows. Both are **rendered markdown** by default — the Description View's
-renderer — with an **Edit** action on the title bar that swaps in the markdown editor and back. What is written is
-[[field-schema#video-notes]], writer-owned: the text goes to the user's sidecar through `record_notes` the moment
-editing ends — leaving edit, focus leaving the editor, the player switching video, the dock or the document closing,
-quitting — never dirtying the record, never asking for a save, and the notes stay editable while the video plays.
+renderer — with one **Edit** action on the title bar that swaps in the markdown editor for both parts and back. What
+is written is [[field-schema#video-notes]], writer-owned: the text goes to the user's sidecar through `record_notes`
+the moment editing ends — leaving edit, focus leaving the editor, the player switching video, the dock or the document
+closing, quitting — never dirtying the record, never asking for a save, and the notes stay editable while the video
+plays. Only a part the user changed is written. A video with no data yet is looked for among the renamed ones
+first, and until that search answers its notes are not safe to edit: the editor is disabled, and a bookmark asked for
+meanwhile is added once the search answers, so nothing typed over an empty note replaces the one the search finds.
+
+**Which video's notes show.** The player's video drives them: they change when the player loads another, previous
+and next included. A single click on a video in the Tree or the Files sub-dock — or on a line of its notes in the Tree
+— shows that video's notes without loading it, a missing video's too; a click on the player's picture, or a
+double-click on a video, a note or a bookmark, or a followed link, ties them to the video it names again. *Add note*
+always acts on the player's video, so it ties them to it first. The player's `T` and `N` overlays
+([[plugins#player-maximized]]) behave as these docks do: they are the same views, shown differently.
 
 **Links seek the player.** A `rehuco-video:<key>#t=<seconds>` link is a seek of the document's player — loading the
-video paused first if another is loaded, the rule previous and next follow — and without `#t` loads the video; any
-other link opens in the system's browser. It is the first custom link a markdown view handles in the agent; the
-`filter://` links of the viewer's fields ([[plugins#filter-urls]]) are the precedent for the dispatch.
+video paused first if another is loaded, the rule previous and next follow — and without `#t` loads the video. A link
+to the video already loaded goes to the time and leaves it playing or paused as it was. Any other link opens in the
+system's browser. It is the first custom link a markdown view handles in the agent; the `filter://` links of the
+viewer's fields ([[plugins#filter-urls]]) are the precedent for the dispatch.
 
-**Add note** sits on the player's transport bar and in the player's commands, so it works from the overlay too
-([[plugins#player-maximized]]): *Add note at* the current time pauses, appends a line `- [mm:ss](rehuco-video:…#t=…)`
-and a space to the video's notes and shows the dock in edit with the caret at the end; *Add note* appends a plain
-dash and a space for a note about the whole video. That line is the bookmark: there is no other.
+**Add note at** sits on the player's transport bar and in the player's commands (`B`, armed in the player like its
+other keys), so it works from the overlay too ([[plugins#player-maximized]]): it adds a line
+`- [mm:ss](rehuco-video:…#t=…)` and a space to the video's notes. That line is the bookmark: there is no other, and a
+note with no time is written by editing the notes. **The line goes beside its neighbours in time**, whatever order the
+user left the note in: after the latest bookmark at or before its time and the lines under that bookmark, else just
+before the earliest bookmark after it, else at the end; nothing else moves. **A setting on the Videos page** decides
+the rest: on (the default), it pauses the video and the dock opens in edit with the caret at the end of the new line;
+off, it only adds the line and playback and the dock stay as they are, so a video can be listened to through,
+bookmarked as it goes, and the notes added later. The player's seek slider marks each bookmark of the video loaded
+with a tick, drawn under the handle.
 
 The panel — view, editor, toggle, link dispatch — is one widget; the dock and the player's `N` overlay each host
 an instance over the same model.

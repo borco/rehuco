@@ -40,6 +40,8 @@ def test_a_stopped_player_lets_go_of_the_video_so_the_folder_can_be_renamed(
     model = mocker.create_autospec(RehuDocumentModel, instance=True)
     model.progress_of.return_value = None
     model.measured_videos.return_value = {}
+    model.video_notes_of.return_value = ""
+    model.notes_changed = mocker.Mock()
     model.path = folder / "info.rehu"
     model.rename_coordinator = None
     recorder = mocker.create_autospec(WatchProgressRecorder, instance=True)

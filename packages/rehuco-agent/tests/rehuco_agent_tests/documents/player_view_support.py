@@ -170,6 +170,8 @@ def fixture_model(
     model.progress_of.side_effect = progress.get
     model.measured_videos.return_value = {}
     model.last_video.return_value = None
+    model.video_notes_of.return_value = ""
+    model.notes_changed = mocker.Mock()
     return model
 
 

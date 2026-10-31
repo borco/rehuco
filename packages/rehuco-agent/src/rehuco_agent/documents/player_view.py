@@ -5,23 +5,25 @@ from collections.abc import Callable
 from enum import Enum, auto
 from functools import partial
 from pathlib import Path
-from typing import Final, cast
+from typing import Final, cast, override
 
-from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QImage, QPalette
+from borco_pyside.theming import GlyphActionIconThemeHandler
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QImage, QMouseEvent
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame
-from PySide6.QtWidgets import QToolButton, QWidget
+from PySide6.QtWidgets import QWidget
 from rehuco_core import (
     EXTERNAL_TOOLS,
     FFMPEG_LIBRARIES_TOOL,
     VideoFormat,
     content_path,
+    note_lines,
     read_video_format,
     tutorial_video_keys,
 )
 
 from ..commands import (
+    PLAYER_ADD_NOTE_AT,
     PLAYER_BACK,
     PLAYER_FORWARD,
     PLAYER_NEXT,
@@ -35,19 +37,12 @@ from ..commands import (
     PLAYER_VOLUME_UP,
     shared_command_registry,
 )
-from ..glyphs import (
-    PLAYER_BACK_GLYPH,
-    PLAYER_FORWARD_GLYPH,
-    PLAYER_NEXT_GLYPH,
-    PLAYER_PAUSE_GLYPH,
-    PLAYER_PLAY_GLYPH,
-    PLAYER_PREVIOUS_GLYPH,
-)
+from ..glyphs import PLAYER_BACK_GLYPH, PLAYER_FORWARD_GLYPH, PLAYER_NEXT_GLYPH, PLAYER_PREVIOUS_GLYPH
 from ..playback_libraries import shared_playback_libraries
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.videos_settings import shared_videos_settings
-from .clock_text import clock_text
 from .latest_runner import LatestRunner
+from .player_bar import PlayerBar
 from .player_engine import Engine, PlayerEngine
 from .player_notices import AV1_LIBRARIES_HINT, PlayerNotices
 from .player_playlist import PlayerPlaylist
@@ -168,6 +163,13 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     """Emitted with the content key of the video now selected, or ``None`` when the player shows none -- what the
     tutorial's tree marks as the current video (#572)."""
 
+    note_requested = Signal(str, float)
+    """The reader asked for a bookmark: the content key of the video selected, and the time it is at in seconds (#573).
+    The notes dock takes it from here."""
+
+    surface_clicked = Signal()
+    """The reader pressed the mouse on the picture (#573): the notes dock shows the video loaded again."""
+
     def __init__(
         self,
         model: RehuDocumentModel,
@@ -199,15 +201,15 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Whether the selected video has played since it was selected, and so is one whose seeks are progress."""
         self.__position_ms = 0
         """Where the video selected is: where it was left, until it plays, and where it plays from."""
-        self.__duration_ms = 0
-        """The selected video's length, from what is known of it before it opens, and from the player once it does."""
-        self.__scrubbing = False
         self.__frame_seen = False
         self.__av1 = False
         self.__listening = False
 
         self.__ui: Final = Ui_PlayerView()
         self.__ui.setupUi(self)
+        self.__bar: Final = PlayerBar(self.__ui, self)
+        self.__bar.seek_requested.connect(self.__seek_to)
+        model.notes_changed.connect(self.__show_bookmarks)
         self.__engine: Final = PlayerEngine(self, self.__ui.video_widget, self.__ui.vlc_surface)
         self.__notices: Final = PlayerNotices(self.__ui.notice_banner, self)
         self.__notices.tools_requested.connect(self.tools_requested)
@@ -217,6 +219,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__no_frame_timer: Final = self.__single_shot(no_frame_ms, self.__on_no_frame)
         self.__grab_timer: Final = self.__single_shot(grab_ms, self.__on_grab_timeout)
         self.__ui.video_widget.videoSink().videoFrameChanged.connect(self.__on_frame)
+        for surface in (self.__ui.video_widget, self.__ui.vlc_surface, self.__ui.still_widget):
+            surface.installEventFilter(self)
 
         self.__setup_actions()
         self.__setup_bar()
@@ -248,6 +252,20 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__request(key, play=True, position=position)
         self.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def seek(self, key: str, position: float | None = None) -> None:
+        """Go to a time of a video, as a link in a note asks: the video is left playing or paused as it is.
+
+        The video selected goes to the time where it is. Another is loaded **paused**, as previous and next load theirs,
+        at the time or -- with none -- where it was left.
+
+        :param key: the video's content key.
+        :param position: the time in seconds; ``None`` for where the video was left.
+        """
+        if key != self.__key:
+            self.__request(key, play=False, position=position)
+        elif position is not None:
+            self.__seek_to(round(position * 1000))
+
     def stop(self) -> None:
         """Stop playing, recording where it stopped, let go of the video's file, and show nothing.
 
@@ -266,6 +284,21 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__engine.drop()
 
     # endregion
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802  (Qt API name)
+        """Report a left press on any of the picture's surfaces (:attr:`surface_clicked`).
+
+        :param watched: the surface.
+        :param event: what happened to it.
+        :returns: whether the event is consumed -- never: the surfaces keep their own behaviour.
+        """
+        if (
+            event.type() == QEvent.Type.MouseButtonPress
+            and cast(QMouseEvent, event).button() == Qt.MouseButton.LeftButton
+        ):
+            self.surface_clicked.emit()
+        return super().eventFilter(watched, event)
 
     # region Setup
 
@@ -295,7 +328,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         return timer
 
     def __setup_actions(self) -> None:
-        """Bind the player's actions to its commands and put the transport ones on their buttons."""
+        """Bind the player's actions to their commands and keys; the bar puts the transport ones on its buttons."""
         ui = self.__ui
         for action, glyph in (
             (ui.previous_action, PLAYER_PREVIOUS_GLYPH),
@@ -312,6 +345,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             (ui.next_action, PLAYER_NEXT),
             (ui.to_start_action, PLAYER_TO_START),
             (ui.to_end_action, PLAYER_TO_END),
+            (ui.add_note_at_action, PLAYER_ADD_NOTE_AT),
             (ui.volume_up_action, PLAYER_VOLUME_UP),
             (ui.volume_down_action, PLAYER_VOLUME_DOWN),
             (ui.speed_up_action, PLAYER_SPEED_UP),
@@ -327,33 +361,22 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         ui.next_action.triggered.connect(lambda: self.__step(1))
         ui.to_start_action.triggered.connect(lambda: self.__seek_to(0))
         ui.to_end_action.triggered.connect(self.__finish_video)
+        ui.add_note_at_action.triggered.connect(self.__add_note_at)
         ui.volume_up_action.triggered.connect(lambda: self.__change_volume(VOLUME_STEP))
         ui.volume_down_action.triggered.connect(lambda: self.__change_volume(-VOLUME_STEP))
         ui.speed_up_action.triggered.connect(lambda: self.__change_speed(1))
         ui.speed_down_action.triggered.connect(lambda: self.__change_speed(-1))
-        buttons: tuple[tuple[QToolButton, QAction], ...] = (
-            (ui.previous_button, ui.previous_action),
-            (ui.back_button, ui.back_action),
-            (ui.play_pause_button, ui.play_pause_action),
-            (ui.forward_button, ui.forward_action),
-            (ui.next_button, ui.next_action),
-        )
-        for button, action in buttons:
-            button.setDefaultAction(action)
 
     def __setup_bar(self) -> None:
-        """Fill the speed combo, wire the slider and the combo, and show the bar as it is with nothing selected."""
+        """Fill the speed combo, wire it, and show the bar as it is with nothing selected."""
         ui = self.__ui
         for rate in SPEEDS:
             ui.speed_combo.addItem(f"{rate:g}×", rate)
         ui.speed_combo.setCurrentIndex(SPEEDS.index(DEFAULT_SPEED))
-        ui.position_slider.sliderPressed.connect(self.__on_slider_pressed)
-        ui.position_slider.sliderReleased.connect(self.__on_slider_released)
-        ui.position_slider.actionTriggered.connect(self.__on_slider_action)
         ui.speed_combo.currentIndexChanged.connect(self.__on_speed_changed)
         ui.surface_stack.setCurrentWidget(ui.still_widget)
-        self.__show_playing(False)
-        self.__show_time(0)
+        self.__bar.show_playing(False)
+        self.__bar.show_time(0)
         self.__update_actions()
 
     def __ensure_player(self) -> Engine:
@@ -470,11 +493,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         entry = self.__model.progress_of(video.key)
         measured = self.__model.measured_videos().get(video.key)
         length = measured.duration if measured is not None else (entry.duration if entry is not None else None)
-        self.__duration_ms = round(length * 1000) if length else 0
+        self.__bar.set_duration(round(length * 1000) if length else 0)
         start = position if position is not None else PlayerPlaylist.start_position(entry, length)
         self.__position_ms = round(start * 1000)
-        self.__ui.position_slider.setRange(0, self.__duration_ms)
-        self.__show_position(self.__position_ms)
+        self.__bar.show_position(self.__position_ms)
         self.__ui.title_label.set_text(video.key)
         self.__notices.clear()
         self.__ui.still_widget.set_image(None)
@@ -486,6 +508,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if self.__engine.fallback_reason is not None:
             self.__notices.add(VLC_FALLBACK_TEMPLATE.format(reason=self.__engine.fallback_reason))
         self.__update_actions()
+        self.__show_bookmarks()
         self.video_changed.emit(video.key)
 
     def __step(self, delta: int) -> bool:
@@ -506,16 +529,16 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__key = None
         self.__played = False
         self.__position_ms = 0
-        self.__duration_ms = 0
-        self.__ui.position_slider.setRange(0, 0)
+        self.__bar.set_duration(0)
         self.__ui.position_slider.setValue(0)
-        self.__show_time(0)
+        self.__bar.show_time(0)
         self.__ui.title_label.set_text("")
         self.__ui.still_widget.set_image(None)
         self.__ui.surface_stack.setCurrentWidget(self.__ui.still_widget)
         self.__notices.clear()
-        self.__show_playing(False)
+        self.__bar.show_playing(False)
         self.__update_actions()
+        self.__show_bookmarks()
         self.video_changed.emit(None)
 
     # endregion
@@ -637,8 +660,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         else:
             self.__release()
         self.__ui.surface_stack.setCurrentWidget(self.__ui.still_widget)
-        self.__show_position(self.__position_ms)
-        self.__show_playing(False)
+        self.__bar.show_position(self.__position_ms)
+        self.__bar.show_playing(False)
 
     def __finish_video(self) -> None:
         """Record the whole video as watched, then load the next; after the last, stop and let go of its file.
@@ -675,10 +698,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if self.__key is None:
             return
         target = max(position_ms, 0)
-        if self.__duration_ms > 0:
-            target = min(target, self.__duration_ms)
+        if self.__bar.duration_ms > 0:
+            target = min(target, self.__bar.duration_ms)
         self.__position_ms = target
-        self.__show_position(target)
+        self.__bar.show_position(target)
         if self.__engine.player is not None and self.__session is not Session.NONE and self.__ready:
             self.__engine.player.setPosition(target)
         if self.__session is Session.PLAY or self.__played:
@@ -726,7 +749,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if self.__session is not Session.PLAY or not self.__ready:
             return
         self.__position_ms = position_ms
-        self.__show_position(position_ms)
+        self.__bar.show_position(position_ms)
         if self.__key is not None and self.__state != QMediaPlayer.PlaybackState.StoppedState:
             self.__recorder.position(self.__key, position_ms / 1000, self.__duration_seconds())
 
@@ -737,9 +760,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         if self.__session is Session.NONE:
             return
-        self.__duration_ms = duration_ms
-        self.__ui.position_slider.setRange(0, duration_ms)
-        self.__show_position(self.__position_ms)
+        self.__bar.set_duration(duration_ms)
+        self.__bar.show_position(self.__position_ms)
 
     def __on_state_changed(self, state: QMediaPlayer.PlaybackState) -> None:
         """Show whether the video plays, and record where it is the moment it does not.
@@ -748,7 +770,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         self.__state = state
         playing = self.__session is Session.PLAY and state == QMediaPlayer.PlaybackState.PlayingState
-        self.__show_playing(playing)
+        self.__bar.show_playing(playing)
         if self.__session is Session.PLAY and not playing:
             self.__flush()
 
@@ -863,25 +885,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     # endregion
 
-    # region The slider
-
-    def __on_slider_pressed(self) -> None:
-        """Stop the slider following the video while the reader holds it."""
-        self.__scrubbing = True
-
-    def __on_slider_released(self) -> None:
-        """Seek to where the reader let go of the slider."""
-        self.__scrubbing = False
-        self.__seek_to(self.__ui.position_slider.value())
-
-    def __on_slider_action(self) -> None:
-        """Seek to where a click on the slider's groove or a turn of the wheel took it -- not while the handle is held,
-        when every move is an action too and the seek waits for the release."""
-        if not self.__scrubbing:
-            self.__seek_to(self.__ui.position_slider.sliderPosition())
-
-    # endregion
-
     # region What it shows
 
     def __flush(self) -> None:
@@ -902,7 +905,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :returns: the length in seconds, or ``None`` while it is not known.
         """
-        return self.__duration_ms / 1000 if self.__duration_ms > 0 else None
+        return self.__bar.duration_ms / 1000 if self.__bar.duration_ms > 0 else None
 
     @staticmethod
     def __offers_libraries() -> bool:
@@ -912,43 +915,43 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         return FFMPEG_LIBRARIES_TOOL.ID in EXTERNAL_TOOLS and shared_playback_libraries().loaded_from is None
 
-    def __show_playing(self, playing: bool) -> None:
-        """Give the play button the glyph of what pressing it does.
-
-        :param playing: whether a video plays now.
-        """
-        glyph = PLAYER_PAUSE_GLYPH if playing else PLAYER_PLAY_GLYPH
-        action = self.__ui.play_pause_action
-        action.setIcon(themed_glyph_icon(glyph.codepoint, glyph.family, QPalette.ColorRole.Text))
-        action.setText("Pause" if playing else "Play")
-
-    def __show_position(self, position_ms: int) -> None:
-        """Show where the video is on the slider and the clock.
-
-        :param position_ms: the position.
-        """
-        if not self.__scrubbing:
-            self.__ui.position_slider.setValue(position_ms)
-        self.__show_time(position_ms)
-
-    def __show_time(self, position_ms: int) -> None:
-        """Show the position, and the length where it is known, as a clock.
-
-        :param position_ms: where the video is.
-        """
-        clock = clock_text(position_ms)
-        if self.__duration_ms > 0:
-            clock = f"{clock} / {clock_text(self.__duration_ms)}"
-        self.__ui.time_label.setText(clock)
-
     def __update_actions(self) -> None:
         """Enable the actions a selected video allows: none while nothing is, and no step past either end."""
-        ui = self.__ui
         playlist = self.__playlist
-        selected = self.__key is not None
-        for action in (ui.play_pause_action, ui.back_action, ui.forward_action, ui.to_start_action, ui.to_end_action):
-            action.setEnabled(selected)
-        ui.previous_action.setEnabled(playlist is not None and playlist.has_previous)
-        ui.next_action.setEnabled(playlist is not None and playlist.has_next)
+        self.__bar.update_actions(
+            selected=self.__key is not None,
+            has_previous=playlist is not None and playlist.has_previous,
+            has_next=playlist is not None and playlist.has_next,
+        )
+
+    def __show_bookmarks(self) -> None:
+        """Mark the bookmarks in the selected video's notes on the slider: the lines whose link names this video."""
+        key = self.__key
+        lines = note_lines(self.__model.video_notes_of(key)) if key is not None else []
+        self.__bar.show_bookmarks([line.seconds for line in lines if line.key == key and line.seconds is not None])
+
+    def __add_note_at(self) -> None:
+        """Ask for a note at the time the video is at, then pause a video that plays, when the Videos page says so.
+
+        The notes are opened before the pause, not after: a pause under Qt lets the file go, which tears the engine's
+        renderer down on a thread of its own that waits for the GIL under a signal-slot mutex, and what opens the
+        notes dock and its editor makes connections on the GUI thread. Done first, they are over when the teardown
+        starts, and the GUI thread goes back to the event loop, which releases the GIL.
+        """
+        if self.__key is None:  # pragma: no cover  (the action is disabled until a video is selected)
+            return
+        self.note_requested.emit(self.__key, self.__current_position_ms() / 1000)
+        if shared_videos_settings().add_note_edits and self.__session is Session.PLAY:
+            self.__pause()
+
+    def __current_position_ms(self) -> int:
+        """Where the video is: live while it plays, else where it was left.
+
+        :returns: the position in milliseconds.
+        """
+        player = self.__engine.player
+        if player is not None and self.__session is Session.PLAY and self.__ready:
+            return player.position()
+        return self.__position_ms
 
     # endregion

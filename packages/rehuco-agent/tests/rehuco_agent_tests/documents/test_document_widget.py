@@ -78,6 +78,7 @@ from rehuco_agent.documents.document_sub_docks import (
     FILES_ICON_RESOURCE,
     IMAGES_DOCK_MIN_HEIGHT,
     LOG_DOCK_MIN_HEIGHT,
+    NOTES_DOCK_NAME,
     ON_DISK_ICON_RESOURCE,
     PLAYER_DOCK_NAME,
     RENDERER_TAINT_FORMAT,
@@ -5213,7 +5214,7 @@ def test_the_content_images_dock_is_a_reference_packs_alone(
     * verify no toggle on the tutorial's or the collection's toolbar carries the dock's title
     """
     assert type_dock_names(REFERENCE_IMAGES_PLUGIN.key) == {CONTENT_IMAGES_DOCK_NAME}
-    assert type_dock_names(TUTORIAL_PLUGIN.key) == {PLAYER_DOCK_NAME, TREE_DOCK_NAME}
+    assert type_dock_names(TUTORIAL_PLUGIN.key) == {PLAYER_DOCK_NAME, TREE_DOCK_NAME, NOTES_DOCK_NAME}
     assert type_dock_names(COLLECTION_PLUGIN.key) == frozenset()
     assert type_dock_names("") == frozenset()
     assert type_dock_names("daz3d") == frozenset()
