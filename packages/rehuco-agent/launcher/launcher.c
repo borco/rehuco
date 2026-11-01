@@ -76,6 +76,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         return 1;
     }
 
+    /* pythonXY.dll is delay-loaded (CMakeLists.txt): point the DLL search at the venv's base
+     * install before the first Python call below triggers the load. */
+    SetDllDirectoryW(PYTHON_DLL_DIR);
+
     /* 3. Initialise Python. config.executable is set so sys.executable reports the venv
      *    python correctly; actual package visibility comes from the explicit
      *    site.addsitedir() call in the entry script below (see its comment for why). */

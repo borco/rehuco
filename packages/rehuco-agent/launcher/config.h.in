@@ -2,3 +2,5 @@
 #define VENV_PYTHON_EXECUTABLE L"@VENV_PYTHON_FWDSLASH@"
 /* Narrow (non-L) string: embedded directly into the Python source text in launcher.c. */
 #define VENV_SITE_PACKAGES_UTF8 "@VENV_SITE_PACKAGES_FWDSLASH@"
+/* The venv's base Python install, which holds the delay-loaded pythonXY.dll (see CMakeLists.txt). */
+#define PYTHON_DLL_DIR L"@PYTHON_DLL_DIR@"

@@ -25,12 +25,22 @@ file(TO_CMAKE_PATH "${VENV_PYTHON}" VENV_PYTHON_FWDSLASH)       # forward slashe
 get_filename_component(VENV_SITE_PACKAGES "${CMAKE_CURRENT_SOURCE_DIR}/../../../.venv/Lib/site-packages" ABSOLUTE)
 file(TO_CMAKE_PATH "${VENV_SITE_PACKAGES}" VENV_SITE_PACKAGES_FWDSLASH)
 
-configure_file(config.h.in "${CMAKE_CURRENT_BINARY_DIR}/config.h")
-
 set(Python3_FIND_VIRTUALENV FIRST)
 set(Python3_EXECUTABLE "${VENV_PYTHON}")
-# Development.Embed = link Python as host (not extension module)
-find_package(Python3 REQUIRED COMPONENTS Development.Embed)
+# Development.Embed = link Python as host (not extension module). Interpreter is requested too
+# because FindPython honours the Python3_EXECUTABLE hint only for that component: without it, the
+# Development lookup searches on its own and takes whatever Python comes first -- a scoop global
+# 3.15 linked a launcher whose venv is 3.14, which then fails on the first compiled extension.
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Embed)
+
+# The venv's base Python is not on PATH, so the exe cannot find its DLL by the normal search:
+# delay-load it, and have launcher.c point SetDllDirectoryW() at the base install before the first
+# Python call. The DLL is not copied next to the exe -- CPython derives its stdlib prefix from the
+# DLL's own location, so a copy there loses the standard library.
+get_filename_component(PYTHON_DLL_NAME "${Python3_RUNTIME_LIBRARY_RELEASE}" NAME)
+get_filename_component(PYTHON_DLL_DIR "${Python3_RUNTIME_LIBRARY_RELEASE}" DIRECTORY)
+
+configure_file(config.h.in "${CMAKE_CURRENT_BINARY_DIR}/config.h")
 
 # Embed the absolute icon path so the RC compiler finds it regardless of working dir.
 # Built by `make icons` from the 1024px PNG master in the top-level design/icons/ (issue #29) --
@@ -48,4 +58,5 @@ target_include_directories(rehuco-agent-dev PRIVATE
     ${Python3_INCLUDE_DIRS}
     "${CMAKE_CURRENT_BINARY_DIR}"   # config.h lives here
 )
-target_link_libraries(rehuco-agent-dev PRIVATE ${Python3_LIBRARIES} shell32)
+target_link_libraries(rehuco-agent-dev PRIVATE ${Python3_LIBRARIES} shell32 delayimp)
+target_link_options(rehuco-agent-dev PRIVATE "/DELAYLOAD:${PYTHON_DLL_NAME}")
