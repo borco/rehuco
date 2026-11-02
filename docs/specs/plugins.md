@@ -1365,8 +1365,8 @@ an instance over the same model.
 
 [[[plugins#player-maximized]]]
 
-- [#574: feat(agent): maximize the player — double-click over document/window/screen per setting, click pauses, playback survives the move, I info overlay, the overlay surface shared with the lightbox](https://github.com/borco/rehuco/issues/574)
-- [#575: feat(agent): the player's T tree and N notes overlays](https://github.com/borco/rehuco/issues/575)
+- [#574: feat(agent): maximize the player — double-click over document/window/screen per setting (Shift/Ctrl override), click pauses, playback survives the move, I info panel beside the video, the lightbox's overlay host shared](https://github.com/borco/rehuco/issues/574)
+- [#575: feat(agent): the player's T tree and N notes panels beside the video — any at once, docked and maximized](https://github.com/borco/rehuco/issues/575)
 
 The player stays the tutorial's sub-dock; this is how it gets big without a layout change, and how a big video keeps
 its navigation and its notes a key away.

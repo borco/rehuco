@@ -209,6 +209,14 @@ PositionChanged, TimeChanged     then about every 500 ms
   stopped* rule was applied to libvlc first, and **reopening and seeking landed a few frames off** on resume (seen by
   the owner), so under libvlc a pause now holds the file, paused on its frame, and the rename coordinator's
   before-rename call is what releases it.
+- **A mute is the audio output's** (#574): libvlc takes `audio_set_mute` only while its audio output lives, and the
+  state outlasts a player, carried by the instance. Muting before `play()` leaked sound at the start of a paused
+  load (the owner heard seconds of it from a background tab), and unmuting after `stop()` was lost: the next video
+  played silent (measured: `audio_get_mute()` read 1 while it played). Only an unmute made while still paused stuck.
+- **`:no-audio` on a media decodes no audio** (#574): `audio_get_track()` is -1 against 1 without it. The track
+  count still lists the file's tracks, so it proves nothing. `:start-time=<s>` opens a media at a position (23.49 s
+  for 23.5 s asked). A paused load opens `:no-audio`, played before its still it opens again with its audio there,
+  and the engine never mutes.
 
 ### Drawing over the surface
 

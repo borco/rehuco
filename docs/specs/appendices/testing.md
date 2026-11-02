@@ -251,6 +251,11 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   `gc.get_objects()`, a per-directory `stat` on the share (+32 %), a Windows file fact (a `FILE_SHARE_DELETE` reader
   still blocks a replace). A machine-dependent test asks the system's own list (#501: `GetLogicalDrives`,
   `HKCU\Network`).
+- **What the screen and the speakers got** (#574): `uv run --with dxcam` reads every composed frame
+  (`output_color="BGRA"`; its RGB path wants OpenCV), but Windows will not raise a background process's window,
+  so check the captured reference level before trusting a run. A static clip (`smptehdbars`) makes a frame-to-frame
+  pixel difference mean something. `soundcard` loopback records what reaches the speakers, in a process of its
+  own: with python-vlc in the same one it segfaults.
 - **A bug the tests do not show, drive the real window** (#514): a scratchpad script outside pytest (the suite's
   conftest mocks `Path.stat`) builds `MainWindow` over temporary settings folders, `toggleView(True)` on the dock,
   `QTest` clicks, and `panel.grab().save(...)` for the owner to see. A new dialog gets a scratchpad demo before it is
@@ -316,8 +321,12 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
 - **A Scintilla autocomplete popup on a shown editor corrupts the heap offscreen** (#343): `autoCCancel()` first, and
   use `QWidget.setFocus(editor)`.
 - **A test's shown window must be held** (#491): a window built in a helper and dropped dies with its wrapper, taking
-  its dock managers along ("already deleted" at the first call); a generator fixture yields while holding it. A
-  `.show()` without `qtbot.addWidget` leaks a window (#383).
+  its dock managers along ("already deleted" at the first call); a generator fixture yields while holding it, since
+  `qtbot.addWidget` keeps only a weak reference (#574). A `.show()` without `qtbot.addWidget` leaks a window (#383).
+- **A press gives the focus in the window, not in `notify`** (Qt 6, #574): `QApplication.sendEvent` of a press to a
+  widget moves no focus, while `qtbot.mousePress` goes through the window and does. **A test of a visibility
+  trigger shows its window** (#574): the `restore_late` tests never did, so a background tab read at start, when
+  QtAds shows each tab it adds into a visible window, went unseen.
 - **A mock widget handed to a `MainWindow` is saved and closed at teardown** (#464): set `dirty = False` and
   `save_state.return_value = b""`, or the real modal pops or `QByteArray` fails.
 - **A test that loads a model in place keeps every tab and the form alive** (#470): build all tabs, and hang the form

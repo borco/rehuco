@@ -152,6 +152,15 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
   form keeping strong references to the widgets its grids own leaves the model's receivers doubled after a teardown
   (`test_a_teardown_lets_go_of_every_model_connection`): hold `weakref.ref` (#568). A host-parented `QAction` a
   document's sub-docks make is deleted in their `teardown`, or a preview leaks one per document switch (#505).
+- **An inherited slot outlives its widget** (#574): PySide drops a bound method's connection when its widget is
+  deleted only if the method is of the widget's own class. A base class's slot, connected for a subclass, keeps
+  being called on the deleted widget ("already deleted"), and a `@Slot` or a public name does not help: keep the
+  `QMetaObject.Connection` handles and disconnect them on close and on `destroyed` (`OverlaySurface`), a no-op the
+  second time.
+- **Qt Multimedia** (#574): `QMediaPlayer.setPosition` reports its target through `positionChanged` before it
+  returns, about 110 ms ahead of any frame of it, and a frame from before the seek can still arrive meanwhile. A
+  `QVideoWidget` keeps drawing a frame set on its sink after the player that decoded it let the file go, GPU
+  (`RhiTextureHandle`) frames included, and after a resize.
 - **Signals**: a signal-blocked `setText` hides the clear button, which emits `textEdited` — a debounce connects
   `textChanged` (#406); pressing a `QToolButton` in a QtAds dock moves the focus to the dock's scroll area, so a field's
   `editingFinished` fires before the button's action — a test patching `hasFocus` hides it (#514); trace real
