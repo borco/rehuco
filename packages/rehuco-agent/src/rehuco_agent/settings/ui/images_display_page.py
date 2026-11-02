@@ -4,7 +4,7 @@ from typing import Final, NamedTuple
 
 from PySide6.QtWidgets import QRadioButton, QWidget
 
-from ...fields.widgets.image_lightbox import ImageViewerMode
+from ...fields.widgets.overlay_surface import OverlayMode
 from ..image_viewer_settings import DEFAULT_MODE, ImageViewerSettings, shared_image_viewer_settings
 from ..markdown_rendering_settings import MarkdownRenderingSettings, shared_markdown_rendering_settings
 from ..persistent_settings import persistent_settings
@@ -37,7 +37,7 @@ class ImageChoices(NamedTuple):
         like its zip (#367).
     """
 
-    mode: ImageViewerMode
+    mode: OverlayMode
     strip_visible: bool
     preview_wrap: bool
     preview_height: int
@@ -95,10 +95,10 @@ class ImagesDisplayPage(QWidget):
         super().__init__(parent)
         self.__ui: Final = Ui_ImagesDisplayPage()
         self.__ui.setupUi(self)
-        self.__buttons: Final[dict[ImageViewerMode, QRadioButton]] = {
-            ImageViewerMode.DOCUMENT_OVERLAY: self.__ui.document_overlay_radio_button,
-            ImageViewerMode.APP_WINDOW_OVERLAY: self.__ui.app_window_overlay_radio_button,
-            ImageViewerMode.FULL_SCREEN: self.__ui.full_screen_radio_button,
+        self.__buttons: Final[dict[OverlayMode, QRadioButton]] = {
+            OverlayMode.DOCUMENT_OVERLAY: self.__ui.document_overlay_radio_button,
+            OverlayMode.APP_WINDOW_OVERLAY: self.__ui.app_window_overlay_radio_button,
+            OverlayMode.FULL_SCREEN: self.__ui.full_screen_radio_button,
         }
         self.__ui.content_min_height_spin_box.valueChanged.connect(self.__on_content_min_height_changed)
         self.__ui.content_max_height_spin_box.valueChanged.connect(self.__on_content_max_height_changed)
@@ -264,7 +264,7 @@ class ImagesDisplayPage(QWidget):
             settings.content_strip_zip_folder,
         )
 
-    def __selected_mode(self) -> ImageViewerMode:
+    def __selected_mode(self) -> OverlayMode:
         """The mode whose radio button is currently checked.
 
         :returns: the checked mode; the document overlay when somehow none is checked, matching the

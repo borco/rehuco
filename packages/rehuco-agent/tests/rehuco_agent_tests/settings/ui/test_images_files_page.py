@@ -7,7 +7,7 @@ from borco_pyside.widgets import StringListEditor
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
+from rehuco_agent.fields.widgets.overlay_surface import OverlayMode
 from rehuco_agent.settings import reference_images_settings
 from rehuco_agent.settings.image_viewer_settings import ImageViewerSettings, shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import (
@@ -340,7 +340,7 @@ def test_the_page_neither_reads_nor_writes_the_display_pages_settings(
     """
     viewer_save = mocker.patch.object(ImageViewerSettings, "save")
     rendering_save = mocker.patch.object(MarkdownRenderingSettings, "save")
-    shared_image_viewer_settings().mode = ImageViewerMode.FULL_SCREEN
+    shared_image_viewer_settings().mode = OverlayMode.FULL_SCREEN
     shared_markdown_rendering_settings().max_image_width = 777
     assert not page.is_dirty()
 

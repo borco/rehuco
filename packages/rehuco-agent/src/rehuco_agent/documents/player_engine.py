@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Final, cast
 
 from PySide6.QtCore import QObject
-from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer, QVideoSink
 from PySide6.QtWidgets import QWidget
 
 from ..playback_vlc import shared_vlc_library
@@ -30,16 +30,17 @@ class PlayerEngine:
     new engine's signals, so the view's state machine never knows which engine it drives.
 
     :param owner: the view, parent of the engines built.
-    :param video_widget: the page Qt Multimedia draws on.
+    :param video_widget: the page Qt Multimedia's frames are shown on.
     :param vlc_surface: the page libvlc's frames are painted on.
+    :param sink: where Qt Multimedia decodes into: the view's, which hands the frames on to the video widget.
     """
 
-    def __init__(self, owner: QWidget, video_widget: QWidget, vlc_surface: VlcSurface) -> None:
+    def __init__(self, owner: QWidget, video_widget: QWidget, vlc_surface: VlcSurface, sink: QVideoSink) -> None:
         self.__owner: Final = owner
+        self.__sink: Final = sink
         self.__pages: Final = (video_widget, vlc_surface)
         """The surface stack's pages: Qt's video widget, and the one libvlc's frames are painted on."""
         self.__player: Engine | None = None
-        self.__audio: QAudioOutput | None = None
         self.__vlc = False
         self.__fallback_reason: str | None = None
         self.__built_for: str | None = None
@@ -97,11 +98,10 @@ class PlayerEngine:
             return
         if self.__vlc:
             cast(VlcMediaPlayer, self.__player).close()
+        else:
+            cast(QMediaPlayer, self.__player).audioOutput().deleteLater()
         cast(QObject, self.__player).deleteLater()
-        if self.__audio is not None:
-            self.__audio.deleteLater()
         self.__player = None
-        self.__audio = None
         self.__vlc = False
         self.__fallback_reason = None
 
@@ -110,10 +110,10 @@ class PlayerEngine:
 
         :param volume: 0 to 1.
         """
-        if self.__audio is not None:
-            self.__audio.setVolume(volume)
-        elif self.__vlc and self.__player is not None:
+        if self.__vlc:
             cast(VlcMediaPlayer, self.__player).setVolume(volume)
+        elif self.__player is not None:
+            cast(QMediaPlayer, self.__player).audioOutput().setVolume(volume)
 
     def __build_vlc(self, volume: float) -> VlcMediaPlayer | None:
         """Build the libvlc engine, when the Tools page's VLC loads.
@@ -137,12 +137,11 @@ class PlayerEngine:
         """Build the Qt Multimedia engine.
 
         :param volume: the volume to start at.
-        :returns: the player, its audio output kept.
+        :returns: the player, with its audio output.
         """
         player = QMediaPlayer(self.__owner)
         audio = QAudioOutput(self.__owner)
         audio.setVolume(volume)
         player.setAudioOutput(audio)
-        player.setVideoOutput(self.__pages[0])
-        self.__audio = audio
+        player.setVideoSink(self.__sink)
         return player

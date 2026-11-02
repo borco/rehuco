@@ -103,12 +103,12 @@ FFmpeg libraries always wait for a restart since Qt binds them at import), the l
 *FFmpeg (external)* is,
 saved as `player` and read by the Files sub-dock at each double-click, so a change of player reaches open documents.
 The libraries are loaded at start, so choosing them (or leaving them) says *Takes effect at the next start*, and a
-start that could not load a chosen build says why beside the choice. **Videos** also gains *Maximize videos over* — the
-document, the main window or full screen, the lightbox's three surfaces, chosen separately for the player
-([[plugins#player-maximized]], #574); the next maximize uses a change, an open one is not moved. **Videos** also
-gains a *Notes* frame (#573) with one box, *Adding a note pauses the video and opens the notes for editing*, on by
-default and saved as `add_note_edits`: off, the player's `B` only adds its bookmark, and playback and the notes dock
-stay as they are ([[plugins#video-notes-dock]]); it is read at each `B`, so a change reaches open documents.
+start that could not load a chosen build says why beside the choice. **Videos** also gains a *Maximized player* frame —
+the document, the main window or full screen, the lightbox's three surfaces with the same SHIFT, CTRL and CTRL+SHIFT
+overrides, chosen separately for the player and saved as `maximize_mode` (#574, [[plugins#player-maximized]]); the next
+maximize uses a change, an open one is not moved. The *Notes* frame #573 added, with its *Adding a note pauses the
+video and opens the notes for editing* box (`add_note_edits`), is gone (owner, #574): the player's `B` only adds its
+bookmark, docked or maximized ([[plugins#video-notes-dock]]), and a stored value is ignored.
 **Root Catalog**
 gains *Default root layouts* — a list of named entries, each a per-type layout map (one row per type or `*`) and a
 fallback map, seeded with *Current name* (`{"*": "*"}`), which the Add Roots dialog offers in its combo and can add

@@ -42,6 +42,16 @@ class PlayerPlaylist:
         return self.__videos[self.__index]
 
     @property
+    def position(self) -> int:
+        """Where the current video stands in the list, counting from 1."""
+        return self.__index + 1
+
+    @property
+    def count(self) -> int:
+        """How many videos the list holds."""
+        return len(self.__videos)
+
+    @property
     def has_previous(self) -> bool:
         """Whether a video comes before the current one."""
         return self.__index > 0

@@ -185,13 +185,15 @@ def fixture_recorder(mocker: MockerFixture) -> WatchProgressRecorder:
     return mocker.create_autospec(WatchProgressRecorder, instance=True)
 
 
-def make_view(
+def make_view(  # pylint: disable=too-many-arguments
     qtbot: QtBot,
     model: RehuDocumentModel,
     recorder: WatchProgressRecorder,
     *,
     no_frame_ms: int = NO_FRAME_MS,
     grab_ms: int = GRAB_TIMEOUT_MS,
+    document: QWidget | None = None,
+    click_ms: int | None = None,
 ) -> PlayerView:
     """A shown player with nothing loaded; shown so its title is laid out and elided to a width.
 
@@ -200,9 +202,14 @@ def make_view(
     :param recorder: the recorder.
     :param no_frame_ms: how long an AV1 video may play without a frame before it is blamed.
     :param grab_ms: how long a paused load may wait for its frame.
+    :param document: the document the player belongs to and is shown in; a hidden one of its own when ``None``.
+    :param click_ms: how long a click waits for a second one; the system's when ``None``.
     :returns: the view.
     """
-    view = PlayerView(model, recorder, no_frame_ms=no_frame_ms, grab_ms=grab_ms)
+    if document is None:
+        document = QWidget()
+        qtbot.addWidget(document)
+    view = PlayerView(model, recorder, document, no_frame_ms=no_frame_ms, grab_ms=grab_ms, click_ms=click_ms)
     qtbot.addWidget(view)
     view.resize(640, 400)
     view.show()
@@ -267,14 +274,25 @@ def speed_combo_of(view: PlayerView) -> QComboBox:
 
 
 def sink_of(view: PlayerView) -> QVideoSink:
-    """The sink a view's video widget draws into.
+    """The sink a view's Qt player decodes into, which the view hands frames on from.
 
     :param view: the view.
     :returns: its sink.
     """
-    video_widget = view.findChild(QVideoWidget)
+    sink = view.findChild(QVideoSink, "frame_sink")
+    assert isinstance(sink, QVideoSink)
+    return sink
+
+
+def widget_frame(view: PlayerView) -> QVideoFrame:
+    """The frame a view's Qt video widget holds: the last one handed on to it.
+
+    :param view: the view.
+    :returns: the frame, invalid when none was.
+    """
+    video_widget = view.findChild(QVideoWidget, "video_widget")
     assert isinstance(video_widget, QVideoWidget)
-    return video_widget.videoSink()
+    return video_widget.videoSink().videoFrame()
 
 
 def still_of(view: PlayerView) -> VideoStill:
@@ -365,6 +383,17 @@ def picture(start_ms: int | None = None) -> QVideoFrame:
     if start_ms is not None:
         frame.setStartTime(start_ms * 1000)
     return frame
+
+
+def show_first_frame(view: PlayerView, player: QMediaPlayer | None = None) -> None:
+    """Have Qt's engine buffer and its sink receive a frame of where the video is: what puts a playing video's picture
+    up in place of the still (#574).
+
+    :param view: the view.
+    :param player: the Qt player to report it, when it is not the one the view finds first.
+    """
+    (player if player is not None else player_of(view)).mediaStatusChanged.emit(BUFFERED)
+    sink_of(view).videoFrameChanged.emit(picture())
 
 
 def start_playing(view: PlayerView, key: str = "01.mp4", *, length_ms: int = LENGTH_MS) -> QMediaPlayer:

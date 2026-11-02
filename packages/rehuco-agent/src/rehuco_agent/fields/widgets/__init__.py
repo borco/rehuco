@@ -11,7 +11,7 @@ from .duration_edit import DurationEdit
 from .duration_measurement_edit import DurationMeasurementEdit
 from .expand_toggle_button import ExpandToggleButton
 from .image_export import ImageExporter, image_mime
-from .image_lightbox import ImageLightbox, ImageViewerMode, viewer_mode_for
+from .image_lightbox import ImageLightbox
 from .image_selector import ImageSelector
 from .image_source import (
     ImageDescription,
@@ -35,6 +35,7 @@ from .measurement_result import MeasurementResult
 from .membership_table_model import MembershipTableModel
 from .memberships_editor import CollectionsEditor, LearningPathsEditor, MembershipsEditor
 from .open_link_line import OpenLinkLine
+from .overlay_surface import OverlayMode, viewer_mode_for
 from .path_editor import PathEditor
 from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
@@ -77,7 +78,7 @@ __all__ = [
     "ImageSelector",
     "ImageSource",
     "ImageStrip",
-    "ImageViewerMode",
+    "OverlayMode",
     "viewer_mode_for",
     "ImageVisibility",
     "PathImageSource",

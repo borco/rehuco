@@ -15,10 +15,10 @@ from rehuco_agent.fields.widgets.image_lightbox import (
     HOVER_INFO_NAME,
     INFO_OVERLAY_NAME,
     ImageInfoOverlay,
-    ImageViewerMode,
 )
 from rehuco_agent.fields.widgets.image_selector import MoveDirection
 from rehuco_agent.fields.widgets.image_source import ImageVisibility, PathImageSource, ScreenshotRowsImageSource
+from rehuco_agent.fields.widgets.overlay_surface import OverlayMode
 from rehuco_agent.fields.widgets.thumbnail_row import ThumbnailRow
 
 VISIBLE: Final = Path("/fake/info00.png")
@@ -56,7 +56,7 @@ def curating(qtbot: QtBot, document: QWidget, current: int, *, info_visible: boo
     """
     source = ScreenshotRowsImageSource(ROWS)
     lightbox = CuratingImageLightbox(
-        source, current, ImageViewerMode.DOCUMENT_OVERLAY, document, info_visible=info_visible, strip_visible=True
+        source, current, OverlayMode.DOCUMENT_OVERLAY, document, info_visible=info_visible, strip_visible=True
     )
     qtbot.addWidget(lightbox)
     lightbox.reveal()
@@ -138,7 +138,7 @@ def test_a_source_without_visibility_shows_no_line(document: QWidget, qtbot: QtB
     lightbox = CuratingImageLightbox(
         source,  # type: ignore[arg-type]
         0,
-        ImageViewerMode.DOCUMENT_OVERLAY,
+        OverlayMode.DOCUMENT_OVERLAY,
         document,
         info_visible=True,
     )

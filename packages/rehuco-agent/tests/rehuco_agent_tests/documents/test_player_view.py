@@ -50,11 +50,13 @@ from .player_view_support import (  # pylint: disable=unused-import
     path_of,
     picture,
     player_of,
+    show_first_frame,
     shown_of,
     sink_of,
     slider_of,
     start_playing,
     still_of,
+    widget_frame,
 )
 
 CLEARED = call(QUrl())
@@ -324,7 +326,8 @@ def test_a_video_loaded_paused_is_opened_for_a_frame_and_let_go_of(
     * keep a partial progress, and load the video as the dock does
     * verify it is open, was sought to where it was left once it buffered, and is still held
     * give the frame at that position
-    * verify the player was stopped and its source cleared, the frame is shown, and the bar is unchanged
+    * verify the player was stopped and its source cleared, the frame is on the video widget, shown, and the bar is
+      unchanged
     """
     progress["02.mp4"] = ProgressEntry(30.0, 100.0)
     player = load_paused(view, model, "02.mp4")
@@ -335,8 +338,8 @@ def test_a_video_loaded_paused_is_opened_for_a_frame_and_let_go_of(
 
     assert let_go(media)
     media.stop.assert_called_once_with()
-    assert still_of(view).image is not None
-    assert shown_of(view) is still_of(view)
+    assert widget_frame(view).isValid()
+    assert shown_of(view).objectName() == "video_widget"
     assert slider_of(view).value() == 30_000
     assert player_of(view) is player
 
@@ -441,14 +444,14 @@ def test_pausing_lets_go_of_the_file_and_keeps_a_frame_and_the_position(
     media: Media,
     recorder: WatchProgressRecorder,
 ) -> None:
-    """A paused video holds nothing: where it is is recorded, a frame of it stays on the surface, and the source is
-    cleared.
+    """A paused video holds nothing: where it is is recorded, its last frame stays on the video widget -- the same
+    widget, so the picture neither shifts nor flashes (#574) -- and the source is cleared.
 
     **Test steps:**
 
-    * play a video, with the player at 33 s and a frame on the sink, and press play/pause
+    * play a video, with the player at 33 s and a frame handed on, and press play/pause
     * verify the position was noted and flushed, the player stopped and its source cleared
-    * verify the frame is shown, the bar reads 33 s, and the button offers play
+    * verify the video widget is still shown with the frame, the bar reads 33 s, and the button offers play
     """
     start_playing(view, "02.mp4")
     sink_of(view).setVideoFrame(picture())
@@ -460,8 +463,8 @@ def test_pausing_lets_go_of_the_file_and_keeps_a_frame_and_the_position(
     assert recorder.mock_calls == [call.position("02.mp4", 33.0, 100.0), call.flush()]  # type: ignore[attr-defined]
     assert let_go(media)
     media.stop.assert_called_once_with()
-    assert shown_of(view) is still_of(view)
-    assert still_of(view).image is not None
+    assert shown_of(view).objectName() == "video_widget"
+    assert widget_frame(view).isValid()
     assert (slider_of(view).value(), label_text(view, "time_label")) == (33_000, "0:33 / 1:40")
     assert action_of(view, "play_pause_action").text() == "Play"
 
@@ -470,7 +473,8 @@ def test_playing_again_opens_the_video_where_it_was_paused(view: PlayerView, med
     """**Test steps:**
 
     * play a video, pause it at 33 s, and press play
-    * verify the video was opened again and played, and sought to 33 s once it buffered, and the video is shown
+    * verify the video was opened again and played, and sought to 33 s once it buffered, and the video is shown once
+      a frame of it arrives
     """
     player = start_playing(view, "02.mp4")
     media.position.return_value = 33_000
@@ -485,6 +489,8 @@ def test_playing_again_opens_the_video_where_it_was_paused(view: PlayerView, med
     media.set_source.assert_called_once_with(QUrl.fromLocalFile(str(path_of("02.mp4"))))
     media.play.assert_called_once_with()
     media.set_position.assert_called_once_with(33_000)
+    assert shown_of(view) is still_of(view)
+    show_first_frame(view)
     assert shown_of(view) is not still_of(view)
     assert action_of(view, "play_pause_action").text() == "Play"
 
@@ -495,7 +501,8 @@ def test_playing_a_video_still_held_for_its_frame_carries_on_without_opening_it_
     """**Test steps:**
 
     * load a video, held for its frame, and press play before the frame came
-    * verify it was played without being opened a second time, the video is shown, and its positions are now recorded
+    * verify it was played without being opened a second time, the video is shown once a frame of it arrives, and its
+      positions are now recorded
     """
     player = load_paused(view, model, "02.mp4")
 
@@ -505,6 +512,7 @@ def test_playing_a_video_still_held_for_its_frame_carries_on_without_opening_it_
 
     media.set_source.assert_called_once()
     media.play.assert_called_once_with()
+    show_first_frame(view)
     assert shown_of(view) is not still_of(view)
     recorder.position.assert_called_once_with("02.mp4", 5.0, 100.0)  # type: ignore[attr-defined]
 
@@ -556,7 +564,8 @@ def test_jumping_to_a_video_plays_it_from_where_it_was_left(
     """**Test steps:**
 
     * keep a partial progress for the second video and jump to it, as a double-click does
-    * verify it was opened and played, the video is shown, and it is sought to where it was left once it buffers
+    * verify it was opened and played, the video is shown once a frame of it arrives, and it is sought to where it
+      was left once it buffers
     """
     progress["02.mp4"] = ProgressEntry(30.0, 100.0)
 
@@ -566,6 +575,7 @@ def test_jumping_to_a_video_plays_it_from_where_it_was_left(
     media.play.assert_called_once_with()
     media.pause.assert_not_called()
     media.set_position.assert_called_once_with(30_000)
+    show_first_frame(view)
     assert shown_of(view) is not still_of(view)
     assert label_text(view, "title_label") == "02.mp4"
     assert player_of(view) is player
@@ -1318,7 +1328,7 @@ def test_a_rename_of_this_resource_pauses_a_playing_video_first(
 
     assert recorder.mock_calls == [call.position("02.mp4", 33.0, 100.0), call.flush()]  # type: ignore[attr-defined]
     assert let_go(media)
-    assert shown_of(view) is still_of(view)
+    assert shown_of(view).objectName() == "video_widget"
     assert slider_of(view).value() == 33_000
 
 

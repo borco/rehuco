@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QCheckBox, QColorDialog, QFrame, QPushButton, QRad
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
+from rehuco_agent.fields.widgets.overlay_surface import OverlayMode
 from rehuco_agent.settings import image_viewer_settings, markdown_rendering_settings
 from rehuco_agent.settings.deletion_settings import (
     DeletionSettings,
@@ -94,16 +94,16 @@ def page(qtbot: QtBot) -> ImagesDisplayPage:
 # endregion
 
 
-RADIO_BUTTON_NAMES: dict[ImageViewerMode, str] = {
-    ImageViewerMode.DOCUMENT_OVERLAY: "document_overlay_radio_button",
-    ImageViewerMode.APP_WINDOW_OVERLAY: "app_window_overlay_radio_button",
-    ImageViewerMode.FULL_SCREEN: "full_screen_radio_button",
+RADIO_BUTTON_NAMES: dict[OverlayMode, str] = {
+    OverlayMode.DOCUMENT_OVERLAY: "document_overlay_radio_button",
+    OverlayMode.APP_WINDOW_OVERLAY: "app_window_overlay_radio_button",
+    OverlayMode.FULL_SCREEN: "full_screen_radio_button",
 }
 """Each surface's radio button in ``images_display_page.ui``, so a test stages a choice the way a
 user does -- by checking the button -- rather than by reaching into the page."""
 
 
-def check(page: ImagesDisplayPage, mode: ImageViewerMode) -> None:
+def check(page: ImagesDisplayPage, mode: OverlayMode) -> None:
     """Check ``mode``'s radio button on ``page``, as a user clicking it would.
 
     :param page: the page under test.
@@ -123,7 +123,7 @@ def test_the_page_starts_on_the_shared_settings_mode(page: ImagesDisplayPage) ->
     * verify it reports no pending change
     """
     assert not page.is_dirty()
-    assert shared_image_viewer_settings().mode == ImageViewerMode.DOCUMENT_OVERLAY
+    assert shared_image_viewer_settings().mode == OverlayMode.DOCUMENT_OVERLAY
 
 
 def test_choosing_another_surface_makes_the_page_dirty(page: ImagesDisplayPage) -> None:
@@ -134,10 +134,10 @@ def test_choosing_another_surface_makes_the_page_dirty(page: ImagesDisplayPage) 
     * check the full-screen radio button
     * verify the page is dirty and the shared settings are untouched
     """
-    check(page, ImageViewerMode.FULL_SCREEN)
+    check(page, OverlayMode.FULL_SCREEN)
 
     assert page.is_dirty()
-    assert shared_image_viewer_settings().mode == ImageViewerMode.DOCUMENT_OVERLAY
+    assert shared_image_viewer_settings().mode == OverlayMode.DOCUMENT_OVERLAY
 
 
 def test_save_changes_pushes_the_chosen_surface_into_the_shared_settings(page: ImagesDisplayPage) -> None:
@@ -148,11 +148,11 @@ def test_save_changes_pushes_the_chosen_surface_into_the_shared_settings(page: I
     * stage the app-window overlay and apply
     * verify the shared settings now name it, and a reload from storage agrees
     """
-    check(page, ImageViewerMode.APP_WINDOW_OVERLAY)
+    check(page, OverlayMode.APP_WINDOW_OVERLAY)
 
     page.save_changes()
 
-    assert shared_image_viewer_settings().mode == ImageViewerMode.APP_WINDOW_OVERLAY
+    assert shared_image_viewer_settings().mode == OverlayMode.APP_WINDOW_OVERLAY
     assert not page.is_dirty()
 
 
@@ -164,7 +164,7 @@ def test_drop_changes_reverts_to_the_saved_surface(page: ImagesDisplayPage) -> N
     * stage the full-screen surface without applying, then reset
     * verify the page is back on the saved (document-overlay) surface
     """
-    check(page, ImageViewerMode.FULL_SCREEN)
+    check(page, OverlayMode.FULL_SCREEN)
     assert page.is_dirty()
 
     page.drop_changes()
@@ -191,7 +191,7 @@ def test_no_surface_checked_falls_back_to_the_default(page: ImagesDisplayPage) -
 
     page.save_changes()
 
-    assert shared_image_viewer_settings().mode == ImageViewerMode.DOCUMENT_OVERLAY
+    assert shared_image_viewer_settings().mode == OverlayMode.DOCUMENT_OVERLAY
 
 
 def test_the_surface_group_is_filterable_by_its_captions(page: ImagesDisplayPage) -> None:
@@ -326,7 +326,7 @@ def test_save_changes_pushes_every_choice_into_the_shared_settings(page: ImagesD
     * stage a surface, both toggles, and all three heights, then apply
     * verify the shared settings carry every one of them
     """
-    check(page, ImageViewerMode.FULL_SCREEN)
+    check(page, OverlayMode.FULL_SCREEN)
     strip_check_box(page).setChecked(True)
     wrap_check_box(page).setChecked(True)
     spin_box(page, "preview_height_spin_box").setValue(200)
@@ -336,7 +336,7 @@ def test_save_changes_pushes_every_choice_into_the_shared_settings(page: ImagesD
     page.save_changes()
 
     settings = shared_image_viewer_settings()
-    assert settings.mode == ImageViewerMode.FULL_SCREEN
+    assert settings.mode == OverlayMode.FULL_SCREEN
     assert settings.strip_visible is True
     assert settings.preview_wrap is True
     assert settings.preview_image_height == 200
@@ -383,7 +383,7 @@ def test_seed_defaults_stages_the_factory_values_over_saved_ones(qtbot: QtBot) -
     """
     factory = ImageViewerSettings()
     settings = shared_image_viewer_settings()
-    settings.mode = ImageViewerMode.FULL_SCREEN
+    settings.mode = OverlayMode.FULL_SCREEN
     settings.strip_visible = not factory.strip_visible
     settings.preview_image_height = factory.preview_image_height + 20
     settings.lightbox_backdrop = "#123456"
@@ -773,7 +773,7 @@ def test_the_page_neither_reads_nor_writes_the_files_pages_settings(
     shared_deletion_settings().use_recycle_bin = False
     assert not page.is_dirty()
 
-    check(page, ImageViewerMode.FULL_SCREEN)
+    check(page, OverlayMode.FULL_SCREEN)
     page.save_changes()
 
     files_save.assert_not_called()

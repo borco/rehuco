@@ -14,8 +14,8 @@ from rehuco_agent.fields.widgets import (
     CuratingImageLightbox,
     ImageExporter,
     ImageLightbox,
-    ImageViewerMode,
     ImageVisibility,
+    OverlayMode,
     PathImageSource,
     ScreenshotRowsImageSource,
 )
@@ -78,7 +78,7 @@ def open_viewer(qtbot: QtBot, document: QWidget, resource: Path, exporter: Image
     """
     images = [resource / "screenshots" / "a.png", resource / "screenshots" / "b.png"]
     viewer = ImageLightbox(
-        PathImageSource(images, resource), 0, ImageViewerMode.DOCUMENT_OVERLAY, document, exporter=exporter
+        PathImageSource(images, resource), 0, OverlayMode.DOCUMENT_OVERLAY, document, exporter=exporter
     )
     viewer.reveal()
     qtbot.waitUntil(lambda: viewer.width() == document.width() and not picture_rect(viewer).isEmpty())
@@ -361,7 +361,7 @@ def test_a_right_click_on_a_thumbnail_of_the_viewers_row_offers_no_menu(
     viewer = ImageLightbox(
         PathImageSource(images, resource),
         0,
-        ImageViewerMode.DOCUMENT_OVERLAY,
+        OverlayMode.DOCUMENT_OVERLAY,
         document,
         strip_visible=True,
         exporter=ImageExporter(staging, lambda: ID),
@@ -399,7 +399,7 @@ def test_the_curating_viewer_copies_too(
     viewer = CuratingImageLightbox(
         ScreenshotRowsImageSource(rows, resource),
         0,
-        ImageViewerMode.DOCUMENT_OVERLAY,
+        OverlayMode.DOCUMENT_OVERLAY,
         document,
         exporter=ImageExporter(staging, lambda: ID),
     )
@@ -431,7 +431,7 @@ def test_a_thumbnail_dragged_out_of_the_viewers_row_is_taken_out_too(
     viewer = ImageLightbox(
         PathImageSource(images, resource),
         0,
-        ImageViewerMode.DOCUMENT_OVERLAY,
+        OverlayMode.DOCUMENT_OVERLAY,
         document,
         strip_visible=True,
         exporter=ImageExporter(staging, lambda: ID),

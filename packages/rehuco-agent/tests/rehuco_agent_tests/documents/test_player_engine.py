@@ -2,6 +2,7 @@
 
 from unittest.mock import Mock
 
+from PySide6.QtMultimedia import QMediaPlayer, QVideoSink
 from PySide6.QtWidgets import QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -11,15 +12,16 @@ from rehuco_agent.documents.vlc_surface import VlcSurface
 from rehuco_agent.settings.videos_settings import VLC_PLAYER, shared_videos_settings
 
 
-def holder(qtbot: QtBot) -> PlayerEngine:
+def holder(qtbot: QtBot, sink: QVideoSink | None = None) -> PlayerEngine:
     """An engine holder over an owner widget with both pages.
 
     :param qtbot: pytest-qt fixture.
+    :param sink: where Qt's player is to decode into; one of the owner's when ``None``.
     :returns: the holder.
     """
     owner = QWidget()
     qtbot.addWidget(owner)
-    return PlayerEngine(owner, QWidget(owner), VlcSurface(owner))
+    return PlayerEngine(owner, QWidget(owner), VlcSurface(owner), sink if sink is not None else QVideoSink(owner))
 
 
 def test_before_anything_is_built_there_is_nothing_to_drop_or_set(qtbot: QtBot) -> None:
@@ -46,7 +48,8 @@ def test_the_volume_reaches_whichever_engine_is_built(qtbot: QtBot, mocker: Mock
     * choose VLC with a loaded library, build again and set the volume; verify the libvlc engine got it
     """
     audio = mocker.patch.object(player_engine, "QAudioOutput").return_value
-    mocker.patch.object(player_engine, "QMediaPlayer")
+    # the player answers the output it was given, as a real one does
+    mocker.patch.object(player_engine, "QMediaPlayer").return_value.audioOutput.return_value = audio
     vlc_player = mocker.patch.object(player_engine, "VlcMediaPlayer").return_value
     library = Mock(available=True, reason=None)
     mocker.patch.object(player_engine, "shared_vlc_library", return_value=library)
@@ -63,3 +66,21 @@ def test_the_volume_reaches_whichever_engine_is_built(qtbot: QtBot, mocker: Mock
     assert engine.vlc
     vlc_player.setVolume.assert_called_with(0.75)
     audio.deleteLater.assert_called_once_with()
+
+
+def test_qts_player_decodes_into_the_sink_it_was_given(qtbot: QtBot) -> None:
+    """The view hands the frames on from there, so a pause can hold the last one on the video widget (#574).
+
+    **Test steps:**
+
+    * build Qt's engine over a sink
+    * verify the player decodes into that sink
+    """
+    sink = QVideoSink()
+    engine = holder(qtbot, sink)
+
+    player = engine.ensure(1.0, 1.0, lambda _player: None)
+
+    assert isinstance(player, QMediaPlayer)
+    assert player.videoSink() is sink
+    engine.drop()

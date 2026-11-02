@@ -54,6 +54,25 @@ def test_a_frame_is_painted_to_fit_and_centred_on_black(qtbot: QtBot) -> None:
     assert QColor(picture.pixel(195, 50)) == QColor(0, 0, 0)
 
 
+def test_a_frame_is_scaled_smoothly(qtbot: QtBot) -> None:
+    """As the still a pause shows is: scaled by repeating pixels, a scale near 1 draws some rows and columns twice.
+
+    **Test steps:**
+
+    * show a 2x1 frame, black then white, on a 200x100 surface
+    * verify the seam between them is grey, which only a smoothed scale draws
+    """
+    surface = shown(qtbot)
+    frame = QImage(2, 1, QImage.Format.Format_RGB32)
+    frame.setPixelColor(0, 0, QColor(0, 0, 0))
+    frame.setPixelColor(1, 0, QColor(255, 255, 255))
+
+    surface.set_frame(frame)
+    picture = surface.grab().toImage()
+
+    assert 0 < QColor(picture.pixel(100, 50)).red() < 255
+
+
 def test_an_ordinary_widget_can_be_drawn_over_the_surface(qtbot: QtBot) -> None:
     """The point of painting the frames: the surface has no native window, so a sibling widget shows over it.
 

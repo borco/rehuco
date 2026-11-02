@@ -52,8 +52,8 @@ class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
         """What each editor was last given -- by whether it is the video's -- so a changed editor is the user's."""
         self.__searching = False
         """Whether the video shown is still being looked for among the renamed ones: its editor waits."""
-        self.__pending_note: tuple[float, bool] | None = None
-        """A bookmark asked for while the search was out -- its time, and whether to edit -- added once it answers."""
+        self.__pending_note: float | None = None
+        """The time of a bookmark asked for while the search was out, added once it answers."""
 
         self.__ui: Final = Ui_NotesPanel()
         self.__ui.setupUi(self)
@@ -115,38 +115,32 @@ class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__searching = False
         self.__show()
 
-    def add_note(self, key: str, seconds: float, *, edit: bool = True) -> None:
+    def add_note(self, key: str, seconds: float) -> None:
         """Add a bookmark to a video's notes at a time, among its other bookmarks in time order.
 
-        By default the notes open in the editor with the caret at the end of the new line. Without ``edit`` the line is
-        only recorded: into the editor's text, written at once, if the notes are being edited, else straight into the
-        video's notes, with no change of mode and no focus taken.
+        The line is only recorded -- into the editor's text, written at once, while the notes are being edited, else
+        straight into the video's notes -- with no change of mode and no focus taken (#574).
 
         :param key: the video's content key.
         :param seconds: the time the bookmark is at.
-        :param edit: whether to open the notes for editing at the new line.
         """
         if key != self.__key:
             self.set_video(key)
         if self.__searching:
-            # the editor shows, disabled, until the search answers; the line is added then
-            self.__pending_note = (seconds, edit)
-            if edit:
-                self.__ui.edit_action.setChecked(True)
+            # added once the search answers
+            self.__pending_note = seconds
             return
         line = f"- [{clock_text(int(seconds * 1000))}]({video_href(key, seconds)}) "
-        if edit:
-            self.__ui.edit_action.setChecked(True)
-        if edit or self.__editing:
+        if self.__editing:
+            # inserted, not set whole: the caret, the selection and the undo history of the edit in progress stay
             editor = self.__video_edit
-            text, end = insert_bookmark(self.__text(editor), line, seconds)
-            editor.setText(text)
-            if edit:
-                # Scintilla's positions count bytes, not characters
-                editor.gotoPos(len(text[:end].encode("utf-8")))
-                QWidget.setFocus(editor)
-            else:
-                self.flush()
+            before = self.__text(editor)
+            text, _ = insert_bookmark(before, line, seconds)
+            # one chunk went in -- the line, with a newline before or after it -- where the two first differ
+            start = next((at for at, (old, new) in enumerate(zip(before, text)) if old != new), len(before))
+            # Scintilla's positions count bytes, not characters
+            editor.insertText(len(text[:start].encode("utf-8")), text[start : start + len(text) - len(before)])
+            self.flush()
             return
         text, _ = insert_bookmark(self.__model.video_notes_of(key), line, seconds)
         self.__model.record_notes(video_notes={key: text})
@@ -267,8 +261,7 @@ class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__show()
         pending, self.__pending_note = self.__pending_note, None
         if pending is not None and self.__key is not None:
-            seconds, edit = pending
-            self.add_note(self.__key, seconds, edit=edit)
+            self.add_note(self.__key, pending)
 
     def __on_notes_changed(self) -> None:
         """Show the notes again after they changed -- a write landing, a rename search finding them: an editor the user

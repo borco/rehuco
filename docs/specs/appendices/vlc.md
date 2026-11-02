@@ -214,9 +214,9 @@ PositionChanged, TimeChanged     then about every 500 ms
 
 [[[appendices.vlc#overlay]]]
 
-What the maximized player's `I`, `T` and `N` overlays ([[plugins#player-maximized]]) will meet: libvlc draws into a
-native child window, and Windows composes native windows, not Qt widgets. Measured with a label raised over a playing
-surface and a screen grab of the window:
+What overlays drawn over the maximized player's picture would have met: libvlc drew into a native child window, and
+Windows composes native windows, not Qt widgets. Measured with a label raised over a playing surface and a screen grab
+of the window:
 
 | Overlay | Result |
 | --- | --- |
@@ -226,9 +226,10 @@ surface and a screen grab of the window:
 | A frameless, translucent top-level window placed over the surface | drawn over the video **with transparency** |
 
 This is why libvlc renders into memory (section 6): the picture is then an ordinary widget and the table does not
-apply to it. It still describes `QVideoWidget`, which holds a native window too, so the Qt engine is where libvlc
-was until it, too, paints its frames (`QVideoSink` into the same painted surface) -- the thing to do before the
-overlays are built ([[plugins#player-maximized]]).
+apply to it. It still describes `QVideoWidget`, which holds a native window too. **The player's `I`, `T` and `N` are
+panels beside the picture instead** (owner, #574): the video shrinks to make room and nothing is drawn on it, so the Qt
+engine keeps its `QVideoWidget` and never pays a frame conversion on the GUI thread
+([[plugins#player-maximized]]).
 
 ## 6. Rendering into memory
 
@@ -256,5 +257,9 @@ libvlc 4's. The dock uses memory, so that its picture is an ordinary widget.
   **67 % of one core (6 % of the machine)**; 100 % of one core with smooth scaling, or with libvlc scaling to the
   window itself (an 11 MB buffer). Memory is one buffer of the picture's size (8 MB at 1080p) and the copies in
   flight.
+- **The surface scales smoothly** (#574), as the still a pause shows does: unsmoothed, a scale near 1 drew some rows
+  and columns twice, which the owner saw as a doubled, jagged picture that got better on pause. Measured again with the
+  player maximized (2734x1007 of picture), smoothed against unsmoothed: **60.0 fps both**, the paint 3.0 ms against
+  2.9 ms, the whole process **132 % of one core against 74 %** (about 11 % of the machine against 6 %).
 - **What it changes for the player**: no native window, so any widget can be drawn over the picture; the still of a
   pause is the last frame, with no snapshot and no `PrintWindow`; and the engine is the same on every OS.

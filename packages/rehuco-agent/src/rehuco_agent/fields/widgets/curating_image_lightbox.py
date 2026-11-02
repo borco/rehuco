@@ -14,9 +14,10 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import QWidget
 
-from .image_lightbox import ImageLightbox, ImageViewerMode
+from .image_lightbox import ImageLightbox
 from .image_selector import MoveDirection
 from .image_source import ImageDescription, ImageVisibility, ScreenshotKey, ScreenshotRowsImageSource
+from .overlay_surface import OverlayMode
 
 MOVE_KEYS: Final = {
     Qt.Key.Key_Home: MoveDirection.TOP,
@@ -72,7 +73,7 @@ class CuratingImageLightbox(ImageLightbox):
         self,
         source: ScreenshotRowsImageSource,
         current: int,
-        mode: ImageViewerMode,
+        mode: OverlayMode,
         document: QWidget,
         **options: Any,
     ) -> None:

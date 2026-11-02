@@ -62,10 +62,14 @@ class VlcMediaPlayer(QObject):
     and, since libvlc then stays *Ended* and ignores ``play()``, a stop is made before any replay;
     ``EncounteredError`` is ``errorOccurred``.
 
-    **A paused load** (:meth:`pause` before anything played) plays muted until the first frame **at the position asked
-    for** -- the first picture libvlc decodes is the file's start, ahead of the seek the view makes as the video
-    buffers -- then pauses and emits :attr:`still_ready` with it; the view then lets the file go, as it does with a
-    frame from Qt's sink. **A pause while playing** keeps the file held, which is the view's business.
+    **A paused load** (:meth:`pause` before anything played) opens the file with ``:no-audio`` -- libvlc then decodes
+    no audio track at all (measured) -- and plays until the first frame **at the position asked for** (the first picture
+    libvlc decodes is the file's start, ahead of the seek the view makes as the video buffers), then pauses and emits
+    :attr:`still_ready` with it; the view then lets the file go, as it does with a frame from Qt's sink. Played before
+    that, the file is opened again with its audio, at the position (``:start-time``). **Nothing is ever muted**: libvlc
+    takes a mute or an unmute only while its audio output lives, so a load muted around it let a blip, then seconds,
+    of sound out at the start, and an unmute after the view's stop was lost and left the next video silent (owner,
+    measured: #574). **A pause while playing** keeps the file held, which is the view's business.
 
     **libvlc's objects are released** by :meth:`close`: the media each time another replaces it, and the player and the
     instance when the view lets the engine go; the event callbacks are attached to one event manager kept for as long
@@ -114,7 +118,8 @@ class VlcMediaPlayer(QObject):
         self.__visible: tuple[int, int] | None = None
         """The video's visible size, read once it plays; the decoder's buffer is padded past it."""
         self.__grabbing = False
-        """Whether a paused load is under way: playing muted until the first frame at the position asked for."""
+        """Whether a paused load is under way: playing, without audio, until the first frame at the position asked
+        for."""
         self.__wanted_ms: int | None = None
         """The position a paused load was seeked to, which its still must be at; ``None`` when none was asked."""
         self.__ended = False
@@ -143,10 +148,7 @@ class VlcMediaPlayer(QObject):
             self.__release_media()
             self.__set_status(QMediaPlayer.MediaStatus.NoMedia)
             return
-        media = self.__instance.media_new(url.toLocalFile())
-        self.__player.set_media(media)
-        self.__release_media()
-        self.__media = media
+        self.__open_media()
         self.__duration_ms = 0
         self.__visible = None
         self.__set_status(QMediaPlayer.MediaStatus.LoadingMedia)
@@ -163,31 +165,37 @@ class VlcMediaPlayer(QObject):
         if self.__media is None:
             return
         if self.__grabbing:
+            # opened without audio for its still: opened again with it, where the load had got to
             self.__grabbing = False
+            start_ms = self.__wanted_ms if self.__wanted_ms is not None else self.position()
             self.__wanted_ms = None
-            self.__player.audio_set_mute(False)
-            self.__player.set_pause(0)
+            self.__epoch += 1
+            self.__sink.epoch = self.__epoch
+            self.__open_media(f":start-time={start_ms / 1000:.3f}")
+            self.__player.play()
             return
         if self.__ended:
             self.__player.stop()
             self.__ended = False
-        self.__player.audio_set_mute(False)
         self.__player.play()
 
     def pause(self) -> None:
-        """Pause a playing file; before anything played, load it paused: play muted until the first frame.
+        """Pause a playing file; before anything played, load it paused: play it without audio until the first frame.
 
         libvlc itself is asked whether it plays, not the state that queued events have reached, so a pause right after
         a resume pauses rather than starting a muted load.
         """
         if self.__media is None:
             return
+        if self.__grabbing:
+            # a paused load is a pause already: paused half-way, it would give no still
+            return
         if self.__state == QMediaPlayer.PlaybackState.PlayingState or self.__player.is_playing():
             self.__player.set_pause(1)
             return
         self.__grabbing = True
         self.__wanted_ms = None
-        self.__player.audio_set_mute(True)
+        self.__open_media(":no-audio")
         self.__player.play()
 
     def stop(self) -> None:
@@ -410,7 +418,6 @@ class VlcMediaPlayer(QObject):
             self.__grabbing = False
             self.__wanted_ms = None
             self.__player.set_pause(1)
-            self.__player.audio_set_mute(False)
             self.still_ready.emit(frame)
 
     def __at_wanted_position(self) -> bool:
@@ -419,6 +426,16 @@ class VlcMediaPlayer(QObject):
         :returns: ``True`` when no seek was asked, or the player is within the tolerance of it.
         """
         return self.__wanted_ms is None or abs(self.position() - self.__wanted_ms) <= SEEK_TOLERANCE_MS
+
+    def __open_media(self, *options: str) -> None:
+        """Open the source as a new media, with libvlc options, in place of the one held.
+
+        :param options: the media's options, ``:no-audio`` or ``:start-time=…``.
+        """
+        media = self.__instance.media_new(self.__source.toLocalFile(), *options)
+        self.__player.set_media(media)
+        self.__release_media()
+        self.__media = media
 
     def __release_media(self) -> None:
         """Release the media held, if any."""

@@ -131,3 +131,16 @@ def test_a_video_resumes_where_it_was_left_unless_it_was_watched(entry: Progress
     * verify a partial one resumes, and an unopened or viewed one starts at 0
     """
     assert PlayerPlaylist.start_position(entry) == expected
+
+
+def test_the_playlist_says_where_its_video_stands() -> None:
+    """**Test steps:**
+
+    * build a playlist on its second video of three
+    * verify it stands second of three, and third after a step forward
+    """
+    playlist = PlayerPlaylist([("a.mp4", Path("a.mp4")), ("b.mp4", Path("b.mp4")), ("c.mp4", Path("c.mp4"))], "b.mp4")
+
+    assert (playlist.position, playlist.count) == (2, 3)
+    playlist.step(1)
+    assert (playlist.position, playlist.count) == (3, 3)
