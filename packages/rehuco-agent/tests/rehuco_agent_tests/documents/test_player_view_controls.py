@@ -14,6 +14,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.commands import (
     PLAYER_BACK,
     PLAYER_FORWARD,
+    PLAYER_INFO,
     PLAYER_NEXT,
     PLAYER_PLAY_PAUSE,
     PLAYER_PREVIOUS,
@@ -24,10 +25,9 @@ from rehuco_agent.commands import (
     PLAYER_VOLUME_DOWN,
     PLAYER_VOLUME_UP,
 )
-from rehuco_agent.documents import player_view
-from rehuco_agent.documents.player_notices import AV1_LIBRARIES_HINT
+from rehuco_agent.documents import player_notices
+from rehuco_agent.documents.player_notices import AV1_LIBRARIES_HINT, AV1_NOTICE
 from rehuco_agent.documents.player_view import (
-    AV1_NOTICE,
     ERROR_NOTICE,
     INTERLACED_NOTICE,
     SPEEDS,
@@ -75,6 +75,7 @@ from .player_view_support import (  # pylint: disable=unused-import
         param("next_action", PLAYER_NEXT, id="next"),
         param("to_start_action", PLAYER_TO_START, id="to the start"),
         param("to_end_action", PLAYER_TO_END, id="to the end"),
+        param("info_action", PLAYER_INFO, id="info"),
         param("volume_up_action", PLAYER_VOLUME_UP, id="volume up"),
         param("volume_down_action", PLAYER_VOLUME_DOWN, id="volume down"),
         param("speed_up_action", PLAYER_SPEED_UP, id="speed up"),
@@ -249,7 +250,7 @@ def test_an_av1_video_that_shows_no_picture_is_explained(
     * play an AV1 video that buffers and plays, but gives no frame within the time allowed
     * verify a notice explains why it shows nothing, with no other way offered
     """
-    mocker.patch.object(player_view, "EXTERNAL_TOOLS", {})
+    mocker.patch.object(player_notices, "EXTERNAL_TOOLS", {})
     listing.formats["01.mp4"] = VideoFormat("AV1", interlaced=False)
     view = make_view(qtbot, model, recorder, no_frame_ms=SHORT_MS)
     start_playing(view)
@@ -272,8 +273,8 @@ def test_an_av1_notice_offers_the_ffmpeg_libraries_when_they_could_be_set_up(
     * verify the notice adds that an external FFmpeg's libraries would play it, with a button
     * press the button and verify the player asks for the Tools page
     """
-    mocker.patch.object(player_view, "EXTERNAL_TOOLS", {FFMPEG_LIBRARIES_TOOL.ID: FFMPEG_LIBRARIES_TOOL})
-    mocker.patch.object(player_view, "shared_playback_libraries", return_value=SimpleNamespace(loaded_from=None))
+    mocker.patch.object(player_notices, "EXTERNAL_TOOLS", {FFMPEG_LIBRARIES_TOOL.ID: FFMPEG_LIBRARIES_TOOL})
+    mocker.patch.object(player_notices, "shared_playback_libraries", return_value=SimpleNamespace(loaded_from=None))
     listing.formats["01.mp4"] = VideoFormat("AV1", interlaced=False)
     view = make_view(qtbot, model, recorder, no_frame_ms=SHORT_MS)
     start_playing(view)
@@ -297,9 +298,9 @@ def test_an_av1_notice_does_not_offer_libraries_this_run_already_uses(
     * play an AV1 video that gives no frame
     * verify the plain notice, with no button
     """
-    mocker.patch.object(player_view, "EXTERNAL_TOOLS", {FFMPEG_LIBRARIES_TOOL.ID: FFMPEG_LIBRARIES_TOOL})
+    mocker.patch.object(player_notices, "EXTERNAL_TOOLS", {FFMPEG_LIBRARIES_TOOL.ID: FFMPEG_LIBRARIES_TOOL})
     mocker.patch.object(
-        player_view, "shared_playback_libraries", return_value=SimpleNamespace(loaded_from=Path("/ffmpeg/bin"))
+        player_notices, "shared_playback_libraries", return_value=SimpleNamespace(loaded_from=Path("/ffmpeg/bin"))
     )
     listing.formats["01.mp4"] = VideoFormat("AV1", interlaced=False)
     view = make_view(qtbot, model, recorder, no_frame_ms=SHORT_MS)

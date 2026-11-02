@@ -50,6 +50,7 @@ from .player_view_support import (  # pylint: disable=unused-import
     path_of,
     picture,
     player_of,
+    show_first_frame,
     shown_of,
     sink_of,
     slider_of,
@@ -470,7 +471,8 @@ def test_playing_again_opens_the_video_where_it_was_paused(view: PlayerView, med
     """**Test steps:**
 
     * play a video, pause it at 33 s, and press play
-    * verify the video was opened again and played, and sought to 33 s once it buffered, and the video is shown
+    * verify the video was opened again and played, and sought to 33 s once it buffered, and the video is shown once
+      a frame of it arrives
     """
     player = start_playing(view, "02.mp4")
     media.position.return_value = 33_000
@@ -485,6 +487,8 @@ def test_playing_again_opens_the_video_where_it_was_paused(view: PlayerView, med
     media.set_source.assert_called_once_with(QUrl.fromLocalFile(str(path_of("02.mp4"))))
     media.play.assert_called_once_with()
     media.set_position.assert_called_once_with(33_000)
+    assert shown_of(view) is still_of(view)
+    show_first_frame(view)
     assert shown_of(view) is not still_of(view)
     assert action_of(view, "play_pause_action").text() == "Play"
 
@@ -495,7 +499,8 @@ def test_playing_a_video_still_held_for_its_frame_carries_on_without_opening_it_
     """**Test steps:**
 
     * load a video, held for its frame, and press play before the frame came
-    * verify it was played without being opened a second time, the video is shown, and its positions are now recorded
+    * verify it was played without being opened a second time, the video is shown once a frame of it arrives, and its
+      positions are now recorded
     """
     player = load_paused(view, model, "02.mp4")
 
@@ -505,6 +510,7 @@ def test_playing_a_video_still_held_for_its_frame_carries_on_without_opening_it_
 
     media.set_source.assert_called_once()
     media.play.assert_called_once_with()
+    show_first_frame(view)
     assert shown_of(view) is not still_of(view)
     recorder.position.assert_called_once_with("02.mp4", 5.0, 100.0)  # type: ignore[attr-defined]
 
@@ -556,7 +562,8 @@ def test_jumping_to_a_video_plays_it_from_where_it_was_left(
     """**Test steps:**
 
     * keep a partial progress for the second video and jump to it, as a double-click does
-    * verify it was opened and played, the video is shown, and it is sought to where it was left once it buffers
+    * verify it was opened and played, the video is shown once a frame of it arrives, and it is sought to where it
+      was left once it buffers
     """
     progress["02.mp4"] = ProgressEntry(30.0, 100.0)
 
@@ -566,6 +573,7 @@ def test_jumping_to_a_video_plays_it_from_where_it_was_left(
     media.play.assert_called_once_with()
     media.pause.assert_not_called()
     media.set_position.assert_called_once_with(30_000)
+    show_first_frame(view)
     assert shown_of(view) is not still_of(view)
     assert label_text(view, "title_label") == "02.mp4"
     assert player_of(view) is player

@@ -377,7 +377,7 @@ def test_a_note_found_by_the_rename_search_replaces_nothing_the_user_typed(
         (f"{LATE}\nsaid late", f"{BOOKMARK_LINE}\n{LATE}\nsaid late"),
     ],
 )
-def test_add_note_puts_the_bookmark_beside_its_neighbours_in_time_with_the_caret_at_its_end(
+def test_add_note_puts_the_bookmark_beside_its_neighbours_in_time(
     panel: NotesPanel, existing: str, expected: str
 ) -> None:
     """The bookmarks already there are anchors, whatever order the user left them in (#573).
@@ -387,31 +387,29 @@ def test_add_note_puts_the_bookmark_beside_its_neighbours_in_time_with_the_caret
     * show a video holding a text, in edit
     * add a bookmark at 1:05
     * verify it went after the latest earlier bookmark and its text, else before the earliest later one, else at the
-      end; the caret is at the end of the new line, and editing is on
+      end, and editing is still on
     """
     begin_editing(panel)
     video_editor(panel).setText(existing)
 
     panel.add_note(KEY, 65.4)
 
-    editor = video_editor(panel)
-    assert text_of(editor) == expected
-    assert editor.currentPos() == len(expected[: expected.index(BOOKMARK_LINE) + len(BOOKMARK_LINE)].encode("utf-8"))
+    assert text_of(video_editor(panel)) == expected
     assert panel.editing
 
 
-def test_add_note_on_another_video_shows_that_video_first(panel: NotesPanel) -> None:
+def test_add_note_on_another_video_shows_that_video_first(panel: NotesPanel, model: RehuDocumentModel) -> None:
     """**Test steps:**
 
     * show one video and add a note on another
-    * verify the panel shows the other, in edit, with the note
+    * verify the panel shows the other, with the note recorded
     """
     panel.set_video(OTHER)
 
     panel.add_note(KEY, 5.0)
 
     assert panel.video_key == KEY
-    assert text_of(video_editor(panel)).startswith("- [0:05](rehuco-video:01%20Basics/c.mp4#t=5) ")
+    assert model.video_notes_of(KEY).startswith("- [0:05](rehuco-video:01%20Basics/c.mp4#t=5) ")
 
 
 def test_a_link_to_a_video_is_reported_with_its_time(panel: NotesPanel, qtbot: QtBot) -> None:
@@ -537,20 +535,20 @@ def test_the_viewers_render_again_when_the_markdown_settings_change(panel: Notes
         apply.assert_called_once()
 
 
-def test_a_note_added_without_editing_is_recorded_at_once_and_changes_no_mode(
+def test_a_note_added_is_recorded_at_once_and_changes_no_mode(
     panel: NotesPanel, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
     """**Test steps:**
 
-    * record a note on a video and add a bookmark at 1:05 to it without editing, then one at 0:10
+    * record a note on a video and add a bookmark at 1:05 to it, then one at 0:10
     * verify each was recorded at once, the earlier one before the later, nothing is being edited, and the panel shows
       the video
     """
     model.record_notes(video_notes={KEY: "first"})
     record = mocker.spy(model, "record_notes")
 
-    panel.add_note(KEY, 65.0, edit=False)
-    panel.add_note(KEY, 10.0, edit=False)
+    panel.add_note(KEY, 65.0)
+    panel.add_note(KEY, 10.0)
 
     assert model.video_notes_of(KEY) == f"first\n- [0:10](rehuco-video:01%20Basics/c.mp4#t=10) \n{BOOKMARK_LINE}"
     assert record.call_count == 2
@@ -558,19 +556,19 @@ def test_a_note_added_without_editing_is_recorded_at_once_and_changes_no_mode(
     assert panel.video_key == KEY
 
 
-def test_a_note_added_without_editing_while_editing_joins_the_editor_and_is_written_at_once(
+def test_a_note_added_while_editing_joins_the_editor_and_is_written_at_once(
     panel: NotesPanel, model: RehuDocumentModel
 ) -> None:
     """**Test steps:**
 
     * edit a video and type into its editor
-    * add a note at a time without editing
+    * add a note at a time
     * verify the editor holds the typed text and the line, and the document holds both
     """
     begin_editing(panel)
     video_editor(panel).setText("typed")
 
-    panel.add_note(KEY, 65.0, edit=False)
+    panel.add_note(KEY, 65.0)
 
     assert text_of(video_editor(panel)) == f"typed\n{BOOKMARK_LINE}"
     assert model.video_notes_of(KEY) == f"typed\n{BOOKMARK_LINE}"
@@ -601,39 +599,16 @@ def test_the_editor_is_disabled_while_the_search_is_out_and_usable_once_it_answe
     assert video_editor(panel).isEnabled()
 
 
-def test_a_bookmark_asked_for_during_the_search_is_added_once_it_answers(
-    panel: NotesPanel, held_writes: HeldWrites
-) -> None:
-    """**Test steps:**
-
-    * ask for a bookmark on a video with no data while the writer holds the search
-    * verify the notes opened for editing, disabled, with nothing added yet
-    * let the search answer and verify the line is in the editor, with the caret at its end, and the editor usable
-    """
-    panel.add_note(KEY, 65.4)
-
-    editor = video_editor(panel)
-    assert panel.editing
-    assert not editor.isEnabled()
-    assert text_of(editor) == ""
-
-    held_writes.release_all()
-
-    assert editor.isEnabled()
-    assert text_of(editor) == BOOKMARK_LINE
-    assert editor.currentPos() == editor.length()
-
-
-def test_a_bookmark_asked_for_without_editing_during_the_search_is_recorded_once_it_answers(
+def test_a_bookmark_asked_for_during_the_search_is_recorded_once_it_answers(
     panel: NotesPanel, model: RehuDocumentModel, held_writes: HeldWrites
 ) -> None:
     """**Test steps:**
 
-    * ask for a bookmark without editing while the writer holds the search
+    * ask for a bookmark while the writer holds the search
     * verify nothing was recorded and nothing is being edited
     * let the search answer and verify the bookmark was recorded
     """
-    panel.add_note(KEY, 65.4, edit=False)
+    panel.add_note(KEY, 65.4)
 
     assert not panel.editing
     assert model.video_notes_of(KEY) == ""
@@ -645,7 +620,7 @@ def test_a_bookmark_asked_for_without_editing_during_the_search_is_recorded_once
 
 
 def test_switching_video_during_the_search_drops_the_bookmark_asked_for(
-    panel: NotesPanel, held_writes: HeldWrites
+    panel: NotesPanel, model: RehuDocumentModel, held_writes: HeldWrites
 ) -> None:
     """A bookmark belongs to the video it was asked on; shown another before the search answers, it is not added
     to that one.
@@ -660,5 +635,26 @@ def test_switching_video_during_the_search_drops_the_bookmark_asked_for(
 
     held_writes.release_all()
 
-    assert text_of(video_editor(panel)) == ""
+    assert "t=65" not in model.video_notes_of(KEY)
+    assert "t=65" not in model.video_notes_of(OTHER)
     assert panel.video_key == OTHER
+
+
+def test_a_note_added_while_editing_keeps_the_caret_where_it_was(panel: NotesPanel) -> None:
+    """The line is inserted, not the whole text set again, so the edit in progress keeps its caret and its undo.
+
+    **Test steps:**
+
+    * edit a video, type into its editor and put the caret after the second character
+    * add a note at a time, which goes after the typed text
+    * verify the editor holds both, and the caret is still after the second character
+    """
+    begin_editing(panel)
+    editor = video_editor(panel)
+    editor.setText("typed")
+    editor.gotoPos(2)
+
+    panel.add_note(KEY, 65.0)
+
+    assert text_of(editor) == f"typed\n{BOOKMARK_LINE}"
+    assert editor.currentPos() == 2

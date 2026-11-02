@@ -9,6 +9,7 @@ from pymediainfo import MediaInfo
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.fields.widgets.overlay_surface import OverlayMode
 from rehuco_agent.settings import videos_settings
 from rehuco_agent.settings.tools_settings import ToolDetection, shared_tools_settings
 from rehuco_agent.settings.ui import videos_page
@@ -835,25 +836,29 @@ def test_a_tool_change_before_the_page_asked_does_not_check(qtbot: QtBot, fake_t
     fake_tool_locator.resolve.assert_not_called()
 
 
-def test_the_add_note_choice_is_staged_saved_and_dropped(qtbot: QtBot) -> None:
+def test_the_maximize_surface_is_staged_saved_dropped_and_defaulted(qtbot: QtBot) -> None:
     """**Test steps:**
 
-    * verify the choice starts on and the page is clean
-    * clear it and verify the page is dirty, then save and verify the shared settings hold it off
-    * tick it and drop the change and verify it is off again
+    * verify the document's choice starts checked and the page is clean
+    * check the main window's, verify the page is dirty, save, and verify the shared settings hold it
+    * check full-screen and drop the change, and verify the main window's is checked again
+    * stage the defaults and verify the document's is checked
     """
     page = VideosPage()
     qtbot.addWidget(page)
-    box = page_ui(page).add_note_edits_check_box
+    ui = page_ui(page)
 
-    assert box.isChecked() is True
+    assert ui.maximize_document_radio_button.isChecked() is True
     assert page.is_dirty() is False
 
-    box.setChecked(False)
+    ui.maximize_app_window_radio_button.setChecked(True)
     assert page.is_dirty() is True
     page.save_changes()
-    assert shared_videos_settings().add_note_edits is False
+    assert shared_videos_settings().maximize_mode is OverlayMode.APP_WINDOW_OVERLAY
 
-    box.setChecked(True)
+    ui.maximize_full_screen_radio_button.setChecked(True)
     page.drop_changes()
-    assert box.isChecked() is False
+    assert ui.maximize_app_window_radio_button.isChecked() is True
+
+    page.seed_defaults()
+    assert ui.maximize_document_radio_button.isChecked() is True

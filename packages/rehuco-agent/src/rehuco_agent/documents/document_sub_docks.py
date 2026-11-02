@@ -65,7 +65,6 @@ from ..settings.image_viewer_settings import ImageViewerSettings, shared_image_v
 from ..settings.logs_settings import shared_logs_settings
 from ..settings.persistent_settings import staging_folder
 from ..settings.reference_images_settings import shared_reference_images_settings
-from ..settings.videos_settings import shared_videos_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
 from .content_images import ContentDisplayFlags, ContentImagesModel, ContentImagesPanel, ContentImagesView
@@ -1676,7 +1675,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__content_images_dock = self.__add_content_images_dock(self.__content_images_view)
             docks[CONTENT_IMAGES_DOCK_NAME] = self.__content_images_dock
         if PLAYER_DOCK_NAME in names:
-            self.__player_view = PlayerView(self.__model, self.__watch_progress, self.__host.widget)
+            self.__player_view = PlayerView(self.__model, self.__watch_progress, self.__host.widget, self.__host.widget)
             self.__player_view.tools_requested.connect(self.tools_requested)
             self.__player_dock = self.__add_player_dock(self.__player_view)
             docks[PLAYER_DOCK_NAME] = self.__player_dock
@@ -2065,22 +2064,14 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__on_video_clicked(key)
 
     def __on_note_requested(self, key: str, position: float) -> None:
-        """Add a bookmark to a video's notes, as the player's *Add note at* asks (#573): shown in the notes dock in
-        edit, or only recorded, as the Videos page's setting says.
+        """Add a bookmark to a video's notes, as the player's *Add note at* asks (#573): recorded, with the notes dock,
+        its mode and the focus left as they are (#574).
 
         :param key: the content key of the video.
         :param position: the time in seconds the bookmark is at.
         """
-        dock = self.__type_docks.get(NOTES_DOCK_NAME)
-        if (
-            self.__notes_panel is None or dock is None
-        ):  # pragma: no cover  (the player and the dock come and go together)
-            return
-        edit = shared_videos_settings().add_note_edits
-        if edit:
-            dock.toggleView(True)
-            dock.setAsCurrentTab()
-        self.__notes_panel.add_note(key, position, edit=edit)
+        if self.__notes_panel is not None:  # pragma: no branch -- the player and the notes come and go together
+            self.__notes_panel.add_note(key, position)
 
     def __on_notes_toggled(self, visible: bool) -> None:
         """Write what was typed as the notes dock is closed (#573).

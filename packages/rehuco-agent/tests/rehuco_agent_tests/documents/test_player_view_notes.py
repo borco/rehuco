@@ -11,7 +11,6 @@ from pytest import mark
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.player_view import PlayerView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.settings.videos_settings import shared_videos_settings
 
 from .player_view_support import (  # pylint: disable=unused-import
     BUFFERED,
@@ -106,23 +105,29 @@ def test_a_seek_to_another_video_loads_it_paused_at_the_time(view: PlayerView, m
     assert slider_of(view).value() == 65_000
 
 
-def test_adding_a_note_at_the_time_pauses_a_playing_video_and_names_the_time(
+def test_adding_a_note_at_the_time_names_it_and_leaves_the_video_playing(
     view: PlayerView, media: Media, qtbot: QtBot
 ) -> None:
-    """**Test steps:**
+    """A note to write is one pause, by Space or a click, away: *Add note at* never pauses (#574, owner).
+
+    **Test steps:**
 
     * play a video that has reached 42 seconds
     * trigger *Add note at*
-    * verify the video key and the time were reported, and the play action offers to play again
+    * verify the video key and the time were reported, and the video still plays
     """
     start_playing(view, "01.mp4")
     media.position.return_value = 42_000
+    media.pause.reset_mock()
+    media.stop.reset_mock()
 
     with qtbot.waitSignal(view.note_requested) as requested:
         action_of(view, "add_note_at_action").trigger()
 
     assert requested.args == ["01.mp4", 42.0]
-    assert action_of(view, "play_pause_action").text() == "Play"
+    assert action_of(view, "play_pause_action").text() == "Pause"
+    media.pause.assert_not_called()
+    media.stop.assert_not_called()
 
 
 def test_adding_a_note_at_the_time_of_a_paused_video_names_where_it_is(
@@ -173,28 +178,6 @@ def test_the_note_action_names_the_time_it_would_add_the_note_at(view: PlayerVie
     action = action_of(view, "add_note_at_action")
     assert action.text() == "Add note at 1:05"
     assert "1:05" in action.toolTip()
-
-
-def test_adding_a_note_without_the_pause_leaves_the_video_playing_and_names_where_it_is(
-    view: PlayerView, media: Media, qtbot: QtBot
-) -> None:
-    """**Test steps:**
-
-    * switch the pause off, play a video that has reached 42 seconds
-    * trigger *Add note at*
-    * verify the time was reported and the video was not paused
-    """
-    shared_videos_settings().add_note_edits = False
-    start_playing(view, "01.mp4")
-    media.position.return_value = 42_000
-    media.pause.reset_mock()
-
-    with qtbot.waitSignal(view.note_requested) as requested:
-        action_of(view, "add_note_at_action").trigger()
-
-    assert requested.args == ["01.mp4", 42.0]
-    assert action_of(view, "play_pause_action").text() == "Pause"
-    media.pause.assert_not_called()
 
 
 def test_the_slider_marks_the_bookmarks_of_the_video_selected(

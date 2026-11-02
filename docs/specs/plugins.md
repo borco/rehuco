@@ -1102,9 +1102,9 @@ than shown black or combed. **The user's own libvlc is the other engine** (#319)
 into the same dock through `python-vlc` once the Tools page has a VLC with its shared library, and speaking
 `QMediaPlayer`'s language (`VlcMediaPlayer`) so the view drives either without knowing which; the choice applies to the
 next video selected, in every open document, the engine rebuilt in place. It closes both gaps,
-and it draws inside the dock, which is what lets the maximized player's overlays ([[plugins#player-maximized]])
-work over it. A VLC launched as a window of its own was built and dropped in #319 for that reason: no overlay, tree
-or notes can be drawn over another process's window ([[appendices.vlc]] keeps what was measured of it).
+and it draws inside the dock, which is what lets the maximized player ([[plugins#player-maximized]]) carry it
+with its panels. A VLC launched as a window of its own was built and dropped in #319 for that reason: another process's
+window can be neither drawn over nor moved with the player ([[appendices.vlc]] keeps what was measured of it).
 
 | | libvlc | Qt Multimedia |
 | --- | --- | --- |
@@ -1223,11 +1223,14 @@ makes it is a daemon.
 stopped player holds its source until it is cleared (measured on Windows, where it is an *access denied*), while
 renaming a resource's folder is something the app does from the editor's path row. So *paused* and *loaded* are the
 view's own states -- the video, the position and a still frame on screen -- with the player's source cleared: pausing
-records the position, keeps the frame on screen and lets go; a video loaded without playing is opened for as long as
-it takes to buffer and give one frame at its position, then let go (with a three-second limit for a video that gives
-none); playing opens it again and seeks to the position once it buffers. An open Player dock therefore never blocks a
-rename. Closing the dock stops the player and lets go the same way, as does the last video's end. It is the reason the
-Content Images dock lets go of its archives when it is hidden (#355).
+records the position, keeps the frame on screen and lets go; a video loaded without playing is opened for as long as it
+takes to buffer and give one frame at its position, then let go (with a three-second limit for a video that gives none);
+playing opens it again and seeks to the position once it buffers, with the still kept up until the widget has a frame of
+that position -- one stamped within a second of it, or any frame once the player reports it there, for a file whose
+frame times run on another clock than its positions, or three seconds after play for one that gives neither -- since the
+widget shows black for about 200 ms as the file opens (#574). An open Player dock therefore never blocks a rename.
+Closing the dock stops the player and lets go the same way, as does the last video's end. It is the reason the Content
+Images dock lets go of its archives when it is hidden (#355).
 
 **A rename that starts while a video plays pauses it first.** The player asks the rename coordinator to be told, ahead
 of any wait, which resource is about to be renamed; for its own resource it pauses into the released state, and the
@@ -1261,10 +1264,11 @@ rename -- the one case the release exists for -- lets the file go through the re
 happen. A load for a still (libvlc decodes no frame without playing) plays muted until the first frame, keeps it,
 and pauses, after which the view stops it as it would after a frame from Qt's sink. **libvlc renders into memory**
 ([[appendices.vlc#memory-rendering]]): it decodes into a buffer of the app's (`VlcFrameSink`) and each frame is painted
-by an ordinary widget (`VlcSurface`), so there is no native window, any widget can be drawn over the picture -- what
-the maximized player's overlays need -- and the engine is the same on every OS. Audio, the clock and subtitles stay
-libvlc's. Measured at 1080p60 in a window the size of a 3440x1440 monitor: 59 fps, about two thirds of one core for
-the whole process.
+by an ordinary widget (`VlcSurface`), so there is no native window, any widget can be drawn over the picture, and
+the engine is the same on every OS. Audio, the clock and subtitles stay
+libvlc's. Measured at 1080p60 in a window the size of a 3440x1440 monitor: 60 fps, about one and a third cores for
+the whole process since the surface scales smoothly (#574), as the still a pause shows does; two thirds of one core
+unsmoothed, which drew some rows and columns twice.
 
 **The build keeps 20 MB of a 105 MB to 460 MB wheel.** The agent depends on `PySide6-Essentials`; Qt Multimedia is in
 `PySide6-Addons`, which is named again for it. Playback needs about 20 MB of that wheel: `QtMultimedia` and
@@ -1304,7 +1308,7 @@ nothing.
 
 The row's actions, shown only where they apply and also on the dock's title bar: **Favorite** (a toggle), **Viewed** (a
 toggle), **Forget** on a missing row — one set of commands, and one object, with the Files dock's. One tree model
-serves this dock and the player's `T` overlay ([[plugins#player-maximized]]). No layout version bump: a layout that
+serves this dock and the player's `T` panel ([[plugins#player-maximized]]). No layout version bump: a layout that
 never names the dock restores and puts it back hidden ([[appendices.qt-ads#structural-layout]]).
 
 ### The notes
@@ -1328,7 +1332,7 @@ meanwhile is added once the search answers, so nothing typed over an empty note 
 and next included. A single click on a video in the Tree or the Files sub-dock — or on a line of its notes in the Tree
 — shows that video's notes without loading it, a missing video's too; a click on the player's picture, or a
 double-click on a video, a note or a bookmark, or a followed link, ties them to the video it names again. *Add note*
-always acts on the player's video, so it ties them to it first. The player's `T` and `N` overlays
+always acts on the player's video, so it ties them to it first. The player's `T` and `N` panels
 ([[plugins#player-maximized]]) behave as these docks do: they are the same views, shown differently.
 
 **Links seek the player.** A `rehuco-video:<key>#t=<seconds>` link is a seek of the document's player — loading the
@@ -1337,21 +1341,21 @@ to the video already loaded goes to the time and leaves it playing or paused as 
 system's browser. It is the first custom link a markdown view handles in the agent; the `filter://` links of the
 viewer's fields ([[plugins#filter-urls]]) are the precedent for the dispatch.
 
-**Add note at** sits on the player's transport bar and in the player's commands (`B`, armed in the player like its
-other keys), so it works from the overlay too ([[plugins#player-maximized]]): it adds a line
-`- [mm:ss](rehuco-video:…#t=…)` and a space to the video's notes. That line is the bookmark: there is no other, and a
-note with no time is written by editing the notes. **The line goes beside its neighbours in time**, whatever order the
-user left the note in: after the latest bookmark at or before its time and the lines under that bookmark, else just
-before the earliest bookmark after it, else at the end; nothing else moves. **A setting on the Videos page** decides
-the rest: on (the default), it pauses the video and the dock opens in edit with the caret at the end of the new line;
-off, it only adds the line and playback and the dock stay as they are, so a video can be listened to through,
-bookmarked as it goes, and the notes added later. The player's seek slider marks each bookmark of the video loaded
-with a tick, drawn under the handle.
+**Add note at** sits on the player's transport bar and in the player's commands (`B`, armed in the player like its other
+keys), so it works while the player is maximized too ([[plugins#player-maximized]]): it adds a line `-
+[mm:ss](rehuco-video:…#t=…)` and a space to the video's notes. That line is the bookmark: there is no other, and a note
+with no time is written by editing the notes. **The line goes beside its neighbours in time**, whatever order the user
+left the note in: after the latest bookmark at or before its time and the lines under that bookmark, else just before
+the earliest bookmark after it, else at the end; nothing else moves. **That is all it does**, docked or maximized:
+playback, the notes dock, its mode and the focus stay as they are, so a video can be listened to through, bookmarked as
+it goes, and the notes added later; a note to write now is one pause, by Space or a click, away (owner in #574; #573
+paused and opened the notes in edit by default, behind a Videos-page setting since removed). The player's seek slider
+marks each bookmark of the video loaded with a tick, drawn under the handle.
 
-The panel — view, editor, toggle, link dispatch — is one widget; the dock and the player's `N` overlay each host
+The panel — view, editor, toggle, link dispatch — is one widget; the dock and the player's `N` panel each host
 an instance over the same model.
 
-### The player maximized, and its overlays
+### The player maximized, and its panels
 
 [[[plugins#player-maximized]]]
 
@@ -1361,33 +1365,42 @@ an instance over the same model.
 The player stays the tutorial's sub-dock; this is how it gets big without a layout change, and how a big video keeps
 its navigation and its notes a key away.
 
-**A click pauses and resumes; a double-click maximizes or restores.** The single click runs on a one-shot timer of
-the system's double-click interval, and a double-click stops it, so a double-click never also toggles playback — the
-only plain way, since Qt delivers the first press before it knows a second is coming. The lightbox's *a single click
-does nothing* is deliberately not followed: the lightbox has nothing to toggle.
+**A click pauses and resumes; a double-click maximizes or restores.** The player counts its own clicks
+(`PlayerClicks`): a click with no second one within the system's double-click interval toggles playback once the
+interval has passed, and a second within it — whatever Qt calls it — maximizes or restores instead, so a double-click
+never also toggles playback. **A click that brings the focus to the player counts like any other** (owner): the
+picture has nothing a stray click could harm, and players toggle on the first click. Every press still ties the notes
+to the player's video ([[plugins#video-notes-dock]]). The lightbox's *a single click does nothing* is deliberately not
+followed: the lightbox has nothing to toggle.
 
-**Maximizing** lifts the player's surface — the video widget and the still — and its transport bar into an overlay
-over the **document**, the **main window** or a frameless **full-screen** window, the three surfaces the lightbox
-offers ([[plugins#tutorial-plugin]]), chosen for videos by a *Maximize videos over* setting of their own on the
-`Videos` page ([[appendices.settings-pages#category-groups]]; the document by default; the next maximize uses a
-change, an open one is not moved), and puts them back on Esc, a double-click or the close button. The video widget's
-native window survives re-parenting with no call at all (#315), so **a playing video keeps playing through both
-moves**. The overlay host is the lightbox's own mechanics — the host per surface, the size-tracking event filter,
-focus held while up and returned within the document on dismiss, the corner controls — extracted into one base both
-viewers sit on, not copied. *Maximize current dock* (Ctrl+Shift+M) is unchanged: that is the dock within its
-document. A maximized player is restored with the session ([[plugins#session-restore]]).
+**Maximizing** lifts the player's stage — the picture and the panels beside it — and its transport bar into an
+overlay over the **document**, the **main window** or a frameless **full-screen** window, the three surfaces the
+lightbox offers ([[plugins#tutorial-plugin]]), chosen for videos by a *Maximized player* setting of their own on the
+`Videos` page ([[appendices.settings-pages#category-groups]]; the document by default; the next maximize uses a change,
+an open one is not moved). SHIFT, CTRL and CTRL+SHIFT held at the double-click pick the surface over the setting, as
+for an image. Esc, a double-click or the restore button at the end of the transport bar (shown only while maximized)
+put them back. Qt re-parents the `QVideoWidget`'s native window rather than recreating it (#315), and libvlc's
+surface is an ordinary widget, so **a playing video keeps playing through both moves**. The overlay host is the
+lightbox's own mechanics — the host per surface, the size-tracking event filter, focus held while up and returned
+within the document on dismiss — extracted into one base both viewers sit on (`OverlaySurface`), not copied; the
+player's actions are added to the overlay too, so its keys answer there. *Maximize current dock* (Ctrl+Shift+M) is
+unchanged: that is the dock within its document. Stopping the player — closing its dock or its document — puts it
+back first. A maximized player reports its surface for the session entry ([[plugins#session-restore]]).
 
-**Three overlays** sit over the video, docked or maximized, each a command of the player's focus group, so the
-Shortcuts page lists and rebinds them; one at a time, showing one hides another; their visibility is session state,
-not saved:
+**The panels sit beside the video, never over it**: the picture shrinks to make room. Nothing is drawn on the
+picture, so Qt's engine keeps its `QVideoWidget`, whose native window no plain widget can paint over
+([[appendices.vlc#overlay]]). The stage is a splitter — the tree on the left, the video, and a column on the right
+with the info above the notes — and any of them may show at once; the dividers drag, and the stage's split rides in
+the player's entry of the document's layout. Each panel is a command of the player's focus group, so the Shortcuts page
+lists and rebinds it; which are shown is session state, not saved:
 
-- **`I` — info**, top-left in the lightbox's translucent box: the video's name, its pixel size (from `videos`, else
-  the sink's frame), its length, its progress and position, and where it stands in the playlist (`30/123`).
-- **`T` — tree**: a light tree over the same model as the Tree sub-dock — no header, name and progress only, the
-  current video marked and in view — in a translucent dark box with light text. A click loads that video; Esc or
-  `T` hides it. It takes the keyboard while up (Up, Down, Enter) and gives it back when it hides.
-- **`N` — notes**: the notes panel in the same style, editable, with the dock's write seams plus hiding the overlay;
-  *Add note* works from here.
+- **`I` — info**: the video's key, its pixel size (from `videos`, else the frame the engine shows), its length, its
+  position with its progress, and where it stands in the playlist (`[30/123]`), in the window's own colours.
+- **`T` — tree** (#575): the Tree sub-dock's own view, the current video marked and in view; a click loads that video.
+- **`N` — notes** (#575): a second notes panel, editable, with the dock's write seams.
+
+**`B`** works as it does docked: it adds its bookmark line and changes nothing else
+([[plugins#video-notes-dock]]).
 
 `I` and `T` mean what they mean in the lightbox; `N` is new; `[`, `]`, the arrows and Space stay the player's.
 

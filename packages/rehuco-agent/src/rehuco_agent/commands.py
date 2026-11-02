@@ -182,6 +182,14 @@ PLAYER_ADD_NOTE_AT: Final = Command(
     PLAYER_SCOPE,
     PLAYER_FOCUS_GROUP,
 )
+PLAYER_INFO: Final = Command(
+    "document.player.info",
+    "Video info",
+    "Show or hide the video's info beside it",
+    ("I",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
 PLAYER_VOLUME_UP: Final = Command(
     "document.player.volume_up", "Volume up", "Raise the volume", ("Up",), PLAYER_SCOPE, PLAYER_FOCUS_GROUP
 )
@@ -251,6 +259,7 @@ COMMANDS: Final = (
     PLAYER_TO_START,
     PLAYER_TO_END,
     PLAYER_ADD_NOTE_AT,
+    PLAYER_INFO,
     PLAYER_VOLUME_UP,
     PLAYER_VOLUME_DOWN,
     PLAYER_SPEED_UP,

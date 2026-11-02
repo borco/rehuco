@@ -295,33 +295,66 @@
     </widget>
    </item>
    <item>
-    <widget class="QFrame" name="notes_frame">
+    <widget class="QFrame" name="maximize_frame">
      <property name="frameShape">
       <enum>QFrame::Shape::StyledPanel</enum>
      </property>
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <layout class="QVBoxLayout" name="notes_frame_layout">
+     <layout class="QVBoxLayout" name="maximize_frame_layout">
       <item>
-       <widget class="QLabel" name="notes_frame_label">
+       <widget class="QLabel" name="maximize_frame_label">
         <property name="font">
          <font>
           <bold>true</bold>
          </font>
         </property>
         <property name="text">
-         <string>Notes</string>
+         <string>Maximized player</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="QCheckBox" name="add_note_edits_check_box">
-        <property name="toolTip">
-         <string>On: adding a note (B) pauses the video and opens the notes for editing at the new bookmark. Off: it only adds the bookmark and leaves the playback and the notes as they are, so you can go back to your bookmarks later.</string>
-        </property>
+       <widget class="QLabel" name="maximize_hint_label">
         <property name="text">
-         <string>Adding a note pauses the video and opens the notes for editing</string>
+         <string>Where the player goes when its video is double-clicked, unless a key held down picks another surface:</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="maximize_document_radio_button">
+        <property name="text">
+         <string>rehu window overlay (or SHIFT)</string>
+        </property>
+        <property name="toolTip">
+         <string>Covers the open document, leaving its tab and the app's menus and toolbars visible. Holding SHIFT while double-clicking opens this way whatever is chosen here.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="maximize_app_window_radio_button">
+        <property name="text">
+         <string>app window overlay (or CTRL)</string>
+        </property>
+        <property name="toolTip">
+         <string>Covers the whole main window, leaving only its menu, tool, and status bars visible. Holding CTRL while double-clicking opens this way whatever is chosen here.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="maximize_full_screen_radio_button">
+        <property name="text">
+         <string>frameless full-screen (or CTRL+SHIFT)</string>
+        </property>
+        <property name="toolTip">
+         <string>Covers the entire screen, with no window frame. Holding CTRL+SHIFT while double-clicking opens this way whatever is chosen here.</string>
         </property>
        </widget>
       </item>

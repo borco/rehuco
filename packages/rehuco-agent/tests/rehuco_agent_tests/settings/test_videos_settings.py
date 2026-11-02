@@ -9,11 +9,14 @@ from typing import Any
 
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
+from rehuco_agent.fields.widgets.overlay_surface import OverlayMode
 from rehuco_agent.settings import videos_settings
 from rehuco_agent.settings.tools_settings import shared_tools_settings
 from rehuco_agent.settings.videos_settings import (
     DEFAULT_PLAYER,
+    GROUP,
     IN_APP_PLAYER,
+    MAXIMIZE_MODE_KEY,
     PLAYERS,
     VLC_PLAYER,
     VideosSettings,
@@ -482,19 +485,31 @@ def test_a_player_this_build_lacks_falls_back_to_the_default(value: object) -> N
 # endregion
 
 
-def test_adding_a_note_edits_by_default_and_the_choice_round_trips(settings: FakeSettings) -> None:
+@mark.parametrize("stored", [None, "nowhere", 3])
+def test_the_maximize_surface_is_the_document_unless_storage_names_another(
+    settings: FakeSettings, stored: object
+) -> None:
     """**Test steps:**
 
-    * verify a fresh object, and storage that never held the choice, load it on
-    * save it off, load a second object, and verify it is off
+    * verify a fresh object maximizes over the document
+    * load storage holding nothing, an unknown name or a number, and verify each reads as the document
     """
-    assert VideosSettings().add_note_edits is True
-    fresh = VideosSettings(add_note_edits=False)
-    fresh.load(settings)  # type: ignore[arg-type]
-    assert fresh.add_note_edits is True
+    assert VideosSettings().maximize_mode is OverlayMode.DOCUMENT_OVERLAY
+    if stored is not None:
+        settings.setValue(f"{GROUP}/{MAXIMIZE_MODE_KEY}", stored)
+    loaded = VideosSettings(maximize_mode=OverlayMode.FULL_SCREEN)
+    loaded.load(settings)  # type: ignore[arg-type]
 
-    VideosSettings(add_note_edits=False).save(settings)  # type: ignore[arg-type]
+    assert loaded.maximize_mode is OverlayMode.DOCUMENT_OVERLAY
+
+
+def test_the_maximize_surface_round_trips(settings: FakeSettings) -> None:
+    """**Test steps:**
+
+    * save a full-screen choice, load a second object, and verify it maximizes over the screen
+    """
+    VideosSettings(maximize_mode=OverlayMode.FULL_SCREEN).save(settings)  # type: ignore[arg-type]
     loaded = VideosSettings()
     loaded.load(settings)  # type: ignore[arg-type]
 
-    assert loaded.add_note_edits is False
+    assert loaded.maximize_mode is OverlayMode.FULL_SCREEN

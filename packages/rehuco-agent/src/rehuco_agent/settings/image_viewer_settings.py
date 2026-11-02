@@ -8,8 +8,9 @@ from PySide6.QtCore import QObject, QSettings
 from PySide6.QtGui import QColor
 
 from ..fields.images_field import IMAGE_STRIP_HEIGHT
-from ..fields.widgets.image_lightbox import DEFAULT_BACKDROP, DEFAULT_STRIP_HEIGHT, ImageViewerMode
+from ..fields.widgets.image_lightbox import DEFAULT_BACKDROP, DEFAULT_STRIP_HEIGHT
 from ..fields.widgets.image_selector import PREVIEW_HEIGHT
+from ..fields.widgets.overlay_surface import OverlayMode
 from .persistent_settings import persistent_settings
 
 GROUP: Final = "image_viewer"
@@ -33,7 +34,7 @@ LEGACY_CONTENT_FOLDER_NAMES_KEY: Final = "content_folder_names"
 """The two banner boxes :data:`CONTENT_BANNERS_KEY` replaced (#392): read only from an ``.ini`` that has
 no banner choice of its own yet, so the first save after #392 settles it for good."""
 
-DEFAULT_MODE: Final = ImageViewerMode.DOCUMENT_OVERLAY
+DEFAULT_MODE: Final = OverlayMode.DOCUMENT_OVERLAY
 """What a fresh install (no ``.ini`` yet) opens screenshots on: the least disruptive of the three --
 the app stays where it was, and only the document being read is covered."""
 
@@ -54,7 +55,7 @@ DEFAULT_PREVIEW_IMAGE_HEIGHT: Final = IMAGE_STRIP_HEIGHT
 DEFAULT_LIGHTBOX_IMAGE_HEIGHT: Final = DEFAULT_STRIP_HEIGHT
 """How tall a screenshot is in a document's own image strip and in the maximized viewer's thumbnail
 row. Each is read from the widget that implements the strip rather than restated here -- the same
-direction :class:`ImageViewerMode` is imported in, so a widget's own natural size and the setting that
+direction :class:`OverlayMode` is imported in, so a widget's own natural size and the setting that
 overrides it can never drift apart."""
 
 DEFAULT_EDITOR_PREVIEW_HEIGHT: Final = PREVIEW_HEIGHT
@@ -126,7 +127,7 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
     :param parent: optional Qt parent.
     """
 
-    mode = SimpleProperty[ImageViewerMode](DEFAULT_MODE)
+    mode = SimpleProperty[OverlayMode](DEFAULT_MODE)
     """Which surface a maximized screenshot opens on."""
 
     strip_visible = SimpleProperty(DEFAULT_STRIP_VISIBLE)
@@ -225,7 +226,7 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         )
         settings.endGroup()
         try:
-            self.mode = ImageViewerMode(stored)
+            self.mode = OverlayMode(stored)
         except ValueError:
             self.mode = DEFAULT_MODE
 

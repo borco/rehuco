@@ -32,6 +32,7 @@ from rehuco_core import (
     WatchRules,
 )
 
+from ..fields.widgets.overlay_surface import OverlayMode
 from .extension_lists import normalize_extensions as normalize_extension_list
 from .persistent_settings import persistent_settings, read_stored_strings
 from .tools_settings import shared_tools_settings
@@ -43,7 +44,7 @@ PLAYER_KEY: Final = "player"
 MARK_FILE_VIEWED_KEY: Final = "mark_file_viewed_at_end"
 MARK_TUTORIAL_VIEWED_KEY: Final = "mark_tutorial_viewed_on_last_file"
 MATCH_RENAMED_BY_SIZE_KEY: Final = "match_renamed_by_size"
-ADD_NOTE_EDITS_KEY: Final = "add_note_edits"
+MAXIMIZE_MODE_KEY: Final = "maximize_mode"
 
 IN_APP_PLAYER: Final = "in_app"
 """The player dock a document hosts ([[plugins#in-app-player]])."""
@@ -66,6 +67,8 @@ PLAYERS: Final = (
 are Windows-only, as their tool is."""
 
 DEFAULT_PLAYER: Final = IN_APP_PLAYER
+
+DEFAULT_MAXIMIZE_MODE: Final = OverlayMode.DOCUMENT_OVERLAY
 
 
 def normalize_extensions(values: object) -> tuple[str, ...]:
@@ -122,6 +125,20 @@ def read_player(value: object) -> str:
     return value if isinstance(value, str) and value in PLAYERS else DEFAULT_PLAYER
 
 
+def read_maximize_mode(value: object) -> OverlayMode:
+    """Resolve a stored ``maximize_mode`` value to a surface this build knows (#574).
+
+    An unrecognized name selects :data:`DEFAULT_MAXIMIZE_MODE` rather than raising, as :func:`read_player` does.
+
+    :param value: the raw stored value.
+    :returns: the surface a maximized video is shown on.
+    """
+    try:
+        return OverlayMode(value)
+    except ValueError:
+        return DEFAULT_MAXIMIZE_MODE
+
+
 @dataclass
 class VideosSettings:
     """How a tutorial's videos are measured -- which backend reads a duration, and over which files -- and how
@@ -153,9 +170,9 @@ class VideosSettings:
     match_renamed_by_size: bool = True
     """A renamed video takes its progress by size alone when no checksum is recorded for it."""
 
-    add_note_edits: bool = True
-    """Adding a note from the player (#573) pauses the video and opens the notes for editing; off, it only adds the line
-    and leaves playback and the notes dock as they are."""
+    maximize_mode: OverlayMode = DEFAULT_MAXIMIZE_MODE
+    """The surface a double-click on the video maximizes the player over (#574), unless a key held picks another;
+    read at each maximize, so a change applies to the next one and an open one is not moved."""
 
     @property
     def video_extensions(self) -> tuple[str, ...]:
@@ -193,7 +210,8 @@ class VideosSettings:
         A never-saved, empty or unreadable extension value comes back as no entries, which resolves to
         the shipped set rather than to no recognized formats at all (:func:`read_extensions`); an
         unrecognized ``engine`` comes back as the default backend (:func:`read_engine`), and an unrecognized
-        ``player`` as the default player (:func:`read_player`).
+        ``player`` as the default player (:func:`read_player`), and an unrecognized ``maximize_mode`` as the document
+        (:func:`read_maximize_mode`).
 
         :param settings: the ``QSettings`` to read from.
         """
@@ -204,7 +222,7 @@ class VideosSettings:
         self.mark_file_viewed_at_end = cast(bool, settings.value(MARK_FILE_VIEWED_KEY, True, type=bool))
         self.mark_tutorial_viewed_on_last_file = cast(bool, settings.value(MARK_TUTORIAL_VIEWED_KEY, True, type=bool))
         self.match_renamed_by_size = cast(bool, settings.value(MATCH_RENAMED_BY_SIZE_KEY, True, type=bool))
-        self.add_note_edits = cast(bool, settings.value(ADD_NOTE_EDITS_KEY, True, type=bool))
+        self.maximize_mode = read_maximize_mode(settings.value(MAXIMIZE_MODE_KEY))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -219,7 +237,7 @@ class VideosSettings:
         settings.setValue(MARK_FILE_VIEWED_KEY, self.mark_file_viewed_at_end)
         settings.setValue(MARK_TUTORIAL_VIEWED_KEY, self.mark_tutorial_viewed_on_last_file)
         settings.setValue(MATCH_RENAMED_BY_SIZE_KEY, self.match_renamed_by_size)
-        settings.setValue(ADD_NOTE_EDITS_KEY, self.add_note_edits)
+        settings.setValue(MAXIMIZE_MODE_KEY, self.maximize_mode.value)
         settings.endGroup()
 
 

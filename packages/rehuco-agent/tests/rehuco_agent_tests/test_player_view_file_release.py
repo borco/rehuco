@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Final
 
 from PySide6.QtMultimedia import QMediaPlayer
+from PySide6.QtWidgets import QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.player_view import PlayerView
@@ -45,7 +46,9 @@ def test_a_stopped_player_lets_go_of_the_video_so_the_folder_can_be_renamed(
     model.path = folder / "info.rehu"
     model.rename_coordinator = None
     recorder = mocker.create_autospec(WatchProgressRecorder, instance=True)
-    view = PlayerView(model, recorder)
+    document = QWidget()
+    qtbot.addWidget(document)
+    view = PlayerView(model, recorder, document)
     qtbot.addWidget(view)
 
     view.jump("clip.mp4")

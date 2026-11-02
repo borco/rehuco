@@ -18,6 +18,7 @@ from rehuco_core import (
 )
 
 from ...documents.latest_runner import LatestRunner
+from ...fields.widgets.overlay_surface import OverlayMode
 from ...item_action_icons import apply_item_action_icons
 from ...playback_libraries import shared_playback_libraries
 from ...playback_vlc import vlc_restart_needed
@@ -84,7 +85,7 @@ class PlayerChoice:
         return self.checked and self.reason is not None
 
 
-class VideosPage(QWidget):
+class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
     """Configure how a tutorial's videos are measured (#224's parameters, made the user's).
 
     Four blocks, the first and the third one per parameter `rehuco_core.rehu_content_duration.content_duration` takes:
@@ -134,6 +135,11 @@ class VideosPage(QWidget):
         self.__ffmpeg_reason: str | None = None
         self.__checker: Final = LatestRunner(self)
         self.__pending: set[str] = set()
+        self.__maximize_buttons: Final = {
+            OverlayMode.DOCUMENT_OVERLAY: self.__ui.maximize_document_radio_button,
+            OverlayMode.APP_WINDOW_OVERLAY: self.__ui.maximize_app_window_radio_button,
+            OverlayMode.FULL_SCREEN: self.__ui.maximize_full_screen_radio_button,
+        }
         self.__choices: Final = [
             PlayerChoice(VLC_PLAYER, self.__ui.vlc_player_radio_button, VLC_TOOL, NEEDS_VLC_TOOLTIP, LatestRunner(self))
         ]
@@ -179,7 +185,7 @@ class VideosPage(QWidget):
             or self.__ui.mark_file_viewed_check_box.isChecked() != settings.mark_file_viewed_at_end
             or self.__ui.mark_tutorial_viewed_check_box.isChecked() != settings.mark_tutorial_viewed_on_last_file
             or self.__ui.match_renamed_by_size_check_box.isChecked() != settings.match_renamed_by_size
-            or self.__ui.add_note_edits_check_box.isChecked() != settings.add_note_edits
+            or self.__staged_maximize_mode() != settings.maximize_mode
         )
 
     def save_changes(self) -> None:
@@ -197,7 +203,7 @@ class VideosPage(QWidget):
         settings.mark_file_viewed_at_end = self.__ui.mark_file_viewed_check_box.isChecked()
         settings.mark_tutorial_viewed_on_last_file = self.__ui.mark_tutorial_viewed_check_box.isChecked()
         settings.match_renamed_by_size = self.__ui.match_renamed_by_size_check_box.isChecked()
-        settings.add_note_edits = self.__ui.add_note_edits_check_box.isChecked()
+        settings.maximize_mode = self.__staged_maximize_mode()
         settings.save(persistent_settings())
         self.drop_changes()
 
@@ -253,7 +259,7 @@ class VideosPage(QWidget):
         self.__ui.mark_file_viewed_check_box.setChecked(settings.mark_file_viewed_at_end)
         self.__ui.mark_tutorial_viewed_check_box.setChecked(settings.mark_tutorial_viewed_on_last_file)
         self.__ui.match_renamed_by_size_check_box.setChecked(settings.match_renamed_by_size)
-        self.__ui.add_note_edits_check_box.setChecked(settings.add_note_edits)
+        self.__maximize_buttons[settings.maximize_mode].setChecked(True)
         self.__update_probe_controls()
         self.__update_player_controls()
 
@@ -275,6 +281,13 @@ class VideosPage(QWidget):
         :returns: the name of the checked radio's player; ``IN_APP_PLAYER`` when no gated one is.
         """
         return next((choice.player for choice in self.__choices if choice.radio.isChecked()), IN_APP_PLAYER)
+
+    def __staged_maximize_mode(self) -> OverlayMode:
+        """The surface a maximized player goes over, as the radio buttons show it (#574).
+
+        :returns: the checked radio's surface; three exclusive radios in one frame always have one checked.
+        """
+        return next(mode for mode, button in self.__maximize_buttons.items() if button.isChecked())
 
     def __update_probe_controls(self) -> None:
         """Offer the FFmpeg choice only while it can be had, point to the Tools page when it cannot, and re-check the

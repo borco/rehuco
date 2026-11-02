@@ -103,8 +103,8 @@ from rehuco_agent.fields.widgets import (
     ImageLightbox,
     ImageSelector,
     ImageStrip,
-    ImageViewerMode,
     MarkdownView,
+    OverlayMode,
     PathEditor,
     PathImageSource,
     SingleChoiceRadioButtons,
@@ -112,9 +112,10 @@ from rehuco_agent.fields.widgets import (
     ThumbnailRow,
     TypeBadge,
 )
-from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME, viewer_mode_for
+from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_selector import AFTER_CONVERSION_COLUMN, CHECK_COLUMN, PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
+from rehuco_agent.fields.widgets.overlay_surface import viewer_mode_for
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
@@ -389,7 +390,7 @@ def test_the_maximized_viewer_opens_on_the_surface_the_settings_name(
     * verify the viewer that opened is a window, not an overlay
     """
     loadable_lightbox_image(mocker)
-    shared_image_viewer_settings().mode = ImageViewerMode.FULL_SCREEN
+    shared_image_viewer_settings().mode = OverlayMode.FULL_SCREEN
 
     activate_screenshot(widget, Path("/fake/info00.jpg"))
 
@@ -5909,15 +5910,15 @@ def test_applying_a_new_clamp_or_banner_choice_reaches_the_open_dock(refimages_w
 @mark.parametrize(
     ("modifiers", "expected"),
     [
-        (Qt.KeyboardModifier.NoModifier, ImageViewerMode.FULL_SCREEN),
-        (Qt.KeyboardModifier.ShiftModifier, ImageViewerMode.DOCUMENT_OVERLAY),
-        (Qt.KeyboardModifier.ControlModifier, ImageViewerMode.APP_WINDOW_OVERLAY),
-        (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier, ImageViewerMode.FULL_SCREEN),
-        (Qt.KeyboardModifier.AltModifier, ImageViewerMode.FULL_SCREEN),
+        (Qt.KeyboardModifier.NoModifier, OverlayMode.FULL_SCREEN),
+        (Qt.KeyboardModifier.ShiftModifier, OverlayMode.DOCUMENT_OVERLAY),
+        (Qt.KeyboardModifier.ControlModifier, OverlayMode.APP_WINDOW_OVERLAY),
+        (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier, OverlayMode.FULL_SCREEN),
+        (Qt.KeyboardModifier.AltModifier, OverlayMode.FULL_SCREEN),
     ],
 )
 def test_the_keys_held_at_activation_pick_the_viewers_surface(
-    modifiers: Qt.KeyboardModifier, expected: ImageViewerMode
+    modifiers: Qt.KeyboardModifier, expected: OverlayMode
 ) -> None:
     """Shift opens over the document, Ctrl over the app window, Ctrl+Shift over the screen; anything
     else -- nothing, or a key with no meaning here -- means the setting (#221).
@@ -5926,7 +5927,7 @@ def test_the_keys_held_at_activation_pick_the_viewers_surface(
 
     * resolve each modifier set against a full-screen setting
     """
-    assert viewer_mode_for(modifiers, ImageViewerMode.FULL_SCREEN) == expected
+    assert viewer_mode_for(modifiers, OverlayMode.FULL_SCREEN) == expected
 
 
 def test_an_activation_reads_the_keys_held_at_that_moment(widget: DocumentWidget, mocker: MockerFixture) -> None:
@@ -5938,7 +5939,7 @@ def test_an_activation_reads_the_keys_held_at_that_moment(widget: DocumentWidget
     * verify a full-screen viewer -- a window -- opened
     """
     loadable_lightbox_image(mocker)
-    shared_image_viewer_settings().mode = ImageViewerMode.DOCUMENT_OVERLAY
+    shared_image_viewer_settings().mode = OverlayMode.DOCUMENT_OVERLAY
     mocker.patch.object(
         QApplication,
         "keyboardModifiers",

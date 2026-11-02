@@ -1,13 +1,9 @@
 """The maximized screenshot viewer -- the lightbox ([[plugins#tutorial-plugin]], #160, #161).
 
 Shows one screenshot of a curated set scaled to fit, on an opaque backdrop, over one of three surfaces
-the user picks in the settings (:class:`ImageViewerMode`). The mode is the only thing that varies: the
-content, the navigation, the dismiss paths, and the focus discipline are identical on all three, so
-there is one widget rather than three.
-
-The enum lives here, next to the widget that implements it, and the settings section
-(:mod:`rehuco_agent.settings.image_viewer_settings`) imports it -- the same direction
-`markdown_rendering_settings` already reads its ``DEFAULT_ENGINE`` from ``markdown_view``.
+the user picks in the settings (:class:`~rehuco_agent.fields.widgets.overlay_surface.OverlayMode`). The mode is the
+only thing that varies: the content, the navigation, the dismiss paths, and the focus discipline are identical on all
+three, so there is one widget rather than three, on the base the maximized player shares (`OverlaySurface`, #574).
 """
 
 # One widget and the small controls only it uses (the hover bands, the corner buttons, the info
@@ -16,15 +12,13 @@ The enum lives here, next to the widget that implements it, and the settings sec
 
 import html
 from collections.abc import Hashable
-from enum import StrEnum
-from typing import Final, cast, override
+from typing import Final, override
 
 import humanize
 from borco_pyside.theming import glyph_icon, read_resource_bytes, recolored_svg_icon
-from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, Signal
 from PySide6.QtGui import (
     QAction,
-    QCloseEvent,
     QColor,
     QContextMenuEvent,
     QEnterEvent,
@@ -42,7 +36,6 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QGridLayout,
     QLabel,
-    QMainWindow,
     QMenu,
     QToolButton,
     QVBoxLayout,
@@ -54,49 +47,9 @@ from ...glyphs import LIGHTBOX_CLOSE_GLYPH
 from .image_export import ImageExporter
 from .image_selector import PreviewLabel
 from .image_source import ImageDescription, ImageSource
+from .overlay_surface import OverlayMode, OverlaySurface
 from .thumbnail_loader import ThumbnailLoader
 from .thumbnail_row import ThumbnailRow
-
-
-class ImageViewerMode(StrEnum):
-    """Which surface a maximized screenshot is shown on ([[plugins#tutorial-plugin]], #160).
-
-    A ``StrEnum`` so the persisted value is the member's own readable name -- an ``.ini`` written by
-    this app stays legible.
-    """
-
-    DOCUMENT_OVERLAY = "document_overlay"
-    """Covers the open document's own client area, leaving the surrounding dock chrome (its tab, the
-    app's menus and toolbars) visible."""
-
-    APP_WINDOW_OVERLAY = "app_window_overlay"
-    """Covers the whole main window's client area, leaving only its menu/tool/status bars visible."""
-
-    FULL_SCREEN = "full_screen"
-    """A frameless window over the entire screen -- the classic photo-viewer lightbox."""
-
-
-def viewer_mode_for(modifiers: Qt.KeyboardModifier, configured: ImageViewerMode) -> ImageViewerMode:
-    """Which surface a maximized image opens on, given the keys held as it was activated (#221).
-
-    The activation's modifiers override the setting for that one viewer: **Shift** opens it over the
-    document, **Ctrl** over the whole app window, **Ctrl+Shift** over the whole screen -- so any surface
-    is one gesture away whatever the setting says -- and no modifier means the setting.
-
-    :param modifiers: the keyboard modifiers held at the activation.
-    :param configured: the surface the settings name.
-    :returns: the surface to open on.
-    """
-    shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
-    ctrl = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
-    if ctrl and shift:
-        return ImageViewerMode.FULL_SCREEN
-    if ctrl:
-        return ImageViewerMode.APP_WINDOW_OVERLAY
-    if shift:
-        return ImageViewerMode.DOCUMENT_OVERLAY
-    return configured
-
 
 DEFAULT_BACKDROP: Final = "#1e1e1e"
 """The backdrop painted behind the image when the owner names none (#221): a neutral dark grey, fully
@@ -433,7 +386,7 @@ class ImageInfoOverlay(QLabel):
         self.adjustSize()
 
 
-class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
+class ImageLightbox(OverlaySurface):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """A curated screenshot set shown maximized, one at a time ([[plugins#tutorial-plugin]], #160, #161).
 
     **Navigation** moves through the curated set in strip order and **stops at both ends** rather than
@@ -457,7 +410,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
     one framed and scrolled into view. It is toggled by the corner list affordance, and that choice is
     a *persisted* preference rather than session state: the owner seeds it from the settings and
     stores it back through :attr:`strip_visible_changed`, which keeps this widget free of any settings
-    dependency of its own (the settings module imports :class:`ImageViewerMode` from here, so the
+    dependency of its own (the settings module imports its defaults from here, so the
     reverse import would be a cycle).
 
     **The info overlay** (`ImageInfoOverlay`, #221, #321) names the image, its pixel size, its file
@@ -473,28 +426,9 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
     set empties. Both reach this widget through the document surface that owns it, the same
     owner-routes-it shape the activation itself follows.
 
-    **Where it paints** is :class:`ImageViewerMode`'s choice. The two overlay modes make this a plain
-    child widget of the surface it covers, tracking that surface's size through an event filter --
-    not a window, so it cannot be alt-tabbed away from its document, and QtAds never sees a new
-    top-level to manage. Full-screen makes it a frameless window instead, parented to the document
-    all the same, so it is destroyed with it and can never outlive the document as an orphan the user
-    has no way back from.
-
-    **Focus** is held for as long as an overlay is up: Qt gives a plain child widget no modality, so
-    clicking another document's dock tab would otherwise hand the keyboard to whatever sits underneath
-    and leave ESC reaching nothing. Focus landing anywhere on the covered surface is pulled straight
-    back (:meth:`__on_focus_changed`), while focus moving to a document this viewer does *not* cover --
-    including one with a viewer of its own -- is left alone, so each open viewer answers ESC exactly
-    while its own document is the active one.
-
-    On dismiss, focus returns where it came from -- but **only within this viewer's own document**. The
-    widget holding focus when the viewer opened is remembered and re-focused, so dismissing lands the
-    user back where they were rather than nowhere; a remembered widget that belongs to some *other*
-    document (or to none -- the app's chrome, another viewer that happened to hold focus at the moment
-    this one opened) is deliberately left alone, since restoring it would yank the user out of the
-    document they are actually looking at and into an unrelated dock. Both the remembered widget and
-    the owning document are tracked through their own ``destroyed`` signals, so a form rebuild (a type
-    switch) or a closing document leaves nothing to restore instead of reaching into a dead object.
+    **Where it paints, and how it holds and hands back the keyboard**, are `OverlaySurface`'s: one of
+    :class:`~rehuco_agent.fields.widgets.overlay_surface.OverlayMode`'s three surfaces, shared with the maximized
+    player (#574).
 
     **Dismiss is ESC, the close button, or -- when the owner allows it -- a double-click on the image**
     (#221): the gesture that opened the viewer, undoing it. A single click on the image does nothing at
@@ -510,9 +444,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         first navigation.
     :param current: the position to open on, clamped into the source.
     :param mode: which surface to paint on.
-    :param document: the open document this viewer belongs to -- its Qt parent in every mode, the
-        surface it covers in :attr:`~ImageViewerMode.DOCUMENT_OVERLAY`, and the window it resolves
-        for :attr:`~ImageViewerMode.APP_WINDOW_OVERLAY`.
+    :param document: the open document this viewer belongs to (`OverlaySurface`).
     :param loader: the thumbnail decode pool the row reads through (keyword-only); one of this
         viewer's own when the owner shares none.
     :param strip_visible: whether to open with the thumbnail row shown (keyword-only).
@@ -526,9 +458,6 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         the viewer.
     """
 
-    closed = Signal()
-    """Fires once the viewer has been dismissed, whichever way it was."""
-
     strip_visible_changed = Signal(bool)
     """Fires with the thumbnail row's new visibility whenever the user toggles it, for the owner to
     remember (#161). This widget never reads or writes any stored state itself."""
@@ -537,7 +466,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         self,
         source: ImageSource,
         current: int,
-        mode: ImageViewerMode,
+        mode: OverlayMode,
         document: QWidget,
         *,
         loader: ThumbnailLoader | None = None,
@@ -548,14 +477,9 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         double_click_closes: bool = True,
         exporter: ImageExporter | None = None,
     ) -> None:
-        host = None if mode is ImageViewerMode.FULL_SCREEN else self.__overlay_host(mode, document)
-        flags = Qt.WindowType.Widget if host is not None else Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
-        super().__init__(host if host is not None else document, flags)
-        self.__host: Final = host
+        super().__init__(mode, document)
         self.__backdrop = backdrop if backdrop is not None else QColor(DEFAULT_BACKDROP)
         self.__double_click_closes = double_click_closes
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         self.__source: ImageSource = source
         self.__index = min(max(current, 0), max(len(source) - 1, 0))
@@ -609,44 +533,6 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         layout.addWidget(self.__make_info_corner(), 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.__strip.set_source(self.__source)
         self.__show_current()
-
-        if host is not None:
-            self.__cover(host, document)
-
-        self.__owner: QWidget | None = document
-        # dropped the moment Qt reports the document gone, so a dismissal after that restores nothing;
-        # the app-window overlay's close-on-destroy path drops it explicitly even earlier
-        # (`__on_document_destroyed`), since its own close runs during the destruction itself
-        document.destroyed.connect(self.__forget_owner)
-
-        self.__previous_focus: QWidget | None = QApplication.focusWidget()
-        if self.__previous_focus is not None:
-            # tracked through Qt's own destroyed signal rather than held blindly: a form rebuild can
-            # delete the focused editor while the viewer is up, and re-focusing a deleted widget on
-            # dismiss would raise
-            self.__previous_focus.destroyed.connect(self.__forget_previous_focus)
-
-    def __cover(self, host: QWidget, document: QWidget) -> None:
-        """Track the surface an overlay covers, and keep the keyboard on it.
-
-        :param host: the surface this viewer covers.
-        :param document: the open document this viewer belongs to.
-        """
-        host.installEventFilter(self)
-        # an app-window overlay is not a descendant of the document it belongs to, so closing that
-        # document would otherwise leave the viewer up, covering the app with a screenshot of a
-        # document that no longer exists. The other two modes are parented into the document and
-        # are destroyed with it, needing no such guard.
-        if host is not document:
-            document.destroyed.connect(self.__on_document_destroyed)
-        # an overlay is a plain child widget, so Qt offers it no modality: clicking another
-        # document's dock tab hands the keyboard to whatever is underneath, and ESC then reaches
-        # nothing at all (#160). Focus is pulled back whenever it lands on the surface this viewer
-        # covers, which is exactly the region the user cannot see or click past anyway.
-        # cast, not an isinstance guard: a QWidget cannot be constructed without a QApplication,
-        # so this widget existing at all is proof instance() is one
-        application = cast(QApplication, QApplication.instance())
-        application.focusChanged.connect(self.__on_focus_changed)
 
     @property
     def current_index(self) -> int:
@@ -769,34 +655,6 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         self.__index = survived if survived is not None else min(self.__index, len(source) - 1)
         self.__show_current()
 
-    def reveal(self) -> None:
-        """Show the viewer on its surface and take the keyboard, so ESC reaches it immediately."""
-        if self.__host is None:
-            self.showFullScreen()
-        else:
-            self.setGeometry(self.__host.rect())
-            self.show()
-            # the surface it covers holds other children (the document's docks, the app's dock
-            # manager) that would otherwise paint over an overlay merely added to them
-            self.raise_()
-        self.activateWindow()
-        self.setFocus(Qt.FocusReason.OtherFocusReason)
-
-    @override
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        """Keep an overlay matched to the surface it covers as that surface is resized.
-
-        An overlay is positioned by hand rather than by a layout (it covers its parent's children
-        instead of sitting beside them), so nothing else would follow a resize.
-
-        :param watched: the object the event was sent to.
-        :param event: the event.
-        :returns: ``False`` always -- the resize is observed, never consumed.
-        """
-        if watched is self.__host and event.type() == QEvent.Type.Resize and self.__host is not None:
-            self.setGeometry(self.__host.rect())
-        return super().eventFilter(watched, event)
-
     @override
     def paintEvent(self, event: QPaintEvent) -> None:
         """Fill the viewer with its backdrop, under the scaled screenshot.
@@ -811,14 +669,12 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
 
     @override
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        """Dismiss on ESC, navigate the set on the arrow/HOME/END keys, toggle the info overlay on ``I``
-        and the thumbnail row on ``T`` (#221), pass everything else on.
+        """Navigate the set on the arrow/HOME/END keys, toggle the info overlay on ``I`` and the thumbnail row on
+        ``T`` (#221), pass everything else on -- ESC to the base, which dismisses.
 
         :param event: the Qt key event.
         """
         match event.key():
-            case Qt.Key.Key_Escape:
-                self.close()
             case Qt.Key.Key_Left:
                 self.__step(-1)
             case Qt.Key.Key_Right:
@@ -931,103 +787,6 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         """
         super().resizeEvent(event)
         self.__layout_navigation_zones()
-
-    @override
-    def closeEvent(self, event: QCloseEvent) -> None:
-        """Report the dismissal, then hand focus back to whatever had it when the viewer opened.
-
-        :param event: the Qt close event, forwarded to the base class.
-        """
-        super().closeEvent(event)
-        # the host's event filter is deliberately not unhooked here: Qt drops a filter when the
-        # filtering object is destroyed, and the host itself may already be gone -- a document closed
-        # underneath the viewer closes it on the way out, after its own surface has been deleted
-        # announced *before* the focus handover, not after: the owner drops its reference to this
-        # viewer on this signal, and handing focus back while it still held one would send the owner's
-        # own become-current handling (`DocumentWidget.take_focus`) straight back into this
-        # half-dismissed viewer, stranding focus on a widget about to be hidden
-        self.closed.emit()
-        # hidden here rather than left to ``close()``'s own hide afterwards: Qt reassigns focus as a
-        # widget disappears, and its choice is the next focusable widget in the whole window -- which
-        # lands in some unrelated dock. Hiding first means that reassignment has already happened by
-        # the time the focus below is handed back, so it is the last word instead of being overruled.
-        self.hide()
-        previous = self.__previous_focus
-        owner = self.__owner
-        if previous is not None and owner is not None and (previous is owner or owner.isAncestorOf(previous)):
-            previous.window().activateWindow()
-            previous.setFocus(Qt.FocusReason.OtherFocusReason)
-
-    def __on_focus_changed(self, old: QWidget | None, now: QWidget | None) -> None:
-        """Reclaim the keyboard whenever focus lands somewhere that isn't a deliberate move away.
-
-        Focus already inside **any** viewer is left alone -- including another document's, which is
-        what keeps two open overlays from tearing focus back and forth when both cover the same
-        app-window surface.
-
-        Otherwise the test is whether the new focus widget is **on this viewer's own containment
-        line**: the covered surface itself, anything under it, or any of the containers holding it
-        (its dock, that dock's area, the splitter, the dock manager). Focus landing on a container is
-        nothing claiming it -- the user has not navigated anywhere, so a viewer covering that document
-        must keep answering ESC. Dragging a splitter between two docks is exactly this case, and it is
-        why the viewer went deaf while its tab still read as current: `DocumentsDock` saw no dock
-        change either, so only re-selecting the tab brought the keyboard back (#161). Focus going to
-        **nothing at all** is reclaimed on the same principle, but only when it was this viewer's to
-        lose, so a background viewer never snatches at a keyboard it never had.
-
-        Everything genuinely *elsewhere* is left alone: another document, the app's own chrome, a
-        settings dialog. None of those is on this document's containment line.
-
-        :param old: the widget losing focus.
-        :param now: the widget receiving focus, or ``None`` when nothing holds it.
-        """
-        if self.__host is None or self.isHidden():
-            return
-        if now is None:
-            if old is self or (old is not None and self.isAncestorOf(old)):
-                self.setFocus(Qt.FocusReason.OtherFocusReason)
-            return
-        if self.__within_a_viewer(now):
-            return
-        if now is self.__host or self.__host.isAncestorOf(now) or now.isAncestorOf(self.__host):
-            self.setFocus(Qt.FocusReason.OtherFocusReason)
-
-    @staticmethod
-    def __within_a_viewer(widget: QWidget) -> bool:
-        """Whether ``widget`` sits inside some `ImageLightbox`.
-
-        :param widget: the widget to test.
-        :returns: whether it, or any of its ancestors, is a viewer.
-        """
-        node: QWidget | None = widget
-        while node is not None:
-            if isinstance(node, ImageLightbox):
-                return True
-            node = node.parentWidget()
-        return False
-
-    def __on_document_destroyed(self) -> None:
-        """Tear an app-window overlay down as its document is destroyed, restoring no focus.
-
-        Runs *during* the document's own destruction (its ``destroyed`` signal), so the owner
-        reference is dropped explicitly before closing rather than left to :meth:`__forget_owner`'s
-        own connection: :meth:`closeEvent`'s restore would otherwise ask the half-destroyed document
-        whether it still owns the remembered focus widget, which raises on a wrapper whose C++ object
-        is already gone. An explicit drop-then-close, not a connection-order guarantee -- slot order
-        is real but too easy to break silently in a later edit. Only the app-window overlay needs
-        this: the other two modes are children of the document and are destroyed with it, never
-        closed.
-        """
-        self.__owner = None
-        self.close()
-
-    def __forget_owner(self) -> None:
-        """Drop the owning document once Qt reports it destroyed, so dismiss restores nothing."""
-        self.__owner = None
-
-    def __forget_previous_focus(self) -> None:
-        """Drop the remembered focus widget once Qt reports it destroyed, so dismiss restores nothing."""
-        self.__previous_focus = None
 
     def __show_current(self) -> None:
         """Paint the screenshot at the current position and resync everything that tracks it.
@@ -1260,22 +1019,3 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes,to
         button = CornerButton(glyph, CLOSE_BUTTON_NAME, "Close (Esc)", self)
         button.clicked.connect(self.close)
         return button
-
-    @staticmethod
-    def __overlay_host(mode: ImageViewerMode, document: QWidget) -> QWidget:
-        """The widget an overlay covers, for whichever overlay ``mode`` asks for.
-
-        The app-window surface is the main window's **central widget** -- its client area -- so the
-        menu bar, toolbars, and status bar stay reachable, matching what the document overlay does one
-        level down. A document whose dock has been torn out into a floating window has no such central
-        widget to resolve, so its own window is covered instead.
-
-        :param mode: the overlay mode; :attr:`~ImageViewerMode.FULL_SCREEN` never reaches here.
-        :param document: the open document the viewer belongs to.
-        :returns: the widget to cover and track.
-        """
-        if mode is ImageViewerMode.DOCUMENT_OVERLAY:
-            return document
-        window = document.window()
-        central = window.centralWidget() if isinstance(window, QMainWindow) else None
-        return central if central is not None else window

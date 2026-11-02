@@ -14,7 +14,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.content_images.archive_cache import ArchiveCache
 from rehuco_agent.documents.content_images.content_images_model import ArchiveImageSource
-from rehuco_agent.fields.widgets import ImageLightbox, ImageViewerMode
+from rehuco_agent.fields.widgets import ImageLightbox, OverlayMode
 from rehuco_agent.fields.widgets.thumbnail_loader import ThumbnailLoader
 from rehuco_agent.fields.widgets.thumbnail_row import ThumbnailRow
 from rehuco_agent.rehuco import roots_lightbox
@@ -425,7 +425,7 @@ def test_the_keys_held_at_the_activation_pick_the_surface_though_the_listing_lan
     keys.return_value = Qt.KeyboardModifier.NoModifier
     qtbot.waitUntil(lambda: built.called, timeout=WAIT_TIMEOUT_MS)
 
-    assert built.call_args.args[2] is ImageViewerMode.APP_WINDOW_OVERLAY
+    assert built.call_args.args[2] is OverlayMode.APP_WINDOW_OVERLAY
 
 
 def clipboard_names() -> list[str]:

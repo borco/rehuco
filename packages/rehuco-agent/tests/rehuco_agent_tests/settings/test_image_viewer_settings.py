@@ -7,7 +7,7 @@ the same rationale) rather than a real one or ``tmp_path``.
 from typing import Any
 
 from pytest import fixture, mark
-from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
+from rehuco_agent.fields.widgets.overlay_surface import OverlayMode
 from rehuco_agent.settings.image_viewer_settings import (
     CONTENT_BANNERS_KEY,
     CONTENT_ROWS_MAX_HEIGHT_KEY,
@@ -93,14 +93,14 @@ def test_save_then_load_round_trips_the_mode(settings: FakeSettings) -> None:
     * verify the mode came back unchanged
     """
     viewer_settings = ImageViewerSettings()
-    viewer_settings.mode = ImageViewerMode.FULL_SCREEN
+    viewer_settings.mode = OverlayMode.FULL_SCREEN
 
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
     restored = ImageViewerSettings()
     restored.load(settings)  # type: ignore[arg-type]
 
-    assert restored.mode == ImageViewerMode.FULL_SCREEN
+    assert restored.mode == OverlayMode.FULL_SCREEN
 
 
 def test_the_persisted_value_is_the_modes_readable_name(settings: FakeSettings) -> None:
@@ -112,7 +112,7 @@ def test_the_persisted_value_is_the_modes_readable_name(settings: FakeSettings) 
     * verify the raw stored value is that member's string
     """
     viewer_settings = ImageViewerSettings()
-    viewer_settings.mode = ImageViewerMode.APP_WINDOW_OVERLAY
+    viewer_settings.mode = OverlayMode.APP_WINDOW_OVERLAY
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
     settings.beginGroup(GROUP)
@@ -131,7 +131,7 @@ def test_load_defaults_to_the_document_overlay_when_nothing_was_saved(settings: 
 
     viewer_settings.load(settings)  # type: ignore[arg-type]
 
-    assert viewer_settings.mode == ImageViewerMode.DOCUMENT_OVERLAY
+    assert viewer_settings.mode == OverlayMode.DOCUMENT_OVERLAY
     assert viewer_settings.mode == DEFAULT_MODE
 
 
@@ -150,7 +150,7 @@ def test_load_falls_back_to_the_default_for_an_unrecognized_mode(settings: FakeS
     settings.setValue(MODE_KEY, "picture_in_picture")
     settings.endGroup()
     viewer_settings = ImageViewerSettings()
-    viewer_settings.mode = ImageViewerMode.FULL_SCREEN
+    viewer_settings.mode = OverlayMode.FULL_SCREEN
 
     viewer_settings.load(settings)  # type: ignore[arg-type]
 
@@ -405,7 +405,7 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     * verify every raw value is stored
     """
     viewer_settings = ImageViewerSettings()
-    viewer_settings.mode = ImageViewerMode.FULL_SCREEN
+    viewer_settings.mode = OverlayMode.FULL_SCREEN
     viewer_settings.strip_visible = True
     viewer_settings.preview_wrap = True
     viewer_settings.previews_visible = False

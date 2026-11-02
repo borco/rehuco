@@ -33,11 +33,11 @@ from rehuco_agent.fields.widgets.image_lightbox import (
     STRIP_TOGGLE_BUTTON_NAME,
     ImageInfoOverlay,
     ImageLightbox,
-    ImageViewerMode,
     OverlayButton,
 )
 from rehuco_agent.fields.widgets.image_selector import PreviewLabel
 from rehuco_agent.fields.widgets.image_source import ImageVisibility, PathImageSource, ScreenshotRowsImageSource
+from rehuco_agent.fields.widgets.overlay_surface import OverlayMode
 from rehuco_agent.fields.widgets.thumbnail_row import ThumbnailRow
 
 from rehuco_agent_tests.qt_waits import wait_destroyed
@@ -146,7 +146,7 @@ def click_thumbnail(qtbot: QtBot, lightbox: ImageLightbox, index: int) -> None:
 
 
 def open_viewer(
-    images: list[Path], current: Path, mode: ImageViewerMode, document: QWidget, **kwargs: Any
+    images: list[Path], current: Path, mode: OverlayMode, document: QWidget, **kwargs: Any
 ) -> ImageLightbox:
     """Build a viewer over ``images``, opened on ``current``, the way the document opens one.
 
@@ -197,7 +197,7 @@ def reveal_over(document: QWidget, images: list[Path], current: Path, **kwargs: 
     :param kwargs: keyword arguments passed straight through to the viewer (``strip_visible``).
     :returns: the revealed viewer.
     """
-    lightbox = open_viewer(images, current, ImageViewerMode.DOCUMENT_OVERLAY, document, **kwargs)
+    lightbox = open_viewer(images, current, OverlayMode.DOCUMENT_OVERLAY, document, **kwargs)
     lightbox.reveal()
     return lightbox
 
@@ -213,7 +213,7 @@ def test_document_overlay_covers_the_document_it_belongs_to(document: QWidget, q
     * reveal a viewer in document-overlay mode
     * verify it is parented to the document, is not a window, and covers the document's whole rect
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
 
     lightbox.reveal()
@@ -231,7 +231,7 @@ def test_app_window_overlay_covers_the_main_windows_client_area(document: QWidge
     * reveal a viewer in app-window-overlay mode over a document nested in a main window
     * verify it is parented to that window's central widget and covers it
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.APP_WINDOW_OVERLAY, document)
     qtbot.addWidget(lightbox)
 
     lightbox.reveal()
@@ -251,7 +251,7 @@ def test_full_screen_is_a_frameless_window_owned_by_the_document(document: QWidg
     * reveal a viewer in full-screen mode
     * verify it is a window, is frameless, and keeps the document as its Qt parent
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.FULL_SCREEN, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.FULL_SCREEN, document)
     qtbot.addWidget(lightbox)
 
     lightbox.reveal()
@@ -269,7 +269,7 @@ def test_escape_dismisses_and_deletes_the_viewer(document: QWidget, qtbot: QtBot
     * reveal a viewer and press ESC on it
     * verify it reports ``closed`` and is destroyed
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
     dismissed: list[bool] = []
     lightbox.closed.connect(lambda: dismissed.append(True))
@@ -288,7 +288,7 @@ def test_the_close_button_dismisses_the_viewer(document: QWidget, qtbot: QtBot) 
     * reveal a viewer and click its close button
     * verify it is destroyed
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
     button = control(lightbox, CLOSE_BUTTON_NAME)
 
@@ -306,7 +306,7 @@ def test_a_double_click_on_the_image_dismisses_the_viewer_when_allowed(document:
     * reveal a viewer with the dismissal refused, double-click its middle and verify it stays up
     * allow it and verify a double-click destroys the viewer
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document, double_click_closes=False)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document, double_click_closes=False)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
     assert lightbox.double_click_closes is False
@@ -331,7 +331,7 @@ def test_clicking_the_image_does_not_dismiss_the_viewer(document: QWidget, qtbot
     * reveal a viewer and left-click the middle of it
     * verify it is still shown
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -348,7 +348,7 @@ def test_another_key_leaves_the_viewer_up(document: QWidget, qtbot: QtBot) -> No
     * reveal a viewer and press a key that isn't ESC
     * verify it is still shown
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -365,7 +365,7 @@ def test_a_right_click_leaves_the_viewer_up(document: QWidget, qtbot: QtBot) -> 
     * reveal a viewer and right-click it
     * verify it is still shown
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -387,7 +387,7 @@ def test_dismissing_returns_focus_where_it_came_from(document: QWidget, qtbot: Q
     editor.show()
     editor.setFocus()
     assert editor.hasFocus()
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
     assert not editor.hasFocus()
 
@@ -417,7 +417,7 @@ def test_dismissing_leaves_focus_alone_when_it_came_from_another_document(
     outsider = QLineEdit(document.window())
     outsider.show()
     outsider.setFocus()
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
     restore = mocker.patch.object(outsider, "setFocus")
 
@@ -438,7 +438,7 @@ def test_the_close_button_restores_focus_the_same_way_escape_does(document: QWid
     editor = QLineEdit(document)
     editor.show()
     editor.setFocus()
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
     button = control(lightbox, CLOSE_BUTTON_NAME)
 
@@ -462,7 +462,7 @@ def test_dismissing_tolerates_the_focused_widget_being_destroyed(document: QWidg
     editor = QLineEdit(document)
     editor.show()
     editor.setFocus()
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
 
     with wait_destroyed(qtbot, editor):
@@ -484,7 +484,7 @@ def test_an_overlay_reclaims_focus_from_the_surface_it_covers(document: QWidget,
     """
     editor = QLineEdit(document)
     editor.show()
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
 
     editor.setFocus()
@@ -505,10 +505,10 @@ def test_two_open_viewers_do_not_fight_over_focus(document: QWidget, qtbot: QtBo
     * reveal two app-window overlays over the same main window
     * verify the second holds focus, and ESC dismisses that one
     """
-    first = open_viewer([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    first = open_viewer([PATH], PATH, OverlayMode.APP_WINDOW_OVERLAY, document)
     qtbot.addWidget(first)
     first.reveal()
-    second = open_viewer([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    second = open_viewer([PATH], PATH, OverlayMode.APP_WINDOW_OVERLAY, document)
     second.reveal()
 
     assert second.hasFocus()
@@ -530,7 +530,7 @@ def test_an_overlay_leaves_focus_alone_outside_the_surface_it_covers(document: Q
     """
     outsider = QLineEdit(document.window())
     outsider.show()
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -550,7 +550,7 @@ def test_an_overlay_follows_the_surface_it_covers_as_it_resizes(document: QWidge
     * reveal a document overlay, then resize the document
     * verify the overlay still covers it exactly
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -570,10 +570,33 @@ def test_an_app_window_overlay_closes_when_its_document_goes_away(document: QWid
     * reveal an app-window overlay, then destroy the document it belongs to
     * verify the overlay is destroyed too
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.APP_WINDOW_OVERLAY, document)
     lightbox.reveal()
 
     with wait_destroyed(qtbot, lightbox):
+        document.deleteLater()
+
+
+def test_a_document_closed_after_its_app_window_overlay_was_dismissed_reaches_no_dead_viewer(
+    document: QWidget, qtbot: QtBot
+) -> None:
+    """A dismissed viewer is deleted; the document's own end must not call it (#574).
+
+    Regression: the connections to the document's ``destroyed`` are made by the shared base and inherited, and
+    PySide drops an inherited bound method's connection with its widget only when the method is the widget's own
+    class's -- so the deleted viewer was told its document had gone, and raised.
+
+    **Test steps:**
+
+    * reveal an app-window overlay, dismiss it with Esc and let it be deleted
+    * destroy the document and verify nothing is raised in the event loop (pytest-qt fails the test on one)
+    """
+    lightbox = open_viewer([PATH], PATH, OverlayMode.APP_WINDOW_OVERLAY, document)
+    lightbox.reveal()
+    with wait_destroyed(qtbot, lightbox):
+        qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+
+    with wait_destroyed(qtbot, document):
         document.deleteLater()
 
 
@@ -593,7 +616,7 @@ def test_a_document_close_under_an_app_window_overlay_restores_no_focus(document
     editor = QLineEdit(document)
     editor.show()
     editor.setFocus()
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.APP_WINDOW_OVERLAY, document)
     lightbox.reveal()
 
     with wait_destroyed(qtbot, lightbox):
@@ -608,7 +631,7 @@ def test_a_full_screen_viewer_dies_with_its_document(document: QWidget, qtbot: Q
     * reveal a full-screen viewer, then destroy the document it belongs to
     * verify the viewer is destroyed too
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.FULL_SCREEN, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.FULL_SCREEN, document)
     lightbox.reveal()
 
     with wait_destroyed(qtbot, lightbox):
@@ -623,7 +646,7 @@ def test_the_screenshot_is_scaled_to_fit_preserving_aspect(document: QWidget, qt
     * reveal a document overlay over a sized document, with a 16:9 source
     * verify the rendered pixmap fits inside the viewer and keeps 16:9
     """
-    lightbox = open_viewer([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = open_viewer([PATH], PATH, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
 
     lightbox.reveal()
@@ -926,7 +949,7 @@ def test_opening_on_a_stored_preference_is_not_reported_as_a_change(document: QW
     * connect to ``strip_visible_changed`` before revealing a viewer with the row shown
     * verify nothing was reported
     """
-    lightbox = open_viewer(PATHS, PATHS[1], ImageViewerMode.DOCUMENT_OVERLAY, document, strip_visible=True)
+    lightbox = open_viewer(PATHS, PATHS[1], OverlayMode.DOCUMENT_OVERLAY, document, strip_visible=True)
     qtbot.addWidget(lightbox)
     reported: list[bool] = []
     lightbox.strip_visible_changed.connect(reported.append)
@@ -1193,7 +1216,7 @@ def test_a_position_past_the_end_opens_on_the_last_image(document: QWidget, qtbo
     * build a viewer asked to open past the end of a three-image set
     * verify it opened on the last one
     """
-    lightbox = ImageLightbox(PathImageSource(PATHS), len(PATHS) + 5, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox(PathImageSource(PATHS), len(PATHS) + 5, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -1208,7 +1231,7 @@ def test_an_empty_source_opens_showing_nothing(document: QWidget, qtbot: QtBot) 
     * build a viewer over an empty source and reveal it
     * verify it has no current key and both bands are hidden
     """
-    lightbox = ImageLightbox(PathImageSource([]), 0, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox(PathImageSource([]), 0, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -1483,7 +1506,7 @@ def test_the_read_only_viewer_names_no_visibility_even_over_the_editors_rows(doc
     * verify the info box is the plain four lines, with nothing bold above them
     """
     rows = ScreenshotRowsImageSource([(PATHS[0], ImageVisibility.HIDDEN), (PATHS[1], ImageVisibility.UNCONVERTED)])
-    lightbox = ImageLightbox(rows, 0, ImageViewerMode.DOCUMENT_OVERLAY, document, info_visible=True)
+    lightbox = ImageLightbox(rows, 0, OverlayMode.DOCUMENT_OVERLAY, document, info_visible=True)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -1504,7 +1527,7 @@ def test_the_read_only_viewer_has_no_curating_keys(document: QWidget, qtbot: QtB
     * verify it is still up, on the same image
     """
     rows = ScreenshotRowsImageSource([(path, ImageVisibility.VISIBLE) for path in PATHS])
-    lightbox = ImageLightbox(rows, 1, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox(rows, 1, OverlayMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 

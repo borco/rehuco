@@ -25,7 +25,7 @@ from ..fields.widgets import (
     ImageExporter,
     ImageLightbox,
     ImageSource,
-    ImageViewerMode,
+    OverlayMode,
     PathImageSource,
     ThumbnailLoader,
     viewer_mode_for,
@@ -122,7 +122,7 @@ class RootsLightbox(QObject):
 
     The surface it paints on follows the settings, and **Shift**, **Ctrl** and **Ctrl+Shift** held at the activation
     pick the dock, the app window or the whole screen
-    (:func:`~rehuco_agent.fields.widgets.image_lightbox.viewer_mode_for`). Whether the thumbnail row is shown starts
+    (:func:`~rehuco_agent.fields.widgets.overlay_surface.viewer_mode_for`). Whether the thumbnail row is shown starts
     from the setting and is remembered here for the next viewer, not written back.
 
     :param host: the widget the viewer belongs to and covers -- the Roots panel.
@@ -140,7 +140,7 @@ class RootsLightbox(QObject):
         self.__generation = 0
         self.__viewer: ImageLightbox | None = None
         self.__strip_visible: bool | None = None
-        self.__pending = (ImageViewerMode.DOCUMENT_OVERLAY, ImagesOwner("", Path()))
+        self.__pending = (OverlayMode.DOCUMENT_OVERLAY, ImagesOwner("", Path()))
         """The surface the archive whose listing is out was asked for, read from the keys at the activation, and
         whose images it holds."""
 
@@ -197,7 +197,7 @@ class RootsLightbox(QObject):
         self.__show(ArchiveImageSource(entries, cache, owner.folder), 0, cache, mode, owner)
 
     @staticmethod
-    def __mode() -> ImageViewerMode:
+    def __mode() -> OverlayMode:
         """The surface the keys held right now ask for: **Shift** the Roots dock, **Ctrl** the app window,
         **Ctrl+Shift** the whole screen, none the setting -- as in a document.
 
@@ -206,7 +206,7 @@ class RootsLightbox(QObject):
         return viewer_mode_for(QApplication.keyboardModifiers(), shared_image_viewer_settings().mode)
 
     def __show(
-        self, source: ImageSource, index: int, cache: ArchiveCache | None, mode: ImageViewerMode, owner: ImagesOwner
+        self, source: ImageSource, index: int, cache: ArchiveCache | None, mode: OverlayMode, owner: ImagesOwner
     ) -> None:
         """Build the viewer over a source, as the settings ask, replacing any open one.
 

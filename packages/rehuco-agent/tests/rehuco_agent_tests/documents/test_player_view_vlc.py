@@ -11,8 +11,9 @@ from typing import Any
 from unittest.mock import Mock
 
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QAction, QImage
 from PySide6.QtMultimedia import QMediaPlayer
+from PySide6.QtWidgets import QLabel
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -20,6 +21,7 @@ from rehuco_agent.documents import player_engine
 from rehuco_agent.documents.player_view import INTERLACED_NOTICE, VLC_FALLBACK_TEMPLATE
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.vlc_media_player import VlcEngineError, VlcMediaPlayer
+from rehuco_agent.documents.vlc_surface import VlcSurface
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
 from rehuco_agent.settings.videos_settings import IN_APP_PLAYER, VLC_PLAYER, shared_videos_settings
 from rehuco_core import RenameCoordinator, VideoFormat
@@ -34,6 +36,7 @@ from .player_view_support import (  # pylint: disable=unused-import
     fixture_recorder,  # noqa: F401
     make_view,
     notices,
+    show_first_frame,
     shown_of,
     still_of,
 )
@@ -133,6 +136,7 @@ def test_vlc_chosen_but_not_loadable_plays_through_qt_and_says_why(
     view = make_view(qtbot, model, recorder)
 
     view.jump("01.mp4")
+    show_first_frame(view)
 
     assert shown_of(view).objectName() == "video_widget"
     assert notices(view) == [VLC_FALLBACK_TEMPLATE.format(reason="No VLC is set up on the Tools page.")]
@@ -156,6 +160,7 @@ def test_an_engine_libvlc_refuses_falls_back_the_same_way(
     view = make_view(qtbot, model, recorder)
 
     view.jump("01.mp4")
+    show_first_frame(view)
 
     assert shown_of(view).objectName() == "video_widget"
     assert notices(view) == [VLC_FALLBACK_TEMPLATE.format(reason="libvlc gave no player.")]
@@ -173,6 +178,7 @@ def test_qt_is_built_when_vlc_is_not_chosen_without_asking_for_the_library(
     view = make_view(qtbot, model, recorder)
 
     view.jump("01.mp4")
+    show_first_frame(view)
 
     loader.assert_not_called()
     assert shown_of(view).objectName() == "video_widget"
@@ -386,6 +392,7 @@ def test_a_changed_choice_rebuilds_the_engine_at_the_next_video(
     mocker.patch.object(player_engine, "QMediaPlayer", side_effect=build_qt)
     view = make_view(qtbot, model, recorder)
     view.jump("01.mp4")
+    show_first_frame(view, qt_players[0])
     assert shown_of(view).objectName() == "video_widget"
     assert len(qt_players) == 1
 
@@ -402,6 +409,7 @@ def test_a_changed_choice_rebuilds_the_engine_at_the_next_video(
 
     engine.deleteLater.assert_called_once_with()
     assert len(qt_players) == 2
+    show_first_frame(view, qt_players[1])
     assert shown_of(view).objectName() == "video_widget"
 
 
@@ -454,6 +462,7 @@ def test_a_vlc_set_up_after_the_fallback_is_taken_at_the_next_video(
     library.reason = "No VLC is set up on the Tools page."
     view = make_view(qtbot, model, recorder)
     view.jump("01.mp4")
+    show_first_frame(view)
     assert shown_of(view).objectName() == "video_widget"
 
     library.available = True
@@ -514,3 +523,38 @@ def test_stopping_a_view_that_built_no_engine_drops_nothing(
     engine.close.assert_not_called()
     built = getattr(player_engine, "VlcMediaPlayer")  # noqa: B009  # the patched class
     built.assert_not_called()
+
+
+def test_the_info_under_libvlc_reads_the_size_off_the_frame_it_shows(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """With no size from a Measure, the info panel names the size of the frame libvlc painted, and none before one is
+    painted (#574).
+
+    **Test steps:**
+
+    * choose VLC, show the info, play a video with no frame painted yet
+    * verify the panel says the size is unknown
+    * paint a 640x360 frame on the libvlc surface and move the video, and verify the panel names that size
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+    view.findChild(QAction, "info_action").trigger()  # type: ignore[union-attr]
+    view.jump("01.mp4")
+    deliver(engine, "durationChanged", 100_000)
+    deliver(engine, "mediaStatusChanged", QMediaPlayer.MediaStatus.BufferedMedia)
+    panel = view.findChild(QLabel, "info_panel")
+    assert isinstance(panel, QLabel)
+    assert "size unknown" in panel.text()
+
+    surface = view.findChild(VlcSurface, "vlc_surface")
+    assert isinstance(surface, VlcSurface)
+    surface.set_frame(QImage(640, 360, QImage.Format.Format_RGB32))
+    view.seek("01.mp4", 10.0)
+
+    assert "640 × 360 px" in panel.text()

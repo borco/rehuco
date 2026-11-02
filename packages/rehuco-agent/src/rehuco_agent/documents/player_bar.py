@@ -3,13 +3,21 @@
 
 from typing import Final
 
-from borco_pyside.theming import themed_glyph_icon
+from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QToolButton
 
 from ..commands import PLAYER_ADD_NOTE_AT, shared_command_registry
-from ..glyphs import PLAYER_PAUSE_GLYPH, PLAYER_PLAY_GLYPH
+from ..glyphs import (
+    LIGHTBOX_CLOSE_GLYPH,
+    PLAYER_BACK_GLYPH,
+    PLAYER_FORWARD_GLYPH,
+    PLAYER_NEXT_GLYPH,
+    PLAYER_PAUSE_GLYPH,
+    PLAYER_PLAY_GLYPH,
+    PLAYER_PREVIOUS_GLYPH,
+)
 from .clock_text import clock_text
 from .player_view_ui import Ui_PlayerView
 
@@ -24,7 +32,8 @@ class PlayerBar(QObject):
 
     The slider follows the position unless the reader holds it; a click on its groove, a turn of the wheel or the
     release of the handle asks for a seek (:attr:`seek_requested`). The clock reads the position over the length, the
-    play action the glyph of what pressing it does, and the *Add note at* action the clock it would add a note at.
+    play action the glyph of what pressing it does, the other transport actions and the restore one their glyphs, and
+    the *Add note at* action the clock it would add a note at.
 
     :param ui: the player's generated UI, whose slider, clock and actions this shows.
     :param parent: the Qt parent, which owns this.
@@ -42,6 +51,14 @@ class PlayerBar(QObject):
         ui.position_slider.sliderPressed.connect(self.__on_slider_pressed)
         ui.position_slider.sliderReleased.connect(self.__on_slider_released)
         ui.position_slider.actionTriggered.connect(self.__on_slider_action)
+        for action, glyph in (
+            (ui.previous_action, PLAYER_PREVIOUS_GLYPH),
+            (ui.back_action, PLAYER_BACK_GLYPH),
+            (ui.forward_action, PLAYER_FORWARD_GLYPH),
+            (ui.next_action, PLAYER_NEXT_GLYPH),
+            (ui.restore_action, LIGHTBOX_CLOSE_GLYPH),
+        ):
+            GlyphActionIconThemeHandler(action, glyph.codepoint, glyph.family)
         for button, action in (
             (ui.previous_button, ui.previous_action),
             (ui.back_button, ui.back_action),
@@ -49,6 +66,7 @@ class PlayerBar(QObject):
             (ui.forward_button, ui.forward_action),
             (ui.next_button, ui.next_action),
             (ui.add_note_button, ui.add_note_at_action),
+            (ui.restore_button, ui.restore_action),
         ):
             self.__mirror(button, action)
 

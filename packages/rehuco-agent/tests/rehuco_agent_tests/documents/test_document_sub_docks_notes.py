@@ -27,7 +27,6 @@ from rehuco_agent.documents.notes_panel import NotesPanel
 from rehuco_agent.documents.player_view import PlayerView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.video_still import VideoStill
-from rehuco_agent.settings.videos_settings import shared_videos_settings
 from rehuco_core import RehuDocument
 
 from .test_document_sub_docks_player import fixture_pack, player_dock  # noqa: F401  # pylint: disable=unused-import
@@ -174,20 +173,23 @@ def test_a_link_in_the_notes_takes_the_player_to_the_time_and_shows_it(
     assert [tuple(item.args) for item in seek.call_args_list] == [("02.mp4", 65.0), ("03.mp4", None)]
 
 
-def test_a_note_asked_for_at_the_player_opens_the_notes_dock_in_edit(widget: DocumentWidget) -> None:
-    """**Test steps:**
+def test_a_note_asked_for_at_the_player_is_recorded_with_the_dock_and_the_focus_left_alone(
+    widget: DocumentWidget,
+) -> None:
+    """*Add note at* only adds the line, docked or maximized (#574, owner).
+
+    **Test steps:**
 
     * have the player ask for a note at a time
-    * verify the notes dock was shown and made current, in edit, holding the bookmark line for that video
+    * verify the notes dock stays hidden, nothing is being edited, the notes show that video and hold the bookmark
     """
     player_of(widget).note_requested.emit("02.mp4", 65.0)
 
-    dock = notes_dock(widget)
     panel = notes_panel(widget)
-    assert dock.toggleViewAction().isChecked() is True
-    assert dock.isCurrentTab() is True  # type: ignore[attr-defined]
-    assert panel.editing is True
+    assert notes_dock(widget).toggleViewAction().isChecked() is False
+    assert panel.editing is False
     assert panel.video_key == "02.mp4"
+    assert "t=65" in widget.sub_docks._DocumentSubDocks__model.video_notes_of("02.mp4")  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_closing_the_notes_dock_writes_what_was_typed(widget: DocumentWidget, mocker: MockerFixture) -> None:
@@ -370,18 +372,3 @@ def test_a_video_activated_or_linked_shows_that_videos_notes(widget: DocumentWid
 
     notes_panel(widget).video_link_activated.emit("03.mp4", None)
     assert notes_panel(widget).video_key == "03.mp4"
-
-
-def test_a_note_asked_for_with_the_choice_off_neither_shows_the_dock_nor_edits(widget: DocumentWidget) -> None:
-    """**Test steps:**
-
-    * switch the choice off and have the player ask for a note at a time
-    * verify the notes dock stays hidden, nothing is being edited, and the note is in the video's notes
-    """
-    shared_videos_settings().add_note_edits = False
-
-    player_of(widget).note_requested.emit("02.mp4", 65.0)
-
-    assert notes_dock(widget).toggleViewAction().isChecked() is False
-    assert notes_panel(widget).editing is False
-    assert "t=65" in widget.sub_docks._DocumentSubDocks__model.video_notes_of("02.mp4")  # type: ignore[attr-defined]  # pylint: disable=protected-access

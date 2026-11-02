@@ -6,12 +6,12 @@ from PySide6.QtWidgets import QWidget
 
 
 class VlcSurface(QWidget):
-    """An ordinary widget showing the frame libvlc decoded last, scaled to fit and centred on black.
+    """An ordinary widget showing the frame libvlc decoded last, smoothly scaled to fit and centred on black.
 
     Ordinary on purpose: libvlc renders into memory ([[appendices.vlc#memory-rendering]]) rather than into a native
-    window of its own, so this is painted by Qt like any other widget and anything may be drawn over it -- the
-    maximized player's overlays ([[plugins#player-maximized]]) among them. Painting a 1080p frame into a window the
-    size of a monitor costs about 3 ms (measured).
+    window of its own, so this is painted by Qt like any other widget, anything may be drawn over it, and the maximized
+    player ([[plugins#player-maximized]]) carries it like any other. Painting a 1080p frame into a window the size of a
+    monitor costs about 3 ms (measured).
 
     :param parent: optional Qt parent.
     """
@@ -47,5 +47,7 @@ class VlcSurface(QWidget):
             scaled = self.__frame.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
             box = QRect(0, 0, scaled.width(), scaled.height())
             box.moveCenter(self.rect().center())
+            # smooth, as the still a pause shows is: unsmoothed, a scale near 1 draws some rows and columns twice
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawImage(box, self.__frame)
         painter.end()
