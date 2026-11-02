@@ -1264,15 +1264,17 @@ libvlc stays *Ended*, so a replay stops first. **A paused video is a stopped pla
 fails while libvlc plays or pauses, and succeeds after `stop()`. **A pause under libvlc holds the file**, paused on its
 frame: reopening and seeking landed a few frames off, so the player stays where it stopped and resumes there, and the
 rename -- the one case the release exists for -- lets the file go through the rename coordinator when it is about to
-happen. A load for a still (libvlc decodes no frame without playing) plays muted until the first frame, keeps it, and
-pauses, still muted -- libvlc pauses on a thread of its own, so unmuting then let a blip of sound out as the app started
-(#574) -- after which the view stops it as it would after a frame from Qt's sink, and only playing unmutes. **libvlc
-renders into memory** ([[appendices.vlc#memory-rendering]]): it decodes into a buffer of the app's (`VlcFrameSink`) and
-each frame is painted by an ordinary widget (`VlcSurface`), so there is no native window, any widget can be drawn over
-the picture, and the engine is the same on every OS. Audio, the clock and subtitles stay libvlc's. Measured at 1080p60
-in a window the size of a 3440x1440 monitor: 60 fps, about one and a third cores for the whole process since the surface
-scales smoothly (#574), as the still a pause shows does; two thirds of one core unsmoothed, which drew some rows and
-columns twice.
+happen. A load for a still (libvlc decodes no frame without playing) opens the file with `:no-audio`, so libvlc decodes
+no audio at all, plays until the first frame, keeps it, and pauses, after which the view stops it as it would after a
+frame from Qt's sink; played before then, the file is opened again with its audio, where the load had got to. Nothing is
+ever muted: libvlc takes a mute or an unmute only while its audio output lives, so a load muted around it let sound out
+at the start, and an unmute after the stop was lost, leaving the next video silent (both seen by the owner, #574).
+**libvlc renders into memory** ([[appendices.vlc#memory-rendering]]): it decodes into a buffer of the app's
+(`VlcFrameSink`) and each frame is painted by an ordinary widget (`VlcSurface`), so there is no native window, any
+widget can be drawn over the picture, and the engine is the same on every OS. Audio, the clock and subtitles stay
+libvlc's. Measured at 1080p60 in a window the size of a 3440x1440 monitor: 60 fps, about one and a third cores for the
+whole process since the surface scales smoothly (#574), as the still a pause shows does; two thirds of one core
+unsmoothed, which drew some rows and columns twice.
 
 **The build keeps 20 MB of a 105 MB to 460 MB wheel.** The agent depends on `PySide6-Essentials`; Qt Multimedia is in
 `PySide6-Addons`, which is named again for it. Playback needs about 20 MB of that wheel: `QtMultimedia` and

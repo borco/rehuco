@@ -3490,6 +3490,48 @@ def test_restore_late_adds_an_unread_dock_without_taking_the_focus(mocker: Mocke
     assert dock.focused_document_widget() is first
 
 
+def test_restore_late_into_a_shown_window_leaves_a_background_tab_unread(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Regression: QtAds shows each tab it adds, and with the window already up the shown tab counted as reaching the
+    screen -- a document on a share was read, and its player played, from behind the one in front (owner, #574).
+
+    **Test steps:**
+
+    * show the area, open one document, and restore a second one late into the same area
+    * verify the late one is still unread and the first is still the focused one
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.show()
+    qtbot.waitExposed(dock)
+    first = dock.open_document(FAKE_KEY)
+
+    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
+
+    late = next(widget for widget in dock.open_document_widgets() if widget.model.path == OTHER_PATH)
+    assert late.model.pending is True
+    assert dock.focused_document_widget() is first
+
+
+def test_restore_late_into_a_shown_empty_area_reads_the_tab_it_shows(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * show the area with nothing open, and restore one document late, without asking for the focus
+    * verify it was read: it is the tab on screen
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.show()
+    qtbot.waitExposed(dock)
+
+    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True))
+
+    widgets = dock.open_document_widgets()
+    assert widgets[0].model.pending is False
+    assert widgets[0].model.title == "Foo"
+
+
 def test_restore_late_can_focus_the_document_and_reads_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     """The session's focused document arriving before the user chose another is focused, and read (#464).
 

@@ -115,9 +115,18 @@ class FakeLibvlc:
         """
         return self.media[index].release.call_count  # pylint: disable=no-member
 
-    def __new_media(self, path: str) -> Mock:
-        """A media wrapper, kept so a test can see it released."""
-        media = Mock(path=path)
+    def opened(self, index: int) -> tuple[str, tuple[str, ...]]:
+        """What one of the media made was opened as.
+
+        :param index: which media, in the order made; negative counts from the last.
+        :returns: its path and its options.
+        """
+        media = self.media[index]
+        return media.path, media.options
+
+    def __new_media(self, path: str, *options: str) -> Mock:
+        """A media wrapper, kept so a test can see it released and the options it was opened with."""
+        media = Mock(path=path, options=options)
         self.media.append(media)
         return media
 
@@ -468,23 +477,23 @@ def test_a_frame_before_the_visible_size_is_known_is_shown_whole(
     assert (frame.width(), frame.height()) == PADDED
 
 
-def test_a_paused_load_plays_muted_until_the_first_frame_then_gives_the_still_and_pauses(
+def test_a_paused_load_decodes_no_audio_until_the_first_frame_then_gives_the_still_and_pauses(
     engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot
 ) -> None:
-    """libvlc decodes no frame without playing, so a load for a still plays muted until the first frame.
+    """libvlc decodes no frame without playing, so a load for a still plays -- opened with ``:no-audio``, so there is
+    nothing to hear, and nothing is muted: libvlc takes a mute only while its audio output lives, and a muted load let
+    sound out at the start, then left the next video silent (#574, measured).
 
     **Test steps:**
 
     * pause before anything played
-    * verify libvlc was muted and told to play
+    * verify the file was opened again with ``:no-audio`` and told to play, and nothing was muted
     * feed the first frame
-    * verify the still arrives as that frame, and libvlc was paused and left muted: it pauses on a thread of its own,
-      so unmuting now would let sound already decoded be heard (#574)
-    * play, and verify libvlc was unmuted
+    * verify the still arrives as that frame, and libvlc was paused
     """
     engine.pause()
 
-    libvlc.player.audio_set_mute.assert_called_with(True)
+    assert libvlc.opened(-1) == (libvlc.opened(0)[0], (":no-audio",))
     libvlc.player.play.assert_called_once_with()
     with qtbot.waitSignal(engine.still_ready, timeout=2000) as blocker:
         libvlc.feed_frame(0x60)
@@ -492,26 +501,26 @@ def test_a_paused_load_plays_muted_until_the_first_frame_then_gives_the_still_an
     still: QImage = blocker.args[0]
     assert (still.width(), still.height()) == VISIBLE  # pylint: disable=no-member  # a signal's record
     libvlc.player.set_pause.assert_called_once_with(1)
-    libvlc.player.audio_set_mute.assert_called_once_with(True)
-
-    engine.play()
-
-    libvlc.player.audio_set_mute.assert_called_with(False)
+    libvlc.player.audio_set_mute.assert_not_called()
 
 
-def test_play_during_a_paused_load_carries_on_unmuted(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:
+def test_play_during_a_paused_load_opens_the_file_again_with_its_audio_where_it_got_to(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc
+) -> None:
     """**Test steps:**
 
-    * pause before anything played, then play
-    * verify no second play was made: it was unmuted and unpaused instead
+    * pause before anything played, seek it to 5 s, then play
+    * verify the file was opened again with no ``:no-audio``, starting at 5 s, and played; nothing paused or muted
     """
     engine.pause()
+    engine.setPosition(5000)
 
     engine.play()
 
-    libvlc.player.play.assert_called_once_with()
-    libvlc.player.audio_set_mute.assert_called_with(False)
-    libvlc.player.set_pause.assert_called_once_with(0)
+    assert libvlc.opened(-1)[1] == (":start-time=5.000",)
+    assert libvlc.player.play.call_count == 2
+    libvlc.player.set_pause.assert_not_called()
+    libvlc.player.audio_set_mute.assert_not_called()
 
 
 def test_the_cleanup_callback_lets_the_buffer_go(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:

@@ -362,7 +362,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         not known until a server has been asked, and the start does not wait for that
         ([[appendices.code-conventions#worker-threads]]). It is made exactly as :meth:`restore_session` makes one --
         a pending dock around a placeholder model, its own remembered layout applied, read when its tab reaches the
-        screen. It is **not** made current unless asked: the user may already be working in another document.
+        screen. It is **not** made current unless asked: the user may already be working in another document. **Nor
+        is it read while it is added**: QtAds shows each tab it adds, and with the window already up that counted as
+        reaching the screen, so a background tab was read -- and its player played -- behind the one in front (owner,
+        #574). It is read once added only if it is what its area then shows.
 
         :param path: the document's path, as the session remembers it.
         :param item: its session entry, whose ``state`` is its own dock layout.
@@ -378,10 +381,14 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             self.__restoring_session = False
         if focus:
             self.__activate(dock)
-        elif previous is not None and previous is not dock:
+            return
+        if previous is not None and previous is not dock:
             # QtAds makes every dock current as it is added, which is right for the start (the last one made is
             # replaced by the session's focused one) and wrong here, where the user may be working in the previous one
             self.__tracker.set_current_dock(previous)
+        if dock.isVisible():
+            # what its area shows once the focus is given back -- the only tab there, or one in an area of its own
+            self.__load_pending(dock)
 
     def open_document_widgets(self) -> list[DocumentWidget]:
         """Every currently open document's widget, in no particular order.
@@ -857,7 +864,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :param visible: whether the dock just appeared (``True``) or was covered/hidden.
         """
         dock = self.sender()
-        if visible and isinstance(dock, QtAds.CDockWidget):
+        # QtAds shows each tab it adds: while a restore adds them, shown is not seen (#574)
+        if visible and not self.__restoring_session and isinstance(dock, QtAds.CDockWidget):
             self.__load_pending(dock)
 
     def __on_current_dock_changed(self, dock: QtAds.CDockWidget | None) -> None:
