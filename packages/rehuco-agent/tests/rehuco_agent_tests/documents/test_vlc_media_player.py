@@ -478,7 +478,9 @@ def test_a_paused_load_plays_muted_until_the_first_frame_then_gives_the_still_an
     * pause before anything played
     * verify libvlc was muted and told to play
     * feed the first frame
-    * verify the still arrives as that frame, libvlc was paused and unmuted
+    * verify the still arrives as that frame, and libvlc was paused and left muted: it pauses on a thread of its own,
+      so unmuting now would let sound already decoded be heard (#574)
+    * play, and verify libvlc was unmuted
     """
     engine.pause()
 
@@ -490,6 +492,10 @@ def test_a_paused_load_plays_muted_until_the_first_frame_then_gives_the_still_an
     still: QImage = blocker.args[0]
     assert (still.width(), still.height()) == VISIBLE  # pylint: disable=no-member  # a signal's record
     libvlc.player.set_pause.assert_called_once_with(1)
+    libvlc.player.audio_set_mute.assert_called_once_with(True)
+
+    engine.play()
+
     libvlc.player.audio_set_mute.assert_called_with(False)
 
 

@@ -172,6 +172,7 @@ def fixture_model(
     model.last_video.return_value = None
     model.video_notes_of.return_value = ""
     model.notes_changed = mocker.Mock()
+    model.progress_changed = mocker.Mock()
     return model
 
 
@@ -274,14 +275,25 @@ def speed_combo_of(view: PlayerView) -> QComboBox:
 
 
 def sink_of(view: PlayerView) -> QVideoSink:
-    """The sink a view's video widget draws into.
+    """The sink a view's Qt player decodes into, which the view hands frames on from.
 
     :param view: the view.
     :returns: its sink.
     """
-    video_widget = view.findChild(QVideoWidget)
+    sink = view.findChild(QVideoSink, "frame_sink")
+    assert isinstance(sink, QVideoSink)
+    return sink
+
+
+def widget_frame(view: PlayerView) -> QVideoFrame:
+    """The frame a view's Qt video widget holds: the last one handed on to it.
+
+    :param view: the view.
+    :returns: the frame, invalid when none was.
+    """
+    video_widget = view.findChild(QVideoWidget, "video_widget")
     assert isinstance(video_widget, QVideoWidget)
-    return video_widget.videoSink()
+    return video_widget.videoSink().videoFrame()
 
 
 def still_of(view: PlayerView) -> VideoStill:

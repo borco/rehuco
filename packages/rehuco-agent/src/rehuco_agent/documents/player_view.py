@@ -9,7 +9,7 @@ from typing import Final, cast
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QImage
-from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame
+from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame, QVideoSink
 from PySide6.QtWidgets import QWidget
 from rehuco_core import (
     VideoFormat,
@@ -214,7 +214,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__bar: Final = PlayerBar(self.__ui, self)
         self.__bar.seek_requested.connect(self.__seek_to)
         model.notes_changed.connect(self.__show_bookmarks)
-        self.__engine: Final = PlayerEngine(self, self.__ui.video_widget, self.__ui.vlc_surface)
+        self.__sink: Final = QVideoSink(self)
+        self.__sink.setObjectName("frame_sink")
+        self.__engine: Final = PlayerEngine(self, self.__ui.video_widget, self.__ui.vlc_surface, self.__sink)
         self.__notices: Final = PlayerNotices(self.__ui.notice_banner, self)
         self.__notices.tools_requested.connect(self.tools_requested)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -222,7 +224,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__list_runner: Final = self.__runner("list_runner", self.__on_listed)
         self.__no_frame_timer: Final = self.__single_shot(no_frame_ms, self.__on_no_frame)
         self.__grab_timer: Final = self.__single_shot(grab_ms, self.__on_grab_timeout)
-        self.__ui.video_widget.videoSink().videoFrameChanged.connect(self.__on_frame)
+        self.__sink.videoFrameChanged.connect(self.__on_frame)
         self.__stage: Final = PlayerStage(self.__ui, model, document, click_ms, self)
         self.__stage.clicks.pressed.connect(self.surface_clicked)
         self.__stage.clicks.clicked.connect(self.__on_picture_clicked)
@@ -660,13 +662,17 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if player is not None and self.__ready:
             self.__position_ms = player.position()
         self.__flush()
-        self.__ui.still_widget.set_image(self.__still_now())
+        if self.__engine.vlc:
+            self.__ui.still_widget.set_image(self.__still_now())
+            self.__stage.show_still()
+        else:
+            # Qt's video widget keeps its last frame: no still, so nothing shifts or flashes (#574)
+            self.__stage.hold()
         if self.__engine.vlc and player is not None and self.__ready:
             player.pause()
             self.__session = Session.HELD
         else:
             self.__release()
-        self.__stage.show_still()
         self.__show_position(self.__position_ms)
         self.__bar.show_playing(False)
 
@@ -837,7 +843,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             return
         if self.__session is Session.GRAB:
             if self.__at_position(frame):
-                self.__ui.still_widget.set_image(frame.toImage())
+                self.__stage.show_frame(frame)
                 self.__release()
             return
         # playing: a valid frame of a ready video comes from Qt's sink in no other session
@@ -856,8 +862,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         return start_ms < 0 or abs(start_ms - self.__position_ms) <= FRAME_TOLERANCE_MS
 
     def __show_engine_surface(self) -> None:
-        """Show the surface the engine draws on as a video starts to play (`PlayerStage`): libvlc's at once, Qt's once
-        it has a frame of where the video is, the still up until then."""
+        """Show the engine's picture as a video starts to play (`PlayerStage`): libvlc's surface at once; Qt's frames
+        handed on to its video widget from one of where the video is, the widget's last frame kept until then."""
         self.__stage.show_engine(self.__engine.surface, self.__engine.vlc, self.__position_ms)
 
     def __on_still(self, image: QImage) -> None:
@@ -870,14 +876,13 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__release()
 
     def __still_now(self) -> QImage | None:
-        """The picture the surface shows, as a video is paused: the last frame of either engine, taken while the file
-        is still held.
+        """libvlc's last frame, as a video is paused under it, taken while the file is still held -- Qt's video widget
+        keeps its own instead.
 
         :returns: the image, or ``None`` when there is none to take.
         """
-        if self.__engine.vlc and self.__engine.player is not None:
-            return cast(VlcMediaPlayer, self.__engine.player).grab_still() if self.__ready else None
-        return self.__ui.video_widget.videoSink().videoFrame().toImage()
+        player = self.__engine.player
+        return cast(VlcMediaPlayer, player).grab_still() if player is not None and self.__ready else None
 
     def __on_grab_timeout(self) -> None:
         """Let go of a video that gave no frame to show, without one. The timer runs for a paused load alone: playing
@@ -960,8 +965,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param position_ms: the position.
         """
         self.__bar.show_position(position_ms)
-        playlist = self.__playlist if self.__key is not None else None
-        self.__stage.show_info(playlist, self.__bar.duration_ms, position_ms, self.__engine.vlc)
+        self.__stage.show_info(self.__playlist, self.__bar.duration_ms, position_ms, self.__engine.vlc)
 
     def __on_picture_clicked(self) -> None:
         """Pause or play the video loaded -- a click on the picture that was not half of a double-click."""

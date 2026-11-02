@@ -53,7 +53,7 @@ class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__searching = False
         """Whether the video shown is still being looked for among the renamed ones: its editor waits."""
         self.__pending_note: float | None = None
-        """A bookmark asked for while the search was out -- its time, and whether to edit -- added once it answers."""
+        """The time of a bookmark asked for while the search was out, added once it answers."""
 
         self.__ui: Final = Ui_NotesPanel()
         self.__ui.setupUi(self)

@@ -23,8 +23,8 @@ FRAME_TOLERANCE_MS: Final = 1000
 """How far from where a video was left a frame may be and still be the one to show it as."""
 
 REVEAL_TIMEOUT_MS: Final = 3000
-"""How long the still may stay up over a video that plays and gives no frame of where it is: then the picture is shown
-as it is, as a paused load gives up on its frame after as long."""
+"""How long Qt's video widget may keep its last frame over a video that plays and gives no frame of where it is: then
+every frame is handed on as it comes, as a paused load gives up on its frame after as long."""
 
 
 class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
@@ -34,12 +34,17 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
     (`PlayerMaximizer`), and keeps the info panel beside the picture: hidden until ``I``, then the picture shrinks to
     make room. The panel is told the video's state as it changes and shows the latest whenever it is shown.
 
-    **Which page the picture shows** is its too. libvlc's surface is shown the moment a video plays, since it resumes
-    on the frame it paused on. Qt's video widget is black until its first frame -- a paused video's file was let go,
-    and opening it again takes about 200 ms (measured, #574) -- so the still stays up until the widget has a frame
-    of where the video is: one Qt stamps within :data:`FRAME_TOLERANCE_MS` of the position asked for, or any frame
-    once the player has reported that position, for a file whose frame times run on another clock than its
-    positions (an MPEG-TS stream's do), or :data:`REVEAL_TIMEOUT_MS` after play for a file that gives neither.
+    **What the picture shows** is its too. libvlc's surface is shown the moment a video plays, since it resumes on the
+    frame it paused on, and a pause shows the still, which is that frame drawn the same way.
+
+    **Qt's frames reach its video widget through here** (:meth:`offer_frame`): the player decodes into the view's own
+    sink, and the stage hands each frame on, or holds the last. A pause stops handing them on and lets the widget keep
+    its last frame, drawn by the same renderer -- swapping to a still painted by Qt's own scaling shifted the picture by
+    about a pixel and flashed as the native window went (seen by the owner, #574). A resume opens the file again,
+    which takes about 200 ms, and hands frames on again only from one of where the video is: stamped within
+    :data:`FRAME_TOLERANCE_MS` of the position asked for, or any frame once the player has reported that position, for
+    a file whose frame times run on another clock than its positions (an MPEG-TS stream's do), or every frame
+    :data:`REVEAL_TIMEOUT_MS` after play, for a file that gives neither.
 
     :param ui: the player's generated UI.
     :param model: the document, read for the pixel size a Measure recorded.
@@ -69,6 +74,10 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         """The position Qt's video widget is to show a frame of before it is shown, or ``None`` while nothing waits."""
         self.__reported_ms: int | None = None
         """The position the player reported last since the wait began, or ``None`` for none yet."""
+        self.__forwarding = False
+        """Whether Qt's frames are handed on to its video widget as they come."""
+        self.__latest: QVideoFrame | None = None
+        """The newest of Qt's frames offered since the video was selected, handed on or not."""
         self.clicks: Final = PlayerClicks((ui.video_widget, ui.vlc_surface, ui.still_widget), click_ms, self)
         self.maximizer: Final = PlayerMaximizer(
             ui.main_layout, (ui.stage_splitter, ui.controls_bar), ui.restore_button, document, parent
@@ -81,6 +90,8 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         self.__reveal_timer.timeout.connect(self.__reveal)
         ui.side_splitter.hide()
         ui.info_action.toggled.connect(self.__on_info_toggled)
+        # a Measure writes the sizes the panel shows; what it cached of them is read again then
+        model.progress_changed.connect(self.__forget_measured)
         ui.restore_action.triggered.connect(self.maximizer.restore)
 
     @property
@@ -91,14 +102,38 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
     # region The picture
 
     def show_still(self) -> None:
-        """Show the still, and wait for no frame."""
-        self.__awaited_ms = None
-        self.__reveal_timer.stop()
+        """Show the still, hand no frame on, and take the video widget's frame away: another video's must never come up
+        as this one's picture."""
+        self.hold()
+        self.__latest = None
+        self.__ui.video_widget.videoSink().setVideoFrame(QVideoFrame())
         self.__ui.surface_stack.setCurrentWidget(self.__ui.still_widget)
 
+    def hold(self) -> None:
+        """Hand no more of Qt's frames on: its video widget keeps the last it was given, as a pause under Qt shows.
+
+        A widget given nothing yet -- paused before a frame of the position arrived -- shows the newest frame decoded
+        instead, from wherever in the video it is: a picture over none.
+        """
+        self.__forwarding = False
+        self.__awaited_ms = None
+        self.__reveal_timer.stop()
+        if self.__latest is not None and not self.__ui.video_widget.videoSink().videoFrame().isValid():
+            self.__ui.video_widget.videoSink().setVideoFrame(self.__latest)
+            self.__ui.surface_stack.setCurrentWidget(self.__ui.video_widget)
+
+    def show_frame(self, frame: QVideoFrame) -> None:
+        """Show one of Qt's frames and hold it -- the frame a paused load opened the file for.
+
+        :param frame: the frame.
+        """
+        self.hold()
+        self.__ui.video_widget.videoSink().setVideoFrame(frame)
+        self.__ui.surface_stack.setCurrentWidget(self.__ui.video_widget)
+
     def show_engine(self, surface: QWidget, vlc: bool, position_ms: int) -> None:
-        """Show the engine's surface as a video starts to play: libvlc's at once, Qt's once it has a frame of where the
-        video is (:meth:`offer_frame`, :meth:`note_position`), the still up until then.
+        """Show the engine's surface as a video starts to play: libvlc's at once; Qt's frames handed on from one of
+        where the video is (:meth:`offer_frame`, :meth:`note_position`), what the picture shows held until then.
 
         :param surface: the page the engine draws on.
         :param vlc: whether the engine is libvlc.
@@ -107,22 +142,25 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         if vlc:
             self.__ui.surface_stack.setCurrentWidget(surface)
             return
+        self.__forwarding = False
         self.__awaited_ms = position_ms
         self.__reported_ms = None
         self.__reveal_timer.start()
 
     def offer_frame(self, frame: QVideoFrame) -> None:
-        """Show Qt's video widget, when a frame of the video playing is the one waited for.
+        """Hand a frame of Qt's on to its video widget while frames are handed on, or when it is the one waited for.
 
         :param frame: a valid frame of the ready video.
         """
+        self.__latest = frame
         awaited, reported = self.__awaited_ms, self.__reported_ms
-        if awaited is None:
-            return
-        start_ms = frame.startTime() / 1000
-        landed = reported is not None and abs(reported - awaited) <= FRAME_TOLERANCE_MS
-        if start_ms < 0 or abs(start_ms - awaited) <= FRAME_TOLERANCE_MS or landed:
-            self.__reveal()
+        if awaited is not None:
+            start_ms = frame.startTime() / 1000
+            landed = reported is not None and abs(reported - awaited) <= FRAME_TOLERANCE_MS
+            if start_ms < 0 or abs(start_ms - awaited) <= FRAME_TOLERANCE_MS or landed:
+                self.__reveal()
+        if self.__forwarding:
+            self.__ui.video_widget.videoSink().setVideoFrame(frame)
 
     def note_position(self, position_ms: int) -> None:
         """Take the position the player reports: while a frame is waited for, one at the position asked for means the
@@ -133,9 +171,10 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         self.__reported_ms = position_ms
 
     def __reveal(self) -> None:
-        """Show Qt's video widget, and wait for no frame."""
+        """Hand Qt's frames on to its video widget from now, and show it."""
         self.__awaited_ms = None
         self.__reveal_timer.stop()
+        self.__forwarding = True
         self.__ui.surface_stack.setCurrentWidget(self.__ui.video_widget)
 
     # endregion
@@ -178,6 +217,10 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
             frame = self.__ui.vlc_surface.frame
             return frame.size() if frame is not None else None
         return self.__ui.video_widget.videoSink().videoSize()
+
+    def __forget_measured(self) -> None:
+        """Read the measured size again at the next refresh: the record's ``videos`` changed."""
+        self.__measured = None
 
     def __on_info_toggled(self, shown: bool) -> None:
         """Show or hide the info beside the picture, which shrinks or grows to fit.

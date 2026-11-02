@@ -64,8 +64,9 @@ class VlcMediaPlayer(QObject):
 
     **A paused load** (:meth:`pause` before anything played) plays muted until the first frame **at the position asked
     for** -- the first picture libvlc decodes is the file's start, ahead of the seek the view makes as the video
-    buffers -- then pauses and emits :attr:`still_ready` with it; the view then lets the file go, as it does with a
-    frame from Qt's sink. **A pause while playing** keeps the file held, which is the view's business.
+    buffers -- then pauses, still muted, and emits :attr:`still_ready` with it; the view then lets the file go, as it
+    does with a frame from Qt's sink, and only :meth:`play` unmutes. **A pause while playing** keeps the file held,
+    which is the view's business.
 
     **libvlc's objects are released** by :meth:`close`: the media each time another replaces it, and the player and the
     instance when the view lets the engine go; the event callbacks are attached to one event manager kept for as long
@@ -409,8 +410,9 @@ class VlcMediaPlayer(QObject):
         if self.__grabbing and self.__at_wanted_position():
             self.__grabbing = False
             self.__wanted_ms = None
+            # left muted: libvlc pauses on a thread of its own, and sound already decoded would be heard if unmuted
+            # now -- a blip as the app starts (owner, #574); what plays it next unmutes it
             self.__player.set_pause(1)
-            self.__player.audio_set_mute(False)
             self.still_ready.emit(frame)
 
     def __at_wanted_position(self) -> bool:

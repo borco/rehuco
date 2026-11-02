@@ -1225,12 +1225,15 @@ renaming a resource's folder is something the app does from the editor's path ro
 view's own states -- the video, the position and a still frame on screen -- with the player's source cleared: pausing
 records the position, keeps the frame on screen and lets go; a video loaded without playing is opened for as long as it
 takes to buffer and give one frame at its position, then let go (with a three-second limit for a video that gives none);
-playing opens it again and seeks to the position once it buffers, with the still kept up until the widget has a frame of
-that position -- one stamped within a second of it, or any frame once the player reports it there, for a file whose
-frame times run on another clock than its positions, or three seconds after play for one that gives neither -- since the
-widget shows black for about 200 ms as the file opens (#574). An open Player dock therefore never blocks a rename.
-Closing the dock stops the player and lets go the same way, as does the last video's end. It is the reason the Content
-Images dock lets go of its archives when it is hidden (#355).
+playing opens it again and seeks to the position once it buffers, under Qt the player decodes into a sink of the view's,
+which hands each frame on to the video widget: a pause stops handing them on and the widget keeps its last frame, drawn
+by the same renderer -- a still painted by Qt's own scaling shifted the picture by about a pixel and flashed as the
+native window went (seen by the owner, #574) -- and playing again hands frames on only from one of that position
+(stamped within a second of it, or any frame once the player reports it there, for a file whose frame times run on
+another clock than its positions, or every frame three seconds after play for one that gives neither), since the file
+takes about 200 ms to open again. An open Player dock therefore never blocks a rename. Closing the dock stops the player
+and lets go the same way, as does the last video's end. It is the reason the Content Images dock lets go of its archives
+when it is hidden (#355).
 
 **A rename that starts while a video plays pauses it first.** The player asks the rename coordinator to be told, ahead
 of any wait, which resource is about to be renamed; for its own resource it pauses into the released state, and the
@@ -1261,14 +1264,15 @@ libvlc stays *Ended*, so a replay stops first. **A paused video is a stopped pla
 fails while libvlc plays or pauses, and succeeds after `stop()`. **A pause under libvlc holds the file**, paused on its
 frame: reopening and seeking landed a few frames off, so the player stays where it stopped and resumes there, and the
 rename -- the one case the release exists for -- lets the file go through the rename coordinator when it is about to
-happen. A load for a still (libvlc decodes no frame without playing) plays muted until the first frame, keeps it,
-and pauses, after which the view stops it as it would after a frame from Qt's sink. **libvlc renders into memory**
-([[appendices.vlc#memory-rendering]]): it decodes into a buffer of the app's (`VlcFrameSink`) and each frame is painted
-by an ordinary widget (`VlcSurface`), so there is no native window, any widget can be drawn over the picture, and
-the engine is the same on every OS. Audio, the clock and subtitles stay
-libvlc's. Measured at 1080p60 in a window the size of a 3440x1440 monitor: 60 fps, about one and a third cores for
-the whole process since the surface scales smoothly (#574), as the still a pause shows does; two thirds of one core
-unsmoothed, which drew some rows and columns twice.
+happen. A load for a still (libvlc decodes no frame without playing) plays muted until the first frame, keeps it, and
+pauses, still muted -- libvlc pauses on a thread of its own, so unmuting then let a blip of sound out as the app started
+(#574) -- after which the view stops it as it would after a frame from Qt's sink, and only playing unmutes. **libvlc
+renders into memory** ([[appendices.vlc#memory-rendering]]): it decodes into a buffer of the app's (`VlcFrameSink`) and
+each frame is painted by an ordinary widget (`VlcSurface`), so there is no native window, any widget can be drawn over
+the picture, and the engine is the same on every OS. Audio, the clock and subtitles stay libvlc's. Measured at 1080p60
+in a window the size of a 3440x1440 monitor: 60 fps, about one and a third cores for the whole process since the surface
+scales smoothly (#574), as the still a pause shows does; two thirds of one core unsmoothed, which drew some rows and
+columns twice.
 
 **The build keeps 20 MB of a 105 MB to 460 MB wheel.** The agent depends on `PySide6-Essentials`; Qt Multimedia is in
 `PySide6-Addons`, which is named again for it. Playback needs about 20 MB of that wheel: `QtMultimedia` and

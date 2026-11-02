@@ -31,6 +31,20 @@ class OverlayMode(StrEnum):
     FULL_SCREEN = "full_screen"
     """A frameless window over the entire screen -- the classic photo-viewer lightbox."""
 
+    @classmethod
+    def stored(cls, value: object, default: OverlayMode) -> OverlayMode:
+        """The member a stored value names, or a default for one this build does not know -- an ``.ini`` written by a
+        newer version.
+
+        :param value: the raw stored value.
+        :param default: what an unknown value reads as.
+        :returns: the member.
+        """
+        try:
+            return cls(value)
+        except ValueError:
+            return default
+
 
 def viewer_mode_for(modifiers: Qt.KeyboardModifier, configured: OverlayMode) -> OverlayMode:
     """Which surface a maximized view opens on, given the keys held as it was activated (#221).

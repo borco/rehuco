@@ -225,10 +225,7 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
             bool, settings.value(CONTENT_STRIP_ZIP_FOLDER_KEY, DEFAULT_CONTENT_STRIP_ZIP_FOLDER, type=bool)
         )
         settings.endGroup()
-        try:
-            self.mode = OverlayMode(stored)
-        except ValueError:
-            self.mode = DEFAULT_MODE
+        self.mode = OverlayMode.stored(stored, DEFAULT_MODE)
 
     def save(self, settings: QSettings) -> None:
         """Save the current choices to persistent storage.

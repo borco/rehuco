@@ -466,3 +466,20 @@ def test_a_state_that_is_no_map_leaves_the_split_as_it_is(host: Host) -> None:
     host.view.restore_state(cbor2.dumps([1, 2]))
 
     assert stage.sizes() == sizes
+
+
+def test_a_measure_while_the_info_shows_reaches_the_panel(host: Host, model: RehuDocumentModel) -> None:
+    """**Test steps:**
+
+    * show the info on an unmeasured video, then have a Measure record its size and the model say so
+    * verify the panel names the size at the next position
+    """
+    action_of(host.view, "info_action").trigger()
+    player = start_playing(host.view, "01.mp4")
+    assert "size unknown" in info_panel_of(host.view).text()
+
+    model.measured_videos.return_value = {"01.mp4": VideoFacts(100.0, 1280, 720)}  # type: ignore[attr-defined]
+    model.progress_changed.connect.call_args.args[0]()  # type: ignore[attr-defined]  # pylint: disable=not-callable
+    player.positionChanged.emit(1_000)
+
+    assert "1280 × 720 px" in info_panel_of(host.view).text()

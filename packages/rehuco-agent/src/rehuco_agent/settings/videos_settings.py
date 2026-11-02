@@ -133,10 +133,7 @@ def read_maximize_mode(value: object) -> OverlayMode:
     :param value: the raw stored value.
     :returns: the surface a maximized video is shown on.
     """
-    try:
-        return OverlayMode(value)
-    except ValueError:
-        return DEFAULT_MAXIMIZE_MODE
+    return OverlayMode.stored(value, DEFAULT_MAXIMIZE_MODE)
 
 
 @dataclass
