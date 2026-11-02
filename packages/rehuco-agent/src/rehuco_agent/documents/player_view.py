@@ -43,7 +43,7 @@ from .player_bar import PlayerBar
 from .player_engine import Engine, PlayerEngine
 from .player_notices import PlayerNotices
 from .player_playlist import PlayerPlaylist
-from .player_stage import FRAME_TOLERANCE_MS, PlayerStage
+from .player_stage import PlayerStage
 from .player_view_ui import Ui_PlayerView
 from .rehu_document_model import RehuDocumentModel
 from .vlc_media_player import VlcMediaPlayer
@@ -228,6 +228,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__stage: Final = PlayerStage(self.__ui, model, document, click_ms, self)
         self.__stage.clicks.pressed.connect(self.surface_clicked)
         self.__stage.clicks.clicked.connect(self.__on_picture_clicked)
+        self.__stage.clicks.double_clicked.connect(self.__on_picture_double_clicked)
 
         self.__setup_actions()
         self.__setup_bar()
@@ -827,6 +828,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param message: Qt's description of it.
         """
         self.__notices.add(f"{ERROR_NOTICE} {message}".rstrip())
+        # no frame of where it is will come: the still, and nothing handed on when the wait runs out
+        self.__stage.hold()
 
     def __on_frame(self, frame: QVideoFrame) -> None:
         """Take the picture the video shows: the frame a paused load was opened for, or proof an AV1 video is no silent
@@ -842,7 +845,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if not self.__ready or not frame.isValid():
             return
         if self.__session is Session.GRAB:
-            if self.__at_position(frame):
+            if PlayerStage.at_position(frame, self.__position_ms):
                 self.__stage.show_frame(frame)
                 self.__release()
             return
@@ -851,15 +854,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if not self.__frame_seen:
             self.__frame_seen = True
             self.__no_frame_timer.stop()
-
-    def __at_position(self, frame: QVideoFrame) -> bool:
-        """Whether a frame is of where the video is, rather than one from before a seek took hold.
-
-        :param frame: a valid frame of the ready video.
-        :returns: ``True`` within :data:`FRAME_TOLERANCE_MS` of the position, or for a frame with no time.
-        """
-        start_ms = frame.startTime() / 1000
-        return start_ms < 0 or abs(start_ms - self.__position_ms) <= FRAME_TOLERANCE_MS
 
     def __show_engine_surface(self) -> None:
         """Show the engine's picture as a video starts to play (`PlayerStage`): libvlc's surface at once; Qt's frames
@@ -966,6 +960,15 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         self.__bar.show_position(position_ms)
         self.__stage.show_info(self.__playlist, self.__bar.duration_ms, position_ms, self.__engine.vlc)
+
+    def __on_picture_double_clicked(self, modifiers: Qt.KeyboardModifier) -> None:
+        """Maximize the player, or put it back -- a double-click on the picture; with no video, there is nothing to
+        maximize.
+
+        :param modifiers: the keys held, which pick the surface over the Videos page's choice as they do for an image.
+        """
+        if self.__key is not None or self.__stage.mode is not None:
+            self.__stage.maximizer.toggle(modifiers)
 
     def __on_picture_clicked(self) -> None:
         """Pause or play the video loaded -- a click on the picture that was not half of a double-click."""

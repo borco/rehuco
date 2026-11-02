@@ -68,8 +68,9 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         """The latest video state :meth:`show_info` was given: the playlist, the length, the position, and whether
         libvlc draws."""
         self.__measured: tuple[str, QSize | None] | None = None
-        """The pixel size a Measure recorded for a video, read once per video: the record's ``videos`` map is parsed
-        whole at each read, and the panel is refreshed at every position."""
+        """The pixel size a Measure recorded for a video, read once as the video is selected: the record's ``videos``
+        map is parsed whole at each read, the panel is refreshed at every position, and a size is the file's -- once a
+        frame shows, the frame says it, and a file that changed is loaded again (owner)."""
         self.__awaited_ms: int | None = None
         """The position Qt's video widget is to show a frame of before it is shown, or ``None`` while nothing waits."""
         self.__reported_ms: int | None = None
@@ -82,7 +83,6 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         self.maximizer: Final = PlayerMaximizer(
             ui.main_layout, (ui.stage_splitter, ui.controls_bar), ui.restore_button, document, parent
         )
-        self.clicks.double_clicked.connect(self.maximizer.toggle)
         self.__reveal_timer: Final = QTimer(self)
         self.__reveal_timer.setObjectName("reveal_timer")
         self.__reveal_timer.setSingleShot(True)
@@ -90,8 +90,6 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         self.__reveal_timer.timeout.connect(self.__reveal)
         ui.side_splitter.hide()
         ui.info_action.toggled.connect(self.__on_info_toggled)
-        # a Measure writes the sizes the panel shows; what it cached of them is read again then
-        model.progress_changed.connect(self.__forget_measured)
         ui.restore_action.triggered.connect(self.maximizer.restore)
 
     @property
@@ -155,9 +153,8 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         self.__latest = frame
         awaited, reported = self.__awaited_ms, self.__reported_ms
         if awaited is not None:
-            start_ms = frame.startTime() / 1000
             landed = reported is not None and abs(reported - awaited) <= FRAME_TOLERANCE_MS
-            if start_ms < 0 or abs(start_ms - awaited) <= FRAME_TOLERANCE_MS or landed:
+            if self.at_position(frame, awaited) or landed:
                 self.__reveal()
         if self.__forwarding:
             self.__ui.video_widget.videoSink().setVideoFrame(frame)
@@ -166,9 +163,25 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         """Take the position the player reports: while a frame is waited for, one at the position asked for means the
         seek has landed and the next frame is of it, whatever time it carries.
 
+        Not the report of the position asked for itself: Qt reports a seek's target the moment it is asked, 110 ms
+        before any frame of it (measured), and a frame from before the seek could still come meanwhile. What playback
+        then reports drifts off the exact target.
+
         :param position_ms: where the player says it is.
         """
-        self.__reported_ms = position_ms
+        if position_ms != self.__awaited_ms:
+            self.__reported_ms = position_ms
+
+    @staticmethod
+    def at_position(frame: QVideoFrame, position_ms: int) -> bool:
+        """Whether a frame is of a position, rather than one from before a seek to it took hold.
+
+        :param frame: a valid frame.
+        :param position_ms: the position.
+        :returns: ``True`` within :data:`FRAME_TOLERANCE_MS` of it, or for a frame with no time.
+        """
+        start_ms = frame.startTime() / 1000
+        return start_ms < 0 or abs(start_ms - position_ms) <= FRAME_TOLERANCE_MS
 
     def __reveal(self) -> None:
         """Hand Qt's frames on to its video widget from now, and show it."""
@@ -200,7 +213,8 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         )
 
     def __pixel_size(self, playlist: PlayerPlaylist, vlc: bool) -> QSize | None:
-        """The picture's size: what a Measure recorded, read once per video, else the frame the engine shows.
+        """The picture's size: what a Measure recorded, read once as the video is selected, else the frame the engine
+        shows.
 
         :param playlist: the playlist on the video loaded.
         :param vlc: whether libvlc draws the picture.
@@ -217,10 +231,6 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
             frame = self.__ui.vlc_surface.frame
             return frame.size() if frame is not None else None
         return self.__ui.video_widget.videoSink().videoSize()
-
-    def __forget_measured(self) -> None:
-        """Read the measured size again at the next refresh: the record's ``videos`` changed."""
-        self.__measured = None
 
     def __on_info_toggled(self, shown: bool) -> None:
         """Show or hide the info beside the picture, which shrinks or grows to fit.

@@ -187,6 +187,9 @@ class VlcMediaPlayer(QObject):
         """
         if self.__media is None:
             return
+        if self.__grabbing:
+            # a paused load is a pause already: paused half-way, it would give no still
+            return
         if self.__state == QMediaPlayer.PlaybackState.PlayingState or self.__player.is_playing():
             self.__player.set_pause(1)
             return

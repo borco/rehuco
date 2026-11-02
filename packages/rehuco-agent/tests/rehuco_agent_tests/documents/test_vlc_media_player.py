@@ -762,3 +762,25 @@ def test_an_event_after_closing_changes_nothing(engine: VlcMediaPlayer, libvlc: 
     qtbot.wait(50)
 
     assert engine.playbackState() == QMediaPlayer.PlaybackState.StoppedState
+
+
+def test_a_pause_during_a_paused_load_leaves_the_load_to_finish(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot
+) -> None:
+    """A paused load plays, so libvlc says it plays; a pause then would stop it half-way, with no still ever given.
+
+    **Test steps:**
+
+    * pause before anything played, and pause again while libvlc says it plays
+    * verify libvlc was not told to pause
+    * feed the first frame and verify the still arrives and libvlc pauses then
+    """
+    engine.pause()
+    libvlc.player.is_playing.return_value = True
+
+    engine.pause()
+
+    libvlc.player.set_pause.assert_not_called()
+    with qtbot.waitSignal(engine.still_ready, timeout=2000):
+        libvlc.feed_frame(0x60)
+    libvlc.player.set_pause.assert_called_once_with(1)

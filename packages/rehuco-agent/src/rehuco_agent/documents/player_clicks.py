@@ -38,7 +38,7 @@ class PlayerClicks(QObject):
     """
 
     pressed = Signal()
-    """A left press landed on the picture: each press of a run, once."""
+    """A left press landed on the picture -- Qt's press, not the double-click it turns a second one into."""
 
     clicked = Signal()
     """A press on the picture with no second press after it."""
@@ -70,6 +70,8 @@ class PlayerClicks(QObject):
             kind in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick)
             and cast(QMouseEvent, event).button() == Qt.MouseButton.LeftButton
         ):
+            if kind == QEvent.Type.MouseButtonPress:
+                self.pressed.emit()
             self.__on_press(cast(QMouseEvent, event).modifiers())
         return super().eventFilter(watched, event)
 
@@ -78,7 +80,6 @@ class PlayerClicks(QObject):
 
         :param modifiers: the keys held at it.
         """
-        self.pressed.emit()
         match self.__count:
             case Count.NONE:
                 self.__count = Count.ONE

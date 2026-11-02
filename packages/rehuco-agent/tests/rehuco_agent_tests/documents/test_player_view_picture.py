@@ -190,3 +190,44 @@ def test_a_pause_before_a_frame_of_the_position_shows_the_newest_frame_decoded(
 
     assert frame_ms(view) == 0
     assert shown_of(view).objectName() == "video_widget"
+
+
+def test_the_seeks_own_report_of_its_target_lands_nothing(view: PlayerView, media: Media) -> None:
+    """Qt reports a seek's target the moment it is asked, before any frame of it; a frame from before the seek could
+    still come, and must not be handed on for it.
+
+    **Test steps:**
+
+    * resume at 33 s, have the player report exactly 33 s, as the seek itself does, and give a frame from 0
+    * verify the widget still holds the paused frame
+    * have the player report 33.05 s, as playback does, and give a frame from 0
+    * verify the widget holds it
+    """
+    player = resume(view, media)
+
+    player.positionChanged.emit(PAUSED_MS)
+    sink_of(view).videoFrameChanged.emit(picture(0))
+    assert frame_ms(view) == PAUSED_MS
+
+    player.positionChanged.emit(PAUSED_MS + 50)
+    sink_of(view).videoFrameChanged.emit(picture(0))
+    assert frame_ms(view) == 0
+
+
+def test_an_error_ends_the_wait_for_a_frame(view: PlayerView, media: Media) -> None:
+    """No frame of the position will come: the timer that would otherwise hand frames on after it runs out stops.
+
+    **Test steps:**
+
+    * resume at 33 s, and have the player report an error
+    * verify the stage's reveal timer is stopped, and a frame given afterwards is not handed on
+    """
+    player = resume(view, media)
+    timer = view.findChild(QTimer, "reveal_timer")
+    assert isinstance(timer, QTimer) and timer.isActive()
+
+    player.errorOccurred.emit(QMediaPlayer.Error.ResourceError, "broken")
+
+    assert not timer.isActive()
+    sink_of(view).videoFrameChanged.emit(picture(PAUSED_MS))
+    assert frame_ms(view) == PAUSED_MS

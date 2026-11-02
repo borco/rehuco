@@ -172,7 +172,6 @@ def fixture_model(
     model.last_video.return_value = None
     model.video_notes_of.return_value = ""
     model.notes_changed = mocker.Mock()
-    model.progress_changed = mocker.Mock()
     return model
 
 
