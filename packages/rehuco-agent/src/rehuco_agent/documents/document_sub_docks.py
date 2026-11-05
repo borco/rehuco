@@ -1059,6 +1059,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         files_view = self.__files_dock.widget()
         if isinstance(files_view, FilesView):  # pragma: no branch -- the Files dock always holds one
             files_view.detach()
+        if self.__player_view is not None:
+            # the player's own views of the tree and the notes share the docks' models: let them go first
+            self.__player_view.panels.detach()
         if self.__tree_view is not None:
             self.__tree_view.detach()
         if self.__notes_panel is not None:
@@ -1633,6 +1636,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             dock = self.__type_docks.pop(name, None)
             if dock is None:
                 continue
+            if name in (PLAYER_DOCK_NAME, TREE_DOCK_NAME, NOTES_DOCK_NAME) and self.__player_view is not None:
+                self.__player_view.panels.detach()
             if name == PLAYER_DOCK_NAME and self.__player_view is not None:
                 self.__player_view.stop()
             if name == TREE_DOCK_NAME and self.__tree_view is not None:
@@ -1685,7 +1690,28 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if NOTES_DOCK_NAME in names:
             self.__notes_panel = NotesPanel(self.__model, self.__host.widget)
             docks[NOTES_DOCK_NAME] = self.__add_notes_dock(self.__notes_panel)
+        self.__add_player_panels()
         return docks
+
+    def __add_player_panels(self) -> None:
+        """Give the player its own views of the tree and the notes, beside the picture (#575).
+
+        They share the docks' models -- the same rows and videos, the same text in the editors -- and behave as the
+        docks do: a click shows a video's notes, a double-click plays it, a link seeks.
+        """
+        player, tree, notes = self.__player_view, self.__tree_view, self.__notes_panel
+        if player is None or tree is None or notes is None:
+            return
+        stage_tree = VideoTreeView(
+            self.__model, self.__host.widget, self.__resource_events, tree=tree.tree, compact=True
+        )
+        stage_notes = NotesPanel(self.__model, self.__host.widget, notes=notes.notes)
+        stage_tree.video_activated.connect(self.__on_video_activated)
+        stage_tree.video_clicked.connect(self.__on_video_clicked)
+        stage_notes.video_link_activated.connect(self.__on_video_link)
+        player.video_changed.connect(stage_tree.set_current)
+        stage_tree.set_current(player.current_key)
+        player.panels.attach(stage_tree, stage_notes)
 
     @staticmethod
     def __focus_first_child(widget: QWidget) -> None:

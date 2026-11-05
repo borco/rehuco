@@ -1358,8 +1358,12 @@ it goes, and the notes added later; a note to write now is one pause, by Space o
 paused and opened the notes in edit by default, behind a Videos-page setting since removed). The player's seek slider
 marks each bookmark of the video loaded with a tick, drawn under the handle.
 
-The panel — view, editor, toggle, link dispatch — is one widget; the dock and the player's `N` panel each host
-an instance over the same model.
+The panel — view, editor, toggle, link dispatch — is one widget; the dock and the player's `N` panel each host an
+instance. **They share one model** (`VideoNotesEdit`), which holds which video's notes show, the search for them, the
+write rules above and the text of an edit: each part is one Scintilla document that every panel's editor shows, so a
+key typed in one is in the other as it is typed, while each panel keeps its own mode, caret and scroll. A bookmark goes
+into that one document, so text typed and unwritten in either panel is never lost to it, and the two are written once,
+by whichever way editing ends first.
 
 ### The player maximized, and its panels
 
@@ -1402,8 +1406,21 @@ lists and rebinds it; which are shown is session state, not saved:
 
 - **`I` — info**: the video's key, its pixel size (from `videos`, else the frame the engine shows), its length, its
   position with its progress, and where it stands in the playlist (`[30/123]`), in the window's own colours.
-- **`T` — tree** (#575): the Tree sub-dock's own view, the current video marked and in view; a click loads that video.
-- **`N` — notes** (#575): a second notes panel, editable, with the dock's write seams.
+- **`T` — tree** (#575): a second view over the Tree sub-dock's rows, the name and the progress alone with no header,
+  the current video marked and brought into view as the panel is shown. Clicks are the dock's: a click shows that
+  video's notes without loading it, a double-click plays it, a bookmark row from its time.
+- **`N` — notes** (#575): a second view of the notes, under the info, with an Edit toggle of its own on a small bar above
+  it. It and the Notes dock are one model ([[plugins#video-notes-dock]]): the same video, and the text of an edit typed
+  in either is in both.
+
+**Which keys a panel keeps while it has the keyboard** (owner, #575). The player's keys are armed on everything inside
+it, the panels included, and a shortcut is tried before the focused widget sees the key; a panel claims the keys it
+needs by accepting the shortcut-override Qt sends first. **A notes editor claims every key that is one of the player's**
+as they are bound now, so everything types and a key rebound on the Shortcuts page follows; other shortcuts (`Ctrl+S`)
+are untouched. **Esc** in an editor gives the keyboard back to the player, or to its overlay, and the next Esc is the
+player's. **The tree and the rendered notes claim the plain arrows, Home, End, Page Up and Page Down**: Space, `B`,
+`I`, `T`, `N`, `[`, `]` and the Ctrl arrows stay the player's. Showing a panel never takes the keyboard, and one hidden
+while it holds it hands it to the player.
 
 **`B`** works as it does docked: it adds its bookmark line and changes nothing else
 ([[plugins#video-notes-dock]]).

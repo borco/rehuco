@@ -285,6 +285,28 @@
     <string>Show or hide the video's info beside it.</string>
    </property>
   </action>
+  <action name="tree_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Video tree</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or hide the tutorial's videos beside the video.</string>
+   </property>
+  </action>
+  <action name="notes_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Video notes</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or hide the notes beside the video.</string>
+   </property>
+  </action>
   <action name="restore_action">
    <property name="text">
     <string>Restore</string>

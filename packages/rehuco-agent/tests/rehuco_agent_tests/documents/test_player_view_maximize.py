@@ -478,3 +478,17 @@ def test_a_double_click_with_no_video_loaded_maximizes_nothing(host: Host, qtbot
 
     assert host.view.maximized_mode is None
     assert not [widget for widget in QApplication.allWidgets() if isinstance(widget, PlayerOverlay)]
+
+
+def test_the_tree_and_notes_keys_do_nothing_where_the_document_has_put_no_panels_in(host: Host) -> None:
+    """**Test steps:**
+
+    * toggle the player's tree and notes on a player the document has not given panels
+    * verify nothing shows and nothing fails
+    """
+    assert not host.view.panels.attached
+
+    action_of(host.view, "tree_action").trigger()
+    action_of(host.view, "notes_action").trigger()
+
+    assert info_panel_of(host.view).isHidden()
