@@ -4,7 +4,7 @@ its picture shown, its split remembered ([[plugins#player-maximized]], #574)."""
 from typing import Final
 
 import cbor2
-from PySide6.QtCore import QByteArray, QObject, QSize, QTimer
+from PySide6.QtCore import QByteArray, QObject, QSize, Qt, QTimer
 from PySide6.QtMultimedia import QVideoFrame
 from PySide6.QtWidgets import QWidget
 
@@ -12,12 +12,15 @@ from ..fields.widgets.overlay_surface import OverlayMode
 from .player_clicks import PlayerClicks
 from .player_info import player_info_text
 from .player_overlay import PlayerMaximizer
+from .player_panels import PlayerPanels
 from .player_playlist import PlayerPlaylist
 from .player_view_ui import Ui_PlayerView
 from .rehu_document_model import RehuDocumentModel
 
-STAGE_STATE_KEY: Final = "stage"
-"""Where the stage's split is kept in the player's entry of the document's layout."""
+STAGE_STATE_KEY: Final = "stage_split"
+"""Where the split of the tree, the picture and the right column is kept in the player's entry of the document's layout.
+It was ``stage`` while the splitter held two children; that entry is ignored. The right column's own divider does not
+drag, so there is nothing of it to keep."""
 
 FRAME_TOLERANCE_MS: Final = 1000
 """How far from where a video was left a frame may be and still be the one to show it as."""
@@ -79,6 +82,8 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         """Whether Qt's frames are handed on to its video widget as they come."""
         self.__latest: QVideoFrame | None = None
         """The newest of Qt's frames offered since the video was selected, handed on or not."""
+        self.__player: Final = parent
+        self.panels: Final = PlayerPanels(ui, parent.actions, self.focus_player, self)
         self.clicks: Final = PlayerClicks((ui.video_widget, ui.vlc_surface, ui.still_widget), click_ms, self)
         self.maximizer: Final = PlayerMaximizer(
             ui.main_layout, (ui.stage_splitter, ui.controls_bar), ui.restore_button, document, parent
@@ -89,6 +94,7 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         self.__reveal_timer.setInterval(REVEAL_TIMEOUT_MS)
         self.__reveal_timer.timeout.connect(self.__reveal)
         ui.side_splitter.hide()
+        ui.info_panel.hide()
         ui.info_action.toggled.connect(self.__on_info_toggled)
         ui.restore_action.triggered.connect(self.maximizer.restore)
 
@@ -96,6 +102,11 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
     def mode(self) -> OverlayMode | None:
         """The surface the player is maximized over, or ``None`` while it is in its dock."""
         return self.maximizer.mode
+
+    def focus_player(self) -> None:
+        """Put the keyboard on the player, or on the overlay it is maximized in: where its keys answer."""
+        overlay = self.maximizer.overlay
+        (overlay if overlay is not None else self.__player).setFocus(Qt.FocusReason.OtherFocusReason)
 
     # region The picture
 
@@ -203,14 +214,15 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         :param vlc: whether libvlc draws the picture, whose frame then gives its size.
         """
         self.__state = (playlist, length_ms, position_ms, vlc)
-        if self.__ui.side_splitter.isHidden():
-            return
-        if playlist is None:
-            self.__ui.info_panel.setText("")
+        if self.__ui.info_panel.isHidden():
             return
         self.__ui.info_panel.setText(
             player_info_text(playlist, self.__pixel_size(playlist, vlc), length_ms, position_ms)
+            if playlist is not None
+            else ""
         )
+        # a longer key can wrap to another line
+        self.panels.fit_info()
 
     def __pixel_size(self, playlist: PlayerPlaylist, vlc: bool) -> QSize | None:
         """The picture's size: what a Measure recorded, read once as the video is selected, else the frame the engine
@@ -237,7 +249,8 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
 
         :param shown: whether it is shown.
         """
-        self.__ui.side_splitter.setVisible(shown)
+        self.__ui.info_panel.setVisible(shown)
+        self.panels.update_side()
         self.show_info(*self.__state)
 
     # endregion

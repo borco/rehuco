@@ -22,15 +22,18 @@ from rehuco_core import (
 from ..commands import (
     PLAYER_ADD_NOTE_AT,
     PLAYER_BACK,
+    PLAYER_EDIT_NOTES,
     PLAYER_FORWARD,
     PLAYER_INFO,
     PLAYER_NEXT,
+    PLAYER_NOTES,
     PLAYER_PLAY_PAUSE,
     PLAYER_PREVIOUS,
     PLAYER_SPEED_DOWN,
     PLAYER_SPEED_UP,
     PLAYER_TO_END,
     PLAYER_TO_START,
+    PLAYER_TREE,
     PLAYER_VOLUME_DOWN,
     PLAYER_VOLUME_UP,
     shared_command_registry,
@@ -42,6 +45,7 @@ from .latest_runner import LatestRunner
 from .player_bar import PlayerBar
 from .player_engine import Engine, PlayerEngine
 from .player_notices import PlayerNotices
+from .player_panels import PlayerPanels
 from .player_playlist import PlayerPlaylist
 from .player_stage import PlayerStage
 from .player_view_ui import Ui_PlayerView
@@ -258,8 +262,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param position: where to start it, in seconds; ``None`` for where it was left.
         """
         self.__request(key, play=True, position=position)
-        overlay = self.__stage.maximizer.overlay
-        (overlay if overlay is not None else self).setFocus(Qt.FocusReason.OtherFocusReason)
+        self.__stage.focus_player()
 
     def seek(self, key: str, position: float | None = None) -> None:
         """Go to a time of a video, as a link in a note asks: the video is left playing or paused as it is.
@@ -293,6 +296,11 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if self.__engine.vlc:
             # libvlc's instance holds threads and an audio output: let them go with the dock; the next video builds anew
             self.__engine.drop()
+
+    @property
+    def panels(self) -> PlayerPanels:
+        """The tree and the notes beside the picture, which the document puts in (#575)."""
+        return self.__stage.panels
 
     @property
     def maximized_mode(self) -> OverlayMode | None:
@@ -356,6 +364,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             (ui.to_end_action, PLAYER_TO_END),
             (ui.add_note_at_action, PLAYER_ADD_NOTE_AT),
             (ui.info_action, PLAYER_INFO),
+            (ui.tree_action, PLAYER_TREE),
+            (ui.notes_action, PLAYER_NOTES),
+            (ui.edit_notes_action, PLAYER_EDIT_NOTES),
             (ui.volume_up_action, PLAYER_VOLUME_UP),
             (ui.volume_down_action, PLAYER_VOLUME_DOWN),
             (ui.speed_up_action, PLAYER_SPEED_UP),

@@ -1,68 +1,63 @@
 """The notes panel: the loaded video's notes above the tutorial's, rendered, with an Edit toggle
-([[plugins#video-notes-dock]], #573)."""
+([[plugins#video-notes-dock]], #573, #575)."""
 
 import logging
 from typing import Final, override
 
-from PySide6.QtCore import QByteArray, QEvent, QObject, QUrl, Signal
+from PySide6.QtCore import QByteArray, QEvent, QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import QStackedWidget, QWidget
-from rehuco_core import VIDEO_LINK_SCHEME, insert_bookmark, parse_video_href, video_href
+from rehuco_core import VIDEO_LINK_SCHEME, parse_video_href
 
 from ..fields.widgets.markdown_edit import MarkdownEdit
 from ..fields.widgets.markdown_view import MarkdownView
 from ..settings.description_editor_settings import shared_description_editor_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
-from .clock_text import clock_text
 from .notes_panel_ui import Ui_NotesPanel
 from .rehu_document_model import RehuDocumentModel
+from .video_notes_edit import VideoNotesEdit
 
 LOG: Final = logging.getLogger(__name__)
 
 
-class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
-    """One document's notes: the video loaded in the player above the tutorial as a whole.
+class NotesPanel(QWidget):
+    """One view of a document's notes: the video loaded in the player above the tutorial as a whole.
 
     Both are rendered Markdown, the Description View's renderer, until the **Edit** action swaps in the Markdown editor
-    for each. **What is written is the user's own, written the moment editing ends** -- leaving edit, the editor losing
-    focus, the video changing, :meth:`flush` -- through the document's ``record_notes`` and never a Save
-    ([[field-schema#video-notes]]). Only a part the user changed is written. **A video with no data yet is looked for
-    among the renamed ones first**, and until that search answers its notes are not safe to edit: the editor is
-    disabled, and a bookmark asked for meanwhile is added once the search answers, so nothing typed or added over an
-    empty note replaces the one the search then finds.
+    for each. **The notes themselves are a** :class:`~rehuco_agent.documents.video_notes_edit.VideoNotesEdit`, shared by
+    every panel of a document: the same video, and the same text in the editors, whichever panel it is typed in (#575).
+    This panel has its own Edit toggle, scroll and caret. What is written, and when, is the model's.
 
     A ``rehuco-video:`` link in a note is a request to the player (:attr:`video_link_activated`); any other link opens
     in the system's browser.
 
-    :param model: the document, whose notes this shows and records.
+    :param model: the document, whose notes this shows.
     :param parent: optional Qt parent.
+    :param notes: the notes model to show; one of its own, which :meth:`detach` then lets go of, when not given.
     """
 
     video_link_activated = Signal(str, object)
     """Emitted ``(content key, seconds or None)`` for a click on a link to a video of the tutorial: the video to take
     to the player and the time to go to, ``None`` for none. The document decides what the player does."""
 
-    def __init__(self, model: RehuDocumentModel, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, model: RehuDocumentModel, parent: QWidget | None = None, notes: VideoNotesEdit | None = None
+    ) -> None:
         super().__init__(parent)
         self.__model: Final = model
-        self.__key: str | None = None
+        self.__owns_notes: Final = notes is None
+        self.__notes: Final = notes if notes is not None else VideoNotesEdit(model, self)
         self.__editing = False
-        self.__shown: dict[bool, str] = {}
-        """What each editor was last given -- by whether it is the video's -- so a changed editor is the user's."""
-        self.__searching = False
-        """Whether the video shown is still being looked for among the renamed ones: its editor waits."""
-        self.__pending_note: float | None = None
-        """The time of a bookmark asked for while the search was out, added once it answers."""
 
         self.__ui: Final = Ui_NotesPanel()
         self.__ui.setupUi(self)
         self.__video_edit: Final = self.__setup_part(self.__ui.video_stack, self.__ui.video_view)
         self.__tutorial_edit: Final = self.__setup_part(self.__ui.tutorial_stack, self.__ui.tutorial_view)
+        self.__notes.share(self.__video_edit, self.__tutorial_edit)
         self.__ui.edit_action.toggled.connect(self.__on_edit_toggled)
         self.__setup_rendering()
-        model.notes_changed.connect(self.__on_notes_changed)
-        model.rename_search_finished.connect(self.__on_search_finished)
+        self.__notes.changed.connect(self.__show)
         model.image_scanner_changed.connect(self.__set_image_scanner)  # type: ignore[attr-defined]
         self.__set_image_scanner(model.image_scanner)
         self.__show()
@@ -70,13 +65,14 @@ class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
     def detach(self) -> None:
         """Write what is waiting and stop following the document, before this panel is destroyed."""
         self.flush()
-        self.__model.notes_changed.disconnect(self.__on_notes_changed)
-        self.__model.rename_search_finished.disconnect(self.__on_search_finished)
+        self.__notes.changed.disconnect(self.__show)
         self.__model.image_scanner_changed.disconnect(self.__set_image_scanner)  # type: ignore[attr-defined]
         previews = shared_image_viewer_settings()
         for view in (self.__ui.video_view, self.__ui.tutorial_view):
             previews.previews_visible_changed.disconnect(view.set_images_visible)  # type: ignore[attr-defined]
         shared_markdown_rendering_settings().description_rendering_changed.disconnect(self.__apply_rendering)
+        if self.__owns_notes:
+            self.__notes.detach()
 
     @property
     def title_bar_actions(self) -> list[QAction]:
@@ -84,83 +80,54 @@ class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
         return [self.__ui.edit_action]
 
     @property
+    def notes(self) -> VideoNotesEdit:
+        """The notes this shows, which other panels of the document show too."""
+        return self.__notes
+
+    @property
     def editing(self) -> bool:
-        """Whether the editors, not the rendered notes, are shown."""
+        """Whether this panel shows the editors, not the rendered notes."""
         return self.__editing
+
+    def set_editing(self, editing: bool) -> None:
+        """Show the editors, or the rendered notes, as the Edit action does.
+
+        :param editing: whether the editors are to be shown.
+        """
+        self.__ui.edit_action.setChecked(editing)
+
+    def focus_editor(self) -> None:
+        """Put the keyboard in the editor of the video's notes (owner: always there, never the tutorial's)."""
+        QWidget.setFocus(self.__video_edit, Qt.FocusReason.OtherFocusReason)
 
     @property
     def video_key(self) -> str | None:
         """The content key of the video whose notes are shown above the tutorial's, or ``None`` for none."""
-        return self.__key
+        return self.__notes.key
 
     @property
     def searching(self) -> bool:
         """Whether the video shown is still being looked for among the renamed ones, its editor disabled meanwhile."""
-        return self.__searching
+        return self.__notes.searching
 
     def set_video(self, key: str | None) -> None:
-        """Show the notes of another video, after writing what was changed in the one before.
-
-        A video with nothing recorded yet is looked for among the renamed ones first, and its editor is disabled until
-        the search answers, so what the user types is never lost to, or written over, the note the search finds.
+        """Show the notes of another video, in every panel of the document.
 
         :param key: the video's content key, or ``None`` for none -- the tutorial's notes alone are shown.
         """
-        self.flush()
-        self.__key = key
-        self.__pending_note = None
-        # set before the search is asked for: a search that answers at once answers through __on_search_finished
-        self.__searching = key is not None and key not in self.__model.video_data_keys()
-        if self.__searching and not self.__model.reattach_renamed_progress():
-            self.__searching = False
-        self.__show()
+        self.__notes.set_video(key)
 
     def add_note(self, key: str, seconds: float) -> None:
         """Add a bookmark to a video's notes at a time, among its other bookmarks in time order.
 
-        The line is only recorded -- into the editor's text, written at once, while the notes are being edited, else
-        straight into the video's notes -- with no change of mode and no focus taken (#574).
-
         :param key: the video's content key.
         :param seconds: the time the bookmark is at.
         """
-        if key != self.__key:
-            self.set_video(key)
-        if self.__searching:
-            # added once the search answers
-            self.__pending_note = seconds
-            return
-        line = f"- [{clock_text(int(seconds * 1000))}]({video_href(key, seconds)}) "
-        if self.__editing:
-            # inserted, not set whole: the caret, the selection and the undo history of the edit in progress stay
-            editor = self.__video_edit
-            before = self.__text(editor)
-            text, _ = insert_bookmark(before, line, seconds)
-            # one chunk went in -- the line, with a newline before or after it -- where the two first differ
-            start = next((at for at, (old, new) in enumerate(zip(before, text)) if old != new), len(before))
-            # Scintilla's positions count bytes, not characters
-            editor.insertText(len(text[:start].encode("utf-8")), text[start : start + len(text) - len(before)])
-            self.flush()
-            return
-        text, _ = insert_bookmark(self.__model.video_notes_of(key), line, seconds)
-        self.__model.record_notes(video_notes={key: text})
+        self.__notes.add_note(key, seconds)
 
     def flush(self) -> None:
         """Record the notes the user changed in the editors, at once; nothing else is written."""
-        if not self.__editing:
-            return
-        notes = self.__changed(self.__tutorial_edit, False)
-        key = self.__key
-        video = self.__changed(self.__video_edit, True) if key is not None and not self.__searching else None
-        if notes is None and video is None:
-            return
-        if notes is not None:
-            self.__shown = {**self.__shown, False: notes}
-        if video is not None:
-            self.__shown = {**self.__shown, True: video}
-        self.__model.record_notes(
-            notes=notes, video_notes={key: video} if key is not None and video is not None else None
-        )
+        self.__notes.flush()
 
     def save_state(self) -> bytes:
         """Encode where the two parts split, for the dock's entry in the layout.
@@ -240,40 +207,13 @@ class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
     # region What it shows
 
     def __show(self) -> None:
-        """Show the notes of the video and the tutorial as they are, in the viewers or the editors."""
-        key = self.__key
+        """Show the notes of the video and the tutorial as they are, in the viewers; the editors hold their own."""
+        key = self.__notes.key
         self.__ui.video_part.setVisible(key is not None)
         self.__ui.video_label.set_text(key or "")
-        video = self.__model.video_notes_of(key) if key is not None else ""
-        self.__ui.video_view.set_markdown(video)
-        self.__ui.tutorial_view.set_markdown(self.__model.notes)
-        self.__video_edit.setEnabled(not self.__searching)
-        if self.__editing:
-            self.__give(self.__video_edit, True, video)
-            self.__give(self.__tutorial_edit, False, self.__model.notes)
-
-    def __on_search_finished(self) -> None:
-        """Let the video's notes be edited, now the search for them among the renamed videos has answered, and add
-        the bookmark asked for meanwhile."""
-        if not self.__searching:
-            return
-        self.__searching = False
-        self.__show()
-        pending, self.__pending_note = self.__pending_note, None
-        if pending is not None and self.__key is not None:
-            self.add_note(self.__key, pending)
-
-    def __on_notes_changed(self) -> None:
-        """Show the notes again after they changed -- a write landing, a rename search finding them: an editor the user
-        changed keeps its text."""
-        key = self.__key
-        self.__ui.video_view.set_markdown(self.__model.video_notes_of(key) if key is not None else "")
-        self.__ui.tutorial_view.set_markdown(self.__model.notes)
-        if self.__editing:
-            if key is not None and self.__changed(self.__video_edit, True) is None:
-                self.__give(self.__video_edit, True, self.__model.video_notes_of(key))
-            if self.__changed(self.__tutorial_edit, False) is None:
-                self.__give(self.__tutorial_edit, False, self.__model.notes)
+        self.__ui.video_view.set_markdown(self.__notes.video_text())
+        self.__ui.tutorial_view.set_markdown(self.__notes.tutorial_text())
+        self.__video_edit.setEnabled(not self.__notes.searching)
 
     def __on_edit_toggled(self, editing: bool) -> None:
         """Swap the viewers for the editors, or back, writing what was changed on the way back.
@@ -283,40 +223,14 @@ class NotesPanel(QWidget):  # pylint: disable=too-many-instance-attributes
         if not editing:
             self.flush()
         self.__editing = editing
+        if editing:
+            self.__notes.begin_editing()
+        else:
+            self.__notes.end_editing()
         self.__show()
         page = 1 if editing else 0
         self.__ui.video_stack.setCurrentIndex(page)
         self.__ui.tutorial_stack.setCurrentIndex(page)
-
-    def __give(self, editor: MarkdownEdit, of_video: bool, text: str) -> None:
-        """Put a text in an editor as what it was given, unless it already holds it -- which keeps its caret.
-
-        :param editor: the editor.
-        :param of_video: whether it is the video's.
-        :param text: what it is to hold.
-        """
-        self.__shown = {**self.__shown, of_video: text}
-        if self.__text(editor) != text:
-            editor.setText(text)
-
-    def __changed(self, editor: MarkdownEdit, of_video: bool) -> str | None:
-        """What the user typed in an editor.
-
-        :param editor: the editor.
-        :param of_video: whether it is the video's.
-        :returns: its text if it differs from what it was given, else ``None``.
-        """
-        text = self.__text(editor)
-        return text if text != self.__shown.get(of_video, "") else None
-
-    @staticmethod
-    def __text(editor: MarkdownEdit) -> str:
-        """Read an editor's full text.
-
-        :param editor: the editor.
-        :returns: its text.
-        """
-        return bytes(editor.getText(editor.length() + 1).data()).decode("utf-8")
 
     # endregion
 

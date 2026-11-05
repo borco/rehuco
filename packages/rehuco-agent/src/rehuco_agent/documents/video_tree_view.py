@@ -50,6 +50,9 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
     :param model: the document.
     :param parent: optional Qt parent.
     :param resource_events: the app's change feed to follow; a private one when not given.
+    :param tree: the rows to show when another view's are to be shown again (#575); that view detaches them, and a
+        view of its own is made when not given.
+    :param compact: whether to show the name and the progress alone, with no header: the player's ``T`` panel.
     """
 
     video_activated = Signal(str, object)
@@ -65,6 +68,9 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         model: RehuDocumentModel,
         parent: QWidget | None = None,
         resource_events: ResourceEvents | None = None,
+        *,
+        tree: VideoTreeModel | None = None,
+        compact: bool = False,
     ) -> None:
         super().__init__(parent)
         self.__document: Final = model
@@ -75,10 +81,13 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__restoring = False
         self.__selected: str | None = None
         """The video selected as the tree is about to be rebuilt, which the reset clears."""
+        self.__scroll_pending = False
+        """Whether the current video is to be brought into view once the rows are listed: it was asked for before."""
+        self.__owns_tree: Final = tree is None
 
         self.__ui: Final = Ui_VideoTreeView()
         self.__ui.setupUi(self)
-        self.__tree: Final = VideoTreeModel(model, self)
+        self.__tree: Final = tree if tree is not None else VideoTreeModel(model, self)
         self.__actions: Final = VideoRowActions(model, self)
         self.__lister: Final = LatestRunner(self)
         self.__lister.read.connect(self.__on_listed)
@@ -91,6 +100,10 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         header.setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.Stretch)
         for column in (PROGRESS_COLUMN, FAVORITE_COLUMN, LENGTH_COLUMN):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        if compact:
+            view.setHeaderHidden(True)
+            for column in (FAVORITE_COLUMN, LENGTH_COLUMN):
+                view.setColumnHidden(column, True)
         view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         view.doubleClicked.connect(self.__on_double_clicked)
         view.clicked.connect(self.__on_clicked)
@@ -108,12 +121,16 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__events.changed.connect(self.__on_files_changed)
         self.__events.folder_changed.connect(self.__on_folder_changed)
         self.__events.root_stale.connect(self.refresh)
+        if tree is not None:
+            # rows listed before this view was made reset nothing here: opened as a reset opens them
+            self.__on_reset()
         self.__update_actions()
 
     def detach(self) -> None:
         """Stop following the document and the app's change feed, before this view is destroyed."""
         self.__lister.discard()
-        self.__tree.detach()
+        if self.__owns_tree:
+            self.__tree.detach()
         self.__document.path_changed.disconnect(self.refresh)  # type: ignore[attr-defined]
         self.__document.active_block_changed.disconnect(self.refresh)
         self.__events.moved.disconnect(self.__on_moved)
@@ -234,6 +251,12 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param key: its content key, or ``None`` for none.
         """
         self.__tree.set_current(key)
+        self.scroll_to_current()
+
+    def scroll_to_current(self) -> None:
+        """Bring the current video into view; once the rows are listed, when they are not yet."""
+        key = self.__tree.current_key
+        self.__scroll_pending = key is not None and not self.__tree.index_of_video(key).isValid()
         self.__show_current()
 
     def __show_current(self) -> None:
@@ -273,6 +296,10 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
                     view.collapse(index)
         finally:
             self.__restoring = False
+        if self.__scroll_pending:
+            # the player's video was asked for before the rows were listed: shown once they are, and never by a rebuild
+            self.__scroll_pending = False
+            self.__show_current()
         if selected is not None:
             index = self.__tree.index_of_video(selected)
             # selecting a row under a closed folder would open it again: a row the reader cannot see is let go

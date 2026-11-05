@@ -19,6 +19,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.notes_panel import NotesPanel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.documents.video_notes_edit import VideoNotesEdit
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 from rehuco_agent_tests.progress_writes import HeldWrites
@@ -55,7 +56,7 @@ def text_of(editor: object) -> str:
     :param editor: the panel's video or tutorial editor.
     :returns: its text.
     """
-    return NotesPanel._NotesPanel__text(editor)  # type: ignore[attr-defined,arg-type]
+    return VideoNotesEdit.text_of(editor)  # type: ignore[attr-defined,arg-type]
 
 
 def video_editor(panel: NotesPanel):  # type: ignore[no-untyped-def]

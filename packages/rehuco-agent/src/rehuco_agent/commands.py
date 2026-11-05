@@ -190,6 +190,30 @@ PLAYER_INFO: Final = Command(
     PLAYER_SCOPE,
     PLAYER_FOCUS_GROUP,
 )
+PLAYER_TREE: Final = Command(
+    "document.player.tree",
+    "Video tree",
+    "Show or hide the tutorial's videos beside the video",
+    ("T",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_NOTES: Final = Command(
+    "document.player.notes",
+    "Video notes",
+    "Show or hide the notes beside the video",
+    ("N",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_EDIT_NOTES: Final = Command(
+    "document.player.edit_notes",
+    "Edit notes",
+    "Start editing the notes beside the video, or end it",
+    ("F2",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
 PLAYER_VOLUME_UP: Final = Command(
     "document.player.volume_up", "Volume up", "Raise the volume", ("Up",), PLAYER_SCOPE, PLAYER_FOCUS_GROUP
 )
@@ -260,6 +284,9 @@ COMMANDS: Final = (
     PLAYER_TO_END,
     PLAYER_ADD_NOTE_AT,
     PLAYER_INFO,
+    PLAYER_TREE,
+    PLAYER_NOTES,
+    PLAYER_EDIT_NOTES,
     PLAYER_VOLUME_UP,
     PLAYER_VOLUME_DOWN,
     PLAYER_SPEED_UP,

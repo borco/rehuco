@@ -233,13 +233,13 @@ def test_detaching_the_document_detaches_the_panel(widget: DocumentWidget, mocke
     """**Test steps:**
 
     * detach the document
-    * verify the panel was detached
+    * verify the dock's panel and the player's own were both detached
     """
     detach = mocker.patch.object(NotesPanel, "detach")
 
     widget.sub_docks.detach()
 
-    detach.assert_called_once_with()
+    assert detach.call_count == 2
 
 
 def test_the_split_rides_in_the_notes_dock_entry_of_the_layout(widget: DocumentWidget) -> None:

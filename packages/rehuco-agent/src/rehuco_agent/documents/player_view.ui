@@ -69,6 +69,9 @@
        <bool>false</bool>
       </property>
       <widget class="QLabel" name="info_panel">
+       <property name="frameShape">
+        <enum>QFrame::Shape::StyledPanel</enum>
+       </property>
        <property name="alignment">
         <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
        </property>
@@ -76,7 +79,10 @@
         <bool>true</bool>
        </property>
        <property name="margin">
-        <number>8</number>
+        <number>4</number>
+       </property>
+       <property name="indent">
+        <number>0</number>
        </property>
       </widget>
      </widget>
@@ -283,6 +289,36 @@
    </property>
    <property name="toolTip">
     <string>Show or hide the video's info beside it.</string>
+   </property>
+  </action>
+  <action name="tree_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Video tree</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or hide the tutorial's videos beside the video.</string>
+   </property>
+  </action>
+  <action name="notes_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Video notes</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or hide the notes beside the video.</string>
+   </property>
+  </action>
+  <action name="edit_notes_action">
+   <property name="text">
+    <string>Edit notes</string>
+   </property>
+   <property name="toolTip">
+    <string>Start editing the notes beside the video, or end it.</string>
    </property>
   </action>
   <action name="restore_action">

@@ -509,3 +509,63 @@ def test_a_click_reports_the_video_of_a_row_or_of_a_line_of_its_notes_and_a_fold
 
     assert video.args == ["01 Basics/b.mp4"]
     assert note.args == ["a.mp4"]
+
+
+def test_a_compact_view_shows_the_name_and_the_progress_alone(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """**Test steps:**
+
+    * show a compact view
+    * verify it has no header, and the favorite and length columns are hidden while the name and progress are not
+    """
+    view = VideoTreeView(model, compact=True)
+    qtbot.addWidget(view)
+    view.show()
+    tree = tree_of(view)
+
+    assert tree.isHeaderHidden()
+    assert [tree.isColumnHidden(column) for column in range(4)] == [False, False, True, True]
+
+
+def test_a_view_over_another_ones_rows_shows_them_and_leaves_them_to_their_owner(
+    qtbot: QtBot, model: RehuDocumentModel, view: VideoTreeView, mocker: MockerFixture
+) -> None:
+    """**Test steps:**
+
+    * show a second view over the first one's tree, with the tree's detach watched
+    * verify both show the same model and the second lists the same rows
+    * detach the second and verify the tree was not detached; detach the first and verify it was
+    """
+    detach = mocker.spy(view.tree, "detach")
+    other = VideoTreeView(model, tree=view.tree, compact=True)
+    qtbot.addWidget(other)
+    other.show()
+
+    assert other.tree is view.tree
+    qtbot.waitUntil(lambda: tree_of(other).isExpanded(index_named(other, "01 Basics")), timeout=TIMEOUT)
+
+    other.detach()
+    assert detach.call_count == 0
+    view.detach()
+    assert detach.call_count == 1
+
+
+def test_the_current_video_asked_for_before_the_rows_are_listed_is_shown_once_they_are(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """**Test steps:**
+
+    * ask a hidden view to mark a video, then show it, with the tree's `scrollTo` watched
+    * verify the video is scrolled to once the rows are listed
+    * verify a later rebuild of the rows scrolls nothing, so it keeps the reader's place
+    """
+    view = VideoTreeView(model)
+    qtbot.addWidget(view)
+    scroll = mocker.spy(tree_of(view), "scrollTo")
+    view.set_current("a.mp4")
+    view.show()
+
+    qtbot.waitUntil(lambda: scroll.call_count == 1, timeout=TIMEOUT)
+    model.record_notes(video_notes={"a.mp4": "- [0:10](rehuco-video:a.mp4#t=10) early"})
+    qtbot.waitUntil(lambda: view.tree.rowCount(index_named(view, "a")) == 1, timeout=TIMEOUT)
+
+    assert scroll.call_count == 1
