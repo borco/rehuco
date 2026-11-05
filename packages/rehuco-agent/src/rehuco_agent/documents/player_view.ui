@@ -307,6 +307,14 @@
     <string>Show or hide the notes beside the video.</string>
    </property>
   </action>
+  <action name="edit_notes_action">
+   <property name="text">
+    <string>Edit notes</string>
+   </property>
+   <property name="toolTip">
+    <string>Start editing the notes beside the video, or end it.</string>
+   </property>
+  </action>
   <action name="restore_action">
    <property name="text">
     <string>Restore</string>

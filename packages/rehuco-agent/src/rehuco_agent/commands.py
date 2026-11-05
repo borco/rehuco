@@ -206,6 +206,14 @@ PLAYER_NOTES: Final = Command(
     PLAYER_SCOPE,
     PLAYER_FOCUS_GROUP,
 )
+PLAYER_EDIT_NOTES: Final = Command(
+    "document.player.edit_notes",
+    "Edit notes",
+    "Start editing the notes beside the video, or end it",
+    ("F2",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
 PLAYER_VOLUME_UP: Final = Command(
     "document.player.volume_up", "Volume up", "Raise the volume", ("Up",), PLAYER_SCOPE, PLAYER_FOCUS_GROUP
 )
@@ -278,6 +286,7 @@ COMMANDS: Final = (
     PLAYER_INFO,
     PLAYER_TREE,
     PLAYER_NOTES,
+    PLAYER_EDIT_NOTES,
     PLAYER_VOLUME_UP,
     PLAYER_VOLUME_DOWN,
     PLAYER_SPEED_UP,

@@ -29,11 +29,11 @@ class Host:  # pylint: disable=too-few-public-methods
     def __init__(self, qtbot: QtBot) -> None:
         self.parent = QWidget()
         qtbot.addWidget(self.parent)
-        self.actions = [QAction(self.parent) for _ in range(3)]
-        for action, keys in zip(self.actions, ("Space", "B", "Left")):
+        self.actions = [QAction(self.parent) for _ in range(4)]
+        for action, keys in zip(self.actions, ("Space", "B", "Left", "F2")):
             action.setShortcut(QKeySequence(keys))
-        self.focus_player = Mock()
-        self.keys = PlayerPanelKeys(lambda: self.actions, self.focus_player, self.parent)
+        self.on_escape = Mock()
+        self.keys = PlayerPanelKeys(lambda: self.actions, self.on_escape, self.actions[3], self.parent)
         self.editor = MarkdownEdit(line_numbers=False, line_endings_visible=False, wrap_long_lines=True)
         self.tree = QTreeView()
         qtbot.addWidget(self.editor)
@@ -69,6 +69,7 @@ def fixture_host(qtbot: QtBot) -> Host:
         param(Qt.Key.Key_B, SHIFT, True, id="a-capital-of-one"),
         param(Qt.Key.Key_Left, PLAIN, True, id="an-arrow"),
         param(Qt.Key.Key_X, PLAIN, False, id="a-key-the-player-does-not-use"),
+        param(Qt.Key.Key_F2, PLAIN, False, id="the-key-that-ends-the-editing"),
         param(Qt.Key.Key_S, CTRL, False, id="another-shortcut"),
         param(Qt.Key.Key_Left, CTRL, False, id="a-key-with-a-modifier-the-player-does-not-bind"),
     ],
@@ -130,14 +131,14 @@ def test_the_tree_claims_the_plain_navigation_keys_and_no_others(
 def test_escape_in_an_editor_hands_the_keyboard_back_and_nowhere_else(host: Host) -> None:
     """**Test steps:**
 
-    * press Esc in the editor and verify the keyboard went to the player and the press was consumed
+    * press Esc in the editor and verify what Esc does there was done and the press was consumed
     * press Esc in the tree and verify it was left alone, so it reaches the maximized player
     * press Ctrl+Esc in the editor and verify it was left alone
     """
     assert host.press(host.editor, QEvent.Type.KeyPress, Qt.Key.Key_Escape)
-    host.focus_player.assert_called_once_with()
+    host.on_escape.assert_called_once_with()
 
-    host.focus_player.reset_mock()
+    host.on_escape.reset_mock()
     assert not host.press(host.tree, QEvent.Type.KeyPress, Qt.Key.Key_Escape)
     assert not host.press(host.editor, QEvent.Type.KeyPress, Qt.Key.Key_Escape, CTRL)
-    host.focus_player.assert_not_called()
+    host.on_escape.assert_not_called()

@@ -4,7 +4,7 @@
 import logging
 from typing import Final, override
 
-from PySide6.QtCore import QByteArray, QEvent, QObject, QUrl, Signal
+from PySide6.QtCore import QByteArray, QEvent, QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import QStackedWidget, QWidget
 from rehuco_core import VIDEO_LINK_SCHEME, parse_video_href
@@ -88,6 +88,17 @@ class NotesPanel(QWidget):
     def editing(self) -> bool:
         """Whether this panel shows the editors, not the rendered notes."""
         return self.__editing
+
+    def set_editing(self, editing: bool) -> None:
+        """Show the editors, or the rendered notes, as the Edit action does.
+
+        :param editing: whether the editors are to be shown.
+        """
+        self.__ui.edit_action.setChecked(editing)
+
+    def focus_editor(self) -> None:
+        """Put the keyboard in the editor of the video's notes (owner: always there, never the tutorial's)."""
+        QWidget.setFocus(self.__video_edit, Qt.FocusReason.OtherFocusReason)
 
     @property
     def video_key(self) -> str | None:

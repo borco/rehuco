@@ -19,10 +19,8 @@ from .rehu_document_model import RehuDocumentModel
 
 STAGE_STATE_KEY: Final = "stage_split"
 """Where the split of the tree, the picture and the right column is kept in the player's entry of the document's layout.
-It was ``stage`` while the splitter held two children; that entry is ignored."""
-
-SIDE_STATE_KEY: Final = "side_split"
-"""Where the right column's split, the info above the notes, is kept."""
+It was ``stage`` while the splitter held two children; that entry is ignored. The right column's own divider does not
+drag, so there is nothing of it to keep."""
 
 FRAME_TOLERANCE_MS: Final = 1000
 """How far from where a video was left a frame may be and still be the one to show it as."""
@@ -218,12 +216,13 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         self.__state = (playlist, length_ms, position_ms, vlc)
         if self.__ui.info_panel.isHidden():
             return
-        if playlist is None:
-            self.__ui.info_panel.setText("")
-            return
         self.__ui.info_panel.setText(
             player_info_text(playlist, self.__pixel_size(playlist, vlc), length_ms, position_ms)
+            if playlist is not None
+            else ""
         )
+        # a longer key can wrap to another line
+        self.panels.fit_info()
 
     def __pixel_size(self, playlist: PlayerPlaylist, vlc: bool) -> QSize | None:
         """The picture's size: what a Measure recorded, read once as the video is selected, else the frame the engine
@@ -261,12 +260,7 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
 
         :returns: the state, restorable by :meth:`restore_state`.
         """
-        return cbor2.dumps(
-            {
-                STAGE_STATE_KEY: bytes(self.__ui.stage_splitter.saveState().data()),
-                SIDE_STATE_KEY: bytes(self.__ui.side_splitter.saveState().data()),
-            }
-        )
+        return cbor2.dumps({STAGE_STATE_KEY: bytes(self.__ui.stage_splitter.saveState().data())})
 
     def restore_state(self, state: bytes) -> None:
         """Restore the split :meth:`save_state` encoded.
@@ -277,9 +271,6 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
             loaded = cbor2.loads(state)
         except cbor2.CBORDecodeError:
             return
-        if not isinstance(loaded, dict):
-            return
-        for key, splitter in ((STAGE_STATE_KEY, self.__ui.stage_splitter), (SIDE_STATE_KEY, self.__ui.side_splitter)):
-            saved = loaded.get(key)
-            if isinstance(saved, bytes):
-                splitter.restoreState(QByteArray(saved))
+        stage = loaded.get(STAGE_STATE_KEY) if isinstance(loaded, dict) else None
+        if isinstance(stage, bytes):
+            self.__ui.stage_splitter.restoreState(QByteArray(stage))

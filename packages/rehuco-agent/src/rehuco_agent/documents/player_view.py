@@ -22,6 +22,7 @@ from rehuco_core import (
 from ..commands import (
     PLAYER_ADD_NOTE_AT,
     PLAYER_BACK,
+    PLAYER_EDIT_NOTES,
     PLAYER_FORWARD,
     PLAYER_INFO,
     PLAYER_NEXT,
@@ -365,6 +366,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             (ui.info_action, PLAYER_INFO),
             (ui.tree_action, PLAYER_TREE),
             (ui.notes_action, PLAYER_NOTES),
+            (ui.edit_notes_action, PLAYER_EDIT_NOTES),
             (ui.volume_up_action, PLAYER_VOLUME_UP),
             (ui.volume_down_action, PLAYER_VOLUME_DOWN),
             (ui.speed_up_action, PLAYER_SPEED_UP),

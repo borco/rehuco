@@ -1400,8 +1400,9 @@ back first. A maximized player reports its surface for the session entry ([[plug
 **The panels sit beside the video, never over it**: the picture shrinks to make room. Nothing is drawn on the
 picture, so Qt's engine keeps its `QVideoWidget`, whose native window no plain widget can paint over
 ([[appendices.vlc#overlay]]). The stage is a splitter — the tree on the left, the video, and a column on the right
-with the info above the notes — and any of them may show at once; the dividers drag, and the stage's split rides in
-the player's entry of the document's layout. Each panel is a command of the player's focus group, so the Shortcuts page
+with the info above the notes — and any of them may show at once. The stage's dividers drag, and its split rides in
+the player's entry of the document's layout; above the notes the info is as tall as its text, behind a divider that
+shows and does not drag (owner). Each panel is a command of the player's focus group, so the Shortcuts page
 lists and rebinds it; which are shown is session state, not saved:
 
 - **`I` — info**: the video's key, its pixel size (from `videos`, else the frame the engine shows), its length, its
@@ -1409,18 +1410,20 @@ lists and rebinds it; which are shown is session state, not saved:
 - **`T` — tree** (#575): a second view over the Tree sub-dock's rows, the name and the progress alone with no header,
   the current video marked and brought into view as the panel is shown. Clicks are the dock's: a click shows that
   video's notes without loading it, a double-click plays it, a bookmark row from its time.
-- **`N` — notes** (#575): a second view of the notes, under the info, with an Edit toggle of its own on a small bar above
-  it. It and the Notes dock are one model ([[plugins#video-notes-dock]]): the same video, and the text of an edit typed
-  in either is in both.
+- **`N` — notes** (#575): a second view of the notes, under the info, with no button: **F2** (*Edit notes*, a command of
+  the player's like the rest) shows it if hidden, starts editing and puts the keyboard in the editor, and ends editing
+  when pressed again, as **Esc** does. It and the Notes dock are one model ([[plugins#video-notes-dock]]): the same
+  video, and the text of an edit typed in either is in both.
 
 **Which keys a panel keeps while it has the keyboard** (owner, #575). The player's keys are armed on everything inside
 it, the panels included, and a shortcut is tried before the focused widget sees the key; a panel claims the keys it
 needs by accepting the shortcut-override Qt sends first. **A notes editor claims every key that is one of the player's**
 as they are bound now, so everything types and a key rebound on the Shortcuts page follows; other shortcuts (`Ctrl+S`)
-are untouched. **Esc** in an editor gives the keyboard back to the player, or to its overlay, and the next Esc is the
-player's. **The tree and the rendered notes claim the plain arrows, Home, End, Page Up and Page Down**: Space, `B`,
-`I`, `T`, `N`, `[`, `]` and the Ctrl arrows stay the player's. Showing a panel never takes the keyboard, and one hidden
-while it holds it hands it to the player.
+are untouched. **F2** is the one key of the player's an editor leaves to the player, so it can end the editing. **Esc**
+in an editor ends the editing and gives the keyboard back to the player, or to its overlay, and the next Esc is the
+player's. **The tree and the rendered notes claim the plain arrows, Home, End, Page Up and Page Down**: Space, `B`, `I`,
+`T`, `N`, `[`, `]` and the Ctrl arrows stay the player's. Showing a panel never takes the keyboard, and one hidden while
+it holds it hands it to the player.
 
 **`B`** works as it does docked: it adds its bookmark line and changes nothing else
 ([[plugins#video-notes-dock]]).
