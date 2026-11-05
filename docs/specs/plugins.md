@@ -1397,13 +1397,14 @@ player's actions are added to the overlay too, so its keys answer there. *Maximi
 unchanged: that is the dock within its document. Stopping the player — closing its dock or its document — puts it
 back first. A maximized player reports its surface for the session entry ([[plugins#session-restore]]).
 
-**The panels sit beside the video, never over it**: the picture shrinks to make room. Nothing is drawn on the
-picture, so Qt's engine keeps its `QVideoWidget`, whose native window no plain widget can paint over
-([[appendices.vlc#overlay]]). The stage is a splitter — the tree on the left, the video, and a column on the right
-with the info above the notes — and any of them may show at once. The stage's dividers drag, and its split rides in
-the player's entry of the document's layout; above the notes the info is as tall as its text, behind a divider that
-shows and does not drag (owner). Each panel is a command of the player's focus group, so the Shortcuts page
-lists and rebinds it; which are shown is session state, not saved:
+**The panels sit beside the video, never over it**: the picture shrinks to make room. Nothing is drawn on the picture,
+so Qt's engine keeps its `QVideoWidget`, whose native window no plain widget can paint over
+([[appendices.vlc#overlay]]). The stage is a splitter — the tree on the left, the video, and a column on the right with
+the info above the notes — and any of them may show at once. The stage's dividers drag, and its split rides in the
+player's entry of the document's layout; above the notes the info is as tall as its text, behind a divider that shows
+and does not drag (owner). The info and each part of the notes are islands, framed as the tree is, and the notes' titles
+are bold over what they head (owner). Each panel is a command of the player's focus group, so the Shortcuts page lists
+and rebinds it; which are shown is session state, not saved:
 
 - **`I` — info**: the video's key, its pixel size (from `videos`, else the frame the engine shows), its length, its
   position with its progress, and where it stands in the playlist (`[30/123]`), in the window's own colours.

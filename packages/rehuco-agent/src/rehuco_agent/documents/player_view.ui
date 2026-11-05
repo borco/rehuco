@@ -69,6 +69,9 @@
        <bool>false</bool>
       </property>
       <widget class="QLabel" name="info_panel">
+       <property name="frameShape">
+        <enum>QFrame::Shape::StyledPanel</enum>
+       </property>
        <property name="alignment">
         <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
        </property>
@@ -76,7 +79,10 @@
         <bool>true</bool>
        </property>
        <property name="margin">
-        <number>8</number>
+        <number>4</number>
+       </property>
+       <property name="indent">
+        <number>0</number>
        </property>
       </widget>
      </widget>

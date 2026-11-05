@@ -467,7 +467,7 @@ def text_height(info: QLabel) -> int:
     :param info: the info panel.
     :returns: the height of the wrapped text and the label's margins.
     """
-    margin = info.margin()
+    margin = info.margin() + info.frameWidth()
     rect = QRect(0, 0, info.width() - 2 * margin, 100_000)
     return info.fontMetrics().boundingRect(rect, int(Qt.TextFlag.TextWordWrap), info.text()).height() + 2 * margin
 
@@ -553,6 +553,42 @@ def test_the_info_alone_fills_the_column_and_leaves_the_stage_its_height(stage: 
     stage.action("notes_action").setChecked(True)
     qtbot.waitUntil(lambda: info.height() == text_height(info), timeout=TIMEOUT)
     assert splitter.height() == height
+
+
+def test_the_info_and_the_notes_start_at_the_same_place_in_the_column(stage: Stage, qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * show the info above the notes for a video
+    * verify the info's text and the notes' headings start the same distance into the column
+    """
+    stage.player.seek(KEY)
+    qtbot.waitUntil(lambda: stage.player.current_key == KEY, timeout=TIMEOUT)
+    side, info = show_info_and_notes(stage, qtbot)
+    notes_ui = stage.notes._NotesPanel__ui  # type: ignore[attr-defined]
+
+    info_start = info.mapTo(side, QPoint(0, 0)).x() + info.frameWidth() + info.margin()
+
+    assert info_start == notes_ui.video_label.mapTo(side, QPoint(0, 0)).x()
+    assert info_start == notes_ui.tutorial_label.mapTo(side, QPoint(0, 0)).x()
+
+
+def test_the_info_and_the_two_notes_are_islands_as_the_tree_is_with_bold_titles(stage: Stage, qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * show the tree, and the info above the notes
+    * verify the info and each part of the notes have the tree's frame
+    * verify the notes' titles are bold and what they head is not
+    """
+    stage.action("tree_action").setChecked(True)
+    _, info = show_info_and_notes(stage, qtbot)
+    notes_ui = stage.notes._NotesPanel__ui  # type: ignore[attr-defined]
+    tree = stage.tree.findChild(QTreeView, "tree_view")
+    assert tree is not None
+
+    for block in (info, notes_ui.video_part, notes_ui.tutorial_part):
+        assert block.frameShape() == tree.frameShape()
+    assert notes_ui.video_label.font().bold() and notes_ui.tutorial_label.font().bold()
+    assert not notes_ui.video_view.font().bold() and not notes_ui.tutorial_view.font().bold()
 
 
 def test_the_divider_above_the_notes_shows_and_does_not_drag(stage: Stage, qtbot: QtBot) -> None:

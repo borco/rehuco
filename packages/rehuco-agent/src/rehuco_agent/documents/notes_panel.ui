@@ -34,7 +34,10 @@
      <property name="childrenCollapsible">
       <bool>false</bool>
      </property>
-     <widget class="QWidget" name="video_part" native="true">
+     <widget class="QFrame" name="video_part">
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
       <layout class="QVBoxLayout" name="video_layout">
        <property name="spacing">
         <number>2</number>
@@ -52,7 +55,13 @@
         <number>2</number>
        </property>
        <item>
-        <widget class="ElidedLabel" name="video_label"/>
+        <widget class="ElidedLabel" name="video_label">
+         <property name="font">
+          <font>
+           <bold>true</bold>
+          </font>
+         </property>
+        </widget>
        </item>
        <item>
         <widget class="QStackedWidget" name="video_stack">
@@ -61,7 +70,10 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="tutorial_part" native="true">
+     <widget class="QFrame" name="tutorial_part">
+      <property name="frameShape">
+       <enum>QFrame::Shape::StyledPanel</enum>
+      </property>
       <layout class="QVBoxLayout" name="tutorial_layout">
        <property name="spacing">
         <number>2</number>
@@ -80,6 +92,11 @@
        </property>
        <item>
         <widget class="QLabel" name="tutorial_label">
+         <property name="font">
+          <font>
+           <bold>true</bold>
+          </font>
+         </property>
          <property name="text">
           <string>Tutorial</string>
          </property>
