@@ -1,0 +1,3233 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/nodes/">
+      
+      
+        <link rel="prev" href="../data-model/">
+      
+      
+        <link rel="next" href="../discovery-trust-access/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Node Communication - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#5-the-node" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Node Communication
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../external-tools/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  External Tools
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#51-two-roles-agent-desktop-gui-and-node-its-child" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.1 Two roles: agent (desktop GUI) and node (its child)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#52-readiness-is-per-operation-never-one-global-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.2 Readiness is per-operation, never one global gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#53-local-file-mode-and-the-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.3 Local-file mode and the catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#54-single-instance-behavior-and-file-association" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.4 Single-instance behavior and file association
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#55-the-record-and-catalog-operations-in-core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.5 The record and catalog operations in core
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#56-node-actions-in-the-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.6 Node actions in the agent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#57-what-a-node-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.7 What a node reports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#58-playing-a-video-in-a-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.8 Playing a video in a browser
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#59-the-web-pages-fastapi-htmx-and-pico" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.9 The web pages: FastAPI, HTMX and Pico
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/vlc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../external-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#51-two-roles-agent-desktop-gui-and-node-its-child" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.1 Two roles: agent (desktop GUI) and node (its child)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#52-readiness-is-per-operation-never-one-global-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.2 Readiness is per-operation, never one global gate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#53-local-file-mode-and-the-catalog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.3 Local-file mode and the catalog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#54-single-instance-behavior-and-file-association" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.4 Single-instance behavior and file association
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#55-the-record-and-catalog-operations-in-core" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.5 The record and catalog operations in core
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#56-node-actions-in-the-agent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.6 Node actions in the agent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#57-what-a-node-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.7 What a node reports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#58-playing-a-video-in-a-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.8 Playing a video in a browser
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#59-the-web-pages-fastapi-htmx-and-pico" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §5.9 The web pages: FastAPI, HTMX and Pico
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="5-the-node">§5. The Node</h1>
+<p><span class="slug-ref">[[[nodes]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[nodes#overview]]]</span></p>
+<p>The node is <strong>what the share cannot do</strong>. Reading, writing, copying and watching the files are the operating system's
+and the SMB server's job (<span class="slug-ref">[[architecture-design#why-distributed]]</span>); the node adds, for the user whose agent runs it:</p>
+<ul>
+<li><strong>Web pages</strong> for a tablet or a browser: the tutorial list, a watch page that plays a video over HTTP with Range,
+  converting it first when the browser cannot play it (<span class="slug-ref">[[nodes#web-playback]]</span>), and writes progress into the user's
+  sidecar (<span class="slug-ref">[[field-schema#watch-progress]]</span>), the image browser later.</li>
+<li><strong>Long jobs</strong> run where the agent would otherwise block: checksum runs, verified copies, and, as an optimisation only,
+  content hashing for a root whose disk is local to the node's machine (<span class="slug-ref">[[nodes#node-status]]</span>).</li>
+<li><strong>The borrow store</strong>: the folder borrowed copies live in, with their <code>.borrow</code> records (<span class="slug-ref">[[borrowing]]</span>).</li>
+<li><strong>Discovery and login</strong>: the node advertises itself over mDNS to agents on the LAN; a browser gets a plain URL. A
+  user logs in to the web pages with a one-time password the node's CLI issues for that username, with a role
+  (<span class="slug-ref">[[discovery-trust-access#user-auth]]</span>).</li>
+</ul>
+<p><strong>What it is today</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/506" title="GitHub Issue: borco/rehuco #506">#506</a>): a process the agent starts a few seconds after its window is up and stops when it quits,
+running as the agent's user, that writes a heartbeat file and a log under the folder the two share
+(<span class="slug-ref">[[packaging-deployment#app-folders]]</span>). <em>Settings</em> &gt; <em>System Integration</em> turns it on and off and shows whether it runs;
+the status bar's right end says <em>Local Node: Running</em> or <em>Stopped</em>. Everything above lands on that lifecycle.</p>
+<p><strong>One HTTPS API for the web pages, when they come</strong>: FastAPI, JSON bodies, plain HTTP Range for media, a self-signed
+certificate; the pages are server-rendered with HTMX and Pico (<span class="slug-ref">[[nodes#web-pages]]</span>). Both the stack (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/418" title="GitHub Issue: borco/rehuco #418">#418</a>) and playback
+(<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/419" title="GitHub Issue: borco/rehuco #419">#419</a>, <span class="slug-ref">[[nodes#web-playback]]</span>) were spiked before any page was written. There is no node-to-node protocol: nodes do not
+talk to each other, and nothing of the catalog travels over it — an agent reads the files over its own mount.</p>
+<p><strong>No system service, for now.</strong> A node that serves from the login screen would have to run as a system service under
+its own account on every OS; the Windows leg of <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/504" title="GitHub Issue: borco/rehuco #504">#504</a> measured what that costs — a service sees none of the users'
+mounts and credentials, cannot run from a per-user install, must be granted its way into profile folders. The owner
+decided the node runs as the current user instead: it serves only while that user is logged in, and that is fine.
+A service stays a possible later opt-in, with the recipe recorded on <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/504" title="GitHub Issue: borco/rehuco #504">#504</a>.</p>
+<h2 id="51-two-roles-agent-desktop-gui-and-node-its-child">§5.1 Two roles: agent (desktop GUI) and node (its child)</h2>
+<p><span class="slug-ref">[[[nodes#two-roles]]]</span></p>
+<p>Two distinct <em>roles</em> exist, because a GUI and a server are different processes with different lifetimes:</p>
+<ul>
+<li><strong>Agent</strong> — the desktop GUI: tray icon, viewer/editor windows, the catalog and the settings. It reads and writes
+  every file itself, over this machine's mounts, through rehuco-core.</li>
+<li><strong>Node</strong> — the headless process the agent hosts. It has <strong>no roots of its own</strong>: roots are the user's, declared in
+  the <code>.rehuco</code> (<span class="slug-ref">[[mounts-and-storage#rehuco-scope]]</span>); the node reads the same per-machine app folder the agent uses
+  and serves whatever of the user's roots is reachable from this machine, plus its borrow store. On the machine that
+  travels, the NAS roots are offline mounts and the borrow store is local, so the node serves the borrowed tutorials
+  with everything else switched off, with no configuration of its own.</li>
+</ul>
+<p>Both are <strong>thin hosts over rehuco-core</strong>: the reading, writing, scanning, checksumming and probing live in the Qt-free
+library, and the agent and the node only wire it up — one with a GUI, the other with an HTTP server. New logic lands
+in core, taking paths, settings and the username as parameters, so the node can do whatever the agent does without
+the code moving. "Admin" is a property of the <strong>logged-in web user</strong>, not of the agent
+(<span class="slug-ref">[[discovery-trust-access#user-auth]]</span>).</p>
+<p><strong>How the node is hosted.</strong> The agent starts <code>rehuco-node</code> as a <strong>child process</strong> (<code>NodeHost</code>, over <code>QProcess</code>) on a
+timer a few seconds after the window is up, so opening a file never pays for it; it holds the child's stdin, and the
+node stops when that pipe reaches EOF — an agent that quits, or crashes, takes its node down with it and never leaves
+an orphan. Quitting stops the node first thing once the close guards pass, with a short grace; a node still starting
+is killed rather than waited for. The packaged app hosts the node as itself: <code>rehuco-agent --node</code> runs the node's own
+<code>main</code>, so there is no second executable to ship. The node runs as the agent's user, and so sees that user's mounts,
+credentials and profile folders with no elevation and no stored password.</p>
+<table>
+<thead>
+<tr>
+<th>Tray</th>
+<th>Node</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>off</td>
+<td>off</td>
+<td>Closing the window quits</td>
+</tr>
+<tr>
+<td>on</td>
+<td>off</td>
+<td>Closing the window hides to the tray</td>
+</tr>
+<tr>
+<td>off</td>
+<td>on</td>
+<td>The node lives exactly as long as the window</td>
+</tr>
+<tr>
+<td>on</td>
+<td>on</td>
+<td>Closing the window keeps the node serving; Quit stops both</td>
+</tr>
+</tbody>
+</table>
+<p><strong>One node per box.</strong> A second user on the same machine runs their own agent and so their own node, on another port
+and under another mDNS name, only while logged in (<span class="slug-ref">[[multiplicity#overview]]</span>).</p>
+<h2 id="52-readiness-is-per-operation-never-one-global-gate">§5.2 Readiness is per-operation, never one global gate</h2>
+<p><span class="slug-ref">[[[nodes#readiness-per-op]]]</span></p>
+<p>The app must be usable before anything in the background settles. The mistake to avoid is a single "ready" flag that
+blocks everything until the slowest background task finishes. Operations are tiered by what they actually depend on:</p>
+<ul>
+<li><strong>Local-file only</strong> → never waits. Double-clicking a <code>.rehu</code> to view it reads that one self-describing file (and its
+  sibling screenshots and the user's sidecar) off disk and renders immediately — no catalog, no notifier, no node.</li>
+<li><strong>Local cache</strong> → waits only on the local <code>.rehudb</code> load (or shows results progressively as it loads). Browsing and
+  searching the catalog is stale-but-local until the notifier and the next scan refine it.</li>
+<li><strong>The share</strong> → a save, a rename or a scan that needs the share waits for the share, as a job in the task queue
+  that says so, never as a frozen window (<span class="slug-ref">[[mounts-and-storage#offline-mounts]]</span>).</li>
+</ul>
+<p>The notifier, the catalog's verify-on-access and the node's start all run <strong>async in the background</strong> and surface
+<em>status</em> ("offline, showing last-known", "node starting"), never a blocking splash.</p>
+<h2 id="53-local-file-mode-and-the-catalog">§5.3 Local-file mode and the catalog</h2>
+<p><span class="slug-ref">[[[nodes#local-vs-swarm]]]</span></p>
+<p>The agent operates in two scopes:</p>
+<ul>
+<li><strong>Local-file mode</strong> — viewing/editing a <em>single</em> <code>.rehu</code> off disk. Needs <strong>no catalog, no node, no login</strong>. It parses
+  the self-describing file, shows/edits fields, renders the Markdown, reads/writes sibling screenshots and the user's
+  sidecar. This is the "dumb viewer/editor" — the correct behavior for a machine with nothing configured, or a single
+  <code>.rehu</code>+folder someone received.</li>
+<li><strong>Catalog mode</strong> — a <code>.rehuco</code> is open: its roots are scanned into the <code>.rehudb</code>, the browsers and the Roots view
+  show them, the notifier keeps them current, the node serves what it can reach.</li>
+</ul>
+<p><strong>Local-file mode is the floor; the catalog enriches when present.</strong> Viewing or editing a file the OS lets the user read
+is never gated by a login: the web pages' access control (<span class="slug-ref">[[discovery-trust-access#access-control]]</span>) governs what the
+node serves over the network, and cannot govern a file the user already has.</p>
+<p><strong>Saving is the same in both scopes</strong> (<span class="slug-ref">[[sync#overview]]</span>): the save takes the record's lock file, re-reads the file,
+compares it with the version the edit was based on, merges the per-user fields, writes atomically and releases. Two
+agents on one share, a web user writing progress through the node, and someone editing the file by hand are all kept
+apart by that one rule, and a change that cannot be merged is a conflict the user resolves, never a silent overwrite.</p>
+<h2 id="54-single-instance-behavior-and-file-association">§5.4 Single-instance behavior and file association</h2>
+<p><span class="slug-ref">[[[nodes#single-instance]]]</span></p>
+<p>The agent uses the standard single-instance pattern: on launch (or <code>.rehu</code> double-click) it tries to bind a local
+socket; if it binds, it is the <strong>main instance</strong>; if the bind fails, another agent is already running, so it connects to
+that socket, forwards the file path, and exits — the main instance opens a new viewer view for the forwarded file. (This
+matches Qt's <code>QLocalServer</code>/single-application approach.)</p>
+<ul>
+<li><strong>One main instance hosts both scopes.</strong> A forwarded double-click opens a local-file-mode view
+  (<span class="slug-ref">[[nodes#local-vs-swarm]]</span>, instant) regardless of whether the same instance also has a catalog open. No separate
+  viewer process.</li>
+<li><strong>Forwarded opens never block.</strong> The receiving instance opens the local file immediately.</li>
+<li><strong>Tray.</strong> If tray mode is enabled, closing the window minimizes to tray and quit is explicit (tray menu / window
+  menu); if disabled, closing quits. The tray lives on the <strong>agent</strong> (the only part with a GUI). An accepted close
+  always quits the application explicitly, whether or not a tray icon exists: Qt's own last-window quit cannot be
+  relied on, because a floating dock window is a top-level window of its own and its close is one QtAds only hides
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/507" title="GitHub Issue: borco/rehuco #507">#507</a>). Hiding to the tray takes every floating dock window along and brings it back.</li>
+<li><strong>Robustness:</strong> if bind fails <em>and</em> connect also fails, assume a crashed holder left a stale socket — reclaim it and
+  become the main instance. The socket name is <strong>scoped per OS user</strong>, so two users on one box don't collide on one
+  socket and forward to the wrong instance. A run with its own settings folder (<span class="slug-ref">[[packaging-deployment#app-folders]]</span>)
+  takes a name of its own too, from that folder's path, so a development build never forwards to the installed one
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/494" title="GitHub Issue: borco/rehuco #494">#494</a>).</li>
+<li><strong>Platform mechanics live in <span class="slug-ref"><span class="slug-ref">[[packaging-deployment#app-identity]]</span></span>.</strong> How each OS delivers a double-clicked <code>.rehu</code>
+  into the running instance — and the file-association and app-identity registration it needs — is OS-specific and is
+  covered under packaging.</li>
+</ul>
+<h2 id="55-the-record-and-catalog-operations-in-core">§5.5 The record and catalog operations in core</h2>
+<p><span class="slug-ref">[[[nodes#access-seam]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/413">#413: refactor(core): resource keys, key relocation, an access router and a change feed</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/416">#416: refactor: records through the access seam — load, save with a version check, revert, convert</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/417">#417: refactor: the Root Catalog through the access seam — roots, queries, rows, scans</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/510">#510: refactor: tear down the remote access seam — NodeKey, AccessRouter, ResourceAccess, Capability, the empty op groups</a></li>
+</ul>
+<p>Every operation on a resource's files goes through a few <strong>operation-level classes in rehuco-core</strong>, Qt-free, that the
+agent and the node both use: <code>Records</code> (load, save, <code>record_progress</code>, legacy conversion), <code>Catalog</code> (roots, query,
+row, count, follow a rename, refresh a record), and the <code>ChangeFeed</code> the notifier publishes on. They were built, in
+issues <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/413" title="GitHub Issue: borco/rehuco #413">#413</a>–<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/417" title="GitHub Issue: borco/rehuco #417">#417</a>, as <code>LocalRecords</code> and <code>LocalCatalog</code>, the local half of a <em>remote access seam</em> — a <code>ResourceAccess</code>
+protocol with a <code>NodeKey</code>, an <code>AccessRouter</code>, capability flags and five empty operation groups waiting for a remote
+implementation. The remote half was <strong>not coming</strong>: a node is one more client of the share, and reaches the files the
+same way. <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/510" title="GitHub Issue: borco/rehuco #510">#510</a> tore the scaffolding down and dropped the <code>Local</code> prefix it no longer contrasted with: the main window
+holds one <code>Records</code> and one <code>Catalog</code> directly, every key is a <code>ResourceKey</code>, and the feed's <code>Invalidated</code> became
+<code>RootStale</code>. What stayed is this:</p>
+<p><strong>Keys, not paths, where the cache speaks.</strong> A resource is identified by a <code>ResourceKey</code>: the absolute path, never
+resolved, which would touch the disk; compared as its <code>Path</code> does — <code>os.path.normcase</code>'s rule, case folded on Windows,
+kept on POSIX. The <code>.rehudb</code> cache stores resources as root plus root-relative path (<span class="slug-ref">[[data-model#cache-schema]]</span>), and
+the node addresses what it serves the same way, so neither depends on a drive letter. A key is a <strong>location</strong>, not an
+identity: recognizing one resource reached by two routes stays a UUID question (<span class="slug-ref">[[mounts-and-storage#uuid-not-paths]]</span>).</p>
+<p><strong>Saving is a read-merge-write with a version check, under the record's lock</strong> (<span class="slug-ref">[[sync#overview]]</span> has the lock):</p>
+<ul>
+<li>Every save re-reads the file, takes the caller's resource metadata, merges the per-user maps <strong>field by field</strong>, and
+  writes atomically. A per-user field the caller changed since it read the file is the caller's; every other one is
+  the file's. The caller may change fields only in its own scope and the reserved <code>public</code> one, so another user's
+  state, and <code>unknown</code>'s, is always the file's.</li>
+<li>A save carries the <code>RecordVersion</code> it was edited from: a hash of the <strong>non-user part</strong>, of the file, and of each
+  per-user field as read, which is what tells a field the caller changed from one it merely still holds. A block
+  holding nothing but its <code>users</code> map is not metadata. So a progress write every few seconds never fails a metadata
+  save; only a newer metadata edit does, and that is reported as a conflict instead of silently overwritten. Only a
+  refused save shows anything: the agent lists every value the two disagree on — the details, and the per-user fields
+  of the caller's own scope and <code>public</code> — each with its original value, the caller's and the file's as three radios,
+  a value that differs from the original in bold, started on the side that changed. It saves the picks, or discards
+  the caller's edits; Save is disabled while every pick is the file's value, since that save would write the file
+  back as it is.</li>
+<li><code>record_progress</code> needs no version: it replaces one user's progress entry and nothing else
+  (<span class="slug-ref">[[field-schema#watch-progress]]</span>).</li>
+<li>With the per-user sidecar (<span class="slug-ref">[[data-model#single-file]]</span>) the per-user half of this moves to a file that has one writer
+  per user; the conflict dialog gains a second diff source and keeps its rows.</li>
+</ul>
+<p><strong>The catalog reads; its owner keeps it current.</strong> <code>Catalog</code> answers what a client asks of a catalog —
+<code>roots()</code>, <code>query(CatalogQuery)</code>, <code>row(key)</code>, and <code>count(root)</code> for Remove Root's question. The two listings raise
+<code>CatalogUnreadable</code> where a cache would raise <code>sqlite3.Error</code>, so no caller catches a driver's exception; a row or a
+count that cannot be read answers nothing, logged. How a cache is opened, reconciled to the <code>.rehuco</code>'s roots and
+followed through renames and saves is its own. Each call opens the cache for its own duration on the calling thread, so
+any worker may call it. Scans and removing a root's rows are jobs.</p>
+<p><strong>Changes come from the notifier.</strong> The <code>ChangeFeed</code> carries <code>Moved</code>, <code>Changed</code>, <code>FolderChanged</code>, <code>RootStale</code> and
+<code>RootReachable</code>; the agent's <code>ResourceEvents</code> adapts it to Qt signals, marshalled to the GUI thread. The notifier
+publishes what the disk says (<span class="slug-ref">[[mounts-and-storage#out-of-band]]</span>); a writer's own change reaches it the same way
+everyone else's does, but for a rename this machine runs, which the rename coordinator publishes at once.</p>
+<p><strong>Never on the GUI thread.</strong> The classes block on storage, so the agent calls them only from workers.</p>
+<h2 id="56-node-actions-in-the-agent">§5.6 Node actions in the agent</h2>
+<p><span class="slug-ref">[[[nodes#node-actions]]]</span></p>
+<ul>
+<li><strong>Open local node</strong> is always present: it starts the node if it is not running and opens its URL in the browser.</li>
+<li>One optional <strong>remote serving node</strong> setting, picked from the mDNS list or typed; <strong>Open remote node</strong> is enabled only
+  when it is set. The tablet uses whichever node's URL the user hands it (<span class="slug-ref">[[borrowing#vacation-topology]]</span>).</li>
+<li><strong>Borrow target preference</strong>: local, the remote serving node, or both when both are reachable; a toolbutton menu on
+  <em>Borrow</em> overrides it per borrow (<span class="slug-ref">[[borrowing#agent-ui]]</span>).</li>
+</ul>
+<h2 id="57-what-a-node-reports">§5.7 What a node reports</h2>
+<p><span class="slug-ref">[[[nodes#node-status]]]</span></p>
+<p>A node is a multi-user, multi-job host, and the agent's <strong>Nodes</strong> view shows what each reachable node is doing:
+copying, hashing, verifying, serving web sessions, with per-job progress, beside its CPU use and free memory. An
+<strong>admin</strong> sees every user's jobs; a regular user sees only their own. The node's queue therefore runs jobs for several
+users in parallel (one lane per user at least, heavy I/O serialized per volume), where the agent's own <code>TaskQueue</code> is
+strictly serial (<span class="slug-ref">[[appendices.task-queue]]</span>).</p>
+<p><strong>Hash delegation, an optimisation only.</strong> A node advertises the root ids it reaches on <em>local</em> disk. Content checksums
+— the heavy <code>.checksum</code> runs over videos and archives, and the destination-side verify of a copy — may be handed to such
+a node, which runs them on its own queue and writes the <code>.checksum</code> record beside the resource as any client would; the
+agent learns of it through the notifier. The small <code>.rehu</code> hash a save compares is never delegated.</p>
+<p><strong>What a node may do is the admin's call, per node.</strong> A node's config carries a permission set — serve pages and
+media, transcode, hash, verify copies, hold a borrow store — that it advertises with its reachable roots; hashing is
+off until someone has looked at the numbers. The Nodes view offers a <strong>Benchmark</strong> action that hashes a fixed sample
+from a root the node reaches and reports MB/s, the CPU load during the run and the time a typical pack would take; the
+node stores the result with its date and shows it in its row. Delegation considers only nodes that allow the job kind,
+prefers the best stored benchmark, and always falls back to the agent itself. A slow node is a scheduling matter, not a
+speed one: its queue runs hashing at low priority, inside a time window, and pauses it while the node serves a video,
+so a checksum sweep every few months is acceptable on a box that would be hopeless for daily hashing. One such box is
+the TS-230 itself: a Debian container on it runs the node beside the data with plain inotify seeing every SMB writer,
+on four slow cores; a headless node like that is given the user's <code>.rehuco</code> path and its machine name as config, since
+no agent shares an app folder with it.</p>
+<h2 id="58-playing-a-video-in-a-browser">§5.8 Playing a video in a browser</h2>
+<p><span class="slug-ref">[[[nodes#web-playback]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/419">#419: spike: video playback and resume on the iPad over the LAN</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/433">#433: feat(node): media with Range — <code>/media/&lt;root_id&gt;/&lt;relative&gt;</code> for <code>&lt;video&gt;</code>, VLC and the in-app player</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/441">#441: feat(web): watch a tutorial in the browser — resume, progress, viewed</a></li>
+</ul>
+<p>Measured by the playback spike (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/419" title="GitHub Issue: borco/rehuco #419">#419</a>) on an iPad mini 5 (A12, iPadOS 26.6.2) in Safari and Edge, which are the same
+WebKit as every iPadOS browser, and on Firefox for Windows. The agent's in-app player plays every file below that the
+iPad refuses; what each candidate player still cannot is in <span class="slug-ref">[[plugins#in-app-player]]</span>.</p>
+<p><strong>A playable file needs nothing but Range.</strong> Served as it is by Starlette's <code>FileResponse</code>, a file plays, seeks and
+resumes: Safari probes <code>bytes=0-1</code>, then keeps one open-ended range and opens a new one per seek, which lands in
+0.2–0.5 s on a 500 MB file. <code>timeupdate</code> fires every 250 ms. A position saved on <code>pagehide</code> and <code>visibilitychange</code>
+survives a reload, a tab switch and a locked screen, and both setting <code>currentTime</code> after <code>loadedmetadata</code> and a <code>#t=</code>
+fragment resume to the second. An MP4 whose index sits at the end of the file plays too.</p>
+<p><strong>What the iPad plays as a file:</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Plays</th>
+<th>Does not</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Container</td>
+<td>MP4, MOV, WebM</td>
+<td>MKV; MPEG-TS, which Safari plays only as HLS segments</td>
+</tr>
+<tr>
+<td>Video</td>
+<td>H.264 progressive; HEVC tagged <code>hvc1</code>, 8- and 10-bit; VP8; VP9 to 4K</td>
+<td>HEVC tagged <code>hev1</code>; interlaced H.264; AV1 on this chip (A17 Pro and M3 or later decode it)</td>
+</tr>
+<tr>
+<td>Audio in MP4</td>
+<td>AAC, stereo and 5.1; AC-3</td>
+<td>MP3 and MP2: the picture plays, silent</td>
+</tr>
+</tbody>
+</table>
+<p>Firefox for Windows plays AV1 and MKV and no HEVC, the reverse. <strong>What plays is the client's property, never the
+file's.</strong></p>
+<p><strong>The client says what it decodes.</strong> The watch page asks <code>navigator.mediaCapabilities.decodingInfo()</code> with the file's
+MIME type and codec string, which the node reads with MediaInfo; on the iPad its answer matched every playback, AV1
+included. <code>canPlayType</code> without a codec string answers "maybe" to anything in an MP4 and is not used. A file the client
+calls unsupported is converted, and so is one that fails with <code>MEDIA_ERR_SRC_NOT_SUPPORTED</code> despite the answer.</p>
+<p><strong>Converted on demand, the opened file only.</strong> Nothing is converted in advance or a tutorial at a time: when the watch
+page opens a file its client cannot play, the page shows <em>Preparing this video for this device</em> with the converter's
+progress, then plays the result, a finished MP4 with its index first, served with Range like any other file. No stream
+is converted live: HLS, or a transcode restarted at every seek, is not done.</p>
+<ul>
+<li><strong>Remux</strong> when only the wrapping is wrong: MKV or TS into MP4, <code>hev1</code> retagged <code>hvc1</code>, MP3, MP2 or broadcast
+  AAC-LATM audio re-encoded to AAC with the video copied. It reads the whole file, so its cost is the read: a 1 GB
+  tutorial over a gigabit share takes about 10 s.</li>
+<li><strong>Transcode</strong> when the codec is wrong: AV1, MPEG-2, interlaced H.264 (deinterlaced) into 8-bit H.264 with AAC.</li>
+</ul>
+<p>Real time multiples measured on the various machines (higher is faster; below 1 the video plays faster than it
+converts):</p>
+<table>
+<thead>
+<tr>
+<th>Machine</th>
+<th>Remux</th>
+<th>AV1 1080p 10-bit to H.264</th>
+<th>AV1 4K 10-bit to 1080p H.264</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PC, Ryzen 5 5600 + RTX 4070</td>
+<td>41×</td>
+<td>2.4× CPU, 7.5× NVENC</td>
+<td>2.7× CPU, 6.2× NVENC</td>
+</tr>
+<tr>
+<td>mac mini, M1</td>
+<td>50×</td>
+<td>2.6× CPU, 3.3× VideoToolbox</td>
+<td>4.1× CPU, 5.9× VideoToolbox</td>
+</tr>
+<tr>
+<td>mac mini (late 2014), i5-4308U</td>
+<td>20×</td>
+<td>0.63×</td>
+<td>1.1×</td>
+</tr>
+<tr>
+<td>Fujitsu Esprimo, GX-217GA</td>
+<td>5.6×</td>
+<td>0.13×</td>
+<td>0.21×</td>
+</tr>
+<tr>
+<td>QNAP TS-230, debian bookworm container, Cortex-A53</td>
+<td>2.2×</td>
+<td>0.08×</td>
+<td>0.08×</td>
+</tr>
+</tbody>
+</table>
+<p>The remux column copies an H.264 TS and re-encodes its audio; a pure copy ran at 10× even on the TS-230. <strong>A node
+transcodes only when it is faster than real time</strong>: the agent's own node on a desktop or laptop transcodes, a small
+headless node remuxes and answers that the file needs a stronger machine. Transcoding is one more kind in a node's
+permission set (<span class="slug-ref">[[nodes#node-status]]</span>).</p>
+<p><strong>The conversion cache.</strong> Converted files live in a folder of the node's own, beside the borrow store and apart from it:
+a borrow puts a copy away (<span class="slug-ref">[[borrowing]]</span>), the cache adapts a format to a client. An entry is keyed by the original's
+path, size and modification time, so an edited original is never served stale; when a new conversion needs room, the
+least recently watched entry goes first. A settings page shows the cache's size, clears it and sets its limit (20 GB,
+say). Progress is stored against the original file, never the converted one: a remux keeps every timestamp and a
+transcode stays within a frame, so a position carries between the agent, the web and back.</p>
+<p><strong>HTTPS, with a certificate the node makes itself.</strong> It must carry the <code>serverAuth</code> extended key usage and name the
+node's address in its subject alternative names: without <code>serverAuth</code>, Safari fails with a TLS error and offers only
+<em>Try again</em>. With it, Safari shows its warning once per device, and the video element honours the exception the user
+accepted: media loaded, seeked and resumed over HTTPS exactly as over HTTP. Plain HTTP played as well and was not
+chosen, since one-time passwords and session cookies would cross the LAN in clear
+(<span class="slug-ref">[[discovery-trust-access#user-auth]]</span>).</p>
+<h2 id="59-the-web-pages-fastapi-htmx-and-pico">§5.9 The web pages: FastAPI, HTMX and Pico</h2>
+<p><span class="slug-ref">[[[nodes#web-pages]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/418">#418: spike: a FastAPI + HTMX + Pico follow-mode page</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/440">#440: feat(web): login page and the tutorial list served by a node</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/441">#441: feat(web): watch a tutorial in the browser — resume, progress, viewed</a></li>
+</ul>
+<p>The follow-mode spike (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/418" title="GitHub Issue: borco/rehuco #418">#418</a>) built the pages the node needs as a throwaway: a tutorial's file list with per-file
+progress, a watch page whose player posts its position every few seconds, and both following a position another
+device writes. Driven by script in Edge for Windows and by hand on the iPad in Safari, Edge and Firefox, on FastAPI
+0.143 (Starlette 1.8), Jinja2 3.1 and uvicorn 0.54 on Python 3.14, with htmx 2.0.4 and Pico CSS 2.0.6. <strong>The stack
+builds the pages as needed</strong>, with a few lines of plain script where a media element or a page leaving is concerned.</p>
+<p><strong>The pages are server-rendered fragments.</strong> Each page is a Jinja2 template; a part that refreshes is a partial the page
+includes and an endpoint renders alone, one template for both. A posted value is form-encoded, htmx's default, so the
+node depends on <code>python-multipart</code> beside <code>jinja2</code>. htmx (51 KB) and Pico (82 KB) are served by the node from its own
+package, never from a CDN: the machine that travels serves its borrowed tutorials with no internet
+(<span class="slug-ref">[[borrowing#vacation-topology]]</span>).</p>
+<p><strong>Following another device is polling.</strong> The list polls its rows every 3 s and swaps them whole; a position the agent
+wrote showed within 3 s. A paused watch page polls every 4 s and, when another device has moved this file's position,
+offers <em>Watched on agent-pc up to 1:10</em> with a <em>Jump there</em> button: it showed 1.8 s after the write. A playing page
+does not poll, and never jumps by itself. A device is told apart by an id the browser keeps in <code>localStorage</code>.</p>
+<p><strong>The player posts through htmx, the page's exit through a beacon.</strong> htmx listens to media events on the <code>&lt;video&gt;</code>
+itself: <code>hx-trigger="every 5s [!this.paused], pause, seeked, ended"</code> posted every 5 s while playing and once per pause
+and seek, and a pause landing while a tick is in flight queues rather than drops, htmx's default. Two traps: a trigger
+filter runs with <code>this</code> as the element, but a <code>js:</code> value in <code>hx-vals</code> runs with <code>this</code> as <code>window</code> and no event, so it
+reads the player by id; and the trigger's name reaches the request only through an <code>htmx:configRequest</code> listener.
+htmx's request is cancelled when the page goes, so <code>pagehide</code> and a hidden <code>visibilitychange</code> post with
+<code>navigator.sendBeacon</code> instead, about ten lines of script; both arrived on navigating away. The resume is the
+<code>#t=&lt;position&gt;</code> fragment (<span class="slug-ref">[[nodes#web-playback]]</span>), whose seek posts the resumed position once on load.</p>
+<p><strong>A page writes only a position it moved.</strong> A page left paused at 0:50 while the agent went on to 1:10 would, on
+leaving, post 0:50 and send the agent back: the exit beacon and a pause post only when this page played or seeked
+since its own last write, and jumping to another device's position is such a seek. The watch page (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/441" title="GitHub Issue: borco/rehuco #441">#441</a>) keeps this
+rule.</p>
+<p><strong>Pico needs one rule of the page's own.</strong> The list, its table and <code>&lt;progress&gt;</code> bars, the nav, the banner and its
+button, and the dark scheme from <code>prefers-color-scheme</code> came out right at phone width with no CSS; <code>&lt;video&gt;</code> does not
+shrink to its container, so the page sets <code>video { width: 100%; height: auto }</code>: without it a 1280-pixel video ran off
+a portrait window.</p>
+<p><strong>Fullscreen is the page's, where the browser allows it, and a fill everywhere.</strong> A browser's own fullscreen is its
+player's, whose X stops the video in Safari, Edge and Firefox on the iPad alike. The page offers two buttons over the
+player instead:</p>
+<ul>
+<li><em>Full screen</em> asks the Fullscreen API for a wrapper around the video, never the video itself, and shows only where
+  <code>fullscreenEnabled</code> says it may. Safari and Edge then hide their tabs and keep the page's <em>Exit full screen</em>, which
+  leaves without a pause; Firefox hands the video to its own player regardless, so there it ends at the X.</li>
+<li><em>Fill page</em> only adds a class: the wrapper fixed over the whole window on black, <code>object-fit: contain</code>. It keeps the
+  inline controls and the page's <em>Exit fill</em> in all three browsers, follows a rotation, and enters and leaves with no
+  pause, but leaves the browser's tabs in place.</li>
+</ul>
+<p>Added to the home screen as a web app (a manifest with <code>display: standalone</code>), the page opens with no tabs or address
+bar, and the Fullscreen API is not offered: <em>Fill page</em> is the only button, and fills everything below the status bar,
+which stays.</p>
+<p><strong>The iPad cannot be told from a Mac, or simulated.</strong> Its Safari sends a Mac user agent, and Edge a Mac one with
+<code>EdgiOS</code> in it, so the node never decides by user agent; what a client plays it asks the client
+(<span class="slug-ref">[[nodes#web-playback]]</span>). Playwright's WebKit for Windows plays no video (<code>MEDIA_ERR_SRC_NOT_SUPPORTED</code> on the spike's
+H.264, though <code>canPlayType</code> says <em>probably</em>), so a page is checked on the iPad itself.</p>
+<p><strong>One thing later pages decide.</strong> <code>js:</code> values and trigger filters are compiled with <code>Function</code>, so a content security
+policy without <code>unsafe-eval</code> needs them moved into a listener.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../data-model/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Data Model">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Data Model
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../discovery-trust-access/" class="md-footer__link md-footer__link--next" aria-label="Next: Discovery &amp; Trust">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Discovery & Trust
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
