@@ -113,6 +113,7 @@ class OverlaySurface(QWidget):
         flags = Qt.WindowType.Widget if host is not None else Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
         super().__init__(host if host is not None else document, flags)
         self.__host: Final = host
+        self.__mode: Final = mode
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         connections: list[QMetaObject.Connection] = []
@@ -139,6 +140,11 @@ class OverlaySurface(QWidget):
             # delete the focused editor while the view is up, and re-focusing a deleted widget on
             # dismiss would raise
             self.__connect(self.__previous_focus.destroyed, self.__forget_previous_focus)
+
+    @property
+    def mode(self) -> OverlayMode:
+        """The surface this view is on -- what a session remembers (#576)."""
+        return self.__mode
 
     def __connect(self, signal: SignalInstance, slot: Callable[..., None]) -> None:
         """Connect a slot of this view's to another object's signal, remembering the connection to let go of.

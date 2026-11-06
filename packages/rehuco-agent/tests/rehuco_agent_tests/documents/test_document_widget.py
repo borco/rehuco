@@ -86,6 +86,7 @@ from rehuco_agent.documents.document_sub_docks import (
     SAVE_DEFAULT_LAYOUT_LABEL,
     SAVE_PREVIEW_ICON_RESOURCE,
     STATE_IMAGE_STRIP_VISIBLE_KEY,
+    STATE_MAXIMIZED_DOCK_KEY,
     TREE_DOCK_NAME,
     DocumentSubDocks,
     type_dock_names,
@@ -2487,7 +2488,7 @@ def image_selector(widget: DocumentWidget) -> ImageSelector:
     """The images editor's selector, reached through the dock registry rather than ``findChildren``.
 
     QtAds detaches the content of a dock sitting behind another tab from the widget tree, and the
-    images editor is one of those -- the same reason ``DocumentWidget.__stateful_widgets`` enumerates
+    images editor is one of those -- the same reason ``DocumentSubDocks.__stateful_widgets_of`` is handed a dock from
     the registry instead.
 
     :param widget: the document widget to look in.
@@ -3041,7 +3042,7 @@ def test_switching_type_tolerates_a_stateful_widget_that_disappears_across_the_s
     qtbot.addWidget(widget)
     location_editor(widget).expanded = True
 
-    real_stateful_widgets = widget.sub_docks._DocumentSubDocks__stateful_widgets  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    real_stateful_widgets = widget.sub_docks._DocumentSubDocks__form_stateful_widgets  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ghost = mocker.Mock(spec=StatefulWidget)
     ghost.save_state.return_value = b"ghost"
     calls: Final = []
@@ -3051,7 +3052,7 @@ def test_switching_type_tolerates_a_stateful_widget_that_disappears_across_the_s
         calls.append(None)
         return {**widgets, "ghost": ghost} if len(calls) == 1 else widgets
 
-    mocker.patch.object(widget.sub_docks, "_DocumentSubDocks__stateful_widgets", side_effect=fake_stateful_widgets)
+    mocker.patch.object(widget.sub_docks, "_DocumentSubDocks__form_stateful_widgets", side_effect=fake_stateful_widgets)
 
     block_model.resource_type = "reference_images"  # no KeyError despite "ghost" missing from the rebuilt grid
 
@@ -6179,7 +6180,10 @@ def test_a_layout_capture_reads_a_maximized_document_undone(widget: DocumentWidg
 
     assert widget.save_layout_state() == unmaximized_layout
     assert manager.openedDockAreas() == [main_view.dockAreaWidget()]
-    assert widget.save_state() == unmaximized_state
+    # the state names the dock beside the layout (#576), which is otherwise as it was
+    maximized_state = cbor2.loads(widget.save_state())
+    assert maximized_state.pop(STATE_MAXIMIZED_DOCK_KEY) == main_view.objectName()
+    assert {**maximized_state, STATE_MAXIMIZED_DOCK_KEY: ""} == cbor2.loads(unmaximized_state)
     assert manager.openedDockAreas() == [main_view.dockAreaWidget()]
     assert button.isChecked()
 

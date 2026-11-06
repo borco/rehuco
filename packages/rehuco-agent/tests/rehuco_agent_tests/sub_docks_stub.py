@@ -26,6 +26,7 @@ class StubSubDocks(QObject):
     filter_requested: Signal = Signal(str)
     tools_requested: Signal = Signal()
     record_activated: Signal = Signal(object)
+    maximized_restored: Signal = Signal(object)
 
     def __init__(self, model: RehuDocumentModel, _host: object, *, parent: QObject, **_kwargs: object) -> None:
         super().__init__(parent)
@@ -64,6 +65,15 @@ class StubSubDocks(QObject):
 
     def stop_playback(self) -> None:
         """Nothing playing."""
+
+    def capture_maximized(self) -> None:
+        """Nothing is maximized."""
+
+    def restore_maximized(self, _view: object) -> None:
+        """Nothing can be maximized.
+
+        :param _view: the view.
+        """
 
     def teardown(self) -> None:
         """Nothing built."""

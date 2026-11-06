@@ -40,6 +40,7 @@ from rehuco_agent.tasks import task_queue_widget as widget_module
 from rehuco_agent.tasks.task_queue_model import STARTS_OVER_HINT
 from rehuco_agent.tasks.task_queue_widget import (
     LOG_DOCK_NAME,
+    MAXIMIZED_DOCK_STATE_KEY,
     PAUSE_TOOLTIP,
     QUEUE_DOCK_NAME,
     STARTS_OVER_SOME_TOOLTIP,
@@ -1487,9 +1488,43 @@ def test_a_sub_dock_maximizes_and_a_capture_reads_it_undone(widget: TaskQueueWid
     button.click()
 
     assert manager.openedDockAreas() == [log_area]
-    assert widget.save_state() == unmaximized
+    maximized = cbor2.loads(widget.save_state())
+    assert maximized.pop(MAXIMIZED_DOCK_STATE_KEY) == LOG_DOCK_NAME
+    assert cbor2.dumps({**maximized, MAXIMIZED_DOCK_STATE_KEY: ""}) == unmaximized
     assert manager.openedDockAreas() == [log_area]
     assert button.isChecked()
+
+
+def test_a_maximized_sub_dock_comes_back_with_the_layout(queue: Mock, qtbot: QtBot) -> None:
+    """The sub-dock filling the Tasks dock is named beside its layout and fills a shell restored from it (#576).
+
+    **Test steps:**
+
+    * maximize the Log sub-dock of a shown shell, and save its state
+    * restore that state into a second shell, and verify nothing is maximized until it is shown
+    * show it, and verify its Log sub-dock fills it
+    """
+    source = TaskQueueWidget(queue)
+    qtbot.addWidget(source)
+    source.resize(800, 600)
+    source.show()
+    log_dock_of(source).toggleView(True)
+    source_handler = source._TaskQueueWidget__maximize_handler  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    source_handler.maximize(log_dock_of(source))
+    state = source.save_state()
+
+    restored = TaskQueueWidget(queue)
+    qtbot.addWidget(restored)
+    restored.resize(800, 600)
+    handler = restored._TaskQueueWidget__maximize_handler  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert restored.restore_state(state) is True
+    assert handler.maximized_dock is None
+    assert handler.maximized_name == LOG_DOCK_NAME
+
+    restored.show()
+
+    qtbot.waitUntil(lambda: handler.maximized_dock is log_dock_of(restored), timeout=10_000)
 
 
 # endregion

@@ -7,7 +7,7 @@ from borco_pyside.qtads import QtAdsFocusTracker, QtAdsMaximizeHandler, tab_clos
 from borco_pyside.theming import Glyph
 from PySide6.QtCore import QByteArray
 from PySide6.QtWidgets import QBoxLayout, QMainWindow, QPushButton, QWidget
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 
@@ -527,6 +527,138 @@ def test_a_handler_built_over_existing_docks_hooks_their_toggle_too(
     docks[1].toggleView(False)
 
     assert handler.maximized_dock is None
+
+
+def test_a_named_maximize_waits_for_the_manager_to_reach_the_screen(qtbot: QtBot) -> None:
+    """A dock maximized by name before its manager is shown fills it only once shown, and gives back real sizes.
+
+    **Test steps:**
+
+    * ask for a dock by name on a hidden window, and verify nothing is maximized yet though the name reads as saved
+    * show the window, and verify the dock fills it
+    * restore it, and verify the sibling has a real width, not a sliver
+    """
+    window = QMainWindow()
+    qtbot.addWidget(window)
+    window.resize(800, 600)
+    manager = QtAds.CDockManager(window)
+    handler = QtAdsMaximizeHandler(manager, GLYPH, MAXIMIZED_GLYPH)
+    left = add_dock(manager, "left", QtAds.LeftDockWidgetArea)
+    right = add_dock(manager, "right", QtAds.RightDockWidgetArea)
+
+    handler.maximize_named("left")
+    qtbot.wait(20)
+
+    assert handler.maximized_dock is None
+    assert handler.maximized_name == "left"
+
+    window.show()
+
+    qtbot.waitUntil(lambda: handler.maximized_dock is left, timeout=WAIT)
+    assert handler.maximized_name == "left"
+
+    handler.restore()
+
+    qtbot.waitUntil(lambda: right.width() > 50, timeout=WAIT)
+    assert handler.maximized_name == ""
+
+
+def test_a_named_maximize_on_a_shown_manager_runs_on_the_next_turn(
+    handler: QtAdsMaximizeHandler, docks: list[QtAds.CDockWidget], qtbot: QtBot
+) -> None:
+    """A manager already on screen has laid out, so the dock named fills it at once.
+
+    **Test steps:**
+
+    * ask for a dock by name on a shown window
+    * verify it is maximized on a later turn of the event loop
+    """
+    handler.maximize_named("right")
+
+    qtbot.waitUntil(lambda: handler.maximized_dock is docks[1], timeout=WAIT)
+
+
+@mark.parametrize("name", ["gone", ""])
+def test_a_name_no_dock_goes_by_restores_nothing(
+    handler: QtAdsMaximizeHandler, docks: list[QtAds.CDockWidget], qtbot: QtBot, name: str
+) -> None:
+    """A name no dock goes by, and no name at all, maximize nothing; the name is kept for a dock added later under it.
+
+    **Test steps:**
+
+    * ask for the name, and let the event loop turn
+    * verify nothing is maximized and every area still shows, and the name is what is still reported
+    """
+    handler.maximize_named(name)
+
+    qtbot.wait(20)
+
+    assert handler.maximized_dock is None
+    assert handler.maximized_name == name
+    assert len(docks) == len(docks[0].dockManager().openedDockAreas())
+
+
+def test_a_dock_added_later_under_the_name_held_is_maximized(
+    handler: QtAdsMaximizeHandler, manager: QtAds.CDockManager, docks: list[QtAds.CDockWidget], qtbot: QtBot
+) -> None:
+    """A document whose storage answers after the start is added under the name the session saved, and fills the area.
+
+    **Test steps:**
+
+    * ask for a name no dock goes by, on a shown manager
+    * add a dock under that name
+    * verify it is the maximized one
+    """
+    del docks
+    handler.maximize_named("late")
+    qtbot.wait(20)
+
+    late = add_dock(manager, "late", QtAds.CenterDockWidgetArea)
+
+    qtbot.waitUntil(lambda: handler.maximized_dock is late, timeout=WAIT)
+
+
+def test_a_closed_dock_by_name_restores_nothing(
+    handler: QtAdsMaximizeHandler, docks: list[QtAds.CDockWidget], qtbot: QtBot
+) -> None:
+    """A dock the layout left closed is not brought back by the maximize saved beside it.
+
+    **Test steps:**
+
+    * close a dock, and ask for it by name
+    * verify, once the event loop turned, that nothing is maximized and it stays closed
+    """
+    docks[2].toggleView(False)
+
+    handler.maximize_named("bottom")
+    qtbot.wait(20)
+
+    assert handler.maximized_dock is None
+    assert docks[2].isClosed()
+
+
+def test_maximizing_a_dock_overtakes_the_name_held(qtbot: QtBot) -> None:
+    """The reader's own maximize wins over a name still held, which is not applied later on top of it.
+
+    **Test steps:**
+
+    * hold one dock's name on a hidden window, then maximize another
+    * show the window, and verify the other stays the maximized one
+    """
+    window = QMainWindow()
+    qtbot.addWidget(window)
+    window.resize(800, 600)
+    manager = QtAds.CDockManager(window)
+    handler = QtAdsMaximizeHandler(manager, GLYPH, MAXIMIZED_GLYPH)
+    add_dock(manager, "left", QtAds.LeftDockWidgetArea)
+    right = add_dock(manager, "right", QtAds.RightDockWidgetArea)
+    handler.maximize_named("left")
+
+    handler.maximize(right)
+    window.show()
+    qtbot.wait(20)
+
+    assert handler.maximized_dock is right
 
 
 def test_maximizing_an_arealess_dock_is_a_no_op(handler: QtAdsMaximizeHandler, manager: QtAds.CDockManager) -> None:

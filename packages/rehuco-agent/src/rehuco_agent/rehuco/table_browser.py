@@ -9,7 +9,7 @@ import humanize
 from borco_core import fold
 from borco_pyside.theming import GlyphActionIconThemeHandler
 from borco_pyside.widgets import HeaderSectionsMenu, RowBandDelegate
-from PySide6.QtCore import QByteArray, QModelIndex, QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QByteArray, QItemSelection, QItemSelectionModel, QModelIndex, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QStandardItemModel
 from PySide6.QtWidgets import QLineEdit, QMenu, QTableView, QWidget
 from rehuco_core import CatalogField, CatalogQuery, CatalogRow
@@ -55,6 +55,10 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     **The rows change in place** when the app renames, writes or deletes a record (:meth:`update_rows`), so a
     selection survives; exactly one selected row is the browser's **current resource** (:attr:`current_changed`).
 
+    **The selection comes back with the rows** ([[plugins#session-restore]], #576): the one remembered is held until the
+    first read of every row and applied quietly, so it does not move the preview the session restores on its own. Until
+    then it is what :meth:`state` says, so quitting first loses nothing; a selection the reader makes overtakes it.
+
     A browser carries the state a catalog remembers about it -- its id, name, filter text and header state -- but
     not its dock: what a name *looks like* on a tab is the shell's.
 
@@ -93,6 +97,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__filter_text = without_retired_tokens(state.filter) if state is not None else preset.filter
         self.__parsed = parse_filter(self.__filter_text)
         self.__current: RowKey | None = None
+        self.__held_selection: tuple[RowKey, ...] = state.selection if state is not None else ()
+        self.__restoring_selection = False
         self.__model: Final = CatalogTableModel(self)
         self.__ui: Final = Ui_RehucoBrowserPanel()
         self.__ui.setupUi(self)
@@ -116,6 +122,7 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         for signal in (model.modelReset, model.rowsInserted, model.rowsRemoved, model.dataChanged):
             signal.connect(self.__update_status)
         view.selectionModel().selectionChanged.connect(self.__update_status)
+        view.selectionModel().selectionChanged.connect(self.__let_go_of_held_selection)
         # connected after setModel, so the selection model has followed a removed or moved row before this asks it
         view.selectionModel().selectionChanged.connect(self.__update_current)
         for signal in (model.modelReset, model.rowsRemoved, model.rowsMoved, model.dataChanged, model.layoutChanged):
@@ -215,6 +222,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
             over the same rows (:meth:`CatalogTableModel.set_rows`).
         """
         self.__model.set_rows(rows, root_ids, catalog=catalog)
+        if catalog is not None:
+            self.__restore_selection()
 
     def update_rows(self, affected: Iterable[int], fresh: Sequence[CatalogRow]) -> None:
         """Bring the rows a rename, a write or a deletion touched up to date, in place.
@@ -248,6 +257,7 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__name,
             self.__ui.filter_edit.text(),
             bytes(self.__ui.catalog_view.horizontalHeader().saveState().data()),
+            self.__held_selection or self.__selected_keys(),
         )
 
     def clone_state(self, name: str) -> BrowserState:
@@ -293,6 +303,46 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         scratch.deleteLater()
         return count
 
+    def __selected_keys(self) -> tuple[RowKey, ...]:
+        """Which resources the selected rows are.
+
+        :returns: their keys.
+        """
+        rows = self.__ui.catalog_view.selectionModel().selectedRows()
+        keys = (self.__model.row_key(index.row()) for index in rows)
+        return tuple(key for key in keys if key is not None)
+
+    def __restore_selection(self) -> None:
+        """Select the rows remembered, now every row is here, and say nothing: nothing follows a restored selection.
+
+        A read that brought no rows at all -- a cache still being built -- says nothing about them yet, so they are
+        held on for the next one; a read with rows that lack them says they are gone.
+        """
+        if not self.__held_selection or self.__model.rowCount() == 0:
+            return
+        held, self.__held_selection = self.__held_selection, ()
+        rows = self.__model.rows_of(frozenset(held))
+        if not rows:
+            return
+        view = self.__ui.catalog_view
+        selection = QItemSelection()
+        for row in rows:
+            selection.select(self.__model.index(row, 0), self.__model.index(row, 0))
+        model = view.selectionModel()
+        flags = QItemSelectionModel.SelectionFlag
+        self.__restoring_selection = True
+        try:
+            model.select(selection, flags.ClearAndSelect | flags.Rows)
+            model.setCurrentIndex(self.__model.index(rows[0], 0), flags.NoUpdate)
+        finally:
+            self.__restoring_selection = False
+        view.scrollTo(self.__model.index(rows[0], 0))
+
+    def __let_go_of_held_selection(self) -> None:
+        """Give up the selection held: the reader has selected something themselves."""
+        if not self.__restoring_selection:
+            self.__held_selection = ()
+
     def __apply_typed(self) -> None:
         """Apply what has been typed, now."""
         self.__apply(self.__ui.filter_edit.text())
@@ -329,7 +379,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         current = self.__model.row_key(rows[0].row()) if len(rows) == 1 else None
         if current != self.__current:
             self.__current = current
-            self.current_changed.emit(current)
+            if not self.__restoring_selection:
+                self.current_changed.emit(current)
 
     def __on_context_menu(self, position: QPoint) -> None:
         """Open the menu of the cell under the pointer, if it has one: an Authors cell offers to filter by each of its

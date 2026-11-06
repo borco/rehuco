@@ -538,6 +538,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # is asked on daemon threads and reaches the handlers below once it answers -- the start waits for nothing
         self.__remembered: Final = RememberedPaths(self.__recent_files, self.__rehuco_settings, self.__session, self)
         self.__remembered.document_arrived.connect(self.__on_document_arrived)
+        self.__remembered.preview_arrived.connect(self.__on_preview_arrived)
         self.__remembered.rehuco_arrived.connect(self.__on_rehuco_arrived)
         self.__remembered.layout_due.connect(self.__on_late_layout_due)
         self.__root_catalog.rehuco_path_changed.connect(self.__remembered.clear_deferred_rehuco)
@@ -566,6 +567,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             place_unnamed=self.__place_unnamed_outer_dock,
             restore_dock_state=self.__restore_outer_dock_state,
         )
+        if restored:
+            self.__maximize_handler.maximize_named(self.__window_settings.maximized_dock)
         # not Final: showEvent sets it the first time it seeds
         self.__bottom_dock_heights_seeded = restored
         # a layout describing a floating window can have it shown there and then, before this window exists on screen
@@ -1944,8 +1947,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             event.ignore()
             return
 
-        # every guard has passed, so a video still playing is stopped where it is and what it recorded is written
-        # before the process goes: the thread that writes it is a daemon (#317)
+        # every guard has passed, so the session is captured while the players still hold their videos and stages (#576)
+        self.__capture_session()
+        # and a video still playing is stopped where it is and what it recorded is written before the process goes:
+        # the thread that writes it is a daemon (#317)
         self.__documents_dock.stop_playback(PLAYBACK_WRITE_TIMEOUT)
 
         if session_restore.keep_unsaved_changes:
@@ -1985,7 +1990,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # sends its pin button back there rather than to the default (#279)
         for handler in self.__pin_side_handlers:
             handler.save(persistent_settings())
-        self.__save_session()
+        self.__session.save()
         self.__documents_dock.save_preview_layouts()
         self.__settings_dialog.save_filter_state()
         shared_tools_settings().save(persistent_settings())
@@ -2013,7 +2018,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Apply the loaded session (#65) and reopen the ``.rehuco`` (#377), each unless its own toggle on
         the Session page has turned that off (#408).
 
-        Only the *apply* step is gated: the session is still loaded, and ``__save_session`` still
+        Only the *apply* step is gated: the session is still loaded, and ``__capture_session`` still
         runs on every close, so a run with the toggle off ends by recording its own open set -- the
         skipped session's documents survive only as closed entries under the LRU cap, and
         re-enabling the toggle restores the most recent close, not the pre-toggle session.
@@ -2061,7 +2066,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         **Only the documents on fixed local drives are restored here** (#464), and only those whose file is there: a
         delete between sessions is forgotten instead of made into an empty locked ``missing`` dock. A document on a
         share or a removable drive comes later, through :meth:`__on_document_arrived`, once its device answers; one
-        whose device does not answer is not shown and stays remembered as open (:meth:`__save_session`).
+        whose device does not answer is not shown and stays remembered as open (:meth:`__capture_session`).
 
         Reveals the Documents dock first, like every other open funnel (#268) -- see
         :meth:`__reveal_documents_dock` for why the outer layout restored afterwards still has the last
@@ -2085,18 +2090,37 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__reveal_documents_dock()
         idle = self.__documents_dock.focused_document_path() is None
-        self.__documents_dock.restore_late(path, item, focus=take_focus and idle)
+        self.__documents_dock.restore_late(path, item, focus=take_focus and idle, cover=self.__may_cover())
+
+    def __on_preview_arrived(self, preview: DocumentSessionSettings.Preview) -> None:
+        """The last session's preview is there, its storage having answered late: restore it as a document arriving late
+        is restored.
+
+        :param preview: its entry.
+        """
+        self.__reveal_documents_dock()
+        self.__documents_dock.restore_late_preview(preview, cover=self.__may_cover())
+
+    def __may_cover(self) -> bool:
+        """Whether a late arrival's wide maximized view may open at once (#576): the start is still settling, and the
+        reader has not focused another document than the session's.
+
+        :returns: whether it may; otherwise it waits for its tab.
+        """
+        focused = self.__documents_dock.focused_document_path()
+        return self.__remembered.settling and (focused is None or focused == self.__session.focused_path)
 
     def __on_late_layout_due(self) -> None:
         """Every awaited remote document has answered (#464): lay the documents out as the session left them, now
         that the docks the saved layout names all exist.
 
         A document the user opened in the first seconds stays where it is, since the layout does not name it (#102).
-        **Not while a preview is shown**: the restore would move it out of the place the user is looking at.
+        **Not while a preview of this run is shown**: the restore would move it out of the place the user is looking at.
+        The session's own preview is a part of the layout.
         """
-        if self.__documents_dock.preview_document_widget() is not None:
+        if self.__documents_dock.shows_a_new_preview():
             return
-        self.__documents_dock.restore_state(self.__session.docks_layout)
+        self.__documents_dock.restore_state(self.__session.docks_layout, self.__session.maximized_dock)
 
     def __save_window_state(self) -> None:
         """Persist this window's current size/position, toolbar layout, outer dock layout, and the
@@ -2105,6 +2129,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__window_settings.toolbars_state = bytes(self.saveState(TOOLBARS_STATE_VERSION).data())
         with self.__maximize_handler.unmaximized():
             self.__window_settings.outer_layout = QtAdsLayout(self.__dock_manager).save(self.__outer_dock_state)
+        self.__window_settings.maximized_dock = self.__maximize_handler.maximized_name
         self.__window_settings.save()
 
     def __outer_dock_state(self, dock: QtAds.CDockWidget) -> bytes | None:
@@ -2139,15 +2164,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         dock.toggleView(dock is self.__documents_dock_widget)
 
-    def __save_session(self) -> None:
-        """Snapshot every open document's dock layout and focus, and persist the open-file set.
+    def __capture_session(self) -> None:
+        """Snapshot every open document's dock layout, maximized view and focus, and the open-file set -- before the
+        players are stopped, which is what puts a maximized one back and lets go of its video (#576).
 
         Currently open documents always count as the most-recently-used ones (moved to the end of
         the LRU order); everything else keeps its prior state but is marked closed. A brand-new
         document not yet written to its path (``saved_on_disk`` false) is skipped -- there is nothing
         on disk to restore, and reopening it via the load path would materialize a locked ``MISSING``
-        stub for a file that never existed, resurrecting edits the user discarded (#175, #147). Neither is the
-        preview (#39): it is transient, so the next run starts without one.
+        stub for a file that never existed, resurrecting edits the user discarded (#175, #147). The preview (#39) is
+        an entry of its own, so it stays out of the list ``Open recents`` is not.
         """
         preview = self.__documents_dock.preview_document_widget()
         open_widgets = {
@@ -2161,9 +2187,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         for item in self.__session.items.values():
             item.open = False
         for path, widget in open_widgets.items():
-            self.__session.items[path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
-                open=True, state=widget.save_state()
-            )
+            self.__session.items[path] = self.__captured_item(widget)  # pylint: disable=unsupported-assignment-operation
         # a document that was open and is not now because its device never answered this run (#464) is still open as
         # far as the session goes: closing it here would forget it for good just because a server was off
         for path in self.__remembered.still_open:
@@ -2172,8 +2196,35 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         preview_focused = preview is not None and self.__documents_dock.focused_document_widget() is preview
         self.__session.focused_path = None if preview_focused else self.__documents_dock.focused_document_path()
         self.__session.docks_layout = self.__documents_dock.save_state()
+        self.__session.maximized_dock = self.__documents_dock.maximized_dock_name
+        self.__capture_preview(preview)
 
-        self.__session.save()
+    def __capture_preview(self, preview: DocumentWidget | None) -> None:
+        """Snapshot the preview as the session's entry of it; one still waiting for its device stays as it is, for the
+        reason a document does.
+
+        :param preview: the preview's widget, or ``None`` with no preview.
+        """
+        remembered = self.__session.preview
+        if preview is None or preview.model.path is None or not preview.model.saved_on_disk:
+            if remembered is None or remembered.path not in self.__remembered.still_open:
+                self.__session.preview = None
+            return
+        name = self.__documents_dock.preview_dock_name()
+        self.__session.preview = DocumentSessionSettings.Preview(
+            preview.model.path, name, self.__captured_item(preview)
+        )
+
+    @staticmethod
+    def __captured_item(widget: DocumentWidget) -> DocumentSessionSettings.Item:
+        """An open document's session entry. What it has maximized is put back first, for the docks to be captured as
+        they are under it (owner).
+
+        :param widget: the document's widget.
+        :returns: its entry.
+        """
+        maximized = widget.capture_maximized()
+        return DocumentSessionSettings.Item(open=True, state=widget.save_state(), maximized=maximized)
 
     def open_path(self, path: Path | str) -> None:
         """Open ``path``, dispatching to :meth:`open_file`, :meth:`open_folder`, or

@@ -749,11 +749,15 @@ entry costs only itself.
 entry is kept and the closed ones are cut to the newest few (`MAXIMUM_REMEMBERED_FILES` in all). Paths are stored as
 saved and are not resolved on load, so a share that is down cannot stall the start.
 
-[[plugins#session-restore]] (#576) adds, under the same lenient read: a `preview` entry of the item's shape for the
-preview dock; per item a `maximized` object — `kind` (`lightbox` or `player`), the image or video `key`, the surface
-`mode`, and for a lightbox `info` and `strip` — restored once the document has loaded; and inside each manager's
-layout state the name of its maximized dock, kept **beside** the layout because a layout is always captured
-unmaximized ([[appendices.qt-ads#area-maximize]]).
+[[plugins#session-restore]] (#576) adds, under the same lenient read: a `preview` entry of the item's shape with the
+dock's `name`, which `docks_layout` knows it by; per item a `maximized` object — `kind` (`lightbox` or `player`), the
+image or video `key`, the surface `mode`, and for a lightbox the `source` set it navigated (`curated`, `folder`,
+`content` or `curating`), `info` and `strip` — restored once the document has loaded; and `maximized_dock`, the name of
+the document dock filling the area, kept **beside** the layout because a layout is always captured unmaximized
+([[appendices.qt-ads#area-maximize]]). The same name sits beside the layout in a document's `state`, in
+`main-window.json` and in a catalog's file. A document's `state` also carries, in each dock's entry, what its views
+remember: the player's video and panels, each tree's row and closed rows, each notes panel's note and editing, the
+Files sub-dock's folder and the tables' sort.
 
 ### `main-window.json`
 
@@ -764,6 +768,7 @@ unmaximized ([[appendices.qt-ads#area-maximize]]).
 | `geometry` | base64 | `QMainWindow.saveGeometry()`; empty restores nothing |
 | `outer_layout` | object | the outer dock manager's layout tree (Documents, Log, Tasks, Settings and the rest), with the Log dock's filters and the Tasks dock's nested layout folded into their entries; anything but an object reads as none |
 | `toolbars_state` | base64 | `QMainWindow.saveState()` for the toolbar area; Qt checks its own version (`TOOLBARS_STATE_VERSION`) and keeps the default on a mismatch |
+| `maximized_dock` | string | the outer dock filling the window, re-applied after `outer_layout` restores; `""` for none |
 
 ### `layouts/<group>.json`
 
@@ -781,5 +786,7 @@ A type with no entry has no default: layouts are never inherited across types.
 
 The per-catalog, per-machine file the Browsers dock keeps ([[plugins#browsers]]): each browser's name, filter,
 header state and saved search, and where the browsers' sub-docks sit. [[plugins#session-restore]] (#576) adds each
-browser's current row's key, and the Root Catalog's current folder and expanded roots, re-selected once the rows
-and listings load.
+browser's `selection`, its rows' keys; `maximized_dock`, the browser's sub-dock filling the dock; and `roots_current`,
+the Root Catalog's current row as its `root` and the `path` of names down from it — re-selected once the rows and
+listings load, and written back unchanged until they have. The Browsers dock and the Root Catalog each write their own
+half of the file.

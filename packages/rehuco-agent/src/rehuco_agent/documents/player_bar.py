@@ -6,9 +6,27 @@ from typing import Final
 from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QAction, QPalette
-from PySide6.QtWidgets import QToolButton
+from PySide6.QtWidgets import QToolButton, QWidget
 
-from ..commands import PLAYER_ADD_NOTE_AT, shared_command_registry
+from ..commands import (
+    PLAYER_ADD_NOTE_AT,
+    PLAYER_BACK,
+    PLAYER_EDIT_NOTES,
+    PLAYER_FORWARD,
+    PLAYER_INFO,
+    PLAYER_NEXT,
+    PLAYER_NOTES,
+    PLAYER_PLAY_PAUSE,
+    PLAYER_PREVIOUS,
+    PLAYER_SPEED_DOWN,
+    PLAYER_SPEED_UP,
+    PLAYER_TO_END,
+    PLAYER_TO_START,
+    PLAYER_TREE,
+    PLAYER_VOLUME_DOWN,
+    PLAYER_VOLUME_UP,
+    shared_command_registry,
+)
 from ..glyphs import (
     LIGHTBOX_CLOSE_GLYPH,
     PLAYER_BACK_GLYPH,
@@ -25,6 +43,34 @@ ADD_NOTE_AT_TEMPLATE: Final = "Add note at {clock}"
 """The *Add note at* action's text and tooltip, with the clock of where the video is."""
 
 ADD_NOTE_AT_TOOLTIP: Final = "Add a note to the video at {clock}."
+
+
+def bind_player_actions(ui: Ui_PlayerView, player: QWidget) -> None:
+    """Bind the player's actions to their commands and keys.
+
+    :param ui: the player's generated UI.
+    :param player: the player, whose subtree the keys are scoped to: every document has a player of its own.
+    """
+    for action, command in (
+        (ui.play_pause_action, PLAYER_PLAY_PAUSE),
+        (ui.back_action, PLAYER_BACK),
+        (ui.forward_action, PLAYER_FORWARD),
+        (ui.previous_action, PLAYER_PREVIOUS),
+        (ui.next_action, PLAYER_NEXT),
+        (ui.to_start_action, PLAYER_TO_START),
+        (ui.to_end_action, PLAYER_TO_END),
+        (ui.add_note_at_action, PLAYER_ADD_NOTE_AT),
+        (ui.info_action, PLAYER_INFO),
+        (ui.tree_action, PLAYER_TREE),
+        (ui.notes_action, PLAYER_NOTES),
+        (ui.edit_notes_action, PLAYER_EDIT_NOTES),
+        (ui.volume_up_action, PLAYER_VOLUME_UP),
+        (ui.volume_down_action, PLAYER_VOLUME_DOWN),
+        (ui.speed_up_action, PLAYER_SPEED_UP),
+        (ui.speed_down_action, PLAYER_SPEED_DOWN),
+    ):
+        shared_command_registry().bind(action, command.id)
+        player.addAction(action)
 
 
 class PlayerBar(QObject):

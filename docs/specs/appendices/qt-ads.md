@@ -847,6 +847,12 @@ delivers them synchronously, with no turn of the event loop and nothing else let
 splitter's sizes under the container are recorded as the dock is maximized and re-applied after each
 show, since a hidden pane's size is the splitter's own bookkeeping rather than a promise.
 
+**So the maximize itself is saved beside the layout** ([[plugins#session-restore]], #576): an owner saves
+`maximized_name` next to its layout and hands it to `maximize_named` after restoring that, which holds it until the
+manager is on screen, for the sizes it records to be ones a layout pass has settled. Until then `maximized_name` still
+reports it, so a capture in between keeps it; a dock no longer open by that name restores nothing, and a maximize of the
+reader's overtakes it.
+
 
 
 **Exit first, then the change.** Any structural change on the manager — an area added or removed (a

@@ -4,8 +4,9 @@
 import logging
 from functools import partial
 from pathlib import Path
-from typing import Final, override
+from typing import Any, Final, override
 
+import cbor2
 from borco_pyside.widgets import RowBandDelegate
 from PySide6.QtCore import QModelIndex, QPoint, Signal
 from PySide6.QtGui import QAction, QShowEvent
@@ -34,6 +35,10 @@ from .video_tree_model import (
 from .video_tree_view_ui import Ui_VideoTreeView
 
 LOG: Final = logging.getLogger(__name__)
+
+SELECTED_STATE_KEY: Final = "selected"
+CLOSED_STATE_KEY: Final = "closed"
+"""The keys of a tree's saved state: its selected row, and the rows the reader closed."""
 
 LIST_TAG: Final = "list"
 """What the runner that lists the tutorial's videos answers under."""
@@ -79,6 +84,8 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__collapsed: set[str] = set()
         """The videos and folders the reader closed, by key; everything else is open."""
         self.__restoring = False
+        self.__held_item: tuple[str, str, object] | None = None
+        """The row the session remembers as selected, until the rows are listed ([[plugins#session-restore]])."""
         self.__selected: str | None = None
         """The video selected as the tree is about to be rebuilt, which the reset clears."""
         self.__scroll_pending = False
@@ -245,6 +252,83 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     # region What the reader sees
 
+    def save_state(self) -> bytes:
+        """Encode the selected row and the rows the reader closed, for the dock's entry in the layout
+        ([[plugins#session-restore]]).
+
+        :returns: the state, restorable by :meth:`restore_state`.
+        """
+        held = self.__held_item
+        return cbor2.dumps(
+            {
+                SELECTED_STATE_KEY: list(held) if held is not None else self.__selected_item(),
+                CLOSED_STATE_KEY: sorted(self.__collapsed),
+            }
+        )
+
+    def restore_state(self, state: bytes) -> None:
+        """Restore what :meth:`save_state` encoded; the selected row waits for the rows to be listed. Nothing follows
+        the selection coming back: only a click shows a video's notes.
+
+        :param state: the blob; one that cannot be read leaves everything as it is, and each value costs only itself.
+        """
+        try:
+            values: Any = cbor2.loads(state)
+        except cbor2.CBORDecodeError:
+            return
+        if not isinstance(values, dict):
+            return
+        closed = values.get(CLOSED_STATE_KEY)
+        if isinstance(closed, list):
+            self.__collapsed = {key for key in closed if isinstance(key, str)}
+            self.__close_rows()
+        selected = values.get(SELECTED_STATE_KEY)
+        if isinstance(selected, list) and len(selected) == 3 and all(isinstance(part, str) for part in selected[:2]):
+            self.__held_item = tuple(selected)  # type: ignore[assignment]
+            self.__select_held_item()
+
+    def __selected_item(self) -> list[object] | None:
+        """What the selected row is, in a form that outlives the rows.
+
+        :returns: its kind, its video's or folder's key, and a note line's time; ``None`` with nothing selected.
+        """
+        indexes = self.__ui.tree_view.selectionModel().selectedRows()
+        if not indexes:
+            return None
+        index = indexes[0]
+        kind = index.data(KIND_ROLE)
+        if kind == NodeKind.FOLDER:
+            return [NodeKind.FOLDER.value, self.__folder_key(index), None]
+        if kind == NodeKind.NOTE:
+            return [NodeKind.NOTE.value, str(index.parent().data(KEY_ROLE)), index.data(SECONDS_ROLE)]
+        return [NodeKind.VIDEO.value, str(index.data(KEY_ROLE)), None]
+
+    def __index_of_item(self, kind: str, key: str, seconds: object) -> QModelIndex:
+        """Find a row :meth:`__selected_item` described.
+
+        :param kind: its kind.
+        :param key: its video's or folder's key.
+        :param seconds: a note line's time.
+        :returns: the row, invalid when it is not there.
+        """
+        if kind == NodeKind.FOLDER.value:
+            return self.__folder_index(key)
+        video = self.__tree.index_of_video(key)
+        if kind != NodeKind.NOTE.value or not video.isValid():
+            return video
+        rows = (self.__tree.index(row, 0, video) for row in range(self.__tree.rowCount(video)))
+        return next((row for row in rows if row.data(SECONDS_ROLE) == seconds), QModelIndex())
+
+    def __select_held_item(self) -> None:
+        """Select the row the session remembers, once there are rows to look in; one no longer there is let go."""
+        held = self.__held_item
+        if held is None or self.__tree.rowCount() == 0:
+            return
+        self.__held_item = None
+        index = self.__index_of_item(*held)
+        if index.isValid() and self.__is_shown(index):
+            self.__ui.tree_view.setCurrentIndex(index)
+
     def set_current(self, key: str | None) -> None:
         """Mark the video the player has loaded and bring it into view.
 
@@ -288,14 +372,9 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__restoring = True
         try:
             view.expandAll()
-            for key in self.__collapsed:
-                index = self.__tree.index_of_video(key)
-                if not index.isValid():
-                    index = self.__folder_index(key)
-                if index.isValid():
-                    view.collapse(index)
         finally:
             self.__restoring = False
+        self.__close_rows()
         if self.__scroll_pending:
             # the player's video was asked for before the rows were listed: shown once they are, and never by a rebuild
             self.__scroll_pending = False
@@ -305,7 +384,21 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
             # selecting a row under a closed folder would open it again: a row the reader cannot see is let go
             if index.isValid() and self.__is_shown(index):
                 view.setCurrentIndex(index)
+        self.__select_held_item()
         self.__update_actions()
+
+    def __close_rows(self) -> None:
+        """Close the rows the reader closed."""
+        self.__restoring = True
+        try:
+            for key in self.__collapsed:
+                index = self.__tree.index_of_video(key)
+                if not index.isValid():
+                    index = self.__folder_index(key)
+                if index.isValid():
+                    self.__ui.tree_view.collapse(index)
+        finally:
+            self.__restoring = False
 
     def __is_shown(self, index: QModelIndex) -> bool:
         """Whether every folder above a row is open.

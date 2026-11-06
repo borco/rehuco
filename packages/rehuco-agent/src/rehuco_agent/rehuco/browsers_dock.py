@@ -25,7 +25,7 @@ from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile
 from ..dock_maximize import attach_maximize_handler
 from ..filter_urls import filter_url_token
 from ..glyphs import TAB_CLOSE_GLYPH
-from ..settings.catalog_state_store import BrowserState, CatalogState, CatalogStateStore
+from ..settings.catalog_state_store import BrowserState, CatalogStateStore
 from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from .catalog_rows_loader import CatalogRowsLoad, CatalogRowsLoader
 from .catalog_table_model import RowKey
@@ -368,6 +368,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         if not self.__browsers:
             self.__add_browser(TableBrowser())
+        self.__maximize_handler.maximize_named(state.maximized_dock)
         self.__update_enablement()
 
     def __create_browser_dock(self, name: str, state: bytes | None) -> QtAds.CDockWidget | None:
@@ -400,7 +401,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         with self.__maximize_handler.unmaximized():
             layout = QtAdsLayout(self.__dock_manager).save(self.__browser_state)
-        self.__catalog_store.save(file.rehuco_id, CatalogState(layout))
+        self.__catalog_store.save_browsers(file.rehuco_id, layout, self.__maximize_handler.maximized_name)
 
     def __browser_state(self, dock: QtAds.CDockWidget) -> bytes | None:
         """What a browser's sub-dock entry carries: the browser itself.

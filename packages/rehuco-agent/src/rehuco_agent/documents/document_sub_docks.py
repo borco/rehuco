@@ -5,9 +5,11 @@
 # (same precedent as test_rehu_document_model.py, [[appendices.code-conventions]])
 # pylint: disable=too-many-lines
 
+import json
 import os
 from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, cast, override
@@ -31,6 +33,7 @@ from rehuco_core import (
     originals_to_back_up,
     staging_origin,
 )
+from rehuco_core.access import ResourceKey
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..asking_deleter import AskingDeleter
@@ -52,6 +55,7 @@ from ..fields.widgets import (
     viewer_mode_for,
 )
 from ..fields.widgets.image_export import ORIGINAL_FILE_MIME
+from ..fields.widgets.overlay_surface import OverlayMode
 from ..glyphs import FIND_HOLDERS_GLYPH
 from ..recycle_bin_deleter import configured_deleter
 from ..resource_events import ResourceEvents
@@ -63,6 +67,15 @@ from ..settings.deletion_settings import DeletionKind
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.image_viewer_settings import ImageViewerSettings, shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
+from ..settings.maximized_view import (
+    CONTENT_SET,
+    CURATED_SET,
+    CURATING_SET,
+    FOLDER_SET,
+    LIGHTBOX_KIND,
+    PLAYER_KIND,
+    MaximizedView,
+)
 from ..settings.persistent_settings import staging_folder
 from ..settings.reference_images_settings import shared_reference_images_settings
 from .checksum_actions import ChecksumActions
@@ -72,6 +85,8 @@ from .conversion_backup_actions import ConversionBackupActions
 from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, build_document_form
 from .files_view import FilesView
 from .image_downloads import ImageDownloads
+from .latest_runner import LatestRunner
+from .maximized_restore import folder_images, relative_key, resolve_key
 from .name_suggestion_model import NameSuggestionModel
 from .notes_panel import NotesPanel
 from .pending_saves import PendingSaves
@@ -92,6 +107,9 @@ the widget's restores too (#320): a dock the layout names but this document lack
 names is put back hidden where construction puts it."""
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
 STATE_CURRENT_DOCK_KEY: Final = "current_dock"
+STATE_MAXIMIZED_DOCK_KEY: Final = "maximized_dock"
+"""The name of the sub-dock filling the document, beside the layout since one is always captured unmaximized (#576).
+Not in :meth:`DocumentSubDocks.save_layout_state`: a default layout is no place for it."""
 STATE_IMAGE_STRIP_VISIBLE_KEY: Final = "image_strip_visible"
 """Whether this document's maximized image viewer shows its thumbnail row (#161). Read defensively: a
 missing value falls back to the shared setting's default."""
@@ -122,6 +140,10 @@ LOG_DOCK_NAME: Final = "log"
 CHECKSUM_DOCK_NAME: Final = "checksums"
 FILES_DOCK_NAME: Final = "files"
 CONTENT_IMAGES_DOCK_NAME: Final = "content_images"
+STAGE_TREE_NAME: Final = "stage_tree"
+STAGE_NOTES_NAME: Final = "stage_notes"
+"""Object names of the player's own views of the tree and the notes, whose state is kept apart from the docks'."""
+
 PLAYER_DOCK_NAME: Final = "player"
 TREE_DOCK_NAME: Final = "tree"
 NOTES_DOCK_NAME: Final = "notes"
@@ -497,7 +519,8 @@ class SubDockHost:
     """The inline notice strip the document's banner rows go to."""
 
 
-class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
+# one cohesive thing, a document's docks, already far past the line cap for it: what its host asks of them is all here
+class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """One open document's **viewers** and **editors**, each in its own sub-dock
     ([[plugins#viewer-editor-both]]), with the document toolbar over them -- built into the dock manager
     a `SubDockHost` lends (#380).
@@ -585,6 +608,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     ``DocumentWidget`` -> ``DocumentsDock`` -> ``MainWindow`` hop :attr:`status_message` makes, to the window that
     hands it to the Root Catalog ([[plugins#filter-urls]])."""
 
+    maximized_restored: Signal = Signal(object)
+    """Emitted with the overlay of a maximized view a session remembered, just reopened, for the area to stack."""
+
     tools_requested: Signal = Signal()
     """Relays the player's request to set up the FFmpeg libraries up the same ``DocumentWidget`` -> ``DocumentsDock``
     -> ``MainWindow`` hop :attr:`status_message` makes, to the window that opens the Tools page (#580)."""
@@ -638,6 +664,22 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__image_exporter: Final = ImageExporter(staging_folder(), self.__staging_origin, self.__record_folder)
         """What stages an image dragged or copied out of this document (#395) -- from the Content Images grid and
         from every lightbox it opens, named by this resource whichever surface it left from."""
+
+        self.__viewer_set = CURATED_SET
+        """Which set the open viewer navigates, which is what a session remembers it by (#576)."""
+
+        self.__held_view: MaximizedView | None = None
+        """The maximized view the session remembers, until what it needs is there ([[plugins#session-restore]]); what
+        :meth:`capture_maximized` says until then, so quitting first loses nothing."""
+
+        self.__held_record: ResourceKey | None = None
+        """The record :attr:`__held_view` is of: a preview moving on lets go of it."""
+
+        self.__held_set_asked = False
+        """Whether a held view's set has been asked for: a folder no dock lists, or content images no dock reads."""
+
+        self.__held_folder_lister: Final = LatestRunner(self)
+        self.__held_folder_lister.read.connect(self.__on_held_folder_listed)
 
         self.__viewer_follows_curation = True
         """Whether an open maximized viewer is showing the **curated** set, and so is re-pointed when
@@ -1096,6 +1138,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__image_viewer.close()
         self.__maximize_handler.restore()
         self.detach()
+        # a folder still being listed for a remembered view has no document left to open it over
+        self.__held_view = None
+        self.__held_folder_lister.discard()
         for signal, slot in self.__connections:
             signal.disconnect(slot)
         self.__connections.clear()
@@ -1152,6 +1197,192 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         if self.__image_viewer is not None:
             self.__image_viewer.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+        elif self.__player_view is not None and self.__player_view.overlay is not None:
+            self.__player_view.overlay.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+
+    def capture_maximized(self) -> MaximizedView | None:
+        """Say what this document has maximized, and put it back: a layout captured with the player's stage lifted out
+        of its dock would miss what the stage holds, and the docks are to be measured as they are under it (owner).
+
+        :returns: the view; one not opened yet is still the one to remember. ``None`` for none.
+        """
+        view = self.__held_view
+        viewer = self.__image_viewer
+        if viewer is not None:
+            view = view or self.__viewer_view(viewer)
+            viewer.close()
+        player = self.__player_view
+        if player is not None and player.overlay is not None:
+            mode, key = player.maximized_mode, player.current_key
+            if view is None and mode is not None and key is not None:
+                view = MaximizedView(PLAYER_KIND, key, mode.value)
+            player.restore_from_maximized()
+        return view
+
+    def __viewer_view(self, viewer: ImageLightbox) -> MaximizedView | None:
+        """What a session remembers of an open viewer.
+
+        :param viewer: the viewer.
+        :returns: the view; ``None`` for an image outside this record's folder, or none.
+        """
+        index, source = viewer.current_index, viewer.source
+        if self.__viewer_set == CONTENT_SET:
+            key = json.dumps(list(cast(tuple[object, ...], source.key(index))))
+        else:
+            # a row of the editor is keyed by its identity, and knows its path; any other image's key is its path
+            rows = cast(ScreenshotRowsImageSource, source)
+            path = rows.path(index) if self.__viewer_set == CURATING_SET else cast(Path, source.key(index))
+            key = relative_key(path, self.__record_folder())
+        if key is None:
+            return None
+        return MaximizedView(
+            LIGHTBOX_KIND, key, viewer.mode.value, self.__viewer_set, viewer.info_visible, viewer.strip_visible
+        )
+
+    def restore_maximized(self, view: MaximizedView) -> None:
+        """Open the view a session remembers once this document has loaded and what it shows is there, against the set
+        as it is then: a key no longer in it restores nothing.
+
+        :param view: the view.
+        """
+        self.__held_view = view
+        self.__held_record = self.__model.key
+        self.__held_set_asked = False
+        self.__open_held_view()
+
+    def __open_held_view(self) -> None:
+        """Open the view held, if the document and the view's set are there yet. Asked at each moment one may have
+        arrived: a load settling, and any of the sets changing -- as the curated one does on the way through a first
+        read, whose type's docks are built after it, so a view waits for those too rather than finding none."""
+        view = self.__held_view
+        if view is None or self.__model.pending or self.__model.reading is not None or self.__awaiting_type:
+            return
+        if self.__model.key != self.__held_record:
+            self.__held_view = None
+        elif view.kind == PLAYER_KIND:
+            self.__open_held_player(view)
+        elif view.source == CURATED_SET:
+            self.__open_held_paths(view, self.__curated_images)
+        elif view.source == CURATING_SET:
+            self.__open_held_curating(view)
+        elif view.source == CONTENT_SET:
+            self.__open_held_content(view)
+        elif not self.__held_set_asked:
+            self.__list_held_folder(view)
+
+    def __open_held_paths(self, view: MaximizedView, images: list[Path]) -> None:
+        """Open a held view over a list of files: waits while there are none, lets go once they don't hold its image.
+
+        :param view: the view held.
+        :param images: the set as it is now.
+        """
+        image = resolve_key(view.key, self.__record_folder())
+        if image in images:
+            self.__viewer_follows_curation = view.source == CURATED_SET
+            self.__open_image_viewer(
+                self.__path_source(images), images.index(cast(Path, image)), viewer_set=view.source, restored=view
+            )
+        elif images or image is None:
+            self.__held_view = None
+
+    def __open_held_curating(self, view: MaximizedView) -> None:
+        """Open a held view over every row of the images editor, once it has its rows.
+
+        :param view: the view held.
+        """
+        selector = next(
+            (widget for widget in self.__form_stateful_widgets().values() if isinstance(widget, ImageSelector)), None
+        )
+        image = resolve_key(view.key, self.__record_folder())
+        rows = [path for path, _ in selector.screenshot_states()] if selector is not None else []
+        if selector is not None and image in rows:
+            self.__open_curating_viewer(selector, rows.index(cast(Path, image)), view)
+        elif rows or image is None or selector is None:
+            self.__held_view = None
+
+    def __open_held_content(self, view: MaximizedView) -> None:
+        """Open a held view over a pack's content images, once they have been listed: read for it if the dock's being
+        closed left them unread.
+
+        :param view: the view held.
+        """
+        model, content_view = self.__content_images_model, self.__content_images_view
+        if model is None or content_view is None:
+            self.__held_view = None
+            return
+        source = content_view.source
+        if len(source) == 0:
+            dock = self.__content_images_dock
+            if not self.__held_set_asked and dock is not None and dock.isClosed():
+                self.__held_set_asked = True
+                extensions = shared_reference_images_settings().content_image_extensions
+                excluded = shared_excluded_files_settings().excluded_file_patterns
+                model.refresh(self.__model.path, extensions, excluded)
+            return
+        try:
+            key = tuple(json.loads(view.key))
+        except TypeError, ValueError:
+            key = ()
+        index = next((position for position in range(len(source)) if source.key(position) == key), None)
+        if index is None:
+            self.__held_view = None
+            return
+        self.__viewer_follows_curation = False
+        viewer = self.__open_image_viewer(source, index, viewer_set=CONTENT_SET, restored=view)
+        viewer.closed.connect(lambda: self.__on_content_viewer_closed(viewer, source))
+
+    def __list_held_folder(self, view: MaximizedView) -> None:
+        """List the folder of a held view from the Files sub-dock, off the GUI thread: a hidden dock has not read it.
+
+        :param view: the view held.
+        """
+        image = resolve_key(view.key, self.__record_folder())
+        if image is None:
+            self.__held_view = None
+            return
+        self.__held_set_asked = True
+        self.__held_folder_lister.start(view.key, partial(folder_images, image.parent))
+
+    def __on_held_folder_listed(self, key: str, result: object) -> None:
+        """Open a held view from the Files sub-dock over its folder, if it is still held.
+
+        :param key: the key it was listed for.
+        :param result: the images, or the error listing them ended in.
+        """
+        view = self.__held_view
+        if view is None or view.key != key or self.__model.key != self.__held_record:
+            return
+        if isinstance(result, list):
+            self.__open_held_paths(view, result)
+        self.__held_view = None
+
+    def __open_held_player(self, view: MaximizedView) -> None:
+        """Maximize the player over a held view's video, which is loaded first, paused where it was left.
+
+        :param view: the view held.
+        """
+        player = self.__player_view
+        if player is None:
+            self.__held_view = None
+        elif player.current_key == view.key:
+            self.__held_view = None
+            player.maximize(OverlayMode.stored(view.mode, OverlayMode.DOCUMENT_OVERLAY))
+            self.maximized_restored.emit(player.overlay)
+        else:
+            player.load_video(view.key)
+
+    def __on_player_video_selected(self, key: object) -> None:
+        """Maximize the player over a held view's video once it is selected; another selected means it is gone.
+
+        :param key: the video's content key, or ``None`` when the player let go of its video.
+        """
+        view = self.__held_view
+        if view is None or view.kind != PLAYER_KIND or key is None:
+            return
+        if key == view.key:
+            self.__open_held_player(view)
+        else:
+            self.__held_view = None
 
     def save_state(self) -> bytes:
         """Serialize this document's dock layout (visible docks, splitter sizes) and each persisting
@@ -1165,10 +1396,14 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         :returns: cbor2-encoded state, suitable for :meth:`restore_state`
             (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.Item.state`).
         """
+        # a document never read has only a placeholder's docks to capture: what it was opened with is still the truth
+        if self.__awaiting_type and self.__opened_with_state is not None:
+            return self.__opened_with_state
         return cbor2.dumps(
             {
                 **self.__layout_state(self.__dock_widget_state),
                 STATE_IMAGE_STRIP_VISIBLE_KEY: self.__image_strip_visible,
+                STATE_MAXIMIZED_DOCK_KEY: self.__maximize_handler.maximized_name,
             }
         )
 
@@ -1249,6 +1484,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             current_dock_state = values.get(STATE_CURRENT_DOCK_KEY, b"")
             if isinstance(current_dock_state, bytes):
                 self.__tracker.restore_state(current_dock_state)
+            maximized = values.get(STATE_MAXIMIZED_DOCK_KEY)
+            # a placeholder has not its type's docks yet: it restores this blob again when it has
+            if isinstance(maximized, str) and not self.__model.pending:
+                self.__maximize_handler.maximize_named(maximized)
         return restored
 
     def __dock_widget_state(self, dock: QtAds.CDockWidget) -> bytes | None:
@@ -1279,21 +1518,19 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             if widget is not None and isinstance(saved, bytes):
                 widget.restore_state(saved)
 
-    def __stateful_widgets(self) -> dict[str, StatefulWidget]:
-        """The persisting widgets (`StatefulWidget`) across all docks, keyed by object name.
+    def __form_stateful_widgets(self) -> dict[str, StatefulWidget]:
+        """The persisting widgets (`StatefulWidget`) of the form's own docks: what a rebuild of the form replaces. The
+        other docks keep theirs, whose state is about this record and must not carry over to the next one a preview
+        loads (#576).
 
-        Found by protocol rather than by holding references or knowing which field types persist, so
-        persistence stays decoupled from the field toolkit's layout and its set of stateful widgets. A
-        field names its stateful widget after itself (via ``setObjectName``), which is the key here.
-
-        Enumerated through the manager's dock registry (not ``findChildren``): QtAds detaches the
-        content of a dock hidden behind another tab from the widget tree, so ``findChildren`` would
-        miss it once a second editor tab (e.g. the description) is present.
+        Found by protocol rather than by holding references or knowing which field types persist, so persistence stays
+        decoupled from the field toolkit's layout and its set of stateful widgets. A field names its stateful widget
+        after itself (via ``setObjectName``), which is the key here.
 
         :returns: the stateful widgets, keyed by their object name.
         """
         widgets: dict[str, StatefulWidget] = {}
-        for dock in self.__dock_manager.dockWidgetsMap().values():
+        for dock in (*self.__editor_docks.values(), *self.__viewer_docks.values()):
             widgets.update(self.__stateful_widgets_of(dock))
         return widgets
 
@@ -1467,6 +1704,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             return
         if self.__image_viewer is not None:
             self.__image_viewer.close()
+        if self.__player_view is not None:
+            self.__player_view.let_go_of_restored_video()
         self.__image_strip_visible = None
         self.__stashed_sizes.clear()
 
@@ -1489,6 +1728,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__content_images_read_in_load = False
         else:
             self.__refresh_content_images()
+        self.__open_held_view()
 
     def __on_rename_error_changed(self) -> None:
         """Rebuild the inline notice strip as a failed rename is reported or cleared (#162).
@@ -1554,7 +1794,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             and focus_widget is not None
             and self.__editor_docks[EDITOR_MAIN_TAB].widget().isAncestorOf(focus_widget)  # pylint: disable=no-member
         )
-        saved_state = {name: widget.save_state() for name, widget in self.__stateful_widgets().items()}
+        saved_state = {name: widget.save_state() for name, widget in self.__form_stateful_widgets().items()}
         # sever the outgoing form's long-lived-signal connections *before* its widgets are swapped out and
         # destroyed -- deterministically, while its fields are still alive -- so no stale lambda fires into
         # a deleted widget later (a subsequent revert/switch). Then replace the retained form.
@@ -1575,7 +1815,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__swap_dock_contents(self.__viewer_docks, self.__form.make_viewer(self.__model))
         outgoing.delete_later()
         self.__set_editors_locked(self.__editors_locked())
-        rebuilt = self.__stateful_widgets()
+        rebuilt = self.__form_stateful_widgets()
         for name, state in saved_state.items():
             widget = rebuilt.get(name)
             if widget is not None:
@@ -1677,11 +1917,14 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if CONTENT_IMAGES_DOCK_NAME in names:
             self.__content_images_model = ContentImagesModel(self.__model.rename_coordinator, self)
             self.__content_images_view = self.__build_content_images_view(self.__content_images_model)
+            # connected after the view is built, so the view has taken the new source by the time this asks it
+            self.__content_images_model.modelReset.connect(self.__open_held_view)
             self.__content_images_dock = self.__add_content_images_dock(self.__content_images_view)
             docks[CONTENT_IMAGES_DOCK_NAME] = self.__content_images_dock
         if PLAYER_DOCK_NAME in names:
             self.__player_view = PlayerView(self.__model, self.__watch_progress, self.__host.widget, self.__host.widget)
             self.__player_view.tools_requested.connect(self.tools_requested)
+            self.__player_view.video_changed.connect(self.__on_player_video_selected)
             self.__player_dock = self.__add_player_dock(self.__player_view)
             docks[PLAYER_DOCK_NAME] = self.__player_dock
         if TREE_DOCK_NAME in names:
@@ -1706,6 +1949,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__model, self.__host.widget, self.__resource_events, tree=tree.tree, compact=True
         )
         stage_notes = NotesPanel(self.__model, self.__host.widget, notes=notes.notes)
+        # the docks' own views go by their class's name: state is kept by object name, so these go by another
+        stage_tree.setObjectName(STAGE_TREE_NAME)
+        stage_notes.setObjectName(STAGE_NOTES_NAME)
         stage_tree.video_activated.connect(self.__on_video_activated)
         stage_tree.video_clicked.connect(self.__on_video_clicked)
         stage_notes.video_link_activated.connect(self.__on_video_link)
@@ -1994,7 +2240,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         self.__viewer_follows_curation = True
         images = self.__curated_images if path in self.__curated_images else [path]
-        self.__open_image_viewer(self.__path_source(images), images.index(path))
+        self.__open_image_viewer(self.__path_source(images), images.index(path), viewer_set=CURATED_SET)
 
     def __record_folder(self) -> Path | None:
         """The folder this document's record sits in -- what an image file taken out is named relative to (#395).
@@ -2037,7 +2283,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         if isinstance(images, list) and isinstance(clicked, Path) and clicked in images:
             self.__viewer_follows_curation = False
-            self.__open_image_viewer(self.__path_source(images), images.index(clicked))
+            self.__open_image_viewer(self.__path_source(images), images.index(clicked), viewer_set=FOLDER_SET)
 
     def __on_video_activated(self, key: str, position: float | None = None) -> None:
         """Play a video double-clicked in the Files or Tree sub-dock, in this document's one player (#317, #572).
@@ -2136,7 +2382,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             return
         self.__viewer_follows_curation = False
         source = self.__content_images_view.source
-        viewer = self.__open_image_viewer(source, index)
+        viewer = self.__open_image_viewer(source, index, viewer_set=CONTENT_SET)
         viewer.closed.connect(lambda: self.__on_content_viewer_closed(viewer, source))
 
     def __on_content_viewer_closed(self, viewer: ImageLightbox, source: ImageSource) -> None:
@@ -2157,7 +2403,13 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__content_images_view.reveal(viewer.current_index)
 
     def __open_image_viewer[Viewer: ImageLightbox](
-        self, source: ImageSource, index: int, viewer_class: Callable[..., Viewer] = ImageLightbox
+        self,
+        source: ImageSource,
+        index: int,
+        viewer_class: Callable[..., Viewer] = ImageLightbox,
+        *,
+        viewer_set: str,
+        restored: MaximizedView | None = None,
     ) -> Viewer:
         """Open ``source[index]`` maximized, on whichever surface the settings ask for.
 
@@ -2170,23 +2422,34 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         :param source: the set the viewer navigates.
         :param index: where in that set to start.
         :param viewer_class: what to build -- `ImageLightbox` or a subclass taking the same arguments.
+        :param viewer_set: which set ``source`` is, for a session to remember it by.
+        :param restored: the session's view this reopens, whose surface, info and row it takes over the settings'.
         :returns: the viewer, revealed.
         """
         # whichever route opens this one, it is not the editor's until that route says so (#370)
         self.__curation_selector = None
+        # and whichever opens it, the reader has moved on from what the session remembered
+        self.__held_view = None
+        self.__viewer_set = viewer_set
         settings = shared_image_viewer_settings()
         # resolved here, not at construction: a document that has never shown a row follows whatever
         # the shared setting says right now, including a change applied while it sat open (#161)
         strip_visible = settings.strip_visible if self.__image_strip_visible is None else self.__image_strip_visible
+        mode = viewer_mode_for(QApplication.keyboardModifiers(), settings.mode)
+        info_visible = settings.lightbox_info_visible
+        if restored is not None:
+            mode = OverlayMode.stored(restored.mode, mode)
+            strip_visible = strip_visible if restored.strip is None else restored.strip
+            info_visible = info_visible if restored.info is None else restored.info
         viewer = viewer_class(
             source,
             index,
-            viewer_mode_for(QApplication.keyboardModifiers(), settings.mode),
+            mode,
             self.__host.widget,
             loader=self.__thumbnail_loader,
             strip_visible=strip_visible,
             strip_height=settings.lightbox_image_height,
-            info_visible=settings.lightbox_info_visible,
+            info_visible=info_visible,
             backdrop=QColor(settings.lightbox_backdrop),
             double_click_closes=settings.lightbox_double_click_closes,
             exporter=self.__image_exporter,
@@ -2198,6 +2461,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         viewer.destroyed.connect(lambda: self.__on_image_viewer_gone(viewer))
         viewer.strip_visible_changed.connect(self.__on_strip_visible_changed)
         viewer.reveal()
+        if restored is not None:
+            self.maximized_restored.emit(viewer)
         return viewer
 
     def __on_curated_images_changed(self, images: list[Path]) -> None:
@@ -2211,6 +2476,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__curated_images = list(images)
         if self.__image_viewer is not None and self.__viewer_follows_curation:
             self.__image_viewer.set_source(self.__path_source(self.__curated_images))
+        self.__open_held_view()
 
     def __on_curation_viewer_requested(self, selector: ImageSelector, row: int) -> None:
         """Open a curating viewer over every row of the images editor, on ``row`` (#370).
@@ -2225,8 +2491,19 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         :param selector: the images editor asking.
         :param row: the row double-clicked.
         """
+        self.__open_curating_viewer(selector, row)
+
+    def __open_curating_viewer(self, selector: ImageSelector, row: int, restored: MaximizedView | None = None) -> None:
+        """Open a curating viewer over every row of the images editor, its requests going to the editor.
+
+        :param selector: the images editor.
+        :param row: the row to start on.
+        :param restored: the session's view this reopens, if it does.
+        """
         self.__viewer_follows_curation = False
-        viewer = self.__open_image_viewer(self.__rows_source(selector), row, CuratingImageLightbox)
+        viewer = self.__open_image_viewer(
+            self.__rows_source(selector), row, CuratingImageLightbox, viewer_set=CURATING_SET, restored=restored
+        )
         self.__curation_selector = selector
         viewer.delete_requested.connect(selector.delete_requested_at)
         viewer.visibility_toggle_requested.connect(selector.toggle_visibility_at)
@@ -2245,6 +2522,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         if self.__image_viewer is not None and self.__curation_selector is selector:
             self.__image_viewer.set_source(self.__rows_source(selector))
+        self.__open_held_view()
 
     def __rows_source(self, selector: ImageSelector) -> ScreenshotRowsImageSource:
         """An image source over every row of ``selector``, naming each relative to this document's directory.
@@ -2806,7 +3084,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         dock.viewToggled.connect(self.__on_notes_toggled)
         panel.video_link_activated.connect(self.__on_video_link)
         if self.__player_view is not None:  # pragma: no branch -- a tutorial builds its player first
-            self.__player_view.video_changed.connect(panel.set_video)
+            self.__player_view.video_changed.connect(panel.follow_player)
             self.__player_view.note_requested.connect(self.__on_note_requested)
             self.__player_view.surface_clicked.connect(self.__on_surface_clicked)
             panel.set_video(self.__player_view.current_key)

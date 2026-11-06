@@ -31,6 +31,7 @@ from rehuco_core import (
 from rehuco_core.access import KeyRelocation, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
+from ..settings.catalog_state_store import CatalogStateStore
 from ..settings.root_catalog_settings import shared_root_catalog_settings
 from .add_root_dialog import AddRootDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
@@ -44,6 +45,7 @@ from .roots_lightbox import RootsLightbox
 from .roots_management import selected_record
 from .roots_node import NodeListing, RootsNodeKind, ShownRoot, root_title, root_where
 from .roots_opening import RootsOpening
+from .roots_path_restore import RootsPathRestore
 from .roots_preview import RootsPreview
 from .roots_row_actions import RootsRowActions
 
@@ -125,6 +127,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         rename_coordinator: RenameCoordinator = DEFAULT_RENAME_COORDINATOR,
         resource_events: ResourceEvents | None = None,
         records: Records | None = None,
+        catalog_store: CatalogStateStore | None = None,
     ) -> None:
         super().__init__(parent)
         self.__catalog: Final = catalog
@@ -201,6 +204,13 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             catalog, self.__roots_model, self.__preview, self.__current_root_row, self.__commit_root_edit, self
         )
         self.__follow_the_catalog(catalog)
+        self.__path_restore: Final = RootsPathRestore(
+            catalog,
+            self.__roots_model,
+            self.__roots_ui.roots_view,
+            catalog_store if catalog_store is not None else CatalogStateStore(),
+            self,
+        )
         self.__update_enablement()
         if resource_events is not None:
             resource_events.moved.connect(self.__on_moved)
@@ -496,6 +506,10 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.__show_notice("")
         self.__preview.show_index(current)
         self.__on_roots_current_changed()
+        if self.__path_restore.walking:
+            return
+        if current.isValid():
+            self.__path_restore.let_go()
         self.record_selected.emit(selected_record(self.__roots_model, current))
 
     def __on_roots_current_changed(self, *_args: object) -> None:
@@ -714,6 +728,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         :param directory: the folder.
         """
         self.__roots_model.relist_folder(directory.path)
+
+    @property
+    def path_restore(self) -> RootsPathRestore:
+        """The walk back to the row the catalog remembered ([[plugins#session-restore]])."""
+        return self.__path_restore
 
     def reselect(self) -> None:
         """Say again which record the current row stands for, for a listener that has just started to care (#457)."""

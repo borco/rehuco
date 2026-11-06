@@ -2,7 +2,7 @@
 
 from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Final
+from typing import Final, override
 
 import PySide6QtAds as QtAds
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QTimer, Signal
@@ -39,11 +39,13 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
     ``openedDockAreas()`` (which filters on ``isHidden()``) simply stops listing the hidden ones
     ([[appendices.qt-ads#area-maximize]]).
 
-    **Session-only, and a capture must undo it first.** Nothing here is persisted, and a
-    ``saveState()`` taken while maximized would record the hidden areas' splitter panes at zero --
-    restoring that blob later gives a sliver, not the layout the user had. :meth:`unmaximized` is
-    the seam: it shows the hidden areas for the duration of a capture and hides them again after,
-    with the button and the maximize itself left exactly as they were.
+    **Kept beside the layout, and a capture must undo it first.** A ``saveState()`` taken while
+    maximized would record the hidden areas' splitter panes at zero -- restoring that blob later gives
+    a sliver, not the layout the user had. :meth:`unmaximized` is the seam: it shows the hidden areas
+    for the duration of a capture and hides them again after, with the button and the maximize itself
+    left exactly as they were. So an owner persisting a maximize saves :attr:`maximized_name` beside
+    the layout and hands it to :meth:`maximize_named` after restoring it, which waits for the manager
+    to be on screen: the sizes a maximize records have to be ones a layout pass has settled.
 
     **The splitter sizes are remembered, not trusted.** ``QSplitter`` keeps a hidden pane's size
     and hands it back on show (measured, two and three panes, nested), so a plain show would
@@ -117,6 +119,8 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
         self.__hidden_tabs: list[QtAds.CDockWidget] = []
         self.__splitter_sizes: dict[QSplitter, list[int]] = {}
         self.__buttons: Final[dict[QtAds.CDockWidget, QPushButton]] = {}
+        self.__held_name = ""
+        """The dock :meth:`maximize_named` is to maximize once the manager is on screen; empty for none."""
 
         dock_manager.dockWidgetAdded.connect(self.__on_dock_widget_added)
         dock_manager.dockWidgetRemoved.connect(self.__on_dock_widget_removed)
@@ -132,6 +136,58 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
     def maximized_dock(self) -> QtAds.CDockWidget | None:
         """The dock currently filling its container, or ``None`` while none is."""
         return self.__maximized_dock
+
+    @property
+    def maximized_name(self) -> str:
+        """What to save beside a layout: the object name of the dock filling its container, or of the one still waiting
+        to; empty for none."""
+        return self.__maximized_dock.objectName() if self.__maximized_dock is not None else self.__held_name
+
+    def maximize_named(self, name: str) -> None:
+        """Maximize a dock by the name :attr:`maximized_name` gave, once the manager is on screen and has laid out.
+
+        Held until then: a maximize records every splitter's sizes to put back, and before the first layout there are
+        none worth putting back. A name no dock goes by yet is held for one added later under it; maximizing any dock
+        in the meantime overtakes it.
+
+        :param name: the dock's object name; empty for none, which only lets go of a name held.
+        """
+        self.__held_name = name
+        if not name:
+            self.__dock_manager.removeEventFilter(self)
+        elif self.__dock_manager.isVisible():
+            QTimer.singleShot(0, self, self.__maximize_held)
+        else:
+            self.__dock_manager.installEventFilter(self)
+
+    @override
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802  (Qt API name)
+        """Take the manager reaching the screen as the moment to maximize the dock held.
+
+        :param watched: the manager.
+        :param event: what happened to it.
+        :returns: whether the event is consumed -- never.
+        """
+        if event.type() == QEvent.Type.Show:
+            self.__dock_manager.removeEventFilter(self)
+            QTimer.singleShot(0, self, self.__maximize_held)
+        return super().eventFilter(watched, event)
+
+    def __maximize_held(self) -> None:
+        """Maximize the dock held, if it is still held and open; the layout the manager was shown with has settled.
+
+        A name no dock goes by yet stays held, still reported by :attr:`maximized_name`, for a dock added later under
+        it -- one whose storage answers after the start. A closed one by the name restores nothing and is let go.
+        """
+        name = self.__held_name
+        if not name or not self.__dock_manager.isVisible():
+            return
+        dock = self.__dock_manager.findDockWidget(name)
+        if dock is None:
+            return
+        self.__held_name = ""
+        if not dock.isClosed():
+            self.maximize(dock)
 
     def button(self, dock: QtAds.CDockWidget) -> QPushButton | None:
         """The maximize button this handler put on ``dock``'s tab, or ``None`` if it has none yet
@@ -151,6 +207,7 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
 
         :param dock: the dock to fill its container with.
         """
+        self.__held_name = ""
         if dock is self.__maximized_dock:
             return
         area = dock.dockAreaWidget()
@@ -271,6 +328,8 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
         self.__on_structural_change()
         dock.viewToggled.connect(self.__on_structural_change)
         self.__schedule_walk()
+        if self.__held_name and dock.objectName() == self.__held_name:
+            QTimer.singleShot(0, self, self.__maximize_held)
 
     def __on_dock_widget_removed(self, dock: QtAds.CDockWidget) -> None:
         """Exit a standing maximize for the structural change, and forget the dock's button -- it

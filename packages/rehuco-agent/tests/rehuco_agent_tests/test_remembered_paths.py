@@ -77,6 +77,7 @@ class Lists:  # pylint: disable=too-few-public-methods
         session_open: tuple[Path, ...] = (),
         session_closed: tuple[Path, ...] = (),
         focused: Path | None = None,
+        preview: DocumentSessionSettings.Preview | None = None,
     ) -> None:
         self.recent_files = RecentFilesSettings()
         for path in recents:
@@ -91,6 +92,7 @@ class Lists:  # pylint: disable=too-few-public-methods
         for path in session_closed:
             self.session.items[path] = DocumentSessionSettings.Item(open=False)
         self.session.focused_path = focused
+        self.session.preview = preview
         self.remembered = RememberedPaths(self.recent_files, self.rehuco, self.session)
         self.arrived: list[tuple[Path, DocumentSessionSettings.Item, bool]] = []
         self.rehucos: list[Path] = []
@@ -627,3 +629,136 @@ def test_a_document_on_a_server_that_never_answers_is_kept_through_the_real_scan
     assert lists.remembered.still_open == frozenset({path})
     assert path in lists.session.items
     assert not lists.arrived
+
+
+# region The preview (#576)
+
+
+def test_a_local_preview_that_is_there_is_restored_with_the_window(qapp: Any, tmp_path: Path, scan_class: Any) -> None:
+    """The preview's path joins those to restore now, and not the open documents.
+
+    **Test steps:**
+
+    * remember a preview of a local file that is there
+    * verify it is among the paths to restore, and stays out of the session's items
+    """
+    del qapp, scan_class
+    record = tmp_path / "a.rehu"
+    record.write_text("", encoding="utf-8")
+    session = DocumentSessionSettings()
+    session.preview = DocumentSessionSettings.Preview(record, "Preview-1", DocumentSessionSettings.Item(open=True))
+    remembered = RememberedPaths(RecentFilesSettings(), RehucoSettings(), session)
+
+    assert remembered.documents_to_restore_now(SessionRestoreSettings()) == {record}
+    assert record not in session.items
+
+
+def test_a_local_preview_whose_file_is_gone_is_forgotten(qapp: Any, tmp_path: Path, scan_class: Any) -> None:
+    """A preview of a deleted file leaves no dock behind.
+
+    **Test steps:**
+
+    * remember a preview of a file that is not there
+    * verify the entry is gone, and nothing is to be restored
+    """
+    del qapp, scan_class
+    session = DocumentSessionSettings()
+    session.preview = DocumentSessionSettings.Preview(
+        tmp_path / "gone.rehu", "Preview-1", DocumentSessionSettings.Item(open=True)
+    )
+
+    remembered = RememberedPaths(RecentFilesSettings(), RehucoSettings(), session)
+
+    assert session.preview is None
+    assert remembered.documents_to_restore_now(SessionRestoreSettings()) == set()
+
+
+# endregion
+
+
+def test_a_remote_preview_is_awaited_kept_and_arrives_with_its_entry(qapp: Any, scan_class: Any) -> None:
+    """A preview on a share is handled as a document there is: not restored now, kept, and handed over when it answers.
+
+    **Test steps:**
+
+    * remember a preview of a remote file, and ask what is restored now
+    * verify nothing is, and it is remembered as open
+    * deliver *present*, and verify it arrived as a preview, with no document arriving for it
+    """
+    del qapp, scan_class
+    preview = DocumentSessionSettings.Preview(REMOTE, "Preview-1", DocumentSessionSettings.Item(open=True))
+    lists = Lists(preview=preview)
+    arrived: list[object] = []
+    lists.remembered.preview_arrived.connect(arrived.append)
+
+    assert lists.remembered.documents_to_restore_now(SessionRestoreSettings()) == set()
+    assert lists.remembered.still_open == {REMOTE}
+
+    lists.answer(REMOTE, Presence.PRESENT)
+
+    assert arrived == [preview]
+    assert not lists.arrived
+    assert lists.remembered.still_open == frozenset()
+
+
+def test_a_remote_preview_that_is_gone_is_forgotten(qapp: Any, scan_class: Any) -> None:
+    """A share that answers and does not hold the file costs the preview its entry.
+
+    **Test steps:**
+
+    * remember a preview of a remote file, and deliver *gone*
+    * verify the entry is gone
+    """
+    del qapp, scan_class
+    lists = Lists(preview=DocumentSessionSettings.Preview(REMOTE, "Preview-1", DocumentSessionSettings.Item(open=True)))
+    lists.remembered.documents_to_restore_now(SessionRestoreSettings())
+
+    lists.answer(REMOTE, Presence.GONE)
+
+    assert lists.session.preview is None
+
+
+def test_a_remote_preview_is_not_awaited_with_the_remote_toggle_off(qapp: Any, scan_class: Any) -> None:
+    """**Test steps:**
+
+    * remember a preview of a remote file, and ask with the remote toggle off
+    * verify nothing is kept for it
+    """
+    del qapp, scan_class
+    lists = Lists(preview=DocumentSessionSettings.Preview(REMOTE, "Preview-1", DocumentSessionSettings.Item(open=True)))
+
+    now = lists.remembered.documents_to_restore_now(SessionRestoreSettings(restore_remote_documents=False))
+
+    assert now == set()
+    assert lists.remembered.still_open == frozenset()
+
+
+def test_a_local_preview_is_left_out_with_the_local_toggle_off(qapp: Any, tmp_path: Path, scan_class: Any) -> None:
+    """**Test steps:**
+
+    * remember a preview of a local file, and ask with the local toggle off
+    * verify it is not to be restored
+    """
+    del qapp, scan_class
+    there = tmp_path / "there.rehu"
+    there.touch()
+    lists = Lists(preview=DocumentSessionSettings.Preview(there, "Preview-1", DocumentSessionSettings.Item(open=True)))
+
+    assert lists.remembered.documents_to_restore_now(SessionRestoreSettings(restore_local_documents=False)) == set()
+
+
+def test_a_local_preview_that_cannot_be_judged_is_kept(
+    qapp: Any, tmp_path: Path, mocker: MockerFixture, scan_class: Any
+) -> None:
+    """**Test steps:**
+
+    * remember a preview of a local file the operating system gives no verdict on
+    * verify it is not to be restored, and is kept
+    """
+    del qapp, scan_class
+    path = tmp_path / "locked.rehu"
+    mocker.patch.object(startup_presence, "presence_of", return_value=Presence.OFFLINE)
+    lists = Lists(preview=DocumentSessionSettings.Preview(path, "Preview-1", DocumentSessionSettings.Item(open=True)))
+
+    assert lists.remembered.documents_to_restore_now(SessionRestoreSettings()) == set()
+    assert lists.remembered.still_open == {path}

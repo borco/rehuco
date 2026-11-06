@@ -6,6 +6,7 @@ The config folder is the test's ``tmp_path``: every file is real, and nothing ou
 
 import json
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -117,7 +118,7 @@ def test_a_save_writes_the_ids_path_and_creates_its_folder() -> None:
     CatalogStateStore().save(REHUCO_ID, STATE)
 
     written = json.loads(catalog_state_path(REHUCO_ID).read_text(encoding="utf-8"))
-    assert written == {"version": CATALOG_STATE_VERSION, "layout": LAYOUT}
+    assert written == {"version": CATALOG_STATE_VERSION, "layout": LAYOUT, "maximized_dock": "", "roots_current": None}
 
 
 @mark.usefixtures("config")
@@ -327,3 +328,74 @@ def test_a_file_that_is_not_utf8_is_an_empty_state_kept_as_bak_by_the_next_save(
     assert "could not be read" in caplog.text
     assert store.load(REHUCO_ID) == STATE
     assert path.with_name(path.name + ".bak").read_bytes() == NOT_UTF8
+
+
+def test_the_two_docks_each_save_their_half_and_keep_the_others(config: Path) -> None:
+    """The Browsers dock and the Root Catalog write at the same moment, and neither loses what the other wrote.
+
+    **Test steps:**
+
+    * save the Roots' current row, then the browsers' layout and maximized dock
+    * verify the file holds all three, and in the other order too
+    """
+    del config
+    store = CatalogStateStore()
+    current = (uuid4(), ("folder", "file.rehu"))
+
+    store.save_roots_current(REHUCO_ID, current)
+    store.save_browsers(REHUCO_ID, LAYOUT, "a-browser")
+
+    assert store.load(REHUCO_ID) == CatalogState(LAYOUT, "a-browser", current)
+
+    store.save_roots_current(REHUCO_ID, None)
+
+    assert store.load(REHUCO_ID) == CatalogState(LAYOUT, "a-browser", None)
+
+
+@mark.parametrize(
+    "entry",
+    [
+        "not an object",
+        {"root": "not a uuid", "path": []},
+        {"root": str(REHUCO_ID), "path": "not a list"},
+        {"root": str(REHUCO_ID), "path": ["", "empty name"]},
+    ],
+)
+def test_a_malformed_roots_row_costs_only_itself(config: Path, entry: object) -> None:
+    """A hand-damaged current row is read as none, and the layout beside it stays.
+
+    **Test steps:**
+
+    * write a file whose layout is fine and whose current row is not
+    * verify the layout is read and the row is not
+    """
+    del config
+    path = catalog_state_path(REHUCO_ID)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({"version": CATALOG_STATE_VERSION, "layout": LAYOUT, "roots_current": entry}), encoding="utf-8"
+    )
+
+    assert CatalogStateStore().load(REHUCO_ID) == CatalogState(LAYOUT)
+
+
+def test_a_browsers_selection_survives_its_bytes_and_a_bad_key_costs_only_itself() -> None:
+    """A browser reads back with its selected rows, dropping an entry that names no row.
+
+    **Test steps:**
+
+    * round-trip a browser with a selection through its bytes
+    * corrupt one of two entries, and verify the other is kept
+    """
+    key = (uuid4(), "folder/a.rehu")
+    browser = replace(FIRST, selection=(key,))
+
+    assert BrowserState.from_bytes(browser.to_bytes()) == browser
+
+    values = json.loads(browser.to_bytes())
+    values["selection"] = [["not a uuid", "x.rehu"], "not a pair", [str(key[0]), key[1]]]
+
+    restored = BrowserState.from_bytes(json.dumps(values).encode("utf-8"))
+
+    assert restored is not None
+    assert restored.selection == (key,)

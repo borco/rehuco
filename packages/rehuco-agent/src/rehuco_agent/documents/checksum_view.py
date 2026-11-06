@@ -25,7 +25,7 @@ from collections.abc import Sequence
 from typing import Final, cast, override
 
 from borco_pyside.theming import ActionIconThemeHandler, as_drawn_icon
-from PySide6.QtCore import QItemSelectionModel, QPoint
+from PySide6.QtCore import QByteArray, QItemSelectionModel, QPoint
 from PySide6.QtGui import QAction, QShowEvent
 from PySide6.QtWidgets import QHeaderView, QMenu, QWidget
 
@@ -127,6 +127,22 @@ class ChecksumView(QWidget):
         actions.record_changed.connect(self.refresh)
         model.path_changed.connect(self.refresh)  # type: ignore[attr-defined]
         self.refresh()
+
+    def save_state(self) -> bytes:
+        """Encode the table's sort, for the dock's entry in the layout ([[plugins#session-restore]]).
+
+        :returns: the header's state, restorable by :meth:`restore_state`.
+        """
+        return bytes(self.__ui.file_view.horizontalHeader().saveState().data())
+
+    def restore_state(self, state: bytes) -> None:
+        """Restore the sort :meth:`save_state` encoded.
+
+        :param state: the blob; one Qt does not recognise leaves the sort as it is.
+        """
+        header = self.__ui.file_view.horizontalHeader()
+        if header.restoreState(QByteArray(state)):
+            self.__ui.file_view.sortByColumn(header.sortIndicatorSection(), header.sortIndicatorOrder())
 
     # region Reading
 
