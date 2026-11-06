@@ -430,3 +430,14 @@ def load_paused(view: PlayerView, model: RehuDocumentModel, key: str, *, length_
     player.playbackStateChanged.emit(PAUSED)
     player.mediaStatusChanged.emit(BUFFERED)
     return player
+
+
+def subtitle_combo_of(view: PlayerView) -> QComboBox:
+    """The menu on the transport bar that says which subtitle is on and picks another.
+
+    :param view: the view.
+    :returns: the combo.
+    """
+    combo = view.findChild(QComboBox, "subtitle_combo")
+    assert isinstance(combo, QComboBox)
+    return combo

@@ -862,3 +862,59 @@ def test_the_maximize_surface_is_staged_saved_dropped_and_defaulted(qtbot: QtBot
 
     page.seed_defaults()
     assert ui.maximize_document_radio_button.isChecked() is True
+
+
+# region Subtitles
+
+
+def test_the_subtitle_choices_are_staged_saved_dropped_and_defaulted(qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * verify the page starts clean with subtitles on, every language shown and English listed
+    * switch subtitles off, show only the selected languages, list Romanian then Unknown with a name VLC does not
+      know, and verify the page is dirty
+    * save, and verify the shared settings hold the choices with the odd name dropped, and the page is clean again
+    * change one and drop it, and verify the saved choice is back
+    * stage the defaults, and verify they are what a fresh settings object holds
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    assert (ui.subtitles_on_check_box.isChecked(), ui.subtitles_all_radio_button.isChecked()) == (True, True)
+    assert ui.subtitle_languages_editor.values == ("English",)
+    assert page.is_dirty() is False
+
+    ui.subtitles_on_check_box.setChecked(False)
+    ui.subtitles_selected_radio_button.setChecked(True)
+    ui.subtitle_languages_editor.values = ("romanian", "Unknown", "Klingon")
+    assert page.is_dirty() is True
+    page.save_changes()
+
+    settings = shared_videos_settings()
+    assert (settings.subtitles_on, settings.subtitles_show_all) == (False, False)
+    assert settings.subtitle_languages == ("Romanian", "Unknown")
+    assert page.is_dirty() is False
+    ui.subtitles_all_radio_button.setChecked(True)
+    page.drop_changes()
+    assert ui.subtitles_selected_radio_button.isChecked() is True
+
+    page.seed_defaults()
+    assert (ui.subtitles_on_check_box.isChecked(), ui.subtitles_all_radio_button.isChecked()) == (True, True)
+    assert ui.subtitle_languages_editor.values == VideosSettings().subtitle_languages
+
+
+def test_a_list_edit_that_normalizes_to_the_saved_one_is_not_a_change(qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * type the saved language in other letters and add a name VLC does not know
+    * verify the page is not dirty, since saving would write what is there
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    page_ui(page).subtitle_languages_editor.values = ("ENGLISH", "Klingon")
+
+    assert page.is_dirty() is False
+
+
+# endregion

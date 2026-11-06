@@ -10,11 +10,12 @@ is a mock of :class:`VlcMediaPlayer`, since the engine itself is tested in ``tes
 from typing import Any
 from unittest.mock import Mock
 
-from PySide6.QtCore import QUrl
-from PySide6.QtGui import QAction, QImage
+import cbor2
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QAction, QImage, QPalette
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QLabel
-from pytest import fixture
+from pytest import fixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents import player_engine
@@ -24,10 +25,11 @@ from rehuco_agent.documents.vlc_media_player import VlcEngineError, VlcMediaPlay
 from rehuco_agent.documents.vlc_surface import VlcSurface
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
 from rehuco_agent.settings.videos_settings import IN_APP_PLAYER, VLC_PLAYER, shared_videos_settings
-from rehuco_core import RenameCoordinator, VideoFormat
+from rehuco_core import UNKNOWN_ENTRY, RenameCoordinator, SubtitleChoice, SubtitlePreferences, VideoFormat
 
 from .player_view_support import (  # pylint: disable=unused-import
     Listing,
+    action_of,
     fixture_coordinator,  # noqa: F401
     fixture_listing,  # noqa: F401
     fixture_media,  # noqa: F401
@@ -39,6 +41,7 @@ from .player_view_support import (  # pylint: disable=unused-import
     show_first_frame,
     shown_of,
     still_of,
+    subtitle_combo_of,
 )
 
 
@@ -67,6 +70,9 @@ def fixture_engine(mocker: MockerFixture) -> Mock:
     for name in ("positionChanged", "durationChanged", "playbackStateChanged", "mediaStatusChanged", "errorOccurred"):
         setattr(engine, name, Mock())
     engine.still_ready = Mock()
+    engine.still_refreshed = Mock()
+    engine.subtitle_chosen = Mock()
+    engine.subtitle_menu_changed = Mock()
     engine.position.return_value = 0
     engine.duration.return_value = 0
     mocker.patch.object(player_engine, "VlcMediaPlayer", return_value=engine)
@@ -558,3 +564,247 @@ def test_the_info_under_libvlc_reads_the_size_off_the_frame_it_shows(
     view.seek("01.mp4", 10.0)
 
     assert "640 × 360 px" in panel.text()
+
+
+# region Subtitles
+
+
+@mark.parametrize(
+    ("action", "method"),
+    [
+        param("subtitle_next_action", "next_subtitle", id="next"),
+        param("subtitle_previous_action", "previous_subtitle", id="previous"),
+        param("subtitle_toggle_action", "toggle_subtitles", id="on or off"),
+    ],
+)
+def test_the_subtitle_actions_are_enabled_under_libvlc_and_reach_it(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+    action: str,
+    method: str,
+) -> None:
+    """**Test steps:**
+
+    * build a player, and verify the action is disabled while no engine is built
+    * play a video under libvlc, and verify the action is enabled
+    * trigger it and verify the engine was asked for its subtitle call, once
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+    assert not action_of(view, action).isEnabled()
+    view.jump("01.mp4")
+    assert action_of(view, action).isEnabled()
+
+    action_of(view, action).trigger()
+
+    getattr(engine, method).assert_called_once_with()
+
+
+def test_the_subtitle_actions_are_disabled_again_when_the_player_lets_libvlc_go(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * play a video under libvlc, then stop the player
+    * verify the actions are disabled and a trigger reaches no engine
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+
+    view.stop()
+    action_of(view, "subtitle_next_action").trigger()
+
+    assert not action_of(view, "subtitle_next_action").isEnabled()
+    engine.next_subtitle.assert_not_called()
+
+
+def test_the_picture_a_paused_change_made_replaces_the_still(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * play under libvlc and pause, which shows a still
+    * have the engine deliver the frame a subtitle change made
+    * verify the still shows that frame
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    action_of(view, "play_pause_action").trigger()
+    refreshed = QImage(4, 3, QImage.Format.Format_RGB32)
+    refreshed.fill(0xFF112233)
+
+    deliver(engine, "still_refreshed", refreshed)
+
+    assert still_of(view).image is refreshed or still_of(view).image == refreshed
+
+
+def test_the_engine_is_handed_the_settings_list_and_default_before_a_video_opens(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * set the Videos page's subtitles to off, Romanian then Unknown, only selected
+    * play a video under libvlc
+    * verify the engine was given that list, and the choice of no subtitles, which a rehu with none chosen starts at
+    """
+    del library, vlc_chosen
+    settings = shared_videos_settings()
+    settings.subtitles_on = False
+    settings.subtitle_languages = ("Romanian", UNKNOWN_ENTRY)
+    settings.subtitles_show_all = False
+    view = make_view(qtbot, model, recorder)
+
+    view.jump("01.mp4")
+
+    engine.set_subtitle_preferences.assert_called_once_with(
+        SubtitlePreferences(("Romanian", UNKNOWN_ENTRY), show_all=False)
+    )
+    engine.set_subtitle_choice.assert_called_once_with(SubtitleChoice(shown=False))
+
+
+def test_what_the_reader_chose_is_handed_on_with_the_next_video_and_saved_with_the_layout(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * play a video, and have the engine say the reader chose Romanian
+    * play another, and verify the engine was given that choice for it
+    * save the player's state, restore it into a second player, and verify that one hands the same choice on
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    choice = SubtitleChoice(True, "Romanian", False)
+    deliver(engine, "subtitle_chosen", choice)
+    deliver(engine, "subtitle_chosen", "not a choice")  # what is not one is ignored
+
+    view.jump("02.mp4")
+    assert engine.set_subtitle_choice.call_args.args == (choice,)
+
+    other = make_view(qtbot, model, recorder)
+    other.restore_state(view.save_state())
+    other.jump("01.mp4")
+
+    assert engine.set_subtitle_choice.call_args.args == (choice,)
+
+
+def test_a_player_state_with_no_choice_leaves_the_default(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * save the state of a player where nothing was chosen, and restore it, and a blob that is not a state, and a list
+    * play a video and verify the engine was given the settings' default
+    """
+    del library, vlc_chosen
+    shared_videos_settings().subtitles_on = True
+    view = make_view(qtbot, model, recorder)
+
+    view.restore_state(view.save_state())
+    view.restore_state(b"not cbor")
+    view.restore_state(cbor2.dumps([1]))
+    view.jump("01.mp4")
+
+    assert engine.set_subtitle_choice.call_args.args == (SubtitleChoice(shown=True),)
+
+
+# endregion
+
+
+def test_the_transport_bar_offers_the_subtitles_while_the_engine_is_libvlc(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * play under libvlc: verify the menu is there but disabled, reading that the tracks are not known yet
+    * have the engine offer none, English and French with English on and only it visited, and verify the menu lists
+      them, shows English, and gives the entry the keys skip the disabled colour and the others the default
+    * have it offer nothing, and verify the menu is disabled and pending again
+    * have it offer the one entry that says there are none, and verify the menu is disabled
+    * offer them again and stop the player, and verify the menu is hidden
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    combo = subtitle_combo_of(view)
+    assert (combo.isHidden(), combo.isEnabled(), combo.currentText()) == (False, False, "Subs: …")
+
+    deliver(engine, "subtitle_menu_changed", ["Subs: off", "Subs: English", "Subs: French"], 1, 1)
+    assert combo.isEnabled()
+    assert [combo.itemText(row) for row in range(combo.count())] == ["Subs: off", "Subs: English", "Subs: French"]
+    assert (combo.currentText(), combo.isHidden()) == ("Subs: English", False)
+    role = Qt.ItemDataRole.ForegroundRole
+    assert [combo.itemData(row, role) is None for row in range(3)] == [True, True, False]
+    assert combo.itemData(2, role) == combo.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
+
+    deliver(engine, "subtitle_menu_changed", [], 0, 0)
+    assert (combo.currentText(), combo.isEnabled()) == ("Subs: …", False)
+
+    deliver(engine, "subtitle_menu_changed", ["Subs: none"], 0, 0)
+    assert (combo.currentText(), combo.isEnabled()) == ("Subs: none", False)
+
+    deliver(engine, "subtitle_menu_changed", ["Subs: off", "Subs: English"], 1, 1)
+    view.stop()
+    assert combo.isHidden()
+
+
+def test_picking_an_entry_of_the_menu_reaches_libvlc_and_a_new_menu_does_not(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """**Test steps:**
+
+    * play under libvlc and have the engine offer a menu
+    * pick the last entry as the reader would, and verify the engine was asked to show it
+    * have the engine offer another menu, and verify that picked nothing
+    """
+    del library, vlc_chosen
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    combo = subtitle_combo_of(view)
+    deliver(engine, "subtitle_menu_changed", ["Subs: off", "Subs: English", "Subs: Romanian"], 0, 2)
+
+    combo.activated.emit(2)
+    deliver(engine, "subtitle_menu_changed", ["Subs: off", "Subs: English"], 1, 1)
+
+    engine.select_subtitle.assert_called_once_with(2)

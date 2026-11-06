@@ -25,10 +25,13 @@ from rehuco_core import (
     EXTERNAL_TOOLS,
     FFMPEG_LIBRARIES_TOOL,
     FFMPEG_TOOL,
+    LANGUAGES,
+    UNKNOWN_ENTRY,
     VIDEO_EXTENSIONS,
     VLC_TOOL,
     DurationProbe,
     FfprobeDurationProbe,
+    SubtitlePreferences,
     WatchRules,
 )
 
@@ -45,6 +48,9 @@ MARK_FILE_VIEWED_KEY: Final = "mark_file_viewed_at_end"
 MARK_TUTORIAL_VIEWED_KEY: Final = "mark_tutorial_viewed_on_last_file"
 MATCH_RENAMED_BY_SIZE_KEY: Final = "match_renamed_by_size"
 MAXIMIZE_MODE_KEY: Final = "maximize_mode"
+SUBTITLES_ON_KEY: Final = "subtitles_on"
+SUBTITLE_LANGUAGES_KEY: Final = "subtitle_languages"
+SUBTITLES_SHOW_ALL_KEY: Final = "subtitles_show_all"
 
 IN_APP_PLAYER: Final = "in_app"
 """The player dock a document hosts ([[plugins#in-app-player]])."""
@@ -69,6 +75,30 @@ are Windows-only, as their tool is."""
 DEFAULT_PLAYER: Final = IN_APP_PLAYER
 
 DEFAULT_MAXIMIZE_MODE: Final = OverlayMode.DOCUMENT_OVERLAY
+
+DEFAULT_SUBTITLE_LANGUAGES: Final = ("English",)
+"""The languages the subtitle keys visit before any others, until the user lists their own."""
+
+
+def normalize_subtitle_languages(values: object) -> tuple[str, ...]:
+    """Normalize the list of preferred subtitle languages into the names libvlc spells and the one entry that stands
+    for a track with no language (#618).
+
+    A name is matched without regard to case or surrounding space, and spelled as libvlc spells it
+    (:data:`~rehuco_core.LANGUAGES`); an entry that is no language, and a repeat, is dropped; a list left with nothing
+    is :data:`DEFAULT_SUBTITLE_LANGUAGES`, as an empty extension list is the shipped one.
+
+    :param values: the entries as edited or as stored.
+    :returns: the entries, in the order first seen.
+    """
+    known = {language.casefold(): language for language in LANGUAGES}
+    known[UNKNOWN_ENTRY.casefold()] = UNKNOWN_ENTRY
+    entries: list[str] = []
+    for entry in read_stored_strings(values):
+        name = known.get(entry.strip().casefold())
+        if name is not None and name not in entries:
+            entries.append(name)
+    return tuple(entries) if entries else DEFAULT_SUBTITLE_LANGUAGES
 
 
 def normalize_extensions(values: object) -> tuple[str, ...]:
@@ -136,8 +166,9 @@ def read_maximize_mode(value: object) -> OverlayMode:
     return OverlayMode.stored(value, DEFAULT_MAXIMIZE_MODE)
 
 
+# one block of settings, staged and saved together
 @dataclass
-class VideosSettings:
+class VideosSettings:  # pylint: disable=too-many-instance-attributes
     """How a tutorial's videos are measured -- which backend reads a duration, and over which files -- and how
     watching them is tracked ([[field-schema#watch-progress]], #316).
 
@@ -170,6 +201,21 @@ class VideosSettings:
     maximize_mode: OverlayMode = DEFAULT_MAXIMIZE_MODE
     """The surface a double-click on the video maximizes the player over (#574), unless a key held picks another;
     read at each maximize, so a change applies to the next one and an open one is not moved."""
+
+    subtitles_on: bool = True
+    """Whether a rehu's videos start with subtitles shown, until the rehu has had its own choice made (#618)."""
+
+    subtitle_languages: tuple[str, ...] = DEFAULT_SUBTITLE_LANGUAGES
+    """The languages the subtitle keys visit, the most preferred first, with :data:`~rehuco_core.UNKNOWN_ENTRY` for the
+    tracks with no language."""
+
+    subtitles_show_all: bool = True
+    """Whether the keys also visit the tracks :attr:`subtitle_languages` does not name, after those it does."""
+
+    @property
+    def subtitle_preferences(self) -> SubtitlePreferences:
+        """The subtitle list as the player's engine takes it (#618)."""
+        return SubtitlePreferences(normalize_subtitle_languages(self.subtitle_languages), self.subtitles_show_all)
 
     @property
     def video_extensions(self) -> tuple[str, ...]:
@@ -220,6 +266,9 @@ class VideosSettings:
         self.mark_tutorial_viewed_on_last_file = cast(bool, settings.value(MARK_TUTORIAL_VIEWED_KEY, True, type=bool))
         self.match_renamed_by_size = cast(bool, settings.value(MATCH_RENAMED_BY_SIZE_KEY, True, type=bool))
         self.maximize_mode = read_maximize_mode(settings.value(MAXIMIZE_MODE_KEY))
+        self.subtitles_on = cast(bool, settings.value(SUBTITLES_ON_KEY, True, type=bool))
+        self.subtitle_languages = normalize_subtitle_languages(settings.value(SUBTITLE_LANGUAGES_KEY))
+        self.subtitles_show_all = cast(bool, settings.value(SUBTITLES_SHOW_ALL_KEY, True, type=bool))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -235,6 +284,9 @@ class VideosSettings:
         settings.setValue(MARK_TUTORIAL_VIEWED_KEY, self.mark_tutorial_viewed_on_last_file)
         settings.setValue(MATCH_RENAMED_BY_SIZE_KEY, self.match_renamed_by_size)
         settings.setValue(MAXIMIZE_MODE_KEY, self.maximize_mode.value)
+        settings.setValue(SUBTITLES_ON_KEY, self.subtitles_on)
+        settings.setValue(SUBTITLE_LANGUAGES_KEY, list(self.subtitle_languages))
+        settings.setValue(SUBTITLES_SHOW_ALL_KEY, self.subtitles_show_all)
         settings.endGroup()
 
 

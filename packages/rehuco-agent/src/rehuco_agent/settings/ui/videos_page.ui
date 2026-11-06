@@ -362,6 +362,80 @@
     </widget>
    </item>
    <item>
+    <widget class="QFrame" name="subtitles_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="subtitles_frame_layout">
+      <item>
+       <widget class="QLabel" name="subtitles_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Subtitles (VLC)</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="subtitles_on_check_box">
+        <property name="toolTip">
+         <string>What a rehu's videos start with until a subtitle key has been used in it; after that the rehu remembers its own choice.</string>
+        </property>
+        <property name="text">
+         <string>Show subtitles when a video starts</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="subtitles_all_radio_button">
+        <property name="toolTip">
+         <string>The subtitle keys visit every track a video has: the languages listed below first, then the tracks with no language unless they are listed, then the other languages.</string>
+        </property>
+        <property name="text">
+         <string>show all languages</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="subtitles_selected_radio_button">
+        <property name="toolTip">
+         <string>The subtitle keys visit only the languages listed below, in that order.</string>
+        </property>
+        <property name="text">
+         <string>show only selected languages</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="StringListEditor" name="subtitle_languages_editor">
+        <property name="toolTip">
+         <string>The most preferred language first, one per entry, spelled as VLC spells it (English, Romanian). Unknown stands for the tracks whose file names no language. Double-click an entry to edit it.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="subtitles_note_label">
+        <property name="text">
+         <string>V shows the next subtitle track, Alt+V the previous one, Shift+V turns subtitles off and back on. They go through none and the languages above, in that order. A name VLC does not know is dropped.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <spacer name="bottom_spacer">
      <property name="orientation">
       <enum>Qt::Orientation::Vertical</enum>

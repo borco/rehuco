@@ -20,20 +20,18 @@ from rehuco_agent.commands import (
     PLAYER_PREVIOUS,
     PLAYER_SPEED_DOWN,
     PLAYER_SPEED_UP,
+    PLAYER_SUBTITLE_NEXT,
+    PLAYER_SUBTITLE_PREVIOUS,
+    PLAYER_SUBTITLE_TOGGLE,
     PLAYER_TO_END,
     PLAYER_TO_START,
     PLAYER_VOLUME_DOWN,
     PLAYER_VOLUME_UP,
 )
 from rehuco_agent.documents import player_notices
+from rehuco_agent.documents.player_levels import SPEEDS, VOLUME_STEP
 from rehuco_agent.documents.player_notices import AV1_LIBRARIES_HINT, AV1_NOTICE
-from rehuco_agent.documents.player_view import (
-    ERROR_NOTICE,
-    INTERLACED_NOTICE,
-    SPEEDS,
-    VOLUME_STEP,
-    PlayerView,
-)
+from rehuco_agent.documents.player_view import ERROR_NOTICE, INTERLACED_NOTICE, PlayerView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
 from rehuco_core import FFMPEG_LIBRARIES_TOOL, VideoFormat
@@ -60,6 +58,7 @@ from .player_view_support import (  # pylint: disable=unused-import
     sink_of,
     speed_combo_of,
     start_playing,
+    subtitle_combo_of,
 )
 
 # region The keys
@@ -80,6 +79,9 @@ from .player_view_support import (  # pylint: disable=unused-import
         param("volume_down_action", PLAYER_VOLUME_DOWN, id="volume down"),
         param("speed_up_action", PLAYER_SPEED_UP, id="speed up"),
         param("speed_down_action", PLAYER_SPEED_DOWN, id="speed down"),
+        param("subtitle_next_action", PLAYER_SUBTITLE_NEXT, id="next subtitle"),
+        param("subtitle_previous_action", PLAYER_SUBTITLE_PREVIOUS, id="previous subtitle"),
+        param("subtitle_toggle_action", PLAYER_SUBTITLE_TOGGLE, id="subtitles on or off"),
     ],
 )
 def test_every_action_is_on_the_player_with_the_key_of_its_command(
@@ -96,6 +98,38 @@ def test_every_action_is_on_the_player_with_the_key_of_its_command(
 
     assert action in view.actions()
     assert [key.toString() for key in action.shortcuts()] == list(command.default_keys)
+
+
+def test_the_subtitle_keys_are_v_alt_v_and_shift_v() -> None:
+    """**Test steps:**
+
+    * read the default keys of the three commands
+    * verify they are V, Alt+V and Shift+V, and that they are in the player's focus group
+    """
+    assert PLAYER_SUBTITLE_NEXT.default_keys == ("V",)
+    assert PLAYER_SUBTITLE_PREVIOUS.default_keys == ("Alt+V",)
+    assert PLAYER_SUBTITLE_TOGGLE.default_keys == ("Shift+V",)
+    groups = {
+        command.focus_group for command in (PLAYER_SUBTITLE_NEXT, PLAYER_SUBTITLE_PREVIOUS, PLAYER_SUBTITLE_TOGGLE)
+    }
+    assert groups == {PLAYER_PLAY_PAUSE.focus_group}
+
+
+def test_the_subtitle_actions_are_disabled_under_qt(view: PlayerView) -> None:
+    """Qt Multimedia gets no subtitle support (owner, #618).
+
+    **Test steps:**
+
+    * build a player and verify the three subtitle actions are disabled with nothing playing
+    * play a video under Qt and verify they still are
+    """
+    names = ("subtitle_next_action", "subtitle_previous_action", "subtitle_toggle_action")
+    assert [action_of(view, name).isEnabled() for name in names] == [False, False, False]
+
+    start_playing(view)
+
+    assert [action_of(view, name).isEnabled() for name in names] == [False, False, False]
+    assert subtitle_combo_of(view).isHidden()
 
 
 def test_the_new_keys_are_control_home_and_control_end() -> None:

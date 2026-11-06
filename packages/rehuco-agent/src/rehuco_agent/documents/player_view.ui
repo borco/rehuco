@@ -180,15 +180,15 @@
        </widget>
       </item>
       <item>
-       <widget class="QToolButton" name="add_note_button">
+       <widget class="QComboBox" name="subtitle_combo">
         <property name="focusPolicy">
          <enum>Qt::FocusPolicy::NoFocus</enum>
         </property>
-        <property name="toolButtonStyle">
-         <enum>Qt::ToolButtonStyle::ToolButtonTextOnly</enum>
+        <property name="toolTip">
+         <string>Which subtitle is on. V shows the next, Alt+V the previous, Shift+V turns them off or on.</string>
         </property>
-        <property name="autoRaise">
-         <bool>true</bool>
+        <property name="sizeAdjustPolicy">
+         <enum>QComboBox::SizeAdjustPolicy::AdjustToContents</enum>
         </property>
        </widget>
       </item>
@@ -199,6 +199,19 @@
         </property>
         <property name="toolTip">
          <string>Playback speed.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QToolButton" name="add_note_button">
+        <property name="focusPolicy">
+         <enum>Qt::FocusPolicy::NoFocus</enum>
+        </property>
+        <property name="toolButtonStyle">
+         <enum>Qt::ToolButtonStyle::ToolButtonTextOnly</enum>
+        </property>
+        <property name="autoRaise">
+         <bool>true</bool>
         </property>
        </widget>
       </item>
@@ -347,6 +360,21 @@
   <action name="speed_down_action">
    <property name="text">
     <string>Slower</string>
+   </property>
+  </action>
+  <action name="subtitle_next_action">
+   <property name="text">
+    <string>Next subtitle</string>
+   </property>
+  </action>
+  <action name="subtitle_previous_action">
+   <property name="text">
+    <string>Previous subtitle</string>
+   </property>
+  </action>
+  <action name="subtitle_toggle_action">
+   <property name="text">
+    <string>Subtitles on or off</string>
    </property>
   </action>
  </widget>

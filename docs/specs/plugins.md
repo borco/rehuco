@@ -1112,6 +1112,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 - [#521: feat: Tools settings page — optional external tools (ffprobe, VLC, ffmpeg): detect, browse, version gates, install instructions](https://github.com/borco/rehuco/issues/521)
 - [#319: feat: VLC inside the player dock — libvlc as the in-app engine, behind a proxy that works without VLC](https://github.com/borco/rehuco/issues/319)
 - [#580: feat: play videos with an external FFmpeg's libraries — a Playback choice beside Qt's bundled FFmpeg (AV1 in software)](https://github.com/borco/rehuco/issues/580)
+- [#618: feat(agent): VLC subtitle keys: V next track, Alt+V previous track, Shift+V on/off](https://github.com/borco/rehuco/issues/618)
 
 Two players can fill Follow's dock: **libvlc** from the user's own VLC, set up through the Tools page (#521), or
 **Qt Multimedia**, whose FFmpeg backend ships inside PySide6. The spike (#315) measured both on Windows 11 at 125 %
@@ -1219,6 +1220,44 @@ commands in the catalog, armed while focus is anywhere inside the player and now
 Left and Right jump five seconds, Ctrl+Left and Ctrl+Right load the previous and next video, Ctrl+Home plays from the
 start and Ctrl+End goes to the end -- which finishes the video and loads the next -- Up and Down change the volume, and Ctrl+Up and Ctrl+Down, or `]` and `[`, change the speed — and the slider, the combo and the buttons take
 no focus, so an arrow is never theirs.
+
+**Subtitles are libvlc's alone** (#618; Qt gets none, owner). libvlc shows a subtitle file beside the video, blended
+into the frames, and lists its tracks, so no loading code is needed. Three more commands of the player's: `V` shows the
+next track, `Alt+V` the previous one and `Shift+V` turns the subtitles off, or back on. Under Qt the three actions are
+disabled; a video with no track the cycle visits makes them do nothing, as does one loaded and not yet played, whose
+file the player does not hold. **A dropdown on the transport bar, beside the clock, says which subtitle is on and picks
+another** (owner): `Subs: off`, then `Subs: English`, `Subs: Unknown` and so on, with the track's place -- `Subs:
+English 2/3` -- when the video has several of that name. A silent stretch of a video shows no subtitle even with one
+selected, so it is the only sign a key did anything. **It lists every subtitle track the video has**: those the keys
+visit first, in the colour of any other entry, then the others, in the disabled colour. The keys skip those, but the
+reader may pick one with the mouse, and the keys carry on from the start of their cycle afterwards. A pick is a choice
+like a key's, and is remembered the same way -- by language, so a pick the keys would not visit gives way to the cycle's
+first at the next video. The dropdown takes no focus, as the speed combo does, so the keys stay the player's. It is
+VLC's alone, hidden under Qt. libvlc lists a video's tracks only while its file is open, and a video loaded paused has
+its file let go at once, so until the video has played the dropdown is there but disabled, reading `Subs: …`; a video
+libvlc listed nothing for in ten seconds reads `Subs: none`. A focused notes editor takes these keys like the player's
+others ([[plugins#player-maximized]]).
+
+**Which tracks the keys visit** is the *Subtitles* frame of the Videos page
+([[appendices.settings-pages#category-groups]]): a list of languages, the most preferred first, with an *Unknown* entry
+that stands for the tracks whose file names no language (a bare `.vtt`), and a choice between **show only selected
+languages** and **show all languages**. A track's language is the one libvlc prints in its description, `Track 2 -
+[Romanian]` ([[appendices.vlc#subtitles]]); a known language that is not in the list, French say, is not *Unknown*. The
+cycle is *none*, then **every** track of each listed language in libvlc's order, *Unknown* wherever the list puts it;
+with *all languages*, what the list leaves out follows -- *Unknown* if it was not listed, then the other known languages
+-- so no track is out of reach. `V` and `Alt+V` walk the cycle and wrap; `Shift+V` shows the track that was shown last,
+**except** after the cycle reached *none*, which forgets it and sends `Shift+V` to the cycle's first.
+
+**What shows when a video starts** is the rehu's own choice -- on or off, and the language of the track shown, or
+*unknown* -- which rides in the player's entry of the document's layout like the stage's split
+([[plugins#session-restore]]), or, for a rehu where none was made, the page's *Show subtitles when a video starts*. The
+choice is a language, not a track, since a track's id means something only within one video. libvlc's list is empty as a
+video starts and fills in steps over the first tenth of a second, a sidecar's tracks after the video's own
+([[appendices.vlc#subtitles]]), so the engine reads it every quarter second and applies the choice once two reads agree;
+a key pressed before that settles the matter, and a video that lists nothing is given up on after ten seconds. A
+language the video lacks gives the cycle's first track, and a video with no track in the cycle gets none. **A change
+made while paused refreshes the picture** (owner): libvlc draws a subtitle on a paused picture only once the position is
+sought again, so the engine seeks to where it is and the frame that answers replaces the still.
 
 **The playlist is the whole tutorial's videos, every folder, in natural path order.** Showing the dock loads the
 video this user watched last (`last_video`, [[field-schema#watch-progress]]), the first when none was or it is gone,

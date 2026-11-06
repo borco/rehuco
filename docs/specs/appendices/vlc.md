@@ -271,3 +271,29 @@ libvlc 4's. The dock uses memory, so that its picture is an ordinary widget.
   2.9 ms, the whole process **132 % of one core against 74 %** (about 11 % of the machine against 6 %).
 - **What it changes for the player**: no native window, so any widget can be drawn over the picture; the still of a
   pause is the last frame, with no snapshot and no `PrintWindow`; and the engine is the same on every OS.
+
+### Subtitles
+
+[[[appendices.vlc#subtitles]]]
+
+Measured with libvlc 3.0.23 over python-vlc, memory rendering, on a 20 s clip with `clip.vtt` and `clip.en.srt`
+beside it (#618).
+
+- **A subtitle file beside the video is found without being asked** (`sub-autodetect-file`), both of the two above, and
+  listed as `Track 1` and `Track 2 - [English]`: the name is libvlc's, never the file's. The first is selected.
+- **The list fills in steps.** `video_get_spu_description()` is empty as `play()` returns, held two of the four
+  tracks 50 ms later in one run of three, and all four by 100 ms (read every 50 ms, with memory rendering as the player
+  uses it); on a cold first start it was once still empty after 2 s. So the player reads it until two reads agree,
+  never once at load, and asks again at each key press. It starts with `(-1, b"Disable")`, which `video_set_spu(-1)`
+  selects; the engine does not rely on it and puts *off* first itself.
+- **A change shows on a playing video and not on a paused one**, but for turning the subtitles off. Waited 3 s, a
+  track switched on over a paused picture changed no pixel; `set_time(get_time())` then changed tens of thousands and
+  left the player paused. A paused change is therefore a seek to the same position, and the frame it brings is the
+  new still.
+- **The language is in the description, as an English name**: `Track 3 - [French]` for `clip.fr.srt`, from the file
+  name; a bare `clip.vtt` is `Track 1`, with none. `media.tracks_get()`, which would give ISO codes, **segfaulted**
+  here, so the description is what the player reads. libvlc's table of language names is not exposed; the Videos page
+  ships its own list of ISO 639-1 names to choose from.
+- **`--sub-language=fr` and `--no-spu` are libvlc's own** way of choosing at start (French was selected; none was), but
+  they apply to the instance, not a rehu, so the player chooses itself once the list is settled
+  ([[plugins#in-app-player]]).

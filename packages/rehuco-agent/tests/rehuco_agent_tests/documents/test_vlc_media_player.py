@@ -98,6 +98,7 @@ class FakeLibvlc:
         self.player: Final = Mock()
         self.player.get_time.return_value = -1
         self.player.is_playing.return_value = False
+        self.player.video_get_spu_description.return_value = []  # libvlc lists none for a while after a start
         self.media: list[Mock] = []
         self.player.video_get_size.return_value = VISIBLE
         self.callbacks: dict[int, tuple[Callable[..., None], int]] = {}
