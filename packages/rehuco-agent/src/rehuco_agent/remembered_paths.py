@@ -54,6 +54,9 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
     rehuco_arrived: Signal = Signal(object)
     """The remote ``.rehuco`` to reopen is there; open it, unless the user has opened another meanwhile."""
 
+    preview_arrived: Signal = Signal(object)
+    """The last session's preview is there, with its entry: restore it as a document that arrived late is."""
+
     layout_due: Signal = Signal()
     """Every remote document that was awaited has answered and at least one arrived: re-apply the documents' saved
     layout, once."""
@@ -79,6 +82,7 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
             *rehuco.recent.paths,
             *([rehuco.current_path] if rehuco.current_path is not None else []),
             *(path for path, item in session.items.items() if item.open),
+            *([session.preview.path] if session.preview is not None else []),
         ]
         self.__presence: Final = StartupPresence(remembered, self)
         self.__presence.answered.connect(self.__on_answered)
@@ -94,7 +98,7 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
         is kept open for the next run rather than lost.
 
         :param restore: the Session page's choices.
-        :returns: the paths to hand to :meth:`DocumentsDock.restore_session`.
+        :returns: the paths to hand to :meth:`DocumentsDock.restore_session`, the preview's among them when it is one.
         """
         now: set[Path] = set()
         for path, item in self.__session.items.items():
@@ -111,7 +115,35 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
                     # a gone one was forgotten at construction, so what is left is one the operating system gave no
                     # verdict on (a permission error): not restored, not lost
                     self.__kept_open.add(path)
+        preview = self.__session.preview
+        if preview is not None and self.__note_preview(preview.path, restore):
+            now.add(preview.path)
         return now
+
+    def __note_preview(self, path: Path, restore: SessionRestoreSettings) -> bool:
+        """Say whether the session's preview is restored with the window, and note it as awaited or kept otherwise, as
+        :meth:`documents_to_restore_now` does a document.
+
+        :param path: the document the preview showed.
+        :param restore: the Session page's choices.
+        :returns: whether it is to be restored now.
+        """
+        if self.__presence.is_remote(path):
+            if restore.restore_remote_documents:
+                self.__kept_open.add(path)
+                self.__awaiting.add(path)
+            return False
+        if not restore.restore_local_documents:
+            return False
+        if self.__presence.local_presence(path) is Presence.PRESENT:
+            return True
+        self.__kept_open.add(path)
+        return False
+
+    @property
+    def settling(self) -> bool:
+        """Whether the start is recent enough for a late arrival to take focus and layout."""
+        return self.__settling()
 
     @property
     def still_open(self) -> frozenset[Path]:
@@ -164,6 +196,7 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
         self.__recent_files.forget(path)
         self.__rehuco.forget(path)
         self.__session.forget(path)
+        self.__session.forget_preview(path)
         self.__kept_open.discard(path)
         self.__awaiting.discard(path)
         if self.__deferred_rehuco == path:
@@ -193,9 +226,12 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
             if path in self.__awaiting and path in self.__kept_open:
                 self.__kept_open.discard(path)
                 self.__late_added = True
-                self.document_arrived.emit(
-                    path, self.__session.items[path], path == self.__session.focused_path and self.__settling()
-                )
+                preview = self.__session.preview
+                if preview is not None and preview.path == path:
+                    self.preview_arrived.emit(preview)
+                item = self.__session.items.get(path)
+                if item is not None and item.open:
+                    self.document_arrived.emit(path, item, path == self.__session.focused_path and self.__settling())
         self.__awaiting.discard(path)
         if not self.__awaiting and self.__late_added:
             self.__late_added = False

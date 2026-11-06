@@ -44,6 +44,8 @@ class VideoNotesEdit(QObject):  # pylint: disable=too-many-instance-attributes
         self.__searching = False
         self.__pending_note: float | None = None
         """The time of a bookmark asked for while the search was out, added once it answers."""
+        self.__restored_key: str | None = None
+        """The video a session restored the notes of, until the player has loaded its own (:meth:`follow_player`)."""
         self.__video_edit: Final = self.__make_editor(parent)
         self.__tutorial_edit: Final = self.__make_editor(parent)
         model.notes_changed.connect(self.__on_notes_changed)
@@ -128,6 +130,7 @@ class VideoNotesEdit(QObject):  # pylint: disable=too-many-instance-attributes
         :param key: the video's content key, or ``None`` for none -- the tutorial's notes alone are shown.
         """
         self.flush()
+        self.__restored_key = None
         self.__key = key
         self.__pending_note = None
         # set before the search is asked for: a search that answers at once answers through __on_search_finished
@@ -136,6 +139,23 @@ class VideoNotesEdit(QObject):  # pylint: disable=too-many-instance-attributes
             self.__searching = False
         self.__refresh()
         self.changed.emit()
+
+    def restore_video(self, key: str) -> None:
+        """Show the notes of the video shown when the session ended ([[plugins#session-restore]]), which the player
+        loading its own video next does not take away: a note picked from the tree need not be the player's video.
+
+        :param key: the video's content key.
+        """
+        self.set_video(key)
+        self.__restored_key = key
+
+    def follow_player(self, key: str | None) -> None:
+        """Show the notes of the video the player has just selected -- once a session's note is shown, not over it.
+
+        :param key: the video's content key, or ``None`` when the player has let go of its video.
+        """
+        restored = self.__restored_key
+        self.set_video(restored if restored is not None and key is not None else key)
 
     def add_note(self, key: str, seconds: float) -> None:
         """Add a bookmark to a video's notes at a time, among its other bookmarks in time order.

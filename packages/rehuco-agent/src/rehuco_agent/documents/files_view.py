@@ -48,13 +48,14 @@ rename or a delete of the resource's own files fail -- the app would be locking 
 """
 
 from collections.abc import Callable
-from pathlib import Path
-from typing import Final, override
+from pathlib import Path, PurePosixPath
+from typing import Any, Final, cast, override
 
+import cbor2
 from borco_pyside.core import ConnectionList
 from borco_pyside.file_browser import reveal_in_file_browser
 from borco_pyside.theming import ActionIconThemeHandler
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt, QUrl, Signal
+from PySide6.QtCore import QByteArray, QModelIndex, QPersistentModelIndex, QPoint, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices, QShowEvent
 from PySide6.QtWidgets import QHeaderView, QMenu, QToolBar, QToolButton, QWidget
 from rehuco_core import IMAGE_EXTENSIONS, FileKind, Relocation
@@ -83,6 +84,10 @@ from .files_rows import (
 from .files_view_ui import Ui_FilesView
 from .rehu_document_model import RehuDocumentModel
 from .video_row_actions import VideoRowActions
+
+FOLDER_STATE_KEY: Final = "folder"
+HEADER_STATE_KEY: Final = "header"
+"""The keys of the view's saved state: the folder it browses, relative to the resource's, and the table's header."""
 
 REFRESH_ICON_RESOURCE: Final = ":/icons/refresh.svg"
 HOME_ICON_RESOURCE: Final = ":/icons/file_browser_home.svg"
@@ -191,6 +196,8 @@ class FilesView(QWidget):
         self.__verify: Final = verify
         self.__events: Final = resource_events if resource_events is not None else ResourceEvents(parent=self)
         self.__stale = True
+        self.__restored_folder: Path | None = None
+        """The folder a session asked for, until its read says it is there ([[plugins#session-restore]])."""
         self.__directory: Path | None = None
         """The folder currently browsed, or ``None`` for a document with no folder yet."""
         self.__root: Path | None = None
@@ -308,6 +315,10 @@ class FilesView(QWidget):
 
         :param rows: what the read established.
         """
+        restored, self.__restored_folder = self.__restored_folder, None
+        if restored == rows.directory and not rows.reachable:
+            self.__reset_to_root()
+            return
         self.__directory = rows.directory
         navigated = rows.directory != self.__shown
         self.__shown = rows.directory
@@ -400,6 +411,47 @@ class FilesView(QWidget):
     # endregion
 
     # region Navigating and activating
+
+    def save_state(self) -> bytes:
+        """Encode the folder being browsed, relative to the resource's own, and the table's sort, for the dock's entry
+        in the layout ([[plugins#session-restore]]).
+
+        :returns: the state, restorable by :meth:`restore_state`.
+        """
+        root, directory = self.__root, self.__directory
+        beneath = root is not None and directory is not None and FilesView.__is_beneath(directory, root)
+        folder = cast(Path, directory).relative_to(cast(Path, root)).as_posix() if beneath else "."
+        return cbor2.dumps(
+            {
+                FOLDER_STATE_KEY: folder,
+                HEADER_STATE_KEY: bytes(self.__ui.file_view.horizontalHeader().saveState().data()),
+            }
+        )
+
+    def restore_state(self, state: bytes) -> None:
+        """Restore what :meth:`save_state` encoded. A folder that would leave the resource's is not gone to, and one no
+        longer there goes back to the top once the read says so.
+
+        :param state: the blob; one that cannot be read leaves everything as it is, and each value costs only itself.
+        """
+        try:
+            values: Any = cbor2.loads(state)
+        except cbor2.CBORDecodeError:
+            return
+        if not isinstance(values, dict):
+            return
+        header = values.get(HEADER_STATE_KEY)
+        if isinstance(header, bytes) and self.__ui.file_view.horizontalHeader().restoreState(QByteArray(header)):
+            section = self.__ui.file_view.horizontalHeader()
+            self.__ui.file_view.sortByColumn(section.sortIndicatorSection(), section.sortIndicatorOrder())
+        folder, root = values.get(FOLDER_STATE_KEY), self.__root
+        # a backslash is a separator to a Windows join whatever the posix parts say, so none is let through
+        if not isinstance(folder, str) or root is None or "\\" in folder or ".." in PurePosixPath(folder).parts:
+            return
+        target = root / folder
+        if FilesView.__is_beneath(target, root) and target != self.__directory:
+            self.__restored_folder = target
+            self.__go_to(target)
 
     def __go_to(self, directory: Path | None) -> None:
         """Point the browser at ``directory`` and read it -- the one place the browser moves.

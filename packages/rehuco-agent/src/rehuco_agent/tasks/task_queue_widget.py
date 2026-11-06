@@ -87,6 +87,9 @@ TRY_NOW_TOOLTIP: Final = "Try the selected waiting jobs again now, rather than w
 PENDING_SAVES_STATE_KEY: Final = "pending_saves"
 """The key the queue sub-dock's saved state keeps the Pending Saves toggle under (#497)."""
 
+MAXIMIZED_DOCK_STATE_KEY: Final = "maximized_dock"
+"""The key the saved layout keeps the name of its maximized sub-dock under, beside the tree (#576)."""
+
 TASK_STATE_COLORS: Final[dict[JobState, QColor]] = {
     JobState.QUEUED: QColor(QUEUED_COLOR),
     JobState.WAITING: QColor(QUEUED_COLOR),
@@ -223,8 +226,8 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         QtAdsPinGuard(self.__dock_manager, pins=False)
         # never emptied under a floating window, which QtAds would delete with everything in it (#493)
         QtAdsEmptyingGuard(self.__dock_manager)
-        # the maximize toggle on each sub-dock's tab (#341); kept only so save_state can read
-        # the layout un-maximized
+        # the maximize toggle on each sub-dock's tab (#341); kept so save_state can read the layout un-maximized and
+        # say which dock it was, and restore_state maximize that one again (#576)
         self.__maximize_handler: Final = attach_maximize_handler(self.__dock_manager)
         self.__queue_dock: Final = self.__add_queue_dock()
         self.__log_dock: Final = self.__add_log_dock()
@@ -476,7 +479,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         """
         with self.__maximize_handler.unmaximized():
             layout = QtAdsLayout(self.__dock_manager).save(self.__dock_state)
-        return cbor2.dumps(layout)
+        return cbor2.dumps({**layout, MAXIMIZED_DOCK_STATE_KEY: self.__maximize_handler.maximized_name})
 
     def __dock_state(self, dock: QtAds.CDockWidget) -> bytes | None:
         """What a sub-dock's entry in a saved layout carries.
@@ -502,11 +505,15 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
             values: Any = cbor2.loads(state)
         except cbor2.CBORDecodeError:
             return False
-        return QtAdsLayout(self.__dock_manager, pins=False).restore(
+        restored = QtAdsLayout(self.__dock_manager, pins=False).restore(
             values,
             place_unnamed=self.__place_unnamed_dock,
             restore_dock_state=self.__restore_dock_state,
         )
+        maximized = values.get(MAXIMIZED_DOCK_STATE_KEY) if restored and isinstance(values, dict) else None
+        if isinstance(maximized, str):
+            self.__maximize_handler.maximize_named(maximized)
+        return restored
 
     def __restore_dock_state(self, dock: QtAds.CDockWidget, saved: bytes) -> None:
         """Hand a sub-dock the state its saved entry carries.

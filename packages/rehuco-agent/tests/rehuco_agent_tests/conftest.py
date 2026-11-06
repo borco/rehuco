@@ -38,7 +38,7 @@ from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
-from rehuco_agent.rehuco import browsers_dock
+from rehuco_agent.rehuco import browsers_dock, roots_panel
 from rehuco_agent.run_log import shared_run_log
 from rehuco_agent.scraping.registry import shared_scraper_registry
 from rehuco_agent.scraping.scraper_executor import ScraperExecutor, shared_scraper_executor
@@ -384,6 +384,7 @@ def isolate_catalog_state_store(mocker: MockerFixture) -> MemoryCatalogStateStor
     """
     store = MemoryCatalogStateStore()
     mocker.patch.object(browsers_dock, "CatalogStateStore", return_value=store)
+    mocker.patch.object(roots_panel, "CatalogStateStore", return_value=store)
     return store
 
 

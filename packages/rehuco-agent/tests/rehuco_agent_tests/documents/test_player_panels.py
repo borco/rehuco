@@ -438,15 +438,16 @@ def test_escape_in_the_editor_ends_the_editing_too(stage: Stage, qtbot: QtBot) -
     assert QApplication.focusWidget() is stage.player
 
 
-def test_the_stage_state_carries_the_stages_split_alone_and_an_old_one_is_ignored(stage: Stage) -> None:
+def test_the_stage_state_carries_the_stages_split_and_an_old_one_is_ignored(stage: Stage) -> None:
     """**Test steps:**
 
-    * save the stage's state and verify it names the stage's split alone: the column's divider does not drag
+    * save the stage's state and verify it names the stage's split, not the column's whose divider does not drag, the
+      video and the three panels
     * restore a state in the old shape, one key for a two-part stage, and verify nothing changed
     * restore the saved state into the stage and verify it is read
     """
     saved = stage.player.save_state()
-    assert set(cbor2.loads(saved)) == {"stage_split"}
+    assert set(cbor2.loads(saved)) == {"stage_split", "video", "info", "tree", "notes"}
     splitter = stage.player._PlayerView__ui.stage_splitter  # type: ignore[attr-defined]
     sizes = splitter.sizes()
 

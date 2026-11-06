@@ -21,6 +21,7 @@ from ..dock_maximize import attach_maximize_handler
 from ..fields import FieldsTab
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..resource_events import ResourceEvents
+from ..settings.maximized_view import MaximizedView
 from .checksum_actions import ChecksumActions
 from .conversion_backup_actions import ConversionBackupActions
 from .document_sub_docks import DocumentSubDocks, SubDockHost
@@ -28,7 +29,8 @@ from .pending_saves import PendingSaves
 from .rehu_document_model import RehuDocumentModel
 
 
-class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
+# a facade: its members delegate to the sub-docks, for holders to address the document through this widget unchanged
+class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """One open document's window in the Documents dock: an inline notice strip over a nested dock
     manager holding the document's `DocumentSubDocks`, whose toolbar it carries (#380).
 
@@ -68,6 +70,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     filter_requested: Signal = Signal(str)
     """Re-emits a field's clicked ``filter://`` link (a `FilterRequester`) on up to ``DocumentsDock``, the hop
     :attr:`status_message` makes ([[plugins#filter-urls]])."""
+
+    maximized_restored: Signal = Signal(object)
+    """Relays the overlay of a maximized view a session remembered, just reopened, up to ``DocumentsDock`` (#576)."""
 
     record_activated: Signal = Signal(object)
     """Relays another resource's record, double-clicked in this document's Files sub-dock (#266), up to
@@ -149,6 +154,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         old.filter_requested.disconnect(self.filter_requested)
         old.tools_requested.disconnect(self.tools_requested)
         old.record_activated.disconnect(self.record_activated)
+        old.maximized_restored.disconnect(self.maximized_restored)
         self.removeToolBar(old.toolbar)
         old.teardown()
         self.__sub_docks = self.__build_sub_docks(model)
@@ -172,6 +178,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         sub_docks.filter_requested.connect(self.filter_requested)
         sub_docks.tools_requested.connect(self.tools_requested)
         sub_docks.record_activated.connect(self.record_activated)
+        sub_docks.maximized_restored.connect(self.maximized_restored)
         self.addToolBar(sub_docks.toolbar)
         return sub_docks
 
@@ -256,6 +263,20 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """See :meth:`DocumentSubDocks.take_focus`; called by `DocumentsDock` as this document becomes
         the current one."""
         self.__sub_docks.take_focus()
+
+    def capture_maximized(self) -> MaximizedView | None:
+        """See :meth:`DocumentSubDocks.capture_maximized`.
+
+        :returns: what this document has maximized, put back; ``None`` for nothing.
+        """
+        return self.__sub_docks.capture_maximized()
+
+    def restore_maximized(self, view: MaximizedView) -> None:
+        """See :meth:`DocumentSubDocks.restore_maximized`.
+
+        :param view: the view a session remembers.
+        """
+        self.__sub_docks.restore_maximized(view)
 
     def save_state(self) -> bytes:
         """See :meth:`DocumentSubDocks.save_state`.

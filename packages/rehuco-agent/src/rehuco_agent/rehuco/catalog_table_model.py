@@ -369,6 +369,14 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         entry = self.__rows[row]
         return entry.root_id, entry.record.path
 
+    def rows_of(self, keys: Collection[RowKey]) -> list[int]:
+        """Which rows hold the given resources; one no row holds is left out.
+
+        :param keys: the resources, as :meth:`row_key` names them.
+        :returns: their rows, in row order.
+        """
+        return [row for row, entry in enumerate(self.__rows) if (entry.root_id, entry.record.path) in keys]
+
     def authors_of(self, row: int) -> tuple[str, ...]:
         """The individual authors of a row's record, in the record's order.
 

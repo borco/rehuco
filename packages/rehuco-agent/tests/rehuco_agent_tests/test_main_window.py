@@ -75,6 +75,7 @@ from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import PREVIEWS_VISIBLE_KEY, shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import WINDOW_VERSION, MainWindowSettings, main_window_state_path
+from rehuco_agent.settings.maximized_view import PLAYER_KIND, MaximizedView
 from rehuco_agent.settings.persistent_settings import folders
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.rehuco_settings import RehucoSettings
@@ -2840,6 +2841,7 @@ def test_close_event_snapshots_open_documents_into_the_session(mocker: MockerFix
     widget = mocker.MagicMock()
     widget.model = mocker.MagicMock(path=path, dirty=False)
     widget.save_state.return_value = b"snapshot"
+    widget.capture_maximized.return_value = None
     mocker.patch.object(
         window._MainWindow__documents_dock,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
         "open_document_widgets",
@@ -3863,6 +3865,7 @@ def test_docks_menu_lists_open_documents_alphabetically_by_title(
     ]
     for widget in widgets:
         widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+        widget.capture_maximized.return_value = None
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_widgets", return_value=widgets)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     window._MainWindow__add_open_documents(window._MainWindow__ui.file_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -3907,6 +3910,7 @@ def test_docks_menu_repopulates_on_every_show(
     menu = window._MainWindow__ui.file_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     first_widget = mocker.MagicMock(model=mocker.MagicMock(label="First", path=Path("/first/info.rehu"), dirty=False))
     first_widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    first_widget.capture_maximized.return_value = None
     mocker.patch.object(
         window._MainWindow__documents_dock,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
         "open_document_widgets",
@@ -3919,6 +3923,7 @@ def test_docks_menu_repopulates_on_every_show(
         model=mocker.MagicMock(label="Second", path=Path("/second/info.rehu"), dirty=False)
     )
     second_widget.save_state.return_value = b"snapshot"
+    second_widget.capture_maximized.return_value = None
     mocker.patch.object(
         window._MainWindow__documents_dock,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
         "open_document_widgets",
@@ -3943,6 +3948,7 @@ def test_docks_menu_entry_triggering_focuses_that_document(
     qtbot.addWidget(window)
     widget = mocker.MagicMock(model=mocker.MagicMock(label="Solo", path=Path("/solo/info.rehu"), dirty=False))
     widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    widget.capture_maximized.return_value = None
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch.object(documents_dock, "open_document_widgets", return_value=[widget])
     focus_document = mocker.patch.object(documents_dock, "focus_document")
@@ -3975,6 +3981,7 @@ def test_docks_menu_marks_the_focused_documents_entry_with_a_checkmark(
     other_widget = mocker.MagicMock(model=mocker.MagicMock(label="Other", path=Path("/other/info.rehu"), dirty=False))
     for widget in (focused_widget, other_widget):
         widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+        widget.capture_maximized.return_value = None
     mocker.patch.object(documents_dock, "open_document_widgets", return_value=[focused_widget, other_widget])
     mocker.patch.object(documents_dock, "focused_document_widget", return_value=focused_widget)
 
@@ -4004,6 +4011,7 @@ def test_docks_menu_marks_a_dirty_documents_entry_with_the_dirty_marker(
     clean_widget = mocker.MagicMock(model=mocker.MagicMock(label="Clean", path=Path("/clean/info.rehu"), dirty=False))
     for widget in (dirty_widget, clean_widget):
         widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+        widget.capture_maximized.return_value = None
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch.object(documents_dock, "open_document_widgets", return_value=[dirty_widget, clean_widget])
 
@@ -4072,6 +4080,7 @@ def test_close_all_action_is_enabled_iff_a_document_is_open(mocker: MockerFixtur
 
     widget = mocker.MagicMock(model=mocker.MagicMock(label="Solo", path=Path("/solo/info.rehu"), dirty=False))
     widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    widget.capture_maximized.return_value = None
     mocker.patch.object(documents_dock, "open_document_widgets", return_value=[widget])
 
     ui.file_menu.aboutToShow.emit()
@@ -4362,6 +4371,7 @@ def test_picking_a_document_from_the_file_menu_reopens_a_closed_documents_dock(
     qtbot.addWidget(window)
     widget = mocker.MagicMock(model=mocker.MagicMock(label="Solo", path=Path("/solo/info.rehu"), dirty=False))
     widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    widget.capture_maximized.return_value = None
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch.object(documents_dock, "open_document_widgets", return_value=[widget])
     focus_document = mocker.patch.object(documents_dock, "focus_document")
@@ -8211,7 +8221,7 @@ def test_a_remote_document_is_not_restored_with_the_window_but_arrives_when_it_a
 
     answer(window, remote, Presence.PRESENT)
 
-    restore_late.assert_called_once_with(remote, session.items[remote], focus=True)
+    restore_late.assert_called_once_with(remote, session.items[remote], focus=True, cover=True)
 
 
 def test_a_late_document_does_not_take_the_focus_from_one_already_focused(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -8235,7 +8245,7 @@ def test_a_late_document_does_not_take_the_focus_from_one_already_focused(mocker
     answer(window, remote, Presence.PRESENT)
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_late.assert_called_once_with(remote, session.items[remote], focus=False)
+    restore_late.assert_called_once_with(remote, session.items[remote], focus=False, cover=False)
 
 
 def test_a_late_document_reveals_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -8288,7 +8298,7 @@ def test_the_saved_layout_is_reapplied_once_the_late_documents_are_in(mocker: Mo
     restore_state.reset_mock()
     answer(window, remote, Presence.PRESENT)
 
-    restore_state.assert_called_once_with(layout)
+    restore_state.assert_called_once_with(layout, "")
 
 
 @mark.usefixtures("clock")
@@ -8353,7 +8363,9 @@ def test_the_saved_layout_is_not_reapplied_over_a_preview(mocker: MockerFixture,
     widget.model.path = Path("previewed-by-the-user.rehu")
     widget.model.dirty = False  # a dirty one would pop the real save dialog when the window closes
     widget.save_state.return_value = b""  # the close saves it into the session
+    widget.capture_maximized.return_value = None
     mocker.patch("rehuco_agent.main_window.DocumentsDock.preview_document_widget", return_value=widget)
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.shows_a_new_preview", return_value=True)
 
     window = MainWindow()
     qtbot.addWidget(window)
@@ -8410,7 +8422,7 @@ def test_a_remote_document_whose_server_never_answers_stays_remembered_as_open(
     window = MainWindow()
     qtbot.addWidget(window)
     answer(window, remote, Presence.OFFLINE)
-    window._MainWindow__save_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__capture_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     restore_late.assert_not_called()
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -8447,7 +8459,7 @@ def test_a_kept_open_document_the_user_opens_and_closes_stays_closed(
     qtbot.addWidget(window)
     answer(window, remote, Presence.OFFLINE)
     getattr(window, route)(remote)
-    window._MainWindow__save_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__capture_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert not session.items[remote].open  # pylint: disable=no-member,useless-suppression  # a dataclass field
@@ -8547,8 +8559,9 @@ def test_a_document_the_user_opened_by_hand_is_not_marked_open_a_second_time(
     widget.model.saved_on_disk = True
     widget.model.dirty = False
     widget.save_state.return_value = b"from-the-dock"
+    widget.capture_maximized.return_value = None
     mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document_widgets", return_value=[widget])
-    window._MainWindow__save_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__capture_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     assert window._MainWindow__session.items[remote].state == b"from-the-dock"  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access,no-member,useless-suppression
 
@@ -8845,7 +8858,7 @@ def test_a_document_open_when_its_file_is_deleted_locks_as_missing_and_stays_in_
 
     path.unlink()
     widget.model.revert()
-    window._MainWindow__save_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__capture_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.MISSING]
     assert documents.has_missing_documents()
@@ -8854,3 +8867,213 @@ def test_a_document_open_when_its_file_is_deleted_locks_as_missing_and_stays_in_
 
 
 # endregion
+
+
+# region Restoring everything (#576)
+
+
+def test_the_session_is_captured_before_the_players_are_stopped(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Stopping a player puts it back in its dock and lets go of its video, so a capture after it would find neither.
+
+    **Test steps:**
+
+    * open a mocked document, and record the order of its capture and of the stop
+    * close the window
+    * verify the capture came first, and that what was captured is what the session holds
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    calls: list[str] = []
+    view = MaximizedView(PLAYER_KIND, "a.mp4", "full_screen")
+    widget = mocker.MagicMock()
+    widget.model = mocker.MagicMock(path=Path("a.rehu").resolve(), dirty=False)
+    widget.save_state.return_value = b"snapshot"
+
+    def capture() -> MaximizedView:
+        """Note the capture.
+
+        :returns: the view the mocked document has maximized.
+        """
+        calls.append("capture")
+        return view
+
+    widget.capture_maximized.side_effect = capture
+    dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(dock, "open_document_widgets", return_value=[widget])
+    mocker.patch.object(dock, "open_document_models", return_value=[widget.model])
+    mocker.patch.object(dock, "stop_playback", side_effect=lambda _timeout: calls.append("stop"))
+
+    window.closeEvent(QCloseEvent())
+
+    assert calls == ["capture", "stop"]
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert session.items[widget.model.path] == DocumentSessionSettings.Item(
+        open=True, state=b"snapshot", maximized=view
+    )
+
+
+def test_what_a_document_has_maximized_is_put_back_before_its_state_is_taken(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The state walk finds a player's stage only back in its dock, and the docks are to be measured under it.
+
+    **Test steps:**
+
+    * open a mocked document, and record the order of its capture and its state
+    * close the window
+    * verify the capture came first
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    widget = mocker.MagicMock()
+    widget.model = mocker.MagicMock(path=Path("a.rehu").resolve(), dirty=False)
+    manager = mocker.MagicMock()
+    manager.attach_mock(widget.capture_maximized, "capture")
+    manager.attach_mock(widget.save_state, "state")
+    widget.capture_maximized.return_value = None
+    widget.save_state.return_value = b""
+    dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(dock, "open_document_widgets", return_value=[widget])
+    mocker.patch.object(dock, "open_document_models", return_value=[widget.model])
+
+    window.closeEvent(QCloseEvent())
+
+    assert [call[0] for call in manager.mock_calls] == ["capture", "state"]
+
+
+def test_the_preview_is_saved_as_its_own_entry_and_out_of_the_items(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The preview joins the session under the name its layout knows it by, and stays out of what ``Open recents`` is.
+
+    **Test steps:**
+
+    * report a preview, clean and on disk, and close the window
+    * verify the session's entry names it, and its items do not
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    path = Path("previewed.rehu").resolve()
+    widget = mocker.MagicMock()
+    widget.model = mocker.MagicMock(path=path, dirty=False, saved_on_disk=True)
+    widget.save_state.return_value = b"layout"
+    widget.capture_maximized.return_value = None
+    dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(dock, "preview_document_widget", return_value=widget)
+    mocker.patch.object(dock, "open_document_widgets", return_value=[widget])
+    mocker.patch.object(dock, "open_document_models", return_value=[widget.model])
+    mocker.patch.object(dock, "preview_dock_name", return_value="Preview-3")
+
+    window.closeEvent(QCloseEvent())
+
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert session.preview == DocumentSessionSettings.Preview(
+        path, "Preview-3", DocumentSessionSettings.Item(open=True, state=b"layout")
+    )
+    assert path not in session.items
+
+
+def test_a_preview_still_waiting_for_its_device_stays_in_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Like a document on a server that is off, a preview that never arrived is not forgotten by quitting.
+
+    **Test steps:**
+
+    * seed a preview on a share that does not answer, and close the window
+    * verify the entry is still there
+    """
+    remote = Path("/remote-share/pack/info.rehu")
+    treat_as_remote(mocker, remote)
+    preview = DocumentSessionSettings.Preview(remote, "Preview-1", DocumentSessionSettings.Item(open=True))
+
+    def load(self: DocumentSessionSettings) -> None:
+        """Answer with the preview.
+
+        :param self: the session.
+        """
+        self.preview = preview
+
+    mocker.patch.object(DocumentSessionSettings, "load", load)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.closeEvent(QCloseEvent())
+
+    assert window._MainWindow__session.preview == preview  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_a_preview_the_reader_closed_is_not_brought_back(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * leave an entry in the session of a preview that has arrived and is gone since, and close the window with none
+    * verify the entry is gone
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    session.preview = DocumentSessionSettings.Preview(
+        Path("closed.rehu").resolve(), "Preview-1", DocumentSessionSettings.Item(open=True)
+    )
+    del mocker
+
+    window.closeEvent(QCloseEvent())
+
+    assert session.preview is None
+
+
+def test_the_maximized_outer_dock_comes_back(qtbot: QtBot) -> None:
+    """The dock filling the window is named beside the outer layout, and fills a window restored from them.
+
+    **Test steps:**
+
+    * maximize an outer dock on a shown window, and close it
+    * build another window, verify the name reads as saved, and show it
+    * verify that dock fills it
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    handler = window._MainWindow__maximize_handler  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock = window._MainWindow__log_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock.toggleView(True)
+    handler.maximize(dock)
+    name = dock.objectName()
+    window._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window.hide()
+
+    restored = MainWindow()
+    qtbot.addWidget(restored)
+    restored_handler = restored._MainWindow__maximize_handler  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert restored_handler.maximized_name == name
+
+    restored.show()
+
+    qtbot.waitUntil(lambda: restored_handler.maximized_dock is not None, timeout=10_000)
+    assert restored_handler.maximized_dock.objectName() == name
+
+
+# endregion
+
+
+def test_a_preview_arriving_late_is_restored_late(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * seed a preview on a share, construct ``MainWindow`` and deliver the answer that it is there
+    * verify it was handed on, free to cover what is on screen: the start is settling and no document was focused
+    """
+    remote = Path("/remote-share/pack/info.rehu")
+    treat_as_remote(mocker, remote)
+    preview = DocumentSessionSettings.Preview(remote, "Preview-1", DocumentSessionSettings.Item(open=True))
+
+    def load(self: DocumentSessionSettings) -> None:
+        """Answer with the preview.
+
+        :param self: the session.
+        """
+        self.preview = preview
+
+    mocker.patch.object(DocumentSessionSettings, "load", load)
+    restore = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late_preview")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    answer(window, remote, Presence.PRESENT)
+
+    restore.assert_called_once_with(preview, cover=True)

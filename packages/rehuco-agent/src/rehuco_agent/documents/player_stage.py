@@ -17,6 +17,12 @@ from .player_playlist import PlayerPlaylist
 from .player_view_ui import Ui_PlayerView
 from .rehu_document_model import RehuDocumentModel
 
+VIDEO_STATE_KEY: Final = "video"
+INFO_STATE_KEY: Final = "info"
+TREE_STATE_KEY: Final = "tree"
+NOTES_STATE_KEY: Final = "notes"
+"""The rest of the player's entry: the video it is on, and which of the panels beside the picture show (#576)."""
+
 STAGE_STATE_KEY: Final = "stage_split"
 """Where the split of the tree, the picture and the right column is kept in the player's entry of the document's layout.
 It was ``stage`` while the splitter held two children; that entry is ignored. The right column's own divider does not
@@ -255,22 +261,47 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
 
     # endregion
 
-    def save_state(self) -> bytes:
-        """Encode where the stage splits between the picture and the panels beside it.
+    def save_state(self, video: str | None) -> bytes:
+        """Encode where the stage splits between the picture and the panels beside it, which of them show, and the
+        video the player is on.
 
+        :param video: the video's content key, or ``None`` for none.
         :returns: the state, restorable by :meth:`restore_state`.
         """
-        return cbor2.dumps({STAGE_STATE_KEY: bytes(self.__ui.stage_splitter.saveState().data())})
+        ui = self.__ui
+        return cbor2.dumps(
+            {
+                STAGE_STATE_KEY: bytes(ui.stage_splitter.saveState().data()),
+                VIDEO_STATE_KEY: video,
+                INFO_STATE_KEY: ui.info_action.isChecked(),
+                TREE_STATE_KEY: ui.tree_action.isChecked(),
+                NOTES_STATE_KEY: ui.notes_action.isChecked(),
+            }
+        )
 
-    def restore_state(self, state: bytes) -> None:
-        """Restore the split :meth:`save_state` encoded.
+    def restore_state(self, state: bytes) -> str | None:
+        """Restore what :meth:`save_state` encoded: the panels first, since a splitter gives sizes only to what shows.
 
-        :param state: the blob; one that cannot be read, or holds no split, leaves the split as it is.
+        :param state: the blob; one that cannot be read leaves everything as it is, and each value costs only itself.
+        :returns: the video the player was on, or ``None`` for none.
         """
         try:
             loaded = cbor2.loads(state)
         except cbor2.CBORDecodeError:
-            return
-        stage = loaded.get(STAGE_STATE_KEY) if isinstance(loaded, dict) else None
+            return None
+        if not isinstance(loaded, dict):
+            return None
+        ui = self.__ui
+        for key, action in (
+            (INFO_STATE_KEY, ui.info_action),
+            (TREE_STATE_KEY, ui.tree_action),
+            (NOTES_STATE_KEY, ui.notes_action),
+        ):
+            shown = loaded.get(key)
+            if isinstance(shown, bool):
+                action.setChecked(shown)
+        stage = loaded.get(STAGE_STATE_KEY)
         if isinstance(stage, bytes):
-            self.__ui.stage_splitter.restoreState(QByteArray(stage))
+            ui.stage_splitter.restoreState(QByteArray(stage))
+        video = loaded.get(VIDEO_STATE_KEY)
+        return video if isinstance(video, str) and video else None

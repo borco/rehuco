@@ -19,6 +19,7 @@ WINDOW_VERSION: Final = 1
 GEOMETRY_KEY: Final = "geometry"
 OUTER_LAYOUT_KEY: Final = "outer_layout"
 TOOLBARS_STATE_KEY: Final = "toolbars_state"
+MAXIMIZED_DOCK_KEY: Final = "maximized_dock"
 
 
 def main_window_state_path() -> Path:
@@ -54,6 +55,10 @@ class MainWindowSettings:
     layout, distinct from :attr:`outer_layout` (QtAds' own docks). Empty before any session
     has been saved."""
 
+    maximized_dock: str = field(default="")
+    """The object name of the outer dock filling the window, kept beside :attr:`outer_layout` because a layout is always
+    captured unmaximized ([[appendices.qt-ads#area-maximize]], #576); empty for none."""
+
     def load(self, path: Path | None = None) -> None:
         """Replace the current geometry, outer dock state, and toolbar state with what is in the state file.
 
@@ -73,6 +78,7 @@ class MainWindowSettings:
             GEOMETRY_KEY: state_file.encode_bytes(self.geometry),
             OUTER_LAYOUT_KEY: self.outer_layout,
             TOOLBARS_STATE_KEY: state_file.encode_bytes(self.toolbars_state),
+            MAXIMIZED_DOCK_KEY: self.maximized_dock,
         }
         state_file.write_state_file(path, WINDOW_VERSION, values)
 
@@ -85,3 +91,5 @@ class MainWindowSettings:
         outer_layout = values.get(OUTER_LAYOUT_KEY)
         self.outer_layout = outer_layout if isinstance(outer_layout, dict) else None
         self.toolbars_state = state_file.decode_bytes(values.get(TOOLBARS_STATE_KEY))
+        maximized_dock = values.get(MAXIMIZED_DOCK_KEY)
+        self.maximized_dock = maximized_dock if isinstance(maximized_dock, str) else ""

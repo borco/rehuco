@@ -2590,7 +2590,7 @@ def test_closing_a_never_viewed_dock_retires_its_pending_load(mocker: MockerFixt
     dock.close_all()
 
     assert not dock.open_document_widgets()
-    assert not dock._DocumentsDock__pending_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert not dock._DocumentsDock__pending  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def test_restore_session_reads_the_focused_documents_file_immediately(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2719,7 +2719,7 @@ def test_restore_session_restores_the_outer_dock_layout(mocker: MockerFixture, q
 
     dock.restore_session(session)
 
-    restore_state.assert_called_once_with(layout)
+    restore_state.assert_called_once_with(layout, "")
 
 
 # endregion

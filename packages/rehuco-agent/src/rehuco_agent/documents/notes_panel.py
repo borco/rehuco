@@ -2,8 +2,9 @@
 ([[plugins#video-notes-dock]], #573, #575)."""
 
 import logging
-from typing import Final, override
+from typing import Any, Final, override
 
+import cbor2
 from PySide6.QtCore import QByteArray, QEvent, QObject, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import QStackedWidget, QWidget
@@ -19,6 +20,11 @@ from .rehu_document_model import RehuDocumentModel
 from .video_notes_edit import VideoNotesEdit
 
 LOG: Final = logging.getLogger(__name__)
+
+SPLIT_STATE_KEY: Final = "split"
+VIDEO_STATE_KEY: Final = "video"
+EDITING_STATE_KEY: Final = "editing"
+"""The keys of a panel's saved state: where its two parts split, the video it shows the notes of, and its editing."""
 
 
 class NotesPanel(QWidget):
@@ -117,6 +123,13 @@ class NotesPanel(QWidget):
         """
         self.__notes.set_video(key)
 
+    def follow_player(self, key: str | None) -> None:
+        """Show the notes of the video the player selected. See :meth:`VideoNotesEdit.follow_player`.
+
+        :param key: the video's content key, or ``None`` for none.
+        """
+        self.__notes.follow_player(key)
+
     def add_note(self, key: str, seconds: float) -> None:
         """Add a bookmark to a video's notes at a time, among its other bookmarks in time order.
 
@@ -130,18 +143,40 @@ class NotesPanel(QWidget):
         self.__notes.flush()
 
     def save_state(self) -> bytes:
-        """Encode where the two parts split, for the dock's entry in the layout.
+        """Encode where the two parts split, the note shown and whether it is being edited, for the dock's entry in the
+        layout.
 
-        :returns: the splitter's state, restorable by :meth:`restore_state`.
+        :returns: the state, restorable by :meth:`restore_state`.
         """
-        return bytes(self.__ui.splitter.saveState().data())
+        return cbor2.dumps(
+            {
+                SPLIT_STATE_KEY: bytes(self.__ui.splitter.saveState().data()),
+                VIDEO_STATE_KEY: self.__notes.key,
+                EDITING_STATE_KEY: self.__editing,
+            }
+        )
 
     def restore_state(self, state: bytes) -> None:
-        """Restore the split :meth:`save_state` encoded.
+        """Restore what :meth:`save_state` encoded. The keyboard stays where it is: a restored editor is not one the
+        reader just asked for.
 
-        :param state: the blob; one Qt does not recognise leaves the split as it is.
+        :param state: the blob; one that cannot be read leaves everything as it is, and each value costs only itself.
         """
-        self.__ui.splitter.restoreState(QByteArray(state))
+        try:
+            values: Any = cbor2.loads(state)
+        except cbor2.CBORDecodeError:
+            return
+        if not isinstance(values, dict):
+            return
+        split = values.get(SPLIT_STATE_KEY)
+        if isinstance(split, bytes):
+            self.__ui.splitter.restoreState(QByteArray(split))
+        video = values.get(VIDEO_STATE_KEY)
+        if isinstance(video, str) and video:
+            self.__notes.restore_video(video)
+        editing = values.get(EDITING_STATE_KEY)
+        if isinstance(editing, bool):
+            self.set_editing(editing)
 
     @override
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802  (Qt API name)

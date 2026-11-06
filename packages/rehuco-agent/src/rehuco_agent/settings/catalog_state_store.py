@@ -59,6 +59,10 @@ class BrowserState:
     columns: bytes = b""
     """The table header's saved state -- column widths, order, visibility and sort."""
 
+    selection: tuple[tuple[UUID, str], ...] = ()
+    """The selected rows' ``(root_id, relative)`` keys, re-selected once the rows load ([[plugins#session-restore]],
+    #576)."""
+
     def to_bytes(self) -> bytes:
         """This browser as its layout entry stores it.
 
@@ -70,6 +74,7 @@ class BrowserState:
             "name": self.name,
             "filter": self.filter,
             "columns": encode_bytes(self.columns),
+            "selection": [[str(root_id), relative] for root_id, relative in self.selection],
         }
         return json.dumps(values).encode("utf-8")
 
@@ -93,7 +98,24 @@ class BrowserState:
         kind, name, filter_text = entry.get("kind"), entry.get("name"), entry.get("filter", "")
         if not isinstance(kind, str) or not isinstance(name, str) or not isinstance(filter_text, str):
             return None
-        return cls(browser_id, kind, name, filter_text, decode_bytes(entry.get("columns")))
+        selection = cls.__read_selection(entry.get("selection"))
+        return cls(browser_id, kind, name, filter_text, decode_bytes(entry.get("columns")), selection)
+
+    @staticmethod
+    def __read_selection(entries: object) -> tuple[tuple[UUID, str], ...]:
+        """Read the selected rows' keys, skipping an entry that is not one.
+
+        :param entries: what the file holds under ``selection``.
+        :returns: the keys.
+        """
+        keys: list[tuple[UUID, str]] = []
+        for entry in entries if isinstance(entries, list) else []:
+            if isinstance(entry, list) and len(entry) == 2 and isinstance(entry[1], str):
+                try:
+                    keys.append((UUID(str(entry[0])), entry[1]))
+                except ValueError:
+                    continue
+        return tuple(keys)
 
 
 @dataclass
@@ -103,6 +125,14 @@ class CatalogState:
     layout: dict[str, Any] | None = None
     """The Browsers dock's nested layout (`~borco_pyside.qtads.QtAdsLayout`), each browser's
     :class:`BrowserState` in its sub-dock's entry; ``None`` to open one default browser."""
+
+    maximized_dock: str = ""
+    """The object name of the browser's sub-dock filling the dock, kept beside :attr:`layout` because a layout is always
+    captured unmaximized ([[appendices.qt-ads#area-maximize]], #576); empty for none."""
+
+    roots_current: tuple[UUID, tuple[str, ...]] | None = None
+    """The Root Catalog's current row: its root and the names down from it, walked again as the listings arrive
+    ([[plugins#session-restore]], #576)."""
 
 
 class CatalogStateStore:
@@ -127,8 +157,50 @@ class CatalogStateStore:
             LOG.warning("The saved state %s is not in a shape this build reads; it is ignored.", path)
             UNREAD.add(path)
             return CatalogState()
-        layout = values.get("layout")
-        return CatalogState(layout if isinstance(layout, dict) else None)
+        layout, maximized_dock = values.get("layout"), values.get("maximized_dock")
+        return CatalogState(
+            layout if isinstance(layout, dict) else None,
+            maximized_dock if isinstance(maximized_dock, str) else "",
+            self.__read_roots_current(values.get("roots_current")),
+        )
+
+    def save_browsers(self, rehuco_id: UUID, layout: dict[str, Any] | None, maximized_dock: str) -> None:
+        """Write the Browsers dock's half of ``rehuco_id``'s state, keeping the Root Catalog's.
+
+        :param rehuco_id: the catalog's id.
+        :param layout: the dock's nested layout.
+        :param maximized_dock: the object name of the sub-dock filling it, or empty.
+        """
+        state = self.load(rehuco_id)
+        state.layout, state.maximized_dock = layout, maximized_dock
+        self.save(rehuco_id, state)
+
+    def save_roots_current(self, rehuco_id: UUID, current: tuple[UUID, tuple[str, ...]] | None) -> None:
+        """Write the Root Catalog's half of ``rehuco_id``'s state, keeping the Browsers dock's.
+
+        :param rehuco_id: the catalog's id.
+        :param current: its current row's root and the names down from it, or ``None``.
+        """
+        state = self.load(rehuco_id)
+        state.roots_current = current
+        self.save(rehuco_id, state)
+
+    @staticmethod
+    def __read_roots_current(entry: object) -> tuple[UUID, tuple[str, ...]] | None:
+        """Read the Root Catalog's current row, if ``entry`` is one.
+
+        :param entry: what the file holds under ``roots_current``.
+        :returns: its root and the names down from it, or ``None``.
+        """
+        if not isinstance(entry, dict):
+            return None
+        names = entry.get("path")
+        if not isinstance(names, list) or not all(isinstance(name, str) and name for name in names):
+            return None
+        try:
+            return UUID(str(entry.get("root"))), tuple(names)
+        except ValueError:
+            return None
 
     def save(self, rehuco_id: UUID, state: CatalogState) -> None:
         """Write ``rehuco_id``'s state.
@@ -137,7 +209,13 @@ class CatalogStateStore:
         :param state: what to remember.
         """
         path = catalog_state_path(rehuco_id)
-        payload = {"version": CATALOG_STATE_VERSION, "layout": state.layout}
+        current = state.roots_current
+        payload = {
+            "version": CATALOG_STATE_VERSION,
+            "layout": state.layout,
+            "maximized_dock": state.maximized_dock,
+            "roots_current": None if current is None else {"root": str(current[0]), "path": list(current[1])},
+        }
         try:
             # the folder does not exist until something is first written to it
             path.parent.mkdir(parents=True, exist_ok=True)

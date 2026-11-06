@@ -317,8 +317,8 @@ a double-click on its title, or by being asked for another `.rehu` while it has 
 asked, and the other `.rehu` goes to a new preview. An edit alone does not promote, nor a saved one. Its title is the
 document's label in italic; its object name is `Preview-<n>`, numbered per preview because a promoted dock keeps the
 manager registry entry it was added under ([[appendices.qt-ads#dock-registry-keys]]). It is in `Open recents` only
-once promoted, and it is **restored** with the session as its own entry ([[plugins#session-restore]], #576) — it was
-transient until then. Each type's preview remembers **its own layout** under
+once promoted, and it is **restored** with the session as its own entry ([[plugins#session-restore]], #576). Each type's
+preview remembers **its own layout** under
 `preview_layout/<type>`, captured whenever the preview stops showing that type (a switch, a promotion, its close, app
 exit) and written at exit; a type with none opens with its default layout. That layout is implicit: the Layout button
 in a preview acts on the type's default layout, as in any document dock.
@@ -424,28 +424,48 @@ table over it (#245).
 
 [[[plugins#session-restore]]]
 
-- [#576: feat(agent): restore everything — the Documents preview, each browser's current row, the Root Catalog's current folder, every maximized dock, every maximized screenshot or video](https://github.com/borco/rehuco/issues/576)
+- [#576: feat(agent): restore everything — the Documents preview, each browser's selection, the Root Catalog's current row, every maximized dock, every maximized screenshot or video, what a tutorial and a folder show](https://github.com/borco/rehuco/issues/576)
 
 **Quitting and restarting brings the app back as it was closed.** The open documents and their layouts have been
-restored since #21; what was still lost at every start is restored too:
+restored since #21; what was still lost at every start is restored too. **What is restored waits for what it needs, and
+is not lost while it waits**: anything not applied yet is saved again unchanged if the app quits first, so a document
+never viewed, a catalog on a server that is off or a root that did not answer costs nothing.
 
-- **The preview** ([[plugins#dock-shell]]) joins the session as its own entry — path, type, layout — rebuilt at
-  startup as a pending placeholder like every other document, read when its tab first reaches the screen. It is still
-  not in `Open recents`.
-- **Each browser's current row** and **the Root Catalog's current folder and expanded roots** are remembered with the
-  catalog's other per-machine state ([[plugins#browsers]]) and re-selected once their rows and listings load. The
-  selection-follow into the preview is off while that happens, so a restored row does not retarget the preview the
-  session restores alongside it.
+- **The preview** ([[plugins#dock-shell]]) joins the session as its own entry — path, layout and the dock's name, which
+  the saved layout knows it by — rebuilt at startup as a pending placeholder like every other document, read when its
+  tab first reaches the screen. It is still not in `Open recents`. It is what brings the *current* record back, with its
+  layout and its maximized view: a preview closed stays closed.
+- **Each browser's selection** and **the Root Catalog's current row** are remembered with the catalog's other
+  per-machine state ([[plugins#browsers]]). A browser selects its rows again at its first read of every row. The Roots
+  view walks back down its one path as each folder is listed, which `QColumnView` has only one of; a root that is
+  offline ends the walk on the root's row, and the path is kept for when it answers. Neither moves the preview, which
+  the session restores on its own, and the reader selecting anything overtakes both.
 - **Maximized views**, and there can be several at once — one per document, since each lightbox and each maximized
   player ([[plugins#player-maximized]]) belongs to its document. A document's entry records the kind, the image or
-  video key, the surface it was opened on and, for a lightbox, whether its info and its strip were shown. It is
-  restored once the document's deferred first read has loaded it, against the set as it is now — a key no longer in
-  the set restores nothing. Several documents' app-window or full-screen views stack in session order, the focused
-  document's on top.
+  video key, the surface it was opened on and, for a lightbox, the set it navigated — the curated strip, a folder from
+  the Files sub-dock, the content images or the images editor, which comes back curating — and whether its info and its
+  strip were shown. It is restored once the document's deferred first read has loaded it and its set has arrived,
+  against the set as it is then — a key no longer in the set restores nothing. A video comes back paused where it was
+  left, never playing.
+- **Which document is read when.** A view over the document alone waits for its tab. An app-window or full-screen one
+  shows whichever tab is in front, so a local document with one is read at start, and they stack in session order, the
+  focused document's on top, whatever order their reads answer in. A document on a share that arrives late opens such a
+  view only while the start is settling and the reader has not focused another document; otherwise it waits for its tab,
+  so it never covers what they are working on.
 - **A maximized dock.** Layouts are captured unmaximized, since a capture taken while maximized is poisoned
-  ([[appendices.qt-ads#area-maximize]]); the maximized dock's name is therefore saved **beside** the layout at each of
-  the three managers — a document's sub-docks, the documents area, the main window — and re-applied after the layout
-  restores.
+  ([[appendices.qt-ads#area-maximize]]); the maximized dock's name is therefore saved **beside** the layout at each
+  manager — a document's sub-docks, the documents area, the main window, the Browsers dock, the Tasks dock — and
+  re-applied after the layout restores, once the manager is on screen and has laid out.
+- **What a tutorial shows.** The player's video and which of its `I`, `T` and `N` panels show
+  ([[plugins#player-maximized]]); each tree's selected row, a video, a folder or a note line, and the rows closed; each
+  notes panel's note and whether it edits, which the player loading its own video does not take away, and which leaves
+  the keyboard where it is.
+- **The Files sub-dock's folder**, and the sort of the Files and Checksums tables. Their columns are sized by their
+  contents, so a sort is all a table has to remember; a folder gone since goes back to the top.
+
+**Quitting captures first.** Each document's maximized view is recorded and put back before its state is taken: a player
+lifted onto a surface has left its dock, whose state walk would miss what its stage holds, and the docks are to be
+measured as they are under it. This happens before the players stop, which is what lets go of a video.
 
 Every addition keeps the state files' lenient read ([[appendices.settings-pages#state-files]]): a field that is
 missing or malformed costs only itself, so a session written by an older build restores as it did.

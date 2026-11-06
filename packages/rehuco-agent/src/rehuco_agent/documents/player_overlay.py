@@ -86,13 +86,15 @@ class PlayerMaximizer(QObject):
         if self.__overlay is not None:
             self.restore()
         else:
-            self.__maximize(viewer_mode_for(modifiers, shared_videos_settings().maximize_mode))
+            self.maximize(viewer_mode_for(modifiers, shared_videos_settings().maximize_mode))
 
-    def __maximize(self, mode: OverlayMode) -> None:
+    def maximize(self, mode: OverlayMode) -> None:
         """Lift the stage and the bar over ``mode``'s surface and give it the keyboard; the player is in its dock.
 
         :param mode: the surface to cover.
         """
+        if self.__overlay is not None:
+            return
         overlay = PlayerOverlay(mode, self.__document, self.__parts, self.__player.actions())
         overlay.closed.connect(self.__on_closed)
         self.__overlay = overlay

@@ -19,30 +19,11 @@ from rehuco_core import (
     tutorial_video_keys,
 )
 
-from ..commands import (
-    PLAYER_ADD_NOTE_AT,
-    PLAYER_BACK,
-    PLAYER_EDIT_NOTES,
-    PLAYER_FORWARD,
-    PLAYER_INFO,
-    PLAYER_NEXT,
-    PLAYER_NOTES,
-    PLAYER_PLAY_PAUSE,
-    PLAYER_PREVIOUS,
-    PLAYER_SPEED_DOWN,
-    PLAYER_SPEED_UP,
-    PLAYER_TO_END,
-    PLAYER_TO_START,
-    PLAYER_TREE,
-    PLAYER_VOLUME_DOWN,
-    PLAYER_VOLUME_UP,
-    shared_command_registry,
-)
 from ..fields.widgets.overlay_surface import OverlayMode
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.videos_settings import shared_videos_settings
 from .latest_runner import LatestRunner
-from .player_bar import PlayerBar
+from .player_bar import PlayerBar, bind_player_actions
 from .player_engine import Engine, PlayerEngine
 from .player_notices import PlayerNotices
 from .player_panels import PlayerPanels
@@ -192,6 +173,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__volume = 1.0
         self.__videos: list[tuple[str, Path]] | None = None
         """The tutorial's videos as ``(content key, path)`` in play order, once listed; ``None`` before."""
+        self.__held_key: str | None = None
+        """The video the session remembers, loaded in place of the one watched last ([[plugins#session-restore]])."""
         self.__intent: tuple[str | None, bool, float | None] | None = None
         """What to do with the list being read: the video to select (``None`` for the one watched last), whether to
         play it, and where to start it (``None`` for where it was left). Replaced by a later request, so a double-click
@@ -247,7 +230,37 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         if self.__key is not None or self.__intent is not None:
             return
-        self.__request(None, play=False)
+        self.__request(self.__held_key, play=False)
+
+    def load_video(self, key: str) -> None:
+        """Load a video paused where it was left, as :meth:`load_last` loads the one watched last -- what a session's
+        maximized player asks for. A video no longer there is not reported: it restores nothing.
+
+        :param key: the video's content key.
+        """
+        self.__held_key = key
+        self.__request(key, play=False)
+
+    def let_go_of_restored_video(self) -> None:
+        """Forget the video the session remembered: the record it was of is no longer the one shown."""
+        self.__held_key = None
+
+    def maximize(self, mode: OverlayMode) -> None:
+        """Maximize the player over a surface, as a session restore asks; it is in its dock.
+
+        :param mode: the surface.
+        """
+        self.__stage.maximizer.maximize(mode)
+
+    def restore_from_maximized(self) -> None:
+        """Put the player back in its dock, when it is maximized: what a layout capture needs, since its stage holds
+        persisting widgets only the dock's content is walked for."""
+        self.__stage.maximizer.restore()
+
+    @property
+    def overlay(self) -> QWidget | None:
+        """The overlay the player is maximized in, or ``None`` while it is in its dock."""
+        return self.__stage.maximizer.overlay
 
     @property
     def current_key(self) -> str | None:
@@ -308,19 +321,24 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         return self.__stage.mode
 
     def save_state(self) -> bytes:
-        """Encode where the stage splits between the picture and the panels beside it, for the dock's entry in the
-        layout.
+        """Encode the video and the stage -- what shows beside the picture, and where it splits -- for the dock's entry
+        in the layout.
 
         :returns: the state, restorable by :meth:`restore_state`.
         """
-        return self.__stage.save_state()
+        return self.__stage.save_state(self.__key if self.__key is not None else self.__held_key)
 
     def restore_state(self, state: bytes) -> None:
-        """Restore the split :meth:`save_state` encoded.
+        """Restore the stage :meth:`save_state` encoded, and remember its video for the next load; a load already out,
+        for the dock the same layout has just shown, is for this one instead.
 
-        :param state: the blob; one that cannot be read leaves the split as it is.
+        :param state: the blob; one that cannot be read leaves all of it as it is.
         """
-        self.__stage.restore_state(state)
+        video = self.__stage.restore_state(state)
+        if video is not None:
+            self.__held_key = video
+            if self.__key is not None or self.__intent is not None:
+                self.__request(video, play=False)
 
     # endregion
 
@@ -354,27 +372,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     def __setup_actions(self) -> None:
         """Bind the player's actions to their commands and keys; the bar draws the transport ones on its buttons."""
         ui = self.__ui
-        for action, command in (
-            (ui.play_pause_action, PLAYER_PLAY_PAUSE),
-            (ui.back_action, PLAYER_BACK),
-            (ui.forward_action, PLAYER_FORWARD),
-            (ui.previous_action, PLAYER_PREVIOUS),
-            (ui.next_action, PLAYER_NEXT),
-            (ui.to_start_action, PLAYER_TO_START),
-            (ui.to_end_action, PLAYER_TO_END),
-            (ui.add_note_at_action, PLAYER_ADD_NOTE_AT),
-            (ui.info_action, PLAYER_INFO),
-            (ui.tree_action, PLAYER_TREE),
-            (ui.notes_action, PLAYER_NOTES),
-            (ui.edit_notes_action, PLAYER_EDIT_NOTES),
-            (ui.volume_up_action, PLAYER_VOLUME_UP),
-            (ui.volume_down_action, PLAYER_VOLUME_DOWN),
-            (ui.speed_up_action, PLAYER_SPEED_UP),
-            (ui.speed_down_action, PLAYER_SPEED_DOWN),
-        ):
-            shared_command_registry().bind(action, command.id)
-            # added to this widget, whose subtree the keys are scoped to: every document has a player of its own
-            self.addAction(action)
+        bind_player_actions(ui, self)
         ui.play_pause_action.triggered.connect(self.__toggle_playback)
         ui.back_action.triggered.connect(lambda: self.__seek_by(-SEEK_STEP_MS))
         ui.forward_action.triggered.connect(lambda: self.__seek_by(SEEK_STEP_MS))
@@ -484,7 +482,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param position: where to start it, in seconds; ``None`` for where it was left.
         """
         keys = [known for known, _ in videos]
-        if key is None:
+        held, self.__held_key = self.__held_key, None
+        # the session's video gone is no news to report: the player falls back on what it would have loaded anyway
+        if key is None or (key == held and key not in keys):
             last = self.__model.last_video()
             key = last if last in keys else keys[0]
         elif key not in keys:

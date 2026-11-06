@@ -16,6 +16,7 @@ from rehuco_agent.settings.document_session_settings import (
     DocumentSessionSettings,
     document_session_path,
 )
+from rehuco_agent.settings.maximized_view import CURATED_SET, LIGHTBOX_KIND, PLAYER_KIND, MaximizedView
 
 from rehuco_agent_tests.conftest import MemoryStateFiles
 
@@ -465,3 +466,129 @@ def test_load_does_not_resolve_the_stored_paths() -> None:
 
     assert list(loaded.items) == [FIRST]
     assert loaded.focused_path == FIRST
+
+
+# region what #576 restores
+VIEW: Final = MaximizedView(LIGHTBOX_KIND, "shots/a.png", "full_screen", CURATED_SET, True, False)
+
+
+def test_a_maximized_view_and_the_preview_survive_a_save(state_files: MemoryStateFiles) -> None:
+    """A document's maximized view, the maximized document dock and the preview entry come back as they were saved.
+
+    **Test steps:**
+
+    * save a session with each of them
+    * load it into another session, and verify each one
+    """
+    del state_files
+    session = DocumentSessionSettings()
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True, state=b"first", maximized=VIEW)
+    session.maximized_dock = "Preview-7"
+    session.preview = DocumentSessionSettings.Preview(
+        SECOND, "Preview-7", DocumentSessionSettings.Item(open=True, state=b"second", maximized=VIEW)
+    )
+    session.save()
+
+    loaded = DocumentSessionSettings()
+    loaded.load()
+
+    assert loaded.items[FIRST] == session.items[FIRST]
+    assert loaded.maximized_dock == "Preview-7"
+    assert loaded.preview == session.preview
+
+
+def test_a_session_of_an_older_build_restores_as_it_did(state_files: MemoryStateFiles) -> None:
+    """A file with none of the new fields reads with no preview, no maximized dock and no maximized view.
+
+    **Test steps:**
+
+    * write a session as an older build wrote it
+    * verify its document is open and nothing else is there
+    """
+    state_files.files[document_session_path()] = json.dumps(
+        {
+            "version": SESSION_VERSION,
+            "focused_path": "",
+            "items": [{"path": FIRST.as_posix(), "open": True, "state": ""}],
+        }
+    )
+
+    session = DocumentSessionSettings()
+    session.load()
+
+    assert session.items[FIRST].open is True
+    assert session.items[FIRST].maximized is None
+    assert session.preview is None
+    assert session.maximized_dock == ""
+
+
+@mark.parametrize(
+    "preview",
+    [
+        "not an object",
+        {"name": "Preview-1"},
+        {"path": FIRST.as_posix()},
+        {"path": "relative.rehu", "name": "Preview-1"},
+        {"path": FIRST.as_posix(), "name": 7},
+    ],
+)
+def test_a_malformed_preview_costs_only_itself(state_files: MemoryStateFiles, preview: object) -> None:
+    """A preview entry that names no document or no dock reads as no preview; the session's items stay.
+
+    **Test steps:**
+
+    * write a session with a good item and a bad preview
+    * verify there is no preview, and the item is there
+    """
+    state_files.files[document_session_path()] = json.dumps(
+        {"version": SESSION_VERSION, "preview": preview, "items": [{"path": SECOND.as_posix(), "open": True}]}
+    )
+
+    session = DocumentSessionSettings()
+    session.load()
+
+    assert session.preview is None
+    assert SECOND in session.items
+
+
+@mark.parametrize(
+    "maximized",
+    [
+        "not an object",
+        {"kind": "other", "key": "k", "mode": "full_screen"},
+        {"kind": PLAYER_KIND, "key": "", "mode": "full_screen"},
+        {"kind": PLAYER_KIND, "key": "k", "mode": 3},
+        {"kind": PLAYER_KIND, "key": "k", "mode": "full_screen", "source": 3},
+        {"kind": LIGHTBOX_KIND, "key": "k", "mode": "full_screen", "source": "unknown"},
+    ],
+)
+def test_a_malformed_maximized_view_costs_only_itself(maximized: object) -> None:
+    """A maximized view of a wrong shape reads as none.
+
+    **Test steps:**
+
+    * read it
+    * verify it is none
+    """
+    assert MaximizedView.from_json(maximized) is None
+
+
+def test_forgetting_the_preview_s_file_forgets_only_that() -> None:
+    """A gone file takes the preview's entry with it only when it is the file the preview shows.
+
+    **Test steps:**
+
+    * forget another file, and verify the entry stays
+    * forget its file, and verify the entry goes
+    """
+    session = DocumentSessionSettings()
+    session.preview = DocumentSessionSettings.Preview(FIRST, "Preview-1", DocumentSessionSettings.Item(open=True))
+
+    session.forget_preview(SECOND)
+    assert session.preview is not None
+
+    session.forget_preview(FIRST)
+    assert session.preview is None
+
+
+# endregion
