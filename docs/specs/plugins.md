@@ -1113,6 +1113,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 - [#319: feat: VLC inside the player dock — libvlc as the in-app engine, behind a proxy that works without VLC](https://github.com/borco/rehuco/issues/319)
 - [#580: feat: play videos with an external FFmpeg's libraries — a Playback choice beside Qt's bundled FFmpeg (AV1 in software)](https://github.com/borco/rehuco/issues/580)
 - [#618: feat(agent): VLC subtitle keys: V next track, Alt+V previous track, Shift+V on/off](https://github.com/borco/rehuco/issues/618)
+- [#613: feat(agent): scrub preview -- dragging the seek bar shows the frame at the handle in the main picture](https://github.com/borco/rehuco/issues/613)
 
 Two players can fill Follow's dock: **libvlc** from the user's own VLC, set up through the Tools page (#521), or
 **Qt Multimedia**, whose FFmpeg backend ships inside PySide6. The spike (#315) measured both on Windows 11 at 125 %
@@ -1215,11 +1216,22 @@ PySide6 bundles, read from its own DLL names, never a version written into the c
 inspection set, and opens when a video is double-clicked in the Files sub-dock ([[plugins#files-subdock]]) or its
 toggle is pressed. **One player per document**: a `QMediaPlayer` and its `QAudioOutput` drawing into a `QVideoWidget`, built on the first
 video, so opening a tutorial never loads FFmpeg. Its transport bar is previous, back, play/pause, forward, next, a
-seek slider that follows the position and seeks on release or a click, and a speed combo from 0.5 to 2. Its keys are
+seek slider that follows the position and seeks on a click or a drag, and a speed combo from 0.5 to 2. Its keys are
 commands in the catalog, armed while focus is anywhere inside the player and nowhere else — Space plays and pauses,
 Left and Right jump five seconds, Ctrl+Left and Ctrl+Right load the previous and next video, Ctrl+Home plays from the
 start and Ctrl+End goes to the end -- which finishes the video and loads the next -- Up and Down change the volume, and Ctrl+Up and Ctrl+Down, or `]` and `[`, change the speed — and the slider, the combo and the buttons take
 no focus, so an arrow is never theirs.
+
+**Dragging the slider's handle shows the frame at the handle in the main picture** (#613; no second decoder, so
+no thumbnail above the bar, owner). The bar reports the handle at most four times a second, each report a seek, and
+the clock follows it. A video that plays is held paused and silent for the drag, its button still offering to pause,
+and plays on from where the handle is let go. A paused one stays paused there: under Qt, which has let go of its
+file, the drag opens the file for frames and the release lets it go on the frame of that place, as a paused load
+does; under libvlc one paused while playing holds its file and seeks in place, and the still follows, since the
+frame after every seek is announced (a seek to the very last millisecond gives libvlc no frame, measured, so the
+picture stays on the one before). **Only the release is recorded**, as a click on the groove is: nothing the
+player reports during the drag is progress, not even the end of the video. A press with no move opens nothing, and
+a rename during the drag lets the file go for good, leaving the rest of the drag to the bar.
 
 **Subtitles are libvlc's alone** (#618; Qt gets none, owner). libvlc shows a subtitle file beside the video, blended
 into the frames, and lists its tracks, so no loading code is needed. Three more commands of the player's: `V` shows the
@@ -1323,9 +1335,11 @@ libvlc stays *Ended*, so a replay stops first. **A paused video is a stopped pla
 fails while libvlc plays or pauses, and succeeds after `stop()`. **A pause under libvlc holds the file**, paused on its
 frame: reopening and seeking landed a few frames off, so the player stays where it stopped and resumes there, and the
 rename -- the one case the release exists for -- lets the file go through the rename coordinator when it is about to
-happen. A load for a still (libvlc decodes no frame without playing) opens the file with `:no-audio`, so libvlc decodes
-no audio at all, plays until the first frame, keeps it, and pauses, after which the view stops it as it would after a
-frame from Qt's sink; played before then, the file is opened again with its audio, where the load had got to. Nothing is
+happen. A load for a still (libvlc decodes no frame without playing) opens the file already at its position with
+`:no-audio`, so libvlc decodes no audio at all, plays until the first frame, keeps it, and pauses, after which the view
+stops it as it would after a frame from Qt's sink; played before then, the file is opened again with its audio, where
+the load had got to. Seeked only once open, a busy restore kept the file's first frame instead, often black, under
+a bar at the right place (#613). Nothing is
 ever muted: libvlc takes a mute or an unmute only while its audio output lives, so a load muted around it let sound out
 at the start, and an unmute after the stop was lost, leaving the next video silent (both seen by the owner, #574).
 **libvlc renders into memory** ([[appendices.vlc#memory-rendering]]): it decodes into a buffer of the app's

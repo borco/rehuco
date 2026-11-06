@@ -42,6 +42,9 @@ PADDED: Final = (640, 384)
 
 VISIBLE: Final = (640, 360)
 
+OTHER_SOURCE: Final = QUrl.fromLocalFile("C:/clips/b.mp4" if sys.platform == "win32" else "/clips/b.mp4")
+"""A file to open in place of the one the engine fixture opened."""
+
 
 class Kind:
     """One member of a fake ``vlc.EventType``, shaped like python-vlc's: the number in ``value``, and no ``int()`` --
@@ -713,6 +716,127 @@ def test_a_paused_load_waits_for_the_frame_at_the_position_asked_for(
     libvlc.feed_frame(0x20)
     qtbot.waitUntil(lambda: len(stills) == 1)
     libvlc.player.set_pause.assert_called_once_with(1)
+
+
+def test_a_paused_load_with_a_start_opens_there_and_needs_no_seek(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot
+) -> None:
+    """A seek made once the file is open lets its first frame pass for the frame at the position (#613).
+
+    **Test steps:**
+
+    * set a source with a start of 5 s and pause (a paused load)
+    * verify the file was opened there, with no audio
+    * ask for the same position, as the view does as the video buffers
+    * verify libvlc was not seeked
+    * feed a frame there
+    * verify it is the still, and libvlc paused
+    """
+    stills: list[QImage] = []
+    engine.still_ready.connect(stills.append)
+    engine.setSource(OTHER_SOURCE, 5000)
+
+    engine.pause()
+
+    assert libvlc.opened(-1)[1] == (":no-audio", ":start-time=5.000")
+
+    engine.setPosition(5000)
+    libvlc.player.set_time.assert_not_called()
+
+    libvlc.player.get_time.return_value = 5000
+    libvlc.feed_frame(0x10)
+    qtbot.waitUntil(lambda: len(stills) == 1)
+    libvlc.player.set_pause.assert_called_once_with(1)
+
+
+def test_a_paused_load_asked_elsewhere_than_its_start_seeks_there(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:
+    """A drag of the handle can move on before the load has its still.
+
+    **Test steps:**
+
+    * set a source with a start of 5 s, pause, and ask for 7 s
+    * verify libvlc was seeked there
+    """
+    engine.setSource(OTHER_SOURCE, 5000)
+    engine.pause()
+
+    engine.setPosition(7000)
+
+    libvlc.player.set_time.assert_called_once_with(7000)
+
+
+def test_a_paused_load_played_at_once_opens_with_its_audio_at_its_start(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc
+) -> None:
+    """**Test steps:**
+
+    * set a source with a start of 5 s and pause, with libvlc not having got anywhere yet, then play
+    * verify the file was opened again with its audio at the start
+    """
+    libvlc.player.get_time.return_value = 0
+    engine.setSource(OTHER_SOURCE, 5000)
+    engine.pause()
+
+    engine.play()
+
+    assert libvlc.opened(-1)[1] == (":start-time=5.000",)
+
+
+def test_a_start_is_for_the_source_it_was_given_for(engine: VlcMediaPlayer, libvlc: FakeLibvlc) -> None:
+    """**Test steps:**
+
+    * set a source with a start of 5 s, set it again with none, and pause
+    * verify the file was opened at its beginning
+    """
+    engine.setSource(OTHER_SOURCE, 5000)
+    engine.setSource(OTHER_SOURCE)
+
+    engine.pause()
+
+    assert libvlc.opened(-1)[1] == (":no-audio",)
+
+
+def test_the_frame_after_a_seek_is_announced_once_for_a_paused_videos_still(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, surface: VlcSurface, qtbot: QtBot
+) -> None:
+    """**Test steps:**
+
+    * seek, and feed two frames
+    * verify the first was announced and the second not
+    """
+    refreshed: list[QImage] = []
+    engine.still_refreshed.connect(refreshed.append)
+
+    engine.setPosition(5000)
+    libvlc.feed_frame(0x10)
+    qtbot.waitUntil(lambda: len(refreshed) == 1)
+    first = surface.frame
+    libvlc.feed_frame(0x20)
+    qtbot.waitUntil(lambda: surface.frame is not first)
+
+    assert len(refreshed) == 1
+
+
+def test_a_seek_during_a_paused_load_announces_no_frame_but_its_still(
+    engine: VlcMediaPlayer, libvlc: FakeLibvlc, qtbot: QtBot
+) -> None:
+    """**Test steps:**
+
+    * pause (a paused load), seek to 5 s, and feed a frame there
+    * verify the still arrived, and no frame was announced as refreshed
+    """
+    stills: list[QImage] = []
+    refreshed: list[QImage] = []
+    engine.still_ready.connect(stills.append)
+    engine.still_refreshed.connect(refreshed.append)
+    engine.pause()
+    engine.setPosition(5000)
+    libvlc.player.get_time.return_value = 5000
+
+    libvlc.feed_frame(0x10)
+    qtbot.waitUntil(lambda: len(stills) == 1)
+
+    assert not refreshed
 
 
 def test_a_pause_asks_libvlc_whether_it_plays_rather_than_the_queued_state(

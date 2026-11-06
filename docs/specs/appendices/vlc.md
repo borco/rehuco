@@ -215,7 +215,10 @@ PositionChanged, TimeChanged     then about every 500 ms
   played silent (measured: `audio_get_mute()` read 1 while it played). Only an unmute made while still paused stuck.
 - **`:no-audio` on a media decodes no audio** (#574): `audio_get_track()` is -1 against 1 without it. The track
   count still lists the file's tracks, so it proves nothing. `:start-time=<s>` opens a media at a position (23.49 s
-  for 23.5 s asked). A paused load opens `:no-audio`, played before its still it opens again with its audio there,
+  for 23.5 s asked). **A seek's target is reported at once**: `get_time()` reads it straight after `set_time()`,
+  ahead of any frame of it, so "the frame at the position" cannot be told by asking, and the file's first frame, still
+  queued, passes for it whenever the GUI thread is busy (#613: a restored clip on its opening frame). So a paused load
+  opens at its position. It opens `:no-audio`, played before its still it opens again with its audio there,
   and the engine never mutes.
 
 ### Drawing over the surface
