@@ -22,7 +22,8 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.latest_runner import LatestRunner
-from rehuco_agent.documents.player_view import GRAB_TIMEOUT_MS, NO_FRAME_MS, PlayerView
+from rehuco_agent.documents.player_format_notes import NO_FRAME_MS
+from rehuco_agent.documents.player_view import GRAB_TIMEOUT_MS, PlayerView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.video_still import VideoStill
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
@@ -129,7 +130,7 @@ def fixture_listing(mocker: MockerFixture) -> Listing:
         "rehuco_agent.documents.player_view.tutorial_video_keys", side_effect=lambda *a, **k: list(keys)
     )
     mocker.patch(
-        "rehuco_agent.documents.player_view.read_video_format", side_effect=lambda path: formats.get(path.name)
+        "rehuco_agent.documents.player_format_notes.read_video_format", side_effect=lambda path: formats.get(path.name)
     )
     return Listing(keys, formats, listed)
 

@@ -2,7 +2,6 @@
 ([[plugins#in-app-player]], #317, #319)."""
 
 from collections.abc import Callable
-from enum import Enum, auto
 from functools import partial
 from pathlib import Path
 from typing import Final, cast
@@ -12,10 +11,8 @@ from PySide6.QtGui import QImage
 from PySide6.QtMultimedia import QMediaPlayer, QVideoFrame, QVideoSink
 from PySide6.QtWidgets import QWidget
 from rehuco_core import (
-    VideoFormat,
     content_path,
     note_lines,
-    read_video_format,
     tutorial_video_keys,
 )
 
@@ -25,10 +22,12 @@ from ..settings.videos_settings import shared_videos_settings
 from .latest_runner import LatestRunner
 from .player_bar import PlayerBar, bind_player_actions
 from .player_engine import Engine, PlayerEngine
+from .player_format_notes import NO_FRAME_MS, PlayerFormatNotes
 from .player_levels import VOLUME_STEP, PlayerLevels
 from .player_notices import PlayerNotices
 from .player_panels import PlayerPanels
 from .player_playlist import PlayerPlaylist
+from .player_session import Session
 from .player_stage import PlayerStage
 from .player_subtitles import PlayerSubtitles
 from .player_view_ui import Ui_PlayerView
@@ -39,43 +38,18 @@ from .watch_progress_recorder import WatchProgressRecorder
 SEEK_STEP_MS: Final = 5000
 """How far the back and forward keys and buttons jump."""
 
-NO_FRAME_MS: Final = 1500
-"""How long an AV1 video may play without showing a frame before the player says why: Qt decodes AV1 in hardware only,
-and a machine without it plays the sound with no picture and no error."""
-
 GRAB_TIMEOUT_MS: Final = 3000
 """How long a video may be held open to take a frame of it: a file that gives none by then is let go of without one."""
 
 LIST_TAG: Final = "list"
 """What the runner that lists the tutorial's videos answers under."""
 
-INTERLACED_NOTICE: Final = (
-    "This video is interlaced, and this player shows it without deinterlacing: moving edges look combed."
-)
 VLC_FALLBACK_TEMPLATE: Final = "Playing with Qt: {reason}"
 """What the player says when VLC is chosen on the Videos page and its libvlc could not be used (#319)."""
 ERROR_NOTICE: Final = "This video could not be played."
 LIST_ERROR_NOTICE: Final = "This tutorial's videos could not be listed."
 NO_VIDEOS_NOTICE: Final = "This tutorial has no videos."
 MISSING_NOTICE: Final = "That video is no longer in this tutorial."
-
-
-class Session(Enum):
-    """Whether the player holds a video's file, and why."""
-
-    NONE = auto()
-    """No source is open: the file is not held, and the OS may rename its folder."""
-
-    GRAB = auto()
-    """The file is open, paused, only to take a frame of it and learn its length -- a moment, then it is let go."""
-
-    PLAY = auto()
-    """The video is playing, and the file is held for as long as it does."""
-
-    HELD = auto()
-    """The video is paused in the player with its file held, so it resumes on the very frame it stopped on -- the
-    libvlc engine's pause (#319), where reopening and seeking landed a few frames off. A rename of this resource
-    lets the file go first (:meth:`PlayerView.__on_before_rename`)."""
 
 
 class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -103,18 +77,18 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     which speaks ``QMediaPlayer``'s language so nothing below cares which). The choice is read as the engine is built,
     so it applies to the next video selected, in every open document: an engine built for another choice is dropped and
     the new one built in its place. A VLC chosen but not usable plays through Qt, and the banner says why.
-    libvlc deinterlaces and decodes AV1 in software, so neither notice below is made under it.
+    libvlc deinterlaces and decodes AV1 in software, so `PlayerFormatNotes` says nothing under it.
+
+    **Dragging the seek bar's handle** (#613) puts the frame at the handle in the main picture, a few seeks a second
+    (:attr:`Session.SCRUB`). A video that plays is held silent and carries on from where it is let go; a paused one
+    stays paused there, its file opened for the drag where it was not held, and let go after. Only the release is
+    recorded, as a click on the groove is.
 
     **Where it records.** Every position the player reports while a video plays goes to the recorder, which writes about
     every five seconds; the moments that matter are flushed at once -- pause, a seek, switching video, :meth:`stop`.
     Nothing is recorded for a video that was only loaded, so stepping through a tutorial leaves its progress, and the
     video watched last, as they were. Reaching the end records the full length, which is what marks the video viewed
     (:func:`~rehuco_core.reached_end`), and loads the next.
-
-    **What it explains, under Qt.** Qt shows interlaced video combed, and plays AV1 with sound and no picture where
-    the graphics hardware has no AV1 decoder, raising no error. The file's codec and scan type are read off the GUI
-    thread; an interlaced file is noted at once, an AV1 one when no frame has shown within :data:`NO_FRAME_MS` of
-    playing.
 
     **Keys** are the catalog's ``document.player.*`` commands, armed while focus is anywhere inside this widget, or in
     the overlay it is maximized in; the seek slider, the speed combo and the buttons take no focus, so the arrows are
@@ -185,14 +159,16 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Whether the selected video has played since it was selected, and so is one whose seeks are progress."""
         self.__position_ms = 0
         """Where the video selected is: where it was left, until it plays, and where it plays from."""
-        self.__frame_seen = False
-        self.__av1 = False
         self.__listening = False
+        self.__scrub_origin: Session | None = None
+        """The session a drag of the handle began in, or ``None`` while no drag has moved it."""
 
         self.__ui: Final = Ui_PlayerView()
         self.__ui.setupUi(self)
         self.__bar: Final = PlayerBar(self.__ui, self)
         self.__bar.seek_requested.connect(self.__seek_to)
+        self.__bar.scrub_moved.connect(self.__on_scrub_moved)
+        self.__bar.scrub_finished.connect(self.__on_scrub_finished)
         model.notes_changed.connect(self.__show_bookmarks)
         self.__sink: Final = QVideoSink(self)
         self.__sink.setObjectName("frame_sink")
@@ -202,9 +178,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__notices: Final = PlayerNotices(self.__ui.notice_banner, self)
         self.__notices.tools_requested.connect(self.tools_requested)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.__format_runner: Final = self.__runner("format_runner", self.__on_format_read)
+        self.__format_notes: Final = PlayerFormatNotes(
+            self.__notices, no_frame_ms, lambda: self.__state == QMediaPlayer.PlaybackState.PlayingState, self
+        )
         self.__list_runner: Final = self.__runner("list_runner", self.__on_listed)
-        self.__no_frame_timer: Final = self.__single_shot(no_frame_ms, self.__on_no_frame)
         self.__grab_timer: Final = self.__single_shot(grab_ms, self.__on_grab_timeout)
         self.__sink.videoFrameChanged.connect(self.__on_frame)
         self.__stage: Final = PlayerStage(self.__ui, model, document, click_ms, self)
@@ -294,10 +271,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         put back first.
         """
         self.__stage.maximizer.restore()
-        self.__format_runner.discard()
+        self.__format_notes.stop()
         self.__list_runner.discard()
         self.__intent = None
-        self.__no_frame_timer.stop()
         self.__flush()
         self.__release()
         self.__close_video()
@@ -411,6 +387,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         player.errorOccurred.connect(self.__on_error)
         if self.__engine.vlc:
             cast(VlcMediaPlayer, player).still_ready.connect(self.__on_still)
+            cast(VlcMediaPlayer, player).still_refreshed.connect(self.__on_still)
         self.__subtitles.connect_engine(player)
 
     # endregion
@@ -503,9 +480,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__playlist = playlist
         self.__key = video.key
         self.__played = False
-        self.__frame_seen = False
-        self.__av1 = False
-        self.__no_frame_timer.stop()
         entry = self.__model.progress_of(video.key)
         measured = self.__model.measured_videos().get(video.key)
         length = measured.duration if measured is not None else (entry.duration if entry is not None else None)
@@ -519,7 +493,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__stage.show_still()
         # the engine before the format is read: whether a format needs explaining depends on which engine shows it
         self.__ensure_player()
-        self.__format_runner.start(video.key, partial(read_video_format, video.path))
+        self.__format_notes.select(video.key, video.path, explains=not self.__engine.vlc)
         self.__open(Session.PLAY if play else Session.GRAB)
         if self.__engine.fallback_reason is not None:
             self.__notices.add(VLC_FALLBACK_TEMPLATE.format(reason=self.__engine.fallback_reason))
@@ -577,17 +551,22 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         video = self.__playlist.current
         path = content_path(record_path, video.key) if record_path is not None else video.path
         self.__subtitles.prepare()
-        player.setSource(QUrl.fromLocalFile(str(path)))
+        if self.__engine.vlc:
+            cast(VlcMediaPlayer, player).setSource(QUrl.fromLocalFile(str(path)), self.__position_ms)
+        else:
+            player.setSource(QUrl.fromLocalFile(str(path)))
         if session is Session.PLAY:
             self.__show_engine_surface()
             player.play()
         else:
             player.pause()
-            self.__grab_timer.start()
+            if session is Session.GRAB:
+                self.__grab_timer.start()
 
     def __release(self) -> None:
         """Let go of the video's file: the player is stopped and its source cleared."""
         self.__grab_timer.stop()
+        self.__format_notes.disarm()
         held = self.__session is not Session.NONE
         # before the player is told: it reports the position it resets to (0) ahead of the state it ends in, and a
         # position reported while this still said *playing* would be recorded as where the reader got to
@@ -631,7 +610,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             return
         if self.__session is Session.PLAY:
             self.__pause()
-        if self.__session in (Session.GRAB, Session.HELD):
+        if self.__session in (Session.GRAB, Session.HELD, Session.SCRUB):
             self.__release()
 
     # endregion
@@ -642,6 +621,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Pause a video that plays, and play one that does not."""
         if self.__key is None:  # pragma: no cover  (the action is disabled until a video is selected)
             return
+        if self.__session is Session.SCRUB:
+            return
         if self.__session is Session.PLAY:
             self.__pause()
         else:
@@ -649,7 +630,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __play_selected(self) -> None:
         """Play the selected video from where it is."""
-        if self.__session in (Session.GRAB, Session.HELD) and self.__engine.player is not None:
+        if self.__session in (Session.GRAB, Session.HELD, Session.SCRUB) and self.__engine.player is not None:
             # already open, for a frame or paused on one: carry on from there -- a held video on the very frame it
             # stopped on, a grabbed one with the seek to where it is made as it buffers
             self.__grab_timer.stop()
@@ -658,7 +639,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__engine.player.play()
             if self.__ready:
                 self.__played = True
-                self.__arm_no_frame_timer()
+                self.__format_notes.arm()
         else:
             self.__open(Session.PLAY)
 
@@ -718,9 +699,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         if self.__key is None:
             return
-        target = max(position_ms, 0)
-        if self.__bar.duration_ms > 0:
-            target = min(target, self.__bar.duration_ms)
+        target = self.__within_video(position_ms)
         self.__position_ms = target
         self.__show_position(target)
         if self.__engine.player is not None and self.__session is not Session.NONE and self.__ready:
@@ -728,6 +707,76 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if self.__session is Session.PLAY or self.__played:
             self.__recorder.position(self.__key, target / 1000, self.__duration_seconds())
             self.__recorder.flush()
+
+    def __within_video(self, position_ms: int) -> int:
+        """Hold a position within the video.
+
+        :param position_ms: the position.
+        :returns: the position, held within the video's length when that is known.
+        """
+        target = max(position_ms, 0)
+        return min(target, self.__bar.duration_ms) if self.__bar.duration_ms > 0 else target
+
+    # endregion
+
+    # region Dragging the handle
+
+    def __on_scrub_moved(self, position_ms: int) -> None:
+        """Go to where the handle is, the bar and the clock with it and nothing recorded; the first move of a drag
+        takes the video over for it.
+
+        :param position_ms: where the handle is.
+        """
+        if self.__key is None:
+            return
+        self.__position_ms = self.__within_video(position_ms)
+        self.__show_position(self.__position_ms)
+        if self.__scrub_origin is None:
+            self.__begin_scrub()
+        player = self.__engine.player
+        if self.__session is Session.SCRUB and self.__ready and player is not None:
+            player.setPosition(self.__position_ms)
+
+    def __begin_scrub(self) -> None:
+        """Hold the video for the drag: paused and silent, its file open.
+
+        A video that plays and has not buffered is left alone, so the drag only moves the bar and the release seeks:
+        libvlc would take a pause then for a paused load, and the wait is a moment.
+        """
+        origin = self.__session
+        self.__scrub_origin = origin
+        player = self.__engine.player
+        if origin is Session.NONE:
+            self.__open(Session.SCRUB)
+        elif origin is not Session.PLAY:
+            self.__grab_timer.stop()
+            self.__session = Session.SCRUB
+        elif self.__ready and player is not None:
+            # before the pause: what the player reports from here is nobody's progress
+            self.__session = Session.SCRUB
+            if self.__engine.vlc:
+                self.__ui.still_widget.set_image(self.__still_now())
+                self.__stage.show_still()
+            player.pause()
+
+    def __on_scrub_finished(self, position_ms: int) -> None:
+        """End a drag where the handle was let go: a video that played plays on from there, a paused one stays paused
+        on that frame, holding its file only if it held it before. Once something else took the video from the drag
+        -- a rename, a step -- it is a seek like any other.
+
+        :param position_ms: where the handle was let go.
+        """
+        origin, self.__scrub_origin = self.__scrub_origin, None
+        if self.__session is not Session.SCRUB:
+            self.__seek_to(position_ms)
+        elif origin is Session.PLAY:
+            self.__seek_to(position_ms)
+            self.__play_selected()
+        else:
+            self.__session = Session.HELD if origin is Session.HELD else Session.GRAB
+            if self.__session is Session.GRAB:
+                self.__grab_timer.start()
+            self.__seek_to(position_ms)
 
     # endregion
 
@@ -763,6 +812,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param state: the player's new state.
         """
         self.__state = state
+        if self.__session is Session.SCRUB:
+            return
         playing = self.__session is Session.PLAY and state == QMediaPlayer.PlaybackState.PlayingState
         self.__bar.show_playing(playing)
         if self.__session is Session.PLAY and not playing:
@@ -796,7 +847,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
                 player.setPosition(self.__position_ms)
             if self.__session is Session.PLAY:
                 self.__played = True
-                self.__arm_no_frame_timer()
+                self.__format_notes.arm()
         elif status == QMediaPlayer.MediaStatus.EndOfMedia and self.__session is Session.PLAY:
             self.__finish_video()
 
@@ -823,6 +874,10 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         if not self.__ready or not frame.isValid():
             return
+        if self.__session is Session.SCRUB:
+            # no check of its time: a quick drag is always further on than the frame of the last seek
+            self.__stage.show_frame(frame)
+            return
         if self.__session is Session.GRAB:
             if PlayerStage.at_position(frame, self.__position_ms):
                 self.__stage.show_frame(frame)
@@ -830,9 +885,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             return
         # playing: a valid frame of a ready video comes from Qt's sink in no other session
         self.__stage.offer_frame(frame)
-        if not self.__frame_seen:
-            self.__frame_seen = True
-            self.__no_frame_timer.stop()
+        self.__format_notes.frame_seen()
 
     def __show_engine_surface(self) -> None:
         """Show the engine's picture as a video starts to play (`PlayerStage`): libvlc's surface at once; Qt's frames
@@ -840,12 +893,14 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__stage.show_engine(self.__engine.surface, self.__engine.vlc, self.__position_ms)
 
     def __on_still(self, image: QImage) -> None:
-        """Take the picture libvlc made of a paused load, and let the file go -- what a frame from Qt's sink does.
+        """Take the picture libvlc made of a paused load or a seek, and let the file go once a drag is not holding it
+        open -- what a frame from Qt's sink does.
 
-        :param image: the still at the position the video was opened at.
+        :param image: the still at the position asked for.
         """
-        if self.__session is Session.GRAB:
+        if self.__session in (Session.GRAB, Session.SCRUB):
             self.__ui.still_widget.set_image(image)
+        if self.__session is Session.GRAB:
             self.__release()
 
     def __still_now(self) -> QImage | None:
@@ -861,29 +916,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Let go of a video that gave no frame to show, without one. The timer runs for a paused load alone: playing
         or letting go stops it."""
         self.__release()
-
-    def __arm_no_frame_timer(self) -> None:
-        """Start waiting for a picture from an AV1 video that plays."""
-        if self.__av1 and self.__session is Session.PLAY and self.__ready and not self.__frame_seen:
-            self.__no_frame_timer.start()
-
-    def __on_no_frame(self) -> None:
-        """Say why an AV1 video that plays shows nothing."""
-        if not self.__frame_seen and self.__state == QMediaPlayer.PlaybackState.PlayingState:
-            self.__notices.add_av1()
-
-    def __on_format_read(self, key: str, result: object) -> None:
-        """Explain what Qt cannot show well about the video, once its format is known.
-
-        :param key: the video the format is of.
-        :param result: its format, or ``None``, or the error reading it ended in -- the file could not be read.
-        """
-        if key != self.__key or not isinstance(result, VideoFormat) or self.__engine.vlc:
-            return
-        if result.interlaced:
-            self.__notices.add(INTERLACED_NOTICE)
-        self.__av1 = result.is_av1
-        self.__arm_no_frame_timer()
 
     # endregion
 

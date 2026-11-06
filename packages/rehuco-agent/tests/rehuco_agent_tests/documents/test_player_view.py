@@ -1218,12 +1218,13 @@ def test_seeking_a_video_that_has_played_records_the_new_position_though_it_is_p
     media.set_position.assert_not_called()
 
 
-def test_dragging_the_slider_seeks_only_when_it_is_let_go(view: PlayerView, media: Media) -> None:
-    """While it is held the slider is the reader's and must not jump back to the playing position.
+def test_a_held_slider_stays_where_it_is_and_seeks_when_it_is_let_go(view: PlayerView, media: Media) -> None:
+    """While it is held the slider is the reader's and must not jump back to the playing position. A drag of the handle
+    itself is ``test_player_view_scrub``'s.
 
     **Test steps:**
 
-    * play a video, press the slider, move it, and report a position meanwhile
+    * play a video, press the slider, set it elsewhere with no drag, and report a position meanwhile
     * verify the slider kept the reader's place and nothing was sought
     * release it
     * verify the player was sought to where it was let go

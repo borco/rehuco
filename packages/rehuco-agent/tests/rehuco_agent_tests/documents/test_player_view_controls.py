@@ -29,16 +29,19 @@ from rehuco_agent.commands import (
     PLAYER_VOLUME_UP,
 )
 from rehuco_agent.documents import player_notices
+from rehuco_agent.documents.player_format_notes import INTERLACED_NOTICE
 from rehuco_agent.documents.player_levels import SPEEDS, VOLUME_STEP
 from rehuco_agent.documents.player_notices import AV1_LIBRARIES_HINT, AV1_NOTICE
-from rehuco_agent.documents.player_view import ERROR_NOTICE, INTERLACED_NOTICE, PlayerView
+from rehuco_agent.documents.player_view import ERROR_NOTICE, PlayerView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
 from rehuco_core import FFMPEG_LIBRARIES_TOOL, VideoFormat
 
 from .player_view_support import (  # pylint: disable=unused-import
     BUFFERED,
+    PLAYING,
     SHORT_MS,
+    STOPPED,
     Listing,
     Media,
     action_of,
@@ -293,6 +296,29 @@ def test_an_av1_video_that_shows_no_picture_is_explained(
     assert notice_buttons(view) == []
 
 
+def test_an_av1_video_whose_format_is_read_after_it_started_to_play_is_explained_too(
+    qtbot: QtBot,
+    mocker: MockerFixture,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+) -> None:
+    """The format is read off the GUI thread, so it usually answers once the video has buffered.
+
+    **Test steps:**
+
+    * play a video whose format has not answered, and let it buffer
+    * have the answer arrive: AV1, with no frame shown
+    * verify a notice explains why it shows nothing
+    """
+    mocker.patch.object(player_notices, "EXTERNAL_TOOLS", {})
+    view = make_view(qtbot, model, recorder, no_frame_ms=SHORT_MS)
+    start_playing(view)
+
+    format_runner_of(view).read.emit("01.mp4", VideoFormat("AV1", interlaced=False))
+
+    qtbot.waitUntil(lambda: notices(view) == [AV1_NOTICE], timeout=2000)
+
+
 def test_an_av1_notice_offers_the_ffmpeg_libraries_when_they_could_be_set_up(
     qtbot: QtBot,
     mocker: MockerFixture,
@@ -378,6 +404,50 @@ def test_an_av1_video_paused_before_the_time_is_up_is_not_blamed(
     qtbot.wait(5 * SHORT_MS)
 
     assert notices(view) == []
+
+
+def test_a_format_read_while_paused_blames_nothing_as_the_video_opens_again(
+    qtbot: QtBot, model: RehuDocumentModel, recorder: WatchProgressRecorder
+) -> None:
+    """A wait armed while paused would run out as the video reopens, before it has buffered, and blame a silence that
+    is only the buffering.
+
+    **Test steps:**
+
+    * play a video whose format has not answered, pause it before any frame, then have the answer arrive: AV1
+    * press play, and have the player report that it plays, but not yet that it buffered
+    * verify no notice is made once the time allowed is up
+    """
+    view = make_view(qtbot, model, recorder, no_frame_ms=SHORT_MS)
+    start_playing(view)
+    action_of(view, "play_pause_action").trigger()
+    format_runner_of(view).read.emit("01.mp4", VideoFormat("AV1", interlaced=False))
+
+    action_of(view, "play_pause_action").trigger()
+    player_of(view).playbackStateChanged.emit(PLAYING)
+
+    qtbot.wait(5 * SHORT_MS)
+
+    assert notices(view) == []
+
+
+def test_an_av1_video_that_stops_on_an_error_is_not_blamed_for_its_silence_too(
+    qtbot: QtBot, listing: Listing, model: RehuDocumentModel, recorder: WatchProgressRecorder
+) -> None:
+    """**Test steps:**
+
+    * play an AV1 video that gives no frame, and have the player report an error and that it stopped
+    * verify only the error is explained once the time allowed is up
+    """
+    listing.formats["01.mp4"] = VideoFormat("AV1", interlaced=False)
+    view = make_view(qtbot, model, recorder, no_frame_ms=SHORT_MS)
+    player = start_playing(view)
+    player.errorOccurred.emit(player.Error.ResourceError, "no codec")
+    player.playbackStateChanged.emit(STOPPED)
+
+    qtbot.wait(5 * SHORT_MS)
+
+    assert notices(view) == [f"{ERROR_NOTICE} no codec"]
 
 
 def test_a_video_loaded_paused_waits_for_no_picture_to_blame_its_format(

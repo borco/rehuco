@@ -4,7 +4,7 @@
 from typing import Final
 
 from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QToolButton, QWidget
 
@@ -47,6 +47,9 @@ ADD_NOTE_AT_TEMPLATE: Final = "Add note at {clock}"
 
 ADD_NOTE_AT_TOOLTIP: Final = "Add a note to the video at {clock}."
 
+SCRUB_INTERVAL_MS: Final = 250
+"""The least time between two of a drag's moves reaching the player: a few seeks a second (#613)."""
+
 
 def bind_player_actions(ui: Ui_PlayerView, player: QWidget) -> None:
     """Bind the player's actions to their commands and keys.
@@ -83,7 +86,9 @@ class PlayerBar(QObject):
     """The bar under the player's picture, drawn from the player's state and asking it for nothing but a seek.
 
     The slider follows the position unless the reader holds it; a click on its groove, a turn of the wheel or the
-    release of the handle asks for a seek (:attr:`seek_requested`). The clock reads the position over the length, the
+    release of a handle that did not move asks for a seek (:attr:`seek_requested`). **A dragged handle** reports where
+    it is at most once per :data:`SCRUB_INTERVAL_MS` (:attr:`scrub_moved`), and where it was let go
+    (:attr:`scrub_finished`), so a press with no move opens nothing. The clock reads the position over the length, the
     play action the glyph of what pressing it does, the other transport actions and the restore one their glyphs, and
     the *Add note at* action the clock it would add a note at.
 
@@ -94,13 +99,29 @@ class PlayerBar(QObject):
     seek_requested = Signal(int)
     """The reader moved the slider: the position to seek to, in milliseconds."""
 
+    scrub_moved = Signal(int)
+    """The reader is dragging the handle: where it is now, in milliseconds, throttled."""
+
+    scrub_finished = Signal(int)
+    """The reader let go of a handle they had dragged: where, in milliseconds."""
+
     def __init__(self, ui: Ui_PlayerView, parent: QObject) -> None:
         super().__init__(parent)
         self.__ui: Final = ui
         self.__scrubbing = False
+        self.__moved = False
+        """Whether the handle held has moved since it was pressed."""
+        self.__kept_ms: int | None = None
+        """Where the handle went since the last move reported, while the interval runs."""
+        self.__scrub_timer: Final = QTimer(self)
+        self.__scrub_timer.setObjectName("scrub_timer")
+        self.__scrub_timer.setSingleShot(True)
+        self.__scrub_timer.setInterval(SCRUB_INTERVAL_MS)
+        self.__scrub_timer.timeout.connect(self.__on_scrub_interval)
         self.__duration_ms = 0
         self.__note_clock = ""
         ui.position_slider.sliderPressed.connect(self.__on_slider_pressed)
+        ui.position_slider.sliderMoved.connect(self.__on_slider_moved)
         ui.position_slider.sliderReleased.connect(self.__on_slider_released)
         ui.position_slider.actionTriggered.connect(self.__on_slider_action)
         for action, glyph in (
@@ -228,13 +249,41 @@ class PlayerBar(QObject):
         """Stop the slider following the video while the reader holds it."""
         self.__scrubbing = True
 
+    def __on_slider_moved(self, position_ms: int) -> None:
+        """Report where the handle is, or keep it for when the interval runs out.
+
+        :param position_ms: where the handle is.
+        """
+        self.__moved = True
+        if self.__scrub_timer.isActive():
+            self.__kept_ms = position_ms
+        else:
+            self.__report_scrub(position_ms)
+
+    def __on_scrub_interval(self) -> None:
+        """Report where the handle went during the interval, if it went anywhere."""
+        if self.__kept_ms is not None:
+            self.__report_scrub(self.__kept_ms)
+
+    def __report_scrub(self, position_ms: int) -> None:
+        """Report where the handle is, and start the interval until the next report.
+
+        :param position_ms: where the handle is.
+        """
+        self.__kept_ms = None
+        self.__scrub_timer.start()
+        self.scrub_moved.emit(position_ms)
+
     def __on_slider_released(self) -> None:
-        """Ask for a seek to where the reader let go of the slider."""
+        """Say where the reader let go of the slider: the end of a drag, or a seek for a handle that did not move."""
+        moved, self.__moved = self.__moved, False
         self.__scrubbing = False
-        self.seek_requested.emit(self.__ui.position_slider.value())
+        self.__kept_ms = None
+        self.__scrub_timer.stop()
+        (self.scrub_finished if moved else self.seek_requested).emit(self.__ui.position_slider.value())
 
     def __on_slider_action(self) -> None:
         """Ask for a seek to where a click on the slider's groove or a turn of the wheel took it -- not while the
-        handle is held, when every move is an action too and the seek waits for the release."""
+        handle is held, when every move is an action too and the drag reports its own."""
         if not self.__scrubbing:
             self.seek_requested.emit(self.__ui.position_slider.sliderPosition())

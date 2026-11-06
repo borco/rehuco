@@ -85,14 +85,16 @@ class VlcMediaPlayer(QObject):
     and, since libvlc then stays *Ended* and ignores ``play()``, a stop is made before any replay;
     ``EncounteredError`` is ``errorOccurred``.
 
-    **A paused load** (:meth:`pause` before anything played) opens the file with ``:no-audio`` -- libvlc then decodes
-    no audio track at all (measured) -- and plays until the first frame **at the position asked for** (the first picture
-    libvlc decodes is the file's start, ahead of the seek the view makes as the video buffers), then pauses and emits
-    :attr:`still_ready` with it; the view then lets the file go, as it does with a frame from Qt's sink. Played before
-    that, the file is opened again with its audio, at the position (``:start-time``). **Nothing is ever muted**: libvlc
-    takes a mute or an unmute only while its audio output lives, so a load muted around it let a blip, then seconds,
-    of sound out at the start, and an unmute after the view's stop was lost and left the next video silent (owner,
-    measured: #574). **A pause while playing** keeps the file held, which is the view's business.
+    **A paused load** (:meth:`pause` before anything played) opens the file with ``:no-audio`` -- libvlc then decodes no
+    audio track at all (measured) -- **already at its position** (:meth:`setSource`, ``:start-time``), and plays until
+    the first frame there, then pauses and emits :attr:`still_ready` with it; the view then lets the file go, as it does
+    with a frame from Qt's sink. It is not seeked there once open: libvlc reports a seek's target at once, so the file's
+    first frame, still queued, passed for the frame at the position whenever this thread was busy, as it is restoring a
+    session (measured on a test clip, #613): a bar at the right place over the file's opening. Played before that, the
+    file is opened again with its audio, at the position (``:start-time``). **Nothing is ever muted**: libvlc takes a
+    mute or an unmute only while its audio output lives, so a load muted around it let a blip, then seconds, of sound
+    out at the start, and an unmute after the view's stop was lost and left the next video silent (owner, measured:
+    #574). **A pause while playing** keeps the file held, which is the view's business.
 
     **libvlc's objects are released** by :meth:`close`: the media each time another replaces it, and the player and the
     instance when the view lets the engine go; the event callbacks are attached to one event manager kept for as long
@@ -113,8 +115,9 @@ class VlcMediaPlayer(QObject):
     """A paused load has its picture: the first frame at the position it was opened at."""
 
     still_refreshed = Signal(QImage)
-    """A subtitle change made while paused has its picture: the frame at the same position, with the subtitle as it is
-    now (libvlc draws none on a paused picture until the position is sought again, measured)."""
+    """A seek has its picture: the frame at the position -- with a subtitle change made while paused, a seek to the
+    same position, so it shows the subtitle as it is now (libvlc draws none on a paused picture until the position is
+    sought again, measured)."""
 
     subtitle_chosen = Signal(object)
     """The reader chose a subtitle track, or none, with a key: the :class:`~rehuco_core.SubtitleChoice` that says so."""
@@ -165,7 +168,9 @@ class VlcMediaPlayer(QObject):
         """Whether a paused load is under way: playing, without audio, until the first frame at the position asked
         for."""
         self.__wanted_ms: int | None = None
-        """The position a paused load was seeked to, which its still must be at; ``None`` when none was asked."""
+        """The position a paused load was asked for, which its still must be at; ``None`` when none was asked."""
+        self.__start_ms = 0
+        """Where a paused load of the source now set opens the file."""
         self.__ended = False
         self.__refreshing = False
         """Whether a subtitle change made while paused awaits the frame that shows it."""
@@ -189,16 +194,18 @@ class VlcMediaPlayer(QObject):
 
     # region What QMediaPlayer answers
 
-    def setSource(self, url: QUrl) -> None:  # noqa: N802
+    def setSource(self, url: QUrl, start_ms: int = 0) -> None:  # noqa: N802
         """Open a file, or let the one held go; what the file before it still has queued is dropped.
 
         :param url: the file's URL, or an empty one to release the file.
+        :param start_ms: where a paused load of it opens the file, in milliseconds; 0 for its start.
         """
         self.__epoch += 1
         self.__sink.epoch = self.__epoch
         self.__source = url
         self.__grabbing = False
         self.__wanted_ms = None
+        self.__start_ms = start_ms
         self.__ended = False
         self.__refreshing = False
         self.__subtitle_timer.stop()
@@ -254,8 +261,12 @@ class VlcMediaPlayer(QObject):
             self.__player.set_pause(1)
             return
         self.__grabbing = True
-        self.__wanted_ms = None
-        self.__open_media(":no-audio")
+        if self.__start_ms > 0:
+            self.__wanted_ms = self.__start_ms
+            self.__open_media(":no-audio", f":start-time={self.__start_ms / 1000:.3f}")
+        else:
+            self.__wanted_ms = None
+            self.__open_media(":no-audio")
         self.__player.play()
 
     def stop(self) -> None:
@@ -280,12 +291,18 @@ class VlcMediaPlayer(QObject):
         return max(int(self.__player.get_time()), 0)
 
     def setPosition(self, position_ms: int) -> None:  # noqa: N802
-        """Move to a position; during a paused load, the position its still must be at.
+        """Move to a position; during a paused load, the position its still must be at, and otherwise the frame that
+        follows is announced (:attr:`still_refreshed`): a paused video's still shows where it was sought to. Not only
+        once paused: the state lags a pause just made.
 
         :param position_ms: where, in milliseconds.
         """
         if self.__grabbing:
+            if self.__wanted_ms == int(position_ms):
+                return
             self.__wanted_ms = int(position_ms)
+        else:
+            self.__refreshing = True
         self.__player.set_time(int(position_ms))
 
     def duration(self) -> int:

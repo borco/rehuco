@@ -19,13 +19,21 @@ from pytest import fixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents import player_engine
-from rehuco_agent.documents.player_view import INTERLACED_NOTICE, VLC_FALLBACK_TEMPLATE
+from rehuco_agent.documents.player_format_notes import INTERLACED_NOTICE
+from rehuco_agent.documents.player_view import VLC_FALLBACK_TEMPLATE
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.vlc_media_player import VlcEngineError, VlcMediaPlayer
 from rehuco_agent.documents.vlc_surface import VlcSurface
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
 from rehuco_agent.settings.videos_settings import IN_APP_PLAYER, VLC_PLAYER, shared_videos_settings
-from rehuco_core import UNKNOWN_ENTRY, RenameCoordinator, SubtitleChoice, SubtitlePreferences, VideoFormat
+from rehuco_core import (
+    UNKNOWN_ENTRY,
+    ProgressEntry,
+    RenameCoordinator,
+    SubtitleChoice,
+    SubtitlePreferences,
+    VideoFormat,
+)
 
 from .player_view_support import (  # pylint: disable=unused-import
     Listing,
@@ -285,6 +293,34 @@ def test_a_paused_load_shows_libvlcs_still_and_lets_go(
     assert still_of(view).image is not None
     engine.stop.assert_called_once_with()
     engine.setSource.assert_called_with(QUrl())
+
+
+def test_a_paused_load_tells_libvlc_where_to_open_the_file_before_it_pauses(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    progress: dict[str, ProgressEntry],
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """Seeked only once open, a busy restore showed the file's first frame under a bar at the right place (#613).
+
+    **Test steps:**
+
+    * keep a partial progress for a video and load it paused under libvlc
+    * verify the engine was given the source with that start, then the pause
+    """
+    del library, vlc_chosen
+    progress["01.mp4"] = ProgressEntry(30.0, 100.0)
+    model.last_video.return_value = "01.mp4"  # type: ignore[attr-defined]
+    view = make_view(qtbot, model, recorder)
+
+    view.load_last()
+
+    calls = [name for name, _args, _kwargs in engine.method_calls if name in ("setSource", "pause")]
+    assert calls == ["setSource", "pause"]
+    assert engine.setSource.call_args.args[1] == 30_000
 
 
 def test_the_volume_keys_reach_libvlc(
