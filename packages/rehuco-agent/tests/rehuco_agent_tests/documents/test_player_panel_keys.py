@@ -21,6 +21,7 @@ from rehuco_agent.fields.widgets.markdown_edit import MarkdownEdit
 PLAIN = Qt.KeyboardModifier.NoModifier
 CTRL = Qt.KeyboardModifier.ControlModifier
 SHIFT = Qt.KeyboardModifier.ShiftModifier
+ALT = Qt.KeyboardModifier.AltModifier
 
 
 class Host:  # pylint: disable=too-few-public-methods
@@ -29,8 +30,8 @@ class Host:  # pylint: disable=too-few-public-methods
     def __init__(self, qtbot: QtBot) -> None:
         self.parent = QWidget()
         qtbot.addWidget(self.parent)
-        self.actions = [QAction(self.parent) for _ in range(4)]
-        for action, keys in zip(self.actions, ("Space", "B", "Left", "F2")):
+        self.actions = [QAction(self.parent) for _ in range(6)]
+        for action, keys in zip(self.actions, ("Space", "B", "Left", "F2", "Alt+V", "Shift+V")):
             action.setShortcut(QKeySequence(keys))
         self.on_escape = Mock()
         self.keys = PlayerPanelKeys(lambda: self.actions, self.on_escape, self.actions[3], self.parent)
@@ -53,7 +54,7 @@ class Host:  # pylint: disable=too-few-public-methods
 
 @fixture(name="host")
 def fixture_host(qtbot: QtBot) -> Host:
-    """A filter over a player with three keys bound.
+    """A filter over a player with five keys bound, the subtitle ones with Alt and Shift (#618).
 
     :param qtbot: pytest-qt fixture.
     :returns: the host.
@@ -68,6 +69,9 @@ def fixture_host(qtbot: QtBot) -> Host:
         param(Qt.Key.Key_B, PLAIN, True, id="a-player-key"),
         param(Qt.Key.Key_B, SHIFT, True, id="a-capital-of-one"),
         param(Qt.Key.Key_Left, PLAIN, True, id="an-arrow"),
+        param(Qt.Key.Key_V, ALT, True, id="a-key-bound-with-alt"),
+        param(Qt.Key.Key_V, SHIFT, True, id="a-key-bound-with-shift"),
+        param(Qt.Key.Key_V, PLAIN, False, id="the-same-key-bare-is-not-bound-here"),
         param(Qt.Key.Key_X, PLAIN, False, id="a-key-the-player-does-not-use"),
         param(Qt.Key.Key_F2, PLAIN, False, id="the-key-that-ends-the-editing"),
         param(Qt.Key.Key_S, CTRL, False, id="another-shortcut"),

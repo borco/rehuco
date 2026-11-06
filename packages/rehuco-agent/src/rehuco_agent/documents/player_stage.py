@@ -7,6 +7,7 @@ import cbor2
 from PySide6.QtCore import QByteArray, QObject, QSize, Qt, QTimer
 from PySide6.QtMultimedia import QVideoFrame
 from PySide6.QtWidgets import QWidget
+from rehuco_core import SubtitleChoice
 
 from ..fields.widgets.overlay_surface import OverlayMode
 from .player_clicks import PlayerClicks
@@ -21,6 +22,7 @@ VIDEO_STATE_KEY: Final = "video"
 INFO_STATE_KEY: Final = "info"
 TREE_STATE_KEY: Final = "tree"
 NOTES_STATE_KEY: Final = "notes"
+SUBTITLES_STATE_KEY: Final = "subtitles"
 """The rest of the player's entry: the video it is on, and which of the panels beside the picture show (#576)."""
 
 STAGE_STATE_KEY: Final = "stage_split"
@@ -261,23 +263,38 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
 
     # endregion
 
-    def save_state(self, video: str | None) -> bytes:
-        """Encode where the stage splits between the picture and the panels beside it, which of them show, and the
-        video the player is on.
+    def save_state(self, video: str | None, subtitles: SubtitleChoice | None = None) -> bytes:
+        """Encode where the stage splits between the picture and the panels beside it, which of them show, the
+        video the player is on, and what the reader chose of the subtitles (#618).
 
         :param video: the video's content key, or ``None`` for none.
+        :param subtitles: the choice, or ``None`` while none was made, which the settings' default stands for.
         :returns: the state, restorable by :meth:`restore_state`.
         """
         ui = self.__ui
-        return cbor2.dumps(
-            {
-                STAGE_STATE_KEY: bytes(ui.stage_splitter.saveState().data()),
-                VIDEO_STATE_KEY: video,
-                INFO_STATE_KEY: ui.info_action.isChecked(),
-                TREE_STATE_KEY: ui.tree_action.isChecked(),
-                NOTES_STATE_KEY: ui.notes_action.isChecked(),
-            }
-        )
+        state: dict[str, object] = {
+            STAGE_STATE_KEY: bytes(ui.stage_splitter.saveState().data()),
+            VIDEO_STATE_KEY: video,
+            INFO_STATE_KEY: ui.info_action.isChecked(),
+            TREE_STATE_KEY: ui.tree_action.isChecked(),
+            NOTES_STATE_KEY: ui.notes_action.isChecked(),
+        }
+        if subtitles is not None:
+            state[SUBTITLES_STATE_KEY] = subtitles.to_state()
+        return cbor2.dumps(state)
+
+    @staticmethod
+    def subtitles_in(state: bytes) -> SubtitleChoice | None:
+        """The subtitle choice :meth:`save_state` encoded.
+
+        :param state: the blob.
+        :returns: the choice, or ``None`` when there is none or the blob cannot be read.
+        """
+        try:
+            loaded = cbor2.loads(state)
+        except cbor2.CBORDecodeError:
+            return None
+        return SubtitleChoice.from_state(loaded.get(SUBTITLES_STATE_KEY)) if isinstance(loaded, dict) else None
 
     def restore_state(self, state: bytes) -> str | None:
         """Restore what :meth:`save_state` encoded: the panels first, since a splitter gives sizes only to what shows.

@@ -106,7 +106,11 @@ The libraries are loaded at start, so choosing them (or leaving them) says *Take
 start that could not load a chosen build says why beside the choice. **Videos** also gains a *Maximized player* frame —
 the document, the main window or full screen, the lightbox's three surfaces with the same SHIFT, CTRL and CTRL+SHIFT
 overrides, chosen separately for the player and saved as `maximize_mode` (#574, [[plugins#player-maximized]]); the next
-maximize uses a change, an open one is not moved. The *Notes* frame #573 added, with its *Adding a note pauses the
+maximize uses a change, an open one is not moved. A *Subtitles (VLC)* frame (#618) holds *Show subtitles when a
+video starts* (`subtitles_on`), the choice between *show all languages* and *show only selected languages*
+(`subtitles_show_all`), and a reorderable list of languages (`subtitle_languages`), each spelled as libvlc spells it,
+with *Unknown* for the tracks that name none; a name libvlc does not know is dropped on save and an empty list is
+`English` ([[plugins#in-app-player]]). The *Notes* frame #573 added, with its *Adding a note pauses the
 video and opens the notes for editing* box (`add_note_edits`), is gone (owner, #574): the player's `B` only adds its
 bookmark, docked or maximized ([[plugins#video-notes-dock]]), and a stored value is ignored.
 **Root Catalog**

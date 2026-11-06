@@ -236,6 +236,30 @@ PLAYER_SPEED_DOWN: Final = Command(
     PLAYER_SCOPE,
     PLAYER_FOCUS_GROUP,
 )
+PLAYER_SUBTITLE_NEXT: Final = Command(
+    "document.player.subtitle_next",
+    "Next subtitle",
+    "Show the next subtitle track, then none, then the first again (VLC only)",
+    ("V",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_SUBTITLE_PREVIOUS: Final = Command(
+    "document.player.subtitle_previous",
+    "Previous subtitle",
+    "Show the previous subtitle track (VLC only)",
+    ("Alt+V",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
+PLAYER_SUBTITLE_TOGGLE: Final = Command(
+    "document.player.subtitle_toggle",
+    "Subtitles on or off",
+    "Hide the subtitles, or show the track shown last (VLC only)",
+    ("Shift+V",),
+    PLAYER_SCOPE,
+    PLAYER_FOCUS_GROUP,
+)
 CONVERT_SCREENSHOT: Final = Command(
     "document.screenshots.convert",
     "Convert screenshot",
@@ -291,6 +315,9 @@ COMMANDS: Final = (
     PLAYER_VOLUME_DOWN,
     PLAYER_SPEED_UP,
     PLAYER_SPEED_DOWN,
+    PLAYER_SUBTITLE_NEXT,
+    PLAYER_SUBTITLE_PREVIOUS,
+    PLAYER_SUBTITLE_TOGGLE,
     COMPLETE_IMAGES,
     CONVERT_SCREENSHOT,
     TOGGLE_SCREENSHOT_VISIBILITY,

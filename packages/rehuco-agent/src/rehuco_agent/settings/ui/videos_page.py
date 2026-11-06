@@ -25,12 +25,14 @@ from ...playback_vlc import vlc_restart_needed
 from ..persistent_settings import persistent_settings
 from ..tools_settings import shared_tools_settings
 from ..videos_settings import (
+    DEFAULT_SUBTITLE_LANGUAGES,
     FFMPEG_LIBRARIES_PLAYER,
     IN_APP_PLAYER,
     PLAYERS,
     VLC_PLAYER,
     VideosSettings,
     normalize_extensions,
+    normalize_subtitle_languages,
     shared_videos_settings,
 )
 from .videos_page_ui import Ui_VideosPage
@@ -88,7 +90,7 @@ class PlayerChoice:
 class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
     """Configure how a tutorial's videos are measured (#224's parameters, made the user's).
 
-    Four blocks, the first and the third one per parameter `rehuco_core.rehu_content_duration.content_duration` takes:
+    Five blocks, the first and the third one per parameter `rehuco_core.rehu_content_duration.content_duration` takes:
 
     - **Duration probe** -- which backend reads a container. *FFmpeg (external)* is offered once FFmpeg is usable,
       and where FFmpeg is lives on the Tools page ([[packaging-deployment#external-tools]], #521), which a link
@@ -102,6 +104,8 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
       icons, exactly as the reference-images list on `ImagesFilesPage` is.
     - **Watch progress** -- the two auto-viewed rules and the size match for renamed files, which core's
       progress write takes as parameters ([[field-schema#watch-progress]], #316).
+    - **Subtitles** (#618) -- whether a rehu's videos start with them shown, and the list of languages the subtitle
+      keys visit, with a choice between that list alone and every track the video has ([[plugins#in-app-player]]).
 
     **The selected backend reports whether it can actually run**, before anyone presses Compute: a scan under an
     unusable one raises rather than measuring ``0`` ([[field-schema#duration-size]]) -- so this page is where that
@@ -161,6 +165,8 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.ffprobe_probe_radio_button.setText(FfprobeDurationProbe.LABEL)
         self.__ui.extensions_editor.defaults = VIDEO_EXTENSIONS
         apply_item_action_icons(self.__ui.extensions_editor)
+        self.__ui.subtitle_languages_editor.defaults = DEFAULT_SUBTITLE_LANGUAGES
+        apply_item_action_icons(self.__ui.subtitle_languages_editor)
 
         self.__ui.ffprobe_probe_radio_button.toggled.connect(self.__on_probe_toggled)
         for choice in self.__choices:
@@ -186,6 +192,9 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
             or self.__ui.mark_tutorial_viewed_check_box.isChecked() != settings.mark_tutorial_viewed_on_last_file
             or self.__ui.match_renamed_by_size_check_box.isChecked() != settings.match_renamed_by_size
             or self.__staged_maximize_mode() != settings.maximize_mode
+            or self.__ui.subtitles_on_check_box.isChecked() != settings.subtitles_on
+            or self.__ui.subtitles_all_radio_button.isChecked() != settings.subtitles_show_all
+            or normalize_subtitle_languages(self.__ui.subtitle_languages_editor.values) != settings.subtitle_languages
         )
 
     def save_changes(self) -> None:
@@ -204,6 +213,9 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         settings.mark_tutorial_viewed_on_last_file = self.__ui.mark_tutorial_viewed_check_box.isChecked()
         settings.match_renamed_by_size = self.__ui.match_renamed_by_size_check_box.isChecked()
         settings.maximize_mode = self.__staged_maximize_mode()
+        settings.subtitles_on = self.__ui.subtitles_on_check_box.isChecked()
+        settings.subtitles_show_all = self.__ui.subtitles_all_radio_button.isChecked()
+        settings.subtitle_languages = normalize_subtitle_languages(self.__ui.subtitle_languages_editor.values)
         settings.save(persistent_settings())
         self.drop_changes()
 
@@ -260,6 +272,10 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.mark_tutorial_viewed_check_box.setChecked(settings.mark_tutorial_viewed_on_last_file)
         self.__ui.match_renamed_by_size_check_box.setChecked(settings.match_renamed_by_size)
         self.__maximize_buttons[settings.maximize_mode].setChecked(True)
+        self.__ui.subtitles_on_check_box.setChecked(settings.subtitles_on)
+        self.__ui.subtitles_all_radio_button.setChecked(settings.subtitles_show_all)
+        self.__ui.subtitles_selected_radio_button.setChecked(not settings.subtitles_show_all)
+        self.__ui.subtitle_languages_editor.values = settings.subtitle_languages
         self.__update_probe_controls()
         self.__update_player_controls()
 

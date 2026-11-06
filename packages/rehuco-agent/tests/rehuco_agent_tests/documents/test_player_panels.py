@@ -613,3 +613,17 @@ def test_the_divider_above_the_notes_shows_and_does_not_drag(stage: Stage, qtbot
 
 
 # endregion
+
+
+def test_detaching_the_panels_twice_lets_them_go_once(stage: Stage) -> None:
+    """A document detaches its player's panels when it closes and again when its sub-docks are torn down.
+
+    **Test steps:**
+
+    * detach the player's panels, then detach them again
+    * verify the second call finds nothing attached and raises nothing
+    """
+    panels = stage.player.panels
+
+    panels.detach()
+    panels.detach()

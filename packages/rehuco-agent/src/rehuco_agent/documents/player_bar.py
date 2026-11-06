@@ -20,6 +20,9 @@ from ..commands import (
     PLAYER_PREVIOUS,
     PLAYER_SPEED_DOWN,
     PLAYER_SPEED_UP,
+    PLAYER_SUBTITLE_NEXT,
+    PLAYER_SUBTITLE_PREVIOUS,
+    PLAYER_SUBTITLE_TOGGLE,
     PLAYER_TO_END,
     PLAYER_TO_START,
     PLAYER_TREE,
@@ -68,6 +71,9 @@ def bind_player_actions(ui: Ui_PlayerView, player: QWidget) -> None:
         (ui.volume_down_action, PLAYER_VOLUME_DOWN),
         (ui.speed_up_action, PLAYER_SPEED_UP),
         (ui.speed_down_action, PLAYER_SPEED_DOWN),
+        (ui.subtitle_next_action, PLAYER_SUBTITLE_NEXT),
+        (ui.subtitle_previous_action, PLAYER_SUBTITLE_PREVIOUS),
+        (ui.subtitle_toggle_action, PLAYER_SUBTITLE_TOGGLE),
     ):
         shared_command_registry().bind(action, command.id)
         player.addAction(action)

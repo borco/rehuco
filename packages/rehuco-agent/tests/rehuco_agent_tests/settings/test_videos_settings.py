@@ -7,20 +7,23 @@ the same rationale) rather than a real one or ``tmp_path``.
 from collections.abc import Iterator
 from typing import Any
 
-from pytest import fixture, mark
+from pytest import fixture, mark, param
 from pytest_mock import MockerFixture
 from rehuco_agent.fields.widgets.overlay_surface import OverlayMode
 from rehuco_agent.settings import videos_settings
 from rehuco_agent.settings.tools_settings import shared_tools_settings
 from rehuco_agent.settings.videos_settings import (
     DEFAULT_PLAYER,
+    DEFAULT_SUBTITLE_LANGUAGES,
     GROUP,
     IN_APP_PLAYER,
     MAXIMIZE_MODE_KEY,
     PLAYERS,
+    SUBTITLE_LANGUAGES_KEY,
     VLC_PLAYER,
     VideosSettings,
     normalize_extensions,
+    normalize_subtitle_languages,
     read_engine,
     read_player,
     shared_videos_settings,
@@ -30,10 +33,12 @@ from rehuco_core import (
     EXTERNAL_TOOLS,
     FFMPEG_LIBRARIES_TOOL,
     FFMPEG_TOOL,
+    UNKNOWN_ENTRY,
     VIDEO_EXTENSIONS,
     VLC_TOOL,
     FfprobeDurationProbe,
     MediaInfoDurationProbe,
+    SubtitlePreferences,
     WatchRules,
 )
 
@@ -513,3 +518,77 @@ def test_the_maximize_surface_round_trips(settings: FakeSettings) -> None:
     loaded.load(settings)  # type: ignore[arg-type]
 
     assert loaded.maximize_mode is OverlayMode.FULL_SCREEN
+
+
+# region Subtitles
+
+
+@mark.parametrize(
+    ("values", "expected"),
+    [
+        param(["Romanian", "English"], ("Romanian", "English"), id="kept in order"),
+        param([" english ", "ROMANIAN"], ("English", "Romanian"), id="spelled as libvlc spells them"),
+        param(["unknown", "English"], (UNKNOWN_ENTRY, "English"), id="the unknown entry"),
+        param(["English", "english", "English"], ("English",), id="repeats dropped"),
+        param(["Klingon", "French"], ("French",), id="a name libvlc does not know dropped"),
+        param([], DEFAULT_SUBTITLE_LANGUAGES, id="empty is the default"),
+        param(["Klingon"], DEFAULT_SUBTITLE_LANGUAGES, id="nothing usable is the default"),
+        param("Romanian", ("Romanian",), id="a lone string as the ini backend hands one back"),
+        param(None, DEFAULT_SUBTITLE_LANGUAGES, id="nothing stored"),
+    ],
+)
+def test_the_subtitle_languages_are_normalized_to_the_names_libvlc_uses(
+    values: object, expected: tuple[str, ...]
+) -> None:
+    """**Test steps:**
+
+    * normalize each list
+    * verify the names, their order, and the default for a list with nothing usable
+    """
+    assert normalize_subtitle_languages(values) == expected
+
+
+def test_the_subtitle_settings_default_to_on_english_and_all_languages() -> None:
+    """**Test steps:**
+
+    * build fresh settings
+    * verify subtitles start on, English is preferred, and every language is visited after it
+    """
+    settings = VideosSettings()
+
+    assert settings.subtitles_on is True
+    assert settings.subtitle_languages == ("English",)
+    assert settings.subtitle_preferences == SubtitlePreferences(("English",), show_all=True)
+
+
+def test_the_subtitle_settings_round_trip(settings: FakeSettings) -> None:
+    """**Test steps:**
+
+    * save an off, only-selected choice with Romanian then Unknown, and load a second object
+    * verify all three came back, and the preferences the engine takes follow
+    """
+    saved = VideosSettings(subtitles_on=False, subtitle_languages=("Romanian", UNKNOWN_ENTRY), subtitles_show_all=False)
+    saved.save(settings)  # type: ignore[arg-type]
+    loaded = VideosSettings()
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.subtitles_on is False
+    assert loaded.subtitle_languages == ("Romanian", UNKNOWN_ENTRY)
+    assert loaded.subtitles_show_all is False
+    assert loaded.subtitle_preferences == SubtitlePreferences(("Romanian", UNKNOWN_ENTRY), show_all=False)
+
+
+def test_a_stored_subtitle_list_with_nothing_usable_loads_as_the_default(settings: FakeSettings) -> None:
+    """**Test steps:**
+
+    * store a list of names libvlc does not know, and load
+    * verify the default list
+    """
+    settings.setValue(f"{GROUP}/{SUBTITLE_LANGUAGES_KEY}", ["Klingon"])
+    loaded = VideosSettings(subtitle_languages=("Romanian",))
+    loaded.load(settings)  # type: ignore[arg-type]
+
+    assert loaded.subtitle_languages == DEFAULT_SUBTITLE_LANGUAGES
+
+
+# endregion

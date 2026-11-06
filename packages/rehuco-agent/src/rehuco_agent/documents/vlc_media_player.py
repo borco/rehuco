@@ -7,10 +7,20 @@
 import ctypes
 from typing import Any, Final
 
-from PySide6.QtCore import QObject, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtMultimedia import QMediaPlayer
-from rehuco_core import VlcLibrary
+from rehuco_core import (
+    SubtitleChoice,
+    SubtitlePreferences,
+    SubtitleTrack,
+    VlcLibrary,
+    remembered_track,
+    subtitle_cycle,
+    subtitle_entries,
+    subtitle_index,
+    subtitle_labels,
+)
 
 from .vlc_frame_sink import CHROMA, VlcFrameSink
 from .vlc_surface import VlcSurface
@@ -18,6 +28,19 @@ from .vlc_surface import VlcSurface
 INSTANCE_OPTIONS: Final = ("--no-video-title-show", "--no-osd", "--quiet")
 """How the libvlc instance is made: nothing drawn into the frames but the video and its subtitles -- not the file
 name, not VLC's on-screen messages -- and no console noise."""
+
+SUBTITLES_OFF: Final = -1
+"""libvlc's id for no subtitle track: ``video_set_spu`` with it hides them, and its track list names it first."""
+
+NO_SUBTITLES_LABEL: Final = "Subs: none"
+"""The one entry of the subtitle menu for a video libvlc lists no subtitle for, once it has been waited on."""
+
+SUBTITLE_POLL_MS: Final = 250
+"""How often the subtitle tracks libvlc lists are read while waiting for the list to settle: it is empty for seconds
+after a video starts (measured), and a sidecar file's tracks come after the video's own."""
+
+SUBTITLE_POLL_LIMIT: Final = 40
+"""How many reads are made before a video with no subtitles is given up on."""
 
 SEEK_TOLERANCE_MS: Final = 1000
 """How far from the position a paused load was asked to start at its first frame may be and still be its still."""
@@ -89,11 +112,32 @@ class VlcMediaPlayer(QObject):
     still_ready = Signal(QImage)
     """A paused load has its picture: the first frame at the position it was opened at."""
 
+    still_refreshed = Signal(QImage)
+    """A subtitle change made while paused has its picture: the frame at the same position, with the subtitle as it is
+    now (libvlc draws none on a paused picture until the position is sought again, measured)."""
+
+    subtitle_chosen = Signal(object)
+    """The reader chose a subtitle track, or none, with a key: the :class:`~rehuco_core.SubtitleChoice` that says so."""
+
+    subtitle_menu_changed = Signal(object, int, int)
+    """The entries of the subtitle menu (:func:`~rehuco_core.subtitle_labels`), which of them is on, and how many of the
+    tracks after *none* the keys visit -- the rest are the video's others, which the reader may still pick -- as they
+    are set or applied; no entries while libvlc has not listed them, and :data:`NO_SUBTITLES_LABEL` alone for a video it
+    listed none for. A silent stretch of a video shows nothing, so this
+    is how the reader tells a track was set."""
+
     event_raised = Signal(int, object, int)
     """A libvlc event, ``(event type, value, epoch)``, emitted on libvlc's thread and delivered on this object's.
     Internal."""
 
-    def __init__(self, library: VlcLibrary, surface: VlcSurface, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        library: VlcLibrary,
+        surface: VlcSurface,
+        parent: QObject | None = None,
+        *,
+        subtitle_poll_ms: int = SUBTITLE_POLL_MS,
+    ) -> None:
         super().__init__(parent)
         module = library.module
         instance = library.instance(*INSTANCE_OPTIONS)
@@ -123,6 +167,19 @@ class VlcMediaPlayer(QObject):
         self.__wanted_ms: int | None = None
         """The position a paused load was seeked to, which its still must be at; ``None`` when none was asked."""
         self.__ended = False
+        self.__refreshing = False
+        """Whether a subtitle change made while paused awaits the frame that shows it."""
+        self.__preferences = SubtitlePreferences((), show_all=True)
+        self.__choice = SubtitleChoice(shown=False)
+        """What the reader wants of the subtitles: given by the owner, and changed by the keys."""
+        self.__ring: list[SubtitleTrack | None] = []
+        """The entries the subtitle menu offers last: none, then the tracks the keys visit."""
+        self.__listed: list[SubtitleTrack] = []
+        """The tracks libvlc listed at the last read, which the next read compares with."""
+        self.__polls = 0
+        self.__subtitle_timer: Final = QTimer(self)
+        self.__subtitle_timer.setInterval(subtitle_poll_ms)
+        self.__subtitle_timer.timeout.connect(self.__poll_subtitles)
         self.__closed = False
         self.event_raised.connect(self.__on_event, Qt.ConnectionType.QueuedConnection)
         self.__sink.frame_ready.connect(self.__on_frame, Qt.ConnectionType.QueuedConnection)
@@ -143,6 +200,9 @@ class VlcMediaPlayer(QObject):
         self.__grabbing = False
         self.__wanted_ms = None
         self.__ended = False
+        self.__refreshing = False
+        self.__subtitle_timer.stop()
+        self.__announce([], None)
         if url.isEmpty():
             self.__player.set_media(None)
             self.__release_media()
@@ -205,6 +265,9 @@ class VlcMediaPlayer(QObject):
         self.__grabbing = False
         self.__wanted_ms = None
         self.__ended = False
+        self.__refreshing = False
+        self.__subtitle_timer.stop()
+        self.__announce([], None)
         self.__player.stop()
         self.__surface.set_frame(None)
         self.__set_state(QMediaPlayer.PlaybackState.StoppedState)
@@ -259,6 +322,54 @@ class VlcMediaPlayer(QObject):
         :param volume: 0 to 1.
         """
         self.__player.audio_set_volume(round(volume * 100))
+
+    def set_subtitle_preferences(self, preferences: SubtitlePreferences) -> None:
+        """Say which languages the keys visit, and in what order.
+
+        :param preferences: the user's list.
+        """
+        self.__preferences = preferences
+
+    def set_subtitle_choice(self, choice: SubtitleChoice) -> None:
+        """Say what the reader wants of the subtitles of the videos to come: it is applied to the next video once
+        libvlc has listed its tracks, and to the one open if that has not happened yet.
+
+        :param choice: on or off, and the track they are shown as.
+        """
+        self.__choice = choice
+
+    def next_subtitle(self) -> None:
+        """Show the next track of the cycle; after the last, none, and after none, the first. Nothing when the video
+        has no track the cycle visits."""
+        self.__step_subtitle(1)
+
+    def previous_subtitle(self) -> None:
+        """Show the previous track of the cycle, which :meth:`next_subtitle` walks the other way."""
+        self.__step_subtitle(-1)
+
+    def select_subtitle(self, index: int) -> None:
+        """Show the entry the reader picked in the subtitle menu, as the key that reaches it would.
+
+        :param index: the entry's position in the last menu announced (:attr:`subtitle_menu_changed`); one outside it,
+            as a menu that has since been emptied may hand back, is ignored.
+        """
+        if 0 <= index < len(self.__ring):
+            target = self.__ring[index]
+            self.__choose(self.__subtitle_tracks(), target, self.__choice_of(target))
+
+    def toggle_subtitles(self) -> None:
+        """Hide the subtitles, or show again the track shown last, which is the cycle's first when none was or the
+        subtitles were last turned off by cycling to none. Nothing when the video has no track the cycle visits."""
+        tracks = self.__subtitle_tracks()
+        cycle = subtitle_cycle(tracks, self.__preferences)
+        if not cycle:
+            return
+        current = self.__current_subtitle(tracks)
+        if current is not None:
+            self.__choose(tracks, None, SubtitleChoice.of_track(current, shown=False))
+        else:
+            target = remembered_track(cycle, self.__choice)
+            self.__choose(tracks, target, self.__choice_of(target))
 
     def grab_still(self) -> QImage | None:
         """The picture shown now: the frame painted last.
@@ -414,6 +525,9 @@ class VlcMediaPlayer(QObject):
         if self.__visible is not None and (frame.width(), frame.height()) != self.__visible:
             frame = frame.copy(0, 0, *self.__visible)
         self.__surface.set_frame(frame)
+        if self.__refreshing:
+            self.__refreshing = False
+            self.still_refreshed.emit(frame)
         if self.__grabbing and self.__at_wanted_position():
             self.__grabbing = False
             self.__wanted_ms = None
@@ -427,6 +541,106 @@ class VlcMediaPlayer(QObject):
         """
         return self.__wanted_ms is None or abs(self.position() - self.__wanted_ms) <= SEEK_TOLERANCE_MS
 
+    def __subtitle_tracks(self) -> list[SubtitleTrack]:
+        """The subtitle tracks libvlc lists, in its order, without the *disable* entry.
+
+        :returns: the tracks; none while libvlc has not listed any.
+        """
+        described = self.__player.video_get_spu_description() or []
+        return [
+            SubtitleTrack.parse(
+                int(track_id), name.decode("utf-8", "replace") if isinstance(name, bytes) else str(name)
+            )
+            for track_id, name in described
+            if int(track_id) != SUBTITLES_OFF
+        ]
+
+    def __current_subtitle(self, tracks: list[SubtitleTrack]) -> SubtitleTrack | None:
+        """The track libvlc shows.
+
+        :param tracks: the tracks it lists.
+        :returns: the track, or ``None`` when none is shown.
+        """
+        shown = int(self.__player.video_get_spu())
+        return next((track for track in tracks if track.track_id == shown), None)
+
+    def __step_subtitle(self, delta: int) -> None:
+        """Move along the cycle of none and the tracks the preferences visit.
+
+        :param delta: how many places forward, or back when negative.
+        """
+        tracks = self.__subtitle_tracks()
+        cycle = subtitle_cycle(tracks, self.__preferences)
+        if not cycle:
+            return
+        ring: list[SubtitleTrack | None] = [None, *cycle]
+        current = self.__current_subtitle(tracks)
+        index = ring.index(current) if current in ring else 0
+        target = ring[(index + delta) % len(ring)]
+        self.__choose(tracks, target, self.__choice_of(target))
+
+    @staticmethod
+    def __choice_of(track: SubtitleTrack | None) -> SubtitleChoice:
+        """What showing a track, or none, says the reader wants: none forgets the track, so turning the subtitles on
+        again starts the cycle over.
+
+        :param track: the track shown, ``None`` for none.
+        :returns: the choice.
+        """
+        return SubtitleChoice(shown=False) if track is None else SubtitleChoice.of_track(track)
+
+    def __choose(self, tracks: list[SubtitleTrack], track: SubtitleTrack | None, choice: SubtitleChoice) -> None:
+        """Show a track by the reader's key or pick, and say what was chosen. This settles the matter: the choice
+        waiting for the track list is dropped.
+
+        :param tracks: the tracks libvlc lists.
+        :param track: the track to show, ``None`` for none.
+        :param choice: what showing it means.
+        """
+        self.__subtitle_timer.stop()
+        self.__choice = choice
+        self.__show_subtitle(track)
+        self.__announce(tracks, track)
+        self.subtitle_chosen.emit(choice)
+
+    def __announce(self, tracks: list[SubtitleTrack], track: SubtitleTrack | None) -> None:
+        """Say what the subtitle menu offers and which entry is on.
+
+        :param tracks: the tracks libvlc lists; none to empty the menu.
+        :param track: the track shown, ``None`` for none.
+        """
+        cycle = subtitle_cycle(tracks, self.__preferences)
+        entries = subtitle_entries(tracks, cycle)
+        self.__ring = [None, *entries] if entries else []
+        self.subtitle_menu_changed.emit(subtitle_labels(entries), subtitle_index(entries, track), len(cycle))
+
+    def __show_subtitle(self, track: SubtitleTrack | None) -> None:
+        """Show a subtitle track; paused, seek to where the video is so a frame shows it.
+
+        :param track: the track to show, ``None`` for none.
+        """
+        self.__player.video_set_spu(SUBTITLES_OFF if track is None else track.track_id)
+        if self.__state == QMediaPlayer.PlaybackState.PausedState and not self.__grabbing:
+            self.__refreshing = True
+            self.__player.set_time(self.position())
+
+    def __poll_subtitles(self) -> None:
+        """Read libvlc's track list, and apply the choice once it has settled: the same two reads running, with
+        something in it. A video that lists none is given up on after :data:`SUBTITLE_POLL_LIMIT` reads."""
+        self.__polls += 1
+        tracks = self.__subtitle_tracks()
+        settled = bool(tracks) and tracks == self.__listed
+        self.__listed = tracks
+        if settled:
+            self.__subtitle_timer.stop()
+            cycle = subtitle_cycle(tracks, self.__preferences)
+            target = remembered_track(cycle, self.__choice) if self.__choice.shown else None
+            self.__show_subtitle(target)
+            self.__announce(tracks, target)
+        elif self.__polls >= SUBTITLE_POLL_LIMIT:
+            self.__subtitle_timer.stop()
+            self.subtitle_menu_changed.emit([NO_SUBTITLES_LABEL], 0, 0)
+
     def __open_media(self, *options: str) -> None:
         """Open the source as a new media, with libvlc options, in place of the one held.
 
@@ -436,6 +650,9 @@ class VlcMediaPlayer(QObject):
         self.__player.set_media(media)
         self.__release_media()
         self.__media = media
+        self.__polls = 0
+        self.__listed = []
+        self.__subtitle_timer.start()
 
     def __release_media(self) -> None:
         """Release the media held, if any."""

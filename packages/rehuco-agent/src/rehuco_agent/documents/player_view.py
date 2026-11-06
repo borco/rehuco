@@ -25,10 +25,12 @@ from ..settings.videos_settings import shared_videos_settings
 from .latest_runner import LatestRunner
 from .player_bar import PlayerBar, bind_player_actions
 from .player_engine import Engine, PlayerEngine
+from .player_levels import VOLUME_STEP, PlayerLevels
 from .player_notices import PlayerNotices
 from .player_panels import PlayerPanels
 from .player_playlist import PlayerPlaylist
 from .player_stage import PlayerStage
+from .player_subtitles import PlayerSubtitles
 from .player_view_ui import Ui_PlayerView
 from .rehu_document_model import RehuDocumentModel
 from .vlc_media_player import VlcMediaPlayer
@@ -36,14 +38,6 @@ from .watch_progress_recorder import WatchProgressRecorder
 
 SEEK_STEP_MS: Final = 5000
 """How far the back and forward keys and buttons jump."""
-
-VOLUME_STEP: Final = 0.05
-"""How much each press of the volume keys raises or lowers the volume, of a full scale of 1."""
-
-SPEEDS: Final = (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
-"""The playback speeds the combo offers, and the steps of the speed keys."""
-
-DEFAULT_SPEED: Final = 1.0
 
 NO_FRAME_MS: Final = 1500
 """How long an AV1 video may play without showing a frame before the player says why: Qt decodes AV1 in hardware only,
@@ -170,7 +164,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         super().__init__(parent)
         self.__model: Final = model
         self.__recorder: Final = recorder
-        self.__volume = 1.0
         self.__videos: list[tuple[str, Path]] | None = None
         """The tutorial's videos as ``(content key, path)`` in play order, once listed; ``None`` before."""
         self.__held_key: str | None = None
@@ -204,6 +197,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__sink: Final = QVideoSink(self)
         self.__sink.setObjectName("frame_sink")
         self.__engine: Final = PlayerEngine(self, self.__ui.video_widget, self.__ui.vlc_surface, self.__sink)
+        self.__levels: Final = PlayerLevels(self.__ui, self.__engine, self)
+        self.__subtitles: Final = PlayerSubtitles(self.__ui, self.__engine, self)
         self.__notices: Final = PlayerNotices(self.__ui.notice_banner, self)
         self.__notices.tools_requested.connect(self.tools_requested)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -309,6 +304,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if self.__engine.vlc:
             # libvlc's instance holds threads and an audio output: let them go with the dock; the next video builds anew
             self.__engine.drop()
+            self.__subtitles.update_actions()
 
     @property
     def panels(self) -> PlayerPanels:
@@ -326,7 +322,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :returns: the state, restorable by :meth:`restore_state`.
         """
-        return self.__stage.save_state(self.__key if self.__key is not None else self.__held_key)
+        return self.__stage.save_state(
+            self.__key if self.__key is not None else self.__held_key, self.__subtitles.choice
+        )
 
     def restore_state(self, state: bytes) -> None:
         """Restore the stage :meth:`save_state` encoded, and remember its video for the next load; a load already out,
@@ -335,6 +333,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         :param state: the blob; one that cannot be read leaves all of it as it is.
         """
         video = self.__stage.restore_state(state)
+        self.__subtitles.choice = self.__stage.subtitles_in(state)
         if video is not None:
             self.__held_key = video
             if self.__key is not None or self.__intent is not None:
@@ -381,18 +380,13 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         ui.to_start_action.triggered.connect(lambda: self.__seek_to(0))
         ui.to_end_action.triggered.connect(self.__finish_video)
         ui.add_note_at_action.triggered.connect(self.__add_note_at)
-        ui.volume_up_action.triggered.connect(lambda: self.__change_volume(VOLUME_STEP))
-        ui.volume_down_action.triggered.connect(lambda: self.__change_volume(-VOLUME_STEP))
-        ui.speed_up_action.triggered.connect(lambda: self.__change_speed(1))
-        ui.speed_down_action.triggered.connect(lambda: self.__change_speed(-1))
+        ui.volume_up_action.triggered.connect(lambda: self.__levels.change_volume(VOLUME_STEP))
+        ui.volume_down_action.triggered.connect(lambda: self.__levels.change_volume(-VOLUME_STEP))
+        ui.speed_up_action.triggered.connect(lambda: self.__levels.change_speed(1))
+        ui.speed_down_action.triggered.connect(lambda: self.__levels.change_speed(-1))
 
     def __setup_bar(self) -> None:
-        """Fill the speed combo, wire it, and show the bar as it is with nothing selected."""
-        ui = self.__ui
-        for rate in SPEEDS:
-            ui.speed_combo.addItem(f"{rate:g}×", rate)
-        ui.speed_combo.setCurrentIndex(SPEEDS.index(DEFAULT_SPEED))
-        ui.speed_combo.currentIndexChanged.connect(self.__on_speed_changed)
+        """Show the bar as it is with nothing selected."""
         self.__stage.show_still()
         self.__bar.show_playing(False)
         self.__bar.show_time(0)
@@ -403,7 +397,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :returns: the player.
         """
-        return self.__engine.ensure(self.__volume, self.__speed(), self.__connect_engine)
+        return self.__engine.ensure(self.__levels.volume, self.__levels.speed, self.__connect_engine)
 
     def __connect_engine(self, player: Engine) -> None:
         """Listen to a new engine.
@@ -417,6 +411,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         player.errorOccurred.connect(self.__on_error)
         if self.__engine.vlc:
             cast(VlcMediaPlayer, player).still_ready.connect(self.__on_still)
+        self.__subtitles.connect_engine(player)
 
     # endregion
 
@@ -581,6 +576,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         record_path = self.__model.path
         video = self.__playlist.current
         path = content_path(record_path, video.key) if record_path is not None else video.path
+        self.__subtitles.prepare()
         player.setSource(QUrl.fromLocalFile(str(path)))
         if session is Session.PLAY:
             self.__show_engine_surface()
@@ -732,34 +728,6 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         if self.__session is Session.PLAY or self.__played:
             self.__recorder.position(self.__key, target / 1000, self.__duration_seconds())
             self.__recorder.flush()
-
-    def __change_volume(self, delta: float) -> None:
-        """Raise or lower the volume one step, within the scale.
-
-        :param delta: the change, of a full scale of 1.
-        """
-        self.__volume = min(max(self.__volume + delta, 0.0), 1.0)
-        self.__engine.set_volume(self.__volume)
-
-    def __change_speed(self, delta: int) -> None:
-        """Move the speed combo ``delta`` steps, within its range; its change reaches the player.
-
-        :param delta: how many steps faster, or slower when negative.
-        """
-        combo = self.__ui.speed_combo
-        combo.setCurrentIndex(min(max(combo.currentIndex() + delta, 0), combo.count() - 1))
-
-    def __speed(self) -> float:
-        """The speed the combo shows.
-
-        :returns: the playback rate.
-        """
-        return float(self.__ui.speed_combo.currentData())
-
-    def __on_speed_changed(self) -> None:
-        """Play at the speed the combo now shows."""
-        if self.__engine.player is not None:
-            self.__engine.player.setPlaybackRate(self.__speed())
 
     # endregion
 
