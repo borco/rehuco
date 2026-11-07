@@ -6,16 +6,13 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import location_replacements_settings
-from rehuco_agent.settings.location_replacements_settings import (
-    DEFAULT_RULES,
-    ReplacementRule,
-    shared_location_replacements_settings,
-)
+from rehuco_agent.settings.location_replacements_settings import DEFAULT_RULES, shared_location_replacements_settings
 from rehuco_agent.settings.ui import location_replacements_page
 from rehuco_agent.settings.ui.location_replacements_editor import LocationReplacementsEditor
 from rehuco_agent.settings.ui.location_replacements_model import TEXT_COLUMN, LocationReplacementsModel
 from rehuco_agent.settings.ui.location_replacements_page import LocationReplacementsPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
+from rehuco_core import ReplacementRule
 
 # region Sample settings backend
 # Mirrors test_location_templates_page.py's FakeSettings -- kept as a separate copy rather than a shared

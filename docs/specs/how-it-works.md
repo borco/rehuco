@@ -148,12 +148,16 @@ on closing a document or on quitting is waited for. Until it lands, a save is th
 machine: Revert goes back to it and opening the record shows it, and only dropping it returns to the file. An
 app-wide **Tasks** panel shows the queue, with a filter for the saves not yet landed, beside an app-wide **Log**.
 
-A **root catalog** is a `.rehuco` file naming the folders to catalog — its **roots**, each with a label and a
-location that reads the same on every machine (`//nas/data/Tutorials`). Where a machine finds a root is that
-machine's own mapping, kept in its data folder, not in the file: opening a catalog maps the roots whose share the
-machine has mounted, asks about the rest, and leaves a root nobody mapped listed but greyed, with `Map…` to map it
-later. Where the storage is a share, a drive or a disc is detected, never chosen. A catalog written before roots had
-locations is not opened; its roots are added to a new one. `Root Catalog` >
+A **root catalog** is a `.rehuco` file listing, in order, the folders to catalog — its **roots**. Each root is a
+`.rehuroot` file of its own beside the `.rehuco`, made when the root is added, holding its id, its label and a
+location that reads the same on every machine (`//nas/data/Tutorials`), so two catalogs listing one root file share
+the root. Where a machine finds a root is that machine's own mapping, kept in its data folder under the root's id,
+not in either file: opening a catalog maps the roots whose share the machine has mounted, asks about the rest, and
+leaves a root nobody mapped listed but greyed, with `Map…` to map it later. A root whose `.rehuroot` is missing or
+unreadable is listed greyed too, with the reason, and its records already in the cache stay listed, greyed, until the
+root is removed. Where the storage is a share, a drive or a disc is detected, never
+chosen. A catalog written before roots were files of their own is not opened; its roots are added to a new one.
+`Root Catalog` >
 `New…` or `Open…` opens one, one at a time, in two app-wide panels — **Root Catalog**, which lists its roots, and
 **Browsers**, which lists what its cache holds — and it is
 reopened on start with the documents, under the same Session setting; a file written by a newer build opens read-only. `Root Catalog` > **Scan** puts one job per root on the

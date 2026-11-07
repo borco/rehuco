@@ -470,7 +470,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui.scan_action.setEnabled(is_open)
         ui.add_root_action.setEnabled(editable and self.__adding is None)
         ui.remove_root_action.setEnabled(editable and row >= 0)
-        ui.map_root_action.setEnabled(isinstance(self.__roots_model.root_at(current), RehucoRoot))
+        shown = self.__roots_model.root_at(current)
+        ui.map_root_action.setEnabled(isinstance(shown, RehucoRoot) and shown.readable)
         ui.refresh_roots_action.setEnabled(is_open)
         ui.move_to_top_action.setEnabled(editable and row > 0)
         ui.move_up_action.setEnabled(editable and row > 0)
@@ -961,7 +962,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def __on_map_root(self) -> None:
         """Ask for the folder the current root is on this machine and map it; say why if it cannot be."""
         root = self.__roots_model.root_at(self.__acting_index())
-        if not isinstance(root, RehucoRoot):
+        if not isinstance(root, RehucoRoot) or not root.readable:
             return
         folder = self.ask_root_folder(root)
         if folder is not None and not self.__catalog.map_root(root.root_id, folder):

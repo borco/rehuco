@@ -7,14 +7,10 @@ from typing import Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import author_name
+from rehuco_core import apply_location_replacements, known_placeholders_for, location_values, render_location_pattern
 
-from ..settings.location_replacements_settings import apply_location_replacements, shared_location_replacements_settings
-from ..settings.location_templates_settings import (
-    known_placeholders_for,
-    render_location_pattern,
-    shared_location_templates_settings,
-)
+from ..settings.location_replacements_settings import shared_location_replacements_settings
+from ..settings.location_templates_settings import shared_location_templates_settings
 from .rehu_document_model import RehuDocumentModel
 
 NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released", "advertised_count")
@@ -75,18 +71,13 @@ class NameSuggestionModel(QObject):
 
         ``count`` is always in ``values`` -- the model carries `~RehuDocumentModel.advertised_count`
         whatever the type -- but only a type declaring it (ReferenceImages, #349) has it among its
-        :func:`~rehuco_agent.settings.location_templates_settings.known_placeholders_for`, so a pattern
+        :func:`~rehuco_core.known_placeholders_for`, so a pattern
         naming ``{count}`` never reaches here for any other type.
 
         :returns: the distinct candidate strings, in the order their patterns first produced them.
         """
-        values = {
-            "title": self.__model.title,
-            "publisher": self.__model.publisher,
-            "authors": ", ".join(author_name(entry) for entry in self.__model.authors),
-            "year": (self.__model.released or "")[:4],
-            "count": self.__model.advertised_count or "",
-        }
+        model = self.__model
+        values = location_values(model.title, model.publisher, model.authors, model.released, model.advertised_count)
         plugins = self.__model.document.plugins
         main_key = plugins.main_key(self.__model.resource_type)
         if main_key not in plugins:

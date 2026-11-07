@@ -1,5 +1,9 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
+# one cohesive module: the package's whole public surface, its imports and ``__all__``, and nothing else -- a
+# split would only move names between files a reader then has to join
+# pylint: disable=too-many-lines
+
 from .access import (
     Catalog,
     CatalogSession,
@@ -134,6 +138,21 @@ from .learning_path_entries import (
     visible_learning_paths,
 )
 from .legacy_manifest_jobs import LEGACY_MANIFEST_RETIRE_KIND, RetireLegacyManifestJob
+from .location_pattern import (
+    BLANK_PATTERN_PROBLEM,
+    EMPTY_GROUP_PROBLEM,
+    KNOWN_PLACEHOLDERS,
+    MALFORMED_PATTERN_PROBLEM,
+    PLUGIN_PLACEHOLDERS,
+    STRAY_GROUP_MARKER_PROBLEM,
+    UNKNOWN_PLACEHOLDER_PROBLEM,
+    LocationPattern,
+    known_placeholders_for,
+    location_pattern_is_valid,
+    location_pattern_problem,
+    location_values,
+    render_location_pattern,
+)
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
     CURRENT_CHECKSUM_RECORD_VERSION,
@@ -309,6 +328,16 @@ from .rehudb_jobs import (
 )
 from .rehudb_scan import CatalogRecordReader, CatalogRootScan, RootScanOutcome, RootScanResult, ScanProgress
 from .rehudb_updates import CatalogRecordUpdater, RecordCheck, RecordFinding, RecordsChecked, check_records
+from .rehuroot_file import (
+    ANY_TYPE,
+    DEFAULT_LAYOUTS,
+    KEEP_NAME,
+    REHUROOT_FORMAT_VERSION,
+    REHUROOT_SUFFIX,
+    RehurootChangedError,
+    RehurootFile,
+    RehurootFileError,
+)
 from .relocation import Relocation
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
@@ -316,6 +345,13 @@ from .rename_coordination import (
     RenameCoordinator,
     RenameYieldTimeout,
     ResourceLocation,
+)
+from .replacement_rule import (
+    EMPTY_TEXT_PROBLEM,
+    INVALID_REGEX_PROBLEM,
+    ReplacementRule,
+    apply_location_replacements,
+    rule_problem,
 )
 from .resource_scoping import (
     DIRECTORY_SCOPED_FILENAMES,
@@ -327,16 +363,19 @@ from .resource_scoping import (
     other_record_stems,
     resource_name,
 )
+from .root_destination import RecordNaming, Refusal, destination
 from .root_folders import RootFolderLister
 from .root_location import location_of, machine_name, resolve_location, storage_of
 from .root_mappings import (
     ROOT_MAPPINGS_FILE_NAME,
+    SET_ASIDE_FILE_NAME,
     MappedRoot,
     RootMapping,
     RootMappings,
     RootMappingsError,
 )
 from .root_overlap import RootOverlap, root_path_key
+from .sanitized_names import sanitize_name
 from .save_record_job import SAVE_RECORD_KIND, SaveOutcome, SavePayload, SaveRecordJob, rebase_payload
 from .staged_images import (
     StagedImageName,
@@ -504,6 +543,7 @@ __version__ = "0.3.0"
 # export has exactly one correct place and no convention to remember (`borco_core.__init__` is the same)
 __all__ = [
     "ABSENT",
+    "ANY_TYPE",
     "APP_FOLDER_NAME",
     "ARCHIVE_EXTENSIONS",
     "AUDIO_EXTENSIONS",
@@ -511,6 +551,7 @@ __all__ = [
     "ArchiveFacts",
     "AuthorEntry",
     "BACKUP_SUFFIX",
+    "BLANK_PATTERN_PROBLEM",
     "BUILTIN_PLUGINS",
     "BlockedVersion",
     "CHECKSUM_ALGORITHMS",
@@ -589,6 +630,7 @@ __all__ = [
     "DEFAULT_DELETER",
     "DEFAULT_DELETER_PROVIDER",
     "DEFAULT_DURATION_PROBE",
+    "DEFAULT_LAYOUTS",
     "DEFAULT_LOCK_TIMEOUT_SECONDS",
     "DEFAULT_LOCK_TTL_SECONDS",
     "DEFAULT_PLUGIN_REGISTRY",
@@ -608,6 +650,8 @@ __all__ = [
     "DiscardBackupsJob",
     "DurationProbe",
     "DurationProbeError",
+    "EMPTY_GROUP_PROBLEM",
+    "EMPTY_TEXT_PROBLEM",
     "END_TOLERANCE_SECONDS",
     "EXCLUDED_FILE_PATTERNS",
     "EXTERNAL_TOOLS",
@@ -629,6 +673,7 @@ __all__ = [
     "INDEX_KEY",
     "INFO_REHU_FILENAME",
     "INFO_TC_FILENAME",
+    "INVALID_REGEX_PROBLEM",
     "JobCancelled",
     "JobControl",
     "JobOutcome",
@@ -637,6 +682,8 @@ __all__ = [
     "JobState",
     "JobStatus",
     "JobWaiting",
+    "KEEP_NAME",
+    "KNOWN_PLACEHOLDERS",
     "KeyRelocation",
     "LANGUAGES",
     "LAST_VIDEO_KEY",
@@ -651,9 +698,11 @@ __all__ = [
     "LegacySeed",
     "LibrariesUnusableError",
     "LoadedRecord",
+    "LocationPattern",
     "LockHolder",
     "LockReason",
     "LockReasonKind",
+    "MALFORMED_PATTERN_PROBLEM",
     "MATCHED_STATUS",
     "MAX_COLLECTION_LENGTH",
     "MAX_FILE_BYTES",
@@ -673,6 +722,7 @@ __all__ = [
     "NoteLine",
     "ORGANIZATION_FOLDER_NAME",
     "OverridableDeleter",
+    "PLUGIN_PLACEHOLDERS",
     "PROBE_FLAG",
     "PROGRESS_UNIT_BYTES",
     "PROGRESS_UNIT_RESOURCES",
@@ -691,6 +741,8 @@ __all__ = [
     "REHUDB_REMOVE_ROOT_KIND",
     "REHUDB_SCAN_KIND",
     "REHUDB_SUFFIX",
+    "REHUROOT_FORMAT_VERSION",
+    "REHUROOT_SUFFIX",
     "REHU_SUFFIX",
     "RELEASE_RETRY_SECONDS",
     "RESERVED_KEYS",
@@ -703,10 +755,12 @@ __all__ = [
     "RecordFinding",
     "RecordKind",
     "RecordLockedError",
+    "RecordNaming",
     "RecordSignature",
     "RecordVersion",
     "Records",
     "RecordsChecked",
+    "Refusal",
     "RehuDocument",
     "RehuFormatError",
     "RehuRenamer",
@@ -714,11 +768,15 @@ __all__ = [
     "RehucoFile",
     "RehucoFileError",
     "RehucoRoot",
+    "RehurootChangedError",
+    "RehurootFile",
+    "RehurootFileError",
     "Relocation",
     "RemoveCatalogRootJob",
     "RenameCandidate",
     "RenameCoordinator",
     "RenameYieldTimeout",
+    "ReplacementRule",
     "ReportingTaskJob",
     "ResourceKey",
     "ResourceLocation",
@@ -737,6 +795,8 @@ __all__ = [
     "SAVE_RECORD_KIND",
     "SCREENSHOT_NAME_PATTERNS",
     "SCREENSHOT_STEM_PATTERN",
+    "SET_ASIDE_FILE_NAME",
+    "STRAY_GROUP_MARKER_PROBLEM",
     "SaveOutcome",
     "SavePayload",
     "SaveRecordJob",
@@ -787,6 +847,7 @@ __all__ = [
     "ToolNotRunnableError",
     "ToolStatus",
     "UNKNOWN_ENTRY",
+    "UNKNOWN_PLACEHOLDER_PROBLEM",
     "USERS_KEY",
     "USER_SIDECAR_SUFFIX",
     "UnconvertedScreenshot",
@@ -809,6 +870,7 @@ __all__ = [
     "WatchTotals",
     "__version__",
     "app_folders",
+    "apply_location_replacements",
     "author_name",
     "authors_comma_editable",
     "backup_path",
@@ -838,6 +900,7 @@ __all__ = [
     "current_block_version",
     "default_username",
     "delete_screenshot",
+    "destination",
     "discard_conversion_backups",
     "duplicate_source_rows",
     "enclosing_directory_record",
@@ -864,6 +927,7 @@ __all__ = [
     "is_record_name",
     "is_user_sidecar_name",
     "is_valid_content_key",
+    "known_placeholders_for",
     "learning_path_records_by_scope",
     "learning_path_ref",
     "legacy_manifest_candidates",
@@ -875,6 +939,9 @@ __all__ = [
     "load_libraries",
     "load_tc",
     "location_of",
+    "location_pattern_is_valid",
+    "location_pattern_problem",
+    "location_values",
     "lock_path_for",
     "locked_record",
     "log_legacy_seed",
@@ -935,6 +1002,7 @@ __all__ = [
     "remediate_legacy_manifest",
     "remembered_track",
     "rename_rehu_resource",
+    "render_location_pattern",
     "renumber_screenshots",
     "resolve_location",
     "resource_name",
@@ -942,6 +1010,8 @@ __all__ = [
     "retire_legacy_manifests",
     "rewrite_description_images",
     "root_path_key",
+    "rule_problem",
+    "sanitize_name",
     "save_screenshot",
     "scan_conversion_backups",
     "scan_rehu_screenshot_files",

@@ -11,9 +11,10 @@ from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
+from rehuco_core import ReplacementRule, rule_problem
 
 from ...fields.colors import WARNING_COLOR
-from ..location_replacements_settings import DEFAULT_RULES, ReplacementRule, rule_problem
+from ..location_replacements_settings import DEFAULT_RULES
 
 TEXT_COLUMN: Final = 0
 """The text a rule looks for -- the cell an insert opens."""
@@ -48,7 +49,7 @@ class LocationReplacementsModel(QAbstractTableModel):
 
     **Validation is flagged, never enforced.** A row whose text is empty, or whose regexp checkbox is
     set over text that does not parse as one, colors its text cell and explains itself in a tooltip
-    (:func:`~rehuco_agent.settings.location_replacements_settings.rule_problem`); nothing refuses the
+    (:func:`~rehuco_core.rule_problem`); nothing refuses the
     keystroke and saving keeps the row so a typo is fixed in place rather than retyped. Only the text
     column can be invalid -- an empty replacement is a legitimate "delete this" rule, not a mistake, and
     the regexp checkbox is always a valid value (True or False).
@@ -192,7 +193,7 @@ class LocationReplacementsModel(QAbstractTableModel):
 
     def invalid_reason(self, row: int) -> str:
         """Why the rule at ``row`` is not something :func:`apply_location_replacements
-        <rehuco_agent.settings.location_replacements_settings.apply_location_replacements>` would act
+        <rehuco_core.apply_location_replacements>` would act
         on, if it isn't.
 
         :param row: the row to test.

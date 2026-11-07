@@ -11,7 +11,7 @@ closed its own.
 import logging
 import re
 import sqlite3
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
@@ -21,7 +21,6 @@ from pytest import LogCaptureFixture, fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     BUILTIN_PLUGINS,
-    CURRENT_REHUCO_VERSION,
     REHUDB_SUFFIX,
     TYPE_FIELD_COLUMNS,
     CatalogCache,
@@ -40,7 +39,7 @@ from rehuco_core import (
 from rehuco_core.migrations.rehudb import CHAIN, CURRENT_VERSION
 from rehuco_core.rehudb import BUSY_TIMEOUT_MS, FOLD_PROBE
 
-from rehuco_core_tests.mapped_roots import location_at, mapped
+from rehuco_core_tests.mapped_roots import location_at, mapped, new_catalog
 
 CACHE_PATH: Final = Path("/fake/cache/rehuco.rehudb")
 
@@ -70,6 +69,20 @@ class MemoryDatabase:
     def tables(self) -> set[str]:
         """Every table the database holds."""
         return {name for (name,) in self.keeper.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+    def insert_roots(self, roots: Sequence[MappedRoot]) -> None:
+        """Write ``roots`` as a cache of an old schema holds them -- the version-1 columns only, which every version
+        has, where :meth:`CatalogCache.reconcile_roots` writes the current ones.
+
+        :param roots: the roots, in order.
+        """
+        self.keeper.executemany(
+            "INSERT INTO roots (id, label, path, position, removable) VALUES (?, ?, ?, ?, ?)",
+            [
+                (str(root.root_id), root.label, str(root.path), position, int(root.removable))
+                for position, root in enumerate(roots)
+            ],
+        )
 
 
 @fixture(name="memory")
@@ -121,7 +134,7 @@ def fixture_cache(database: MemoryDatabase) -> Generator[CatalogCache]:
 
 def two_roots() -> tuple[RehucoFile, MappedRoot, MappedRoot]:
     """A ``.rehuco`` with two roots, ``tutorials`` and ``packs``."""
-    rehuco = RehucoFile.new()
+    rehuco = new_catalog()
     rehuco.add_root(location_at("D:/tutorials"))
     rehuco.add_root(location_at("E:/packs"))
     first, second = mapped(rehuco)
@@ -135,8 +148,10 @@ def nesting(*paths: Path) -> RehucoFile:
     :param paths: the roots' folders, in display order.
     :returns: the file.
     """
-    roots = [{"id": str(uuid4()), "location": location_at(path), "label": path.name or str(path)} for path in paths]
-    return RehucoFile({"format_version": CURRENT_REHUCO_VERSION, "id": str(uuid4()), "roots": roots})
+    rehuco = new_catalog()
+    for path in paths:
+        rehuco.add_root(location_at(path), path.name or str(path))
+    return rehuco
 
 
 def record(path: str, **fields: Any) -> CatalogRecord:
@@ -349,6 +364,46 @@ def test_a_root_the_rehuco_no_longer_has_cascades_away(database: MemoryDatabase,
     assert [root.root_id for root in cache.roots()] == [second.root_id]
     assert database.scalar("SELECT count(*) FROM resource_authors") == 0
     assert database.scalar("SELECT count(*) FROM authors") == 0
+
+
+def test_a_root_whose_file_cannot_be_read_is_held_with_its_rows(cache: CatalogCache) -> None:
+    """A root the ``.rehuco`` still lists but whose ``.rehuroot`` cannot be read is matched to its row by that file, and
+    kept with its rows, as an offline root is (#577).
+
+    **Test steps:**
+
+    * reconcile two roots, scan a record into the first, then reconcile the second alone, holding the first's file
+    * verify the first's id is returned as held, its row and its record are kept, and the row names its file
+    """
+    rehuco, first, second = two_roots()
+    cache.reconcile_roots(mapped(rehuco))
+    cache.apply_root_scan(first.root_id, [record("a/info.rehu")])
+    assert first.file is not None
+
+    held = cache.reconcile_roots([second], [first.file])
+
+    assert held == {first.root_id}
+    assert [row.record.path for row in cache.rows()] == ["a/info.rehu"]
+    kept = next(root for root in cache.roots() if root.root_id == first.root_id)
+    assert kept.root_file == first.file
+
+
+def test_a_held_file_no_row_was_read_from_holds_nothing(cache: CatalogCache) -> None:
+    """Only a row read from a held file is kept: a root the ``.rehuco`` dropped, whose file is not the one held, goes
+    as it always has.
+
+    **Test steps:**
+
+    * reconcile two roots, then reconcile the second alone, holding a file neither was read from
+    * verify nothing is held and the first root is gone
+    """
+    rehuco, _, second = two_roots()
+    cache.reconcile_roots(mapped(rehuco))
+
+    held = cache.reconcile_roots([second], [Path("/elsewhere/other.rehuroot")])
+
+    assert held == frozenset()
+    assert [root.root_id for root in cache.roots()] == [second.root_id]
 
 
 def test_removing_a_root_cascades_and_returns_its_space(database: MemoryDatabase, cache: CatalogCache) -> None:
@@ -614,8 +669,8 @@ def test_a_version_1_cache_upgrades_and_keeps_its_rows(
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mocker.patch.object(Path, "mkdir", autospec=True)
     rehuco, first, _ = two_roots()
-    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:1]) as old:
-        old.reconcile_roots(mapped(rehuco))
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:1]):
+        database.insert_roots(mapped(rehuco))
         database.keeper.execute("BEGIN")
         old_id = database.keeper.execute(
             "INSERT INTO resources (root_id, path, path_key, kind, mtime_ns, size, content_hash, scanned_at) "
@@ -648,8 +703,8 @@ def test_a_version_2_cache_upgrades_keeping_its_rows_empty_and_stale(
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mocker.patch.object(Path, "mkdir", autospec=True)
     rehuco, first, _ = two_roots()
-    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:2]) as old:
-        old.reconcile_roots(mapped(rehuco))
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:2]):
+        database.insert_roots(mapped(rehuco))
         database.keeper.execute(
             "INSERT INTO resources (root_id, path, path_key, kind, type, title, mtime_ns, size, content_hash, "
             "scanned_at) VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'tutorial', 'T', 42, 7, 'abc', 0)",
@@ -682,8 +737,8 @@ def test_a_version_3_cache_upgrades_with_no_format_version_and_stale(
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mocker.patch.object(Path, "mkdir", autospec=True)
     rehuco, first, _ = two_roots()
-    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:3]) as old:
-        old.reconcile_roots(mapped(rehuco))
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:3]):
+        database.insert_roots(mapped(rehuco))
         database.keeper.execute(
             "INSERT INTO resources (root_id, path, path_key, kind, title, mtime_ns, size, content_hash, scanned_at) "
             "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'T', 42, 7, 'abc', 0)",
@@ -811,8 +866,8 @@ def test_a_cache_upgraded_from_before_the_folded_columns_gets_them_filled(
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mocker.patch.object(Path, "mkdir", autospec=True)
     rehuco, first, _ = two_roots()
-    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:4]) as old:
-        old.reconcile_roots(mapped(rehuco))
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:4]):
+        database.insert_roots(mapped(rehuco))
         database.keeper.execute(
             "INSERT INTO resources (root_id, path, path_key, kind, title, mtime_ns, size, content_hash, scanned_at) "
             "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'Caf\u00e9', 42, 7, 'abc', 0)",
@@ -822,6 +877,30 @@ def test_a_cache_upgraded_from_before_the_folded_columns_gets_them_filled(
     with CatalogCache.open(CACHE_PATH) as upgraded:
         assert upgraded.schema_version == CURRENT_VERSION
         assert titles(upgraded, CatalogQuery(("cafe",))) == ["Caf\u00e9"]
+
+
+def test_a_version_7_cache_upgrades_with_its_roots_naming_no_file(
+    memory: Callable[[], MemoryDatabase], mocker: MockerFixture
+) -> None:
+    """The version-8 step adds the root file column (#577): a root from before it keeps its row and names no file until
+    its catalog is next reconciled.
+
+    **Test steps:**
+
+    * build a version-7 cache holding one root
+    * reopen it with the full chain
+    * verify the stamp is current and the root is kept, naming no file
+    """
+    database = memory()
+    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
+    mocker.patch.object(Path, "mkdir", autospec=True)
+    rehuco, first, _ = two_roots()
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:7]):
+        database.insert_roots(mapped(rehuco)[:1])
+
+    with CatalogCache.open(CACHE_PATH) as upgraded:
+        assert upgraded.schema_version == CURRENT_VERSION
+        assert [(root.root_id, root.root_file) for root in upgraded.roots()] == [(first.root_id, None)]
 
 
 def test_a_refill_another_process_finished_while_this_one_waited_is_not_done_twice(

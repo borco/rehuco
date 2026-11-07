@@ -81,7 +81,11 @@ class RootsRowActions:
                     ui.move_down_action,
                     ui.move_to_bottom_action,
                     self.__separators[1],
-                    *([ui.map_root_action] if isinstance(self.__model.root_at(index), RehucoRoot) else []),
+                    *(
+                        [ui.map_root_action]
+                        if isinstance(shown := self.__model.root_at(index), RehucoRoot) and shown.readable
+                        else []
+                    ),
                     ui.remove_root_action,
                 ]
             case RootsNodeKind.FOLDER:

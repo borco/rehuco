@@ -238,6 +238,22 @@ Concrete consequence for **docking**:
   fallback — constraining how QML is used (non-detachable docks, reduced QML footprint) — is held in reserve, **not**
   needed, and switching to KDDockWidgets stays foreclosed regardless.
 
+**Every new dependency has its licence checked before it is added**, in its PyPI metadata (`License-Expression`, the
+`License ::` classifiers) or, when those are empty, its repository's licence file:
+
+- **A runtime dependency** of a package that ships (the `dependencies` of `rehuco-core`, `rehuco-node`,
+  `rehuco-agent`, `borco-core`, `borco-pyside`) is permissive (MIT, BSD, Apache-2.0, ISC, PSF, MIT-CMU) or LGPL,
+  which the app links without taking its terms. **GPL and AGPL are refused**, and so is a library with no licence
+  stated.
+- **A tool used only to develop or build** (the `dev`, `packaging` and `appimage` groups) may be GPL, since it is never
+  distributed with the app: `pylint` (GPL-2.0+) and `python-appimage` (GPL-3.0+) are.
+- The comment above a dependency in its `pyproject.toml` names its licence, as its neighbours' do.
+
+Unidecode (GPL-2.0+) is how this was learnt: it came in with the rename suggestions (#25) unchecked, and was found
+when #577 moved it into `rehuco-core`; `anyascii` (ISC) replaced it. An audit of every direct dependency on 2026-11-07
+found no other GPL among the runtime ones. Transitive dependencies (`smbprotocol`'s `pyspnego` and `cryptography`,
+`selenium`'s, `requests`'s) were not part of it.
+
 ### §16.7.1 QML-in-`pyqtads` regression check (spike #4)
 
 [[[packaging-deployment#qml-regression]]]

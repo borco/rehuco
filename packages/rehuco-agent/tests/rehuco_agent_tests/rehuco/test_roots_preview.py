@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.rehuco.root_storage import NOT_MAPPED_ROW, ROOT_STORAGE_LABELS
+from rehuco_agent.rehuco.root_storage import NOT_MAPPED_ROW, ROOT_STORAGE_LABELS, UNREADABLE_ROW
 from rehuco_agent.rehuco.roots_checksum import BAD_INK, OLD_BAD_INK
 from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
 from rehuco_agent.rehuco.roots_node import NodeListing
@@ -236,6 +236,30 @@ def test_a_root_this_machine_does_not_map_shows_its_location_and_says_so(qtbot: 
     label = preview.findChild(QLabel, "path_label")
     assert label is not None
     assert not label.isHidden()
+
+
+def test_a_root_whose_file_cannot_be_read_shows_its_file_and_takes_no_name(qtbot: QtBot) -> None:
+    """With no root file to read, the Location line carries the file, the Storage line says the file cannot be read,
+    and the name field is off (#577).
+
+    **Test steps:**
+
+    * show a root of the file whose root file is missing
+    * verify its name is the file's stem, its Storage line, its Location line, and the name field disabled
+    """
+    gone = RehucoRoot(uuid4(), "gone", "", file=Path("/fake/gone.rehuroot"), problem="The root file is missing")
+    model = RootsFolderModel()
+    model.set_roots([gone], RootFolderLister([]))
+    preview = RootsPreview(model, RenameCoordinator())
+    qtbot.addWidget(preview)
+    model.setParent(preview)  # deleted with the preview qtbot deletes (#529)
+
+    preview.show_index(model.index(0, 0))
+
+    assert preview.root_name_edit.text() == "gone"
+    assert not preview.root_name_edit.isEnabled()
+    assert preview.root_storage_value.text() == UNREADABLE_ROW
+    assert preview.location == str(Path("/fake/gone.rehuroot"))
 
 
 def test_editing_can_be_switched_off(shown: Shown) -> None:

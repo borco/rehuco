@@ -5,12 +5,12 @@ RehuDocumentModel (#46).
 from pytest import fixture, mark, param
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.settings.location_replacements_settings import ReplacementRule, shared_location_replacements_settings
+from rehuco_agent.settings.location_replacements_settings import shared_location_replacements_settings
 from rehuco_agent.settings.location_templates_settings import (
     NAME_SUGGESTION_PATTERNS,
     shared_location_templates_settings,
 )
-from rehuco_core import RehuDocument
+from rehuco_core import RehuDocument, ReplacementRule
 
 
 # region fixtures

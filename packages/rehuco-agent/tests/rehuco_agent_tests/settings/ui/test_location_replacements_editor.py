@@ -6,9 +6,9 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.location_replacements_settings import ReplacementRule
 from rehuco_agent.settings.ui.location_replacements_editor import LocationReplacementsEditor
 from rehuco_agent.settings.ui.location_replacements_model import REGEX_COLUMN
+from rehuco_core import ReplacementRule
 
 
 @fixture(name="editor")

@@ -8,11 +8,10 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import location_templates_settings
-from rehuco_agent.settings.location_replacements_settings import ReplacementRule, shared_location_replacements_settings
+from rehuco_agent.settings.location_replacements_settings import shared_location_replacements_settings
 from rehuco_agent.settings.location_templates_settings import (
     DEFAULT_SAMPLE,
     NAME_SUGGESTION_PATTERNS,
-    UNKNOWN_PLACEHOLDER_PROBLEM,
     shared_location_templates_settings,
 )
 from rehuco_agent.settings.ui import location_templates_page
@@ -21,6 +20,7 @@ from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_CO
 from rehuco_agent.settings.ui.location_templates_page import LocationTemplatesPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
+from rehuco_core import UNKNOWN_PLACEHOLDER_PROBLEM, ReplacementRule
 
 # region Sample settings backend
 # Mirrors test_screenshot_patterns_settings.py's FakeSettings -- kept as a separate copy rather than a

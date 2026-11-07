@@ -13,9 +13,10 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QLineEdit
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.location_templates_settings import KNOWN_PLACEHOLDERS, NAME_SUGGESTION_PATTERNS
+from rehuco_agent.settings.location_templates_settings import NAME_SUGGESTION_PATTERNS
 from rehuco_agent.settings.ui.location_template_patterns_editor import LocationTemplatePatternsEditor
 from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_COLUMN, LocationTemplatePatternsModel
+from rehuco_core import KNOWN_PLACEHOLDERS
 
 
 @fixture(name="editor")

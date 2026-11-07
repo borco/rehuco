@@ -5,19 +5,22 @@
 from typing import Final
 
 from PySide6.QtWidgets import QWidget
-from rehuco_core import DEFAULT_PLUGIN_REGISTRY
+from rehuco_core import (
+    DEFAULT_PLUGIN_REGISTRY,
+    apply_location_replacements,
+    known_placeholders_for,
+    render_location_pattern,
+)
 
 from ...fields.widgets.path_editor import PathEditor
-from ..location_replacements_settings import apply_location_replacements, shared_location_replacements_settings
+from ..location_replacements_settings import shared_location_replacements_settings
 from ..location_templates_settings import (
     DEFAULT_SAMPLE,
     NAME_SUGGESTION_PATTERNS,
     SAMPLE_FIELDS,
     LocationTemplatesSettings,
     effective_location_templates,
-    known_placeholders_for,
     normalize_location_templates,
-    render_location_pattern,
     shared_location_templates_settings,
 )
 from ..persistent_settings import persistent_settings
@@ -42,7 +45,7 @@ class LocationTemplatesPage(QWidget):
     pattern is read and flagged, and the preview's job is to show the outcome the way the document will.
 
     :attr:`__known_placeholders` is fixed at construction from ``resource_type``'s plugin declaration
-    (`~rehuco_agent.settings.location_templates_settings.known_placeholders_for`) and never changes
+    (`~rehuco_core.known_placeholders_for`) and never changes
     afterwards, which is what lets it also gate the Try-it sample record's Count row: one instance, one
     type, one placeholder set for its lifetime.
 

@@ -7,11 +7,24 @@ mapping file and no mount table.
 
 from pathlib import Path, PurePath
 from typing import Final
+from uuid import uuid4
 
-from rehuco_core import MappedRoot, RehucoFile
+from rehuco_core import CURRENT_REHUCO_VERSION, MappedRoot, RehucoFile
 
 TEST_HOST: Final = "//test/"
 """The location prefix standing in for the share a test's folders are on."""
+
+UNSAVED_REHUCO: Final = Path("/unsaved/home.rehuco")
+"""Where :func:`new_catalog` says its file is: a folder that does not exist, never written."""
+
+
+def new_catalog() -> RehucoFile:
+    """A catalog with no roots, at a path nothing writes to: :meth:`RehucoFile.add_root` has a folder to name each
+    root's file in (#577), and a test that never saves it touches no disk.
+
+    :returns: the catalog.
+    """
+    return RehucoFile({"format_version": CURRENT_REHUCO_VERSION, "id": str(uuid4()), "roots": []}, UNSAVED_REHUCO)
 
 
 def location_at(path: Path | str) -> str:
@@ -36,6 +49,9 @@ def mapped(file: RehucoFile) -> tuple[MappedRoot, ...]:
     """Every root of a catalog whose locations :func:`location_at` spelled, mapped to its folder.
 
     :param file: the catalog.
-    :returns: its roots, in display order, each on the local storage.
+    :returns: its roots, in display order, each on the local storage and carrying its root file.
     """
-    return tuple(MappedRoot(root.root_id, root.label, root.location, path_at(root.location)) for root in file.roots)
+    return tuple(
+        MappedRoot(root.root_id, root.label, root.location, path_at(root.location), file=root.file)
+        for root in file.roots
+    )

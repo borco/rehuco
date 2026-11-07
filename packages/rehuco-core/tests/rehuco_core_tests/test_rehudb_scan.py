@@ -19,7 +19,6 @@ from rehuco_core import (
     CatalogRootScan,
     RecordKind,
     RecordSignature,
-    RehucoFile,
     RehuDocument,
     RehuFormatError,
     RenameCoordinator,
@@ -30,7 +29,7 @@ from rehuco_core.rehu_parse_limits import MAX_FILE_BYTES
 
 from rehuco_core_tests.concurrency import SETTLE, running, wait_until
 from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
-from rehuco_core_tests.mapped_roots import location_at, mapped
+from rehuco_core_tests.mapped_roots import location_at, mapped, new_catalog
 
 ROOT: Final = Path("/fake/library")
 
@@ -265,7 +264,7 @@ def test_scanned_type_fields_round_trip_through_the_cache(tree: FakeTree, mocker
     pack["reference_images"] = {"advertised_count": "500+", "current_count": 480}
     tree.file("a.rehu", tutorial)
     tree.file("b.rehu", pack)
-    rehuco = RehucoFile.new()
+    rehuco = new_catalog()
     rehuco.add_root(location_at(ROOT))
     result = scan()
 

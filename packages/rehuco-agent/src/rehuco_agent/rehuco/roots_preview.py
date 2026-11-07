@@ -47,11 +47,11 @@ from ..settings.markdown_rendering_settings import shared_markdown_rendering_set
 from ..settings.reference_images_settings import shared_reference_images_settings
 from ..svg_icon_cache import SvgIconCache
 from .record_images import RecordImages
-from .root_storage import NOT_MAPPED_ROW, ROOT_STORAGE_LABELS
+from .root_storage import NOT_MAPPED_ROW, ROOT_STORAGE_LABELS, UNREADABLE_ROW
 from .roots_checksum import BAD_INK, OLD_BAD_INK, RowChecksum, checksum_lines, warning_ink
 from .roots_folder_model import RootsFolderModel
 from .roots_management import PackInfo, PackState
-from .roots_node import NodeListing, RootsNodeKind, ShownRoot
+from .roots_node import NodeListing, RootsNodeKind, ShownRoot, root_where
 from .roots_preview_ui import Ui_RootsPreview
 
 LOG: Final = logging.getLogger(__name__)
@@ -223,6 +223,10 @@ class RootsPreview(QWidget):
         """The record the pane reads what it shows from, while it shows one."""
         self.__checksum_lines: tuple[str, str] | None = None
         self.__shown_root: UUID | None = None
+        self.__editable = True
+        """Whether a root's name may be changed at all, as :meth:`set_editable` last said."""
+        self.__renamable = True
+        """Whether the root shown has a file its name can be written to (#577)."""
         self.__default_name = ""
         self.__images: Final = RecordImages()
         self.__default_name_action: Final = QAction("Use Default Name", self)
@@ -332,7 +336,8 @@ class RootsPreview(QWidget):
 
         :param editable: whether it may.
         """
-        self.__ui.root_name_edit.setEnabled(editable)
+        self.__editable = editable
+        self.__ui.root_name_edit.setEnabled(editable and self.__renamable)
         self.__update_default_name()
 
     def __image_token(self, point: QPoint) -> object | None:
@@ -503,8 +508,8 @@ class RootsPreview(QWidget):
 
     @staticmethod
     def __where(path: Path | None, root: ShownRoot | None) -> str:
-        """Where a row is, as the Location line says it: its folder or file, or a root's location when this machine
-        has no folder for it.
+        """Where a row is, as the Location line says it: its folder or file, a root's location when this machine has
+        no folder for it, or its root file when that cannot be read.
 
         :param path: the row's path on this machine, if it has one.
         :param root: the root of a root row, or ``None`` for any other.
@@ -512,7 +517,7 @@ class RootsPreview(QWidget):
         """
         if path is not None:
             return str(path)
-        return root.location if isinstance(root, RehucoRoot) else ""
+        return root_where(root) if isinstance(root, RehucoRoot) else ""
 
     def __show_root_editors(self, root: ShownRoot | None) -> None:
         """Show a root's name and storage, or hide them for any other row.
@@ -543,9 +548,13 @@ class RootsPreview(QWidget):
             ui.root_name_edit.setText(root.label)
             ui.root_name_edit.blockSignals(blocked)
         self.__update_default_name()
-        ui.root_storage_value.setText(
-            ROOT_STORAGE_LABELS[root.storage] if isinstance(root, MappedRoot) else NOT_MAPPED_ROW
-        )
+        self.__renamable = isinstance(root, MappedRoot) or root.readable
+        ui.root_name_edit.setEnabled(self.__editable and self.__renamable)
+        self.__update_default_name()
+        if isinstance(root, MappedRoot):
+            ui.root_storage_value.setText(ROOT_STORAGE_LABELS[root.storage])
+        else:
+            ui.root_storage_value.setText(NOT_MAPPED_ROW if root.readable else UNREADABLE_ROW)
 
     def __rebuild_buttons(self, index: QModelIndex) -> None:
         """Make one button for each action the row's context menu holds.

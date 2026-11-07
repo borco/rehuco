@@ -137,7 +137,7 @@ def test_empty_current_name_never_warns(qtbot: QtBot) -> None:
 
 
 def test_suggestions_are_transliterated_sanitized_deduplicated(qtbot: QtBot) -> None:
-    """Suggestions are Unidecode-transliterated, filesystem-sanitized, de-duplicated, and empties dropped.
+    """Suggestions are transliterated to ASCII, filesystem-sanitized, de-duplicated, and empties dropped.
 
     **Test steps:**
 

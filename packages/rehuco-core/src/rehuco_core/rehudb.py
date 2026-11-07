@@ -19,7 +19,9 @@ connection, because the cascade a root removal relies on is otherwise silently i
 relabelling, reordering or re-pointing a root updates its row in place (:meth:`CatalogCache.reconcile_roots`)
 and keeps its resources. A **root is wholly online or wholly offline** ([[mounts-and-storage#offline-mounts]]):
 one that would not list keeps its rows as they were (:meth:`CatalogCache.mark_root_unreachable`), while a scan of
-one that did replaces them (:meth:`CatalogCache.apply_root_scan`) -- a record no longer there is gone.
+one that did replaces them (:meth:`CatalogCache.apply_root_scan`) -- a record no longer there is gone. A root whose
+``.rehuroot`` the ``.rehuco`` lists but cannot read is held the same way, matched by that file, until the root is
+removed from the ``.rehuco`` (#577).
 
 **Between scans, one record at a time** (#373): a record re-read after a save is written alone
 (:meth:`CatalogCache.upsert_record`), a deleted one removed (:meth:`CatalogCache.remove`), and a rename applied
@@ -176,8 +178,9 @@ class RecordSignature:
         return self.error is None and self.mtime_ns != 0 and (self.mtime_ns, self.size) == (mtime_ns, size)
 
 
+# one field per column of the roots table, read back as one row
 @dataclass(frozen=True, slots=True)
-class CatalogRoot:
+class CatalogRoot:  # pylint: disable=too-many-instance-attributes
     """One root's row: what the ``.rehuco`` says about it, and what the last scan found.
 
     :param root_id: the ``.rehuco`` root's stable id.
@@ -187,6 +190,7 @@ class CatalogRoot:
     :param removable: whether its folder lives on a removable device; stored, not yet read.
     :param reachable: whether the last scan could list it, or ``None`` before any scan.
     :param scanned_at: when its rows were last replaced by a scan, or ``None``.
+    :param root_file: the ``.rehuroot`` the root was last read from, or ``None`` before it was recorded (#577).
     """
 
     root_id: UUID
@@ -196,6 +200,7 @@ class CatalogRoot:
     removable: bool
     reachable: bool | None
     scanned_at: float | None
+    root_file: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -499,7 +504,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         :returns: the root rows.
         """
         cursor = self.__connection.execute(
-            "SELECT id, label, path, position, removable, reachable, scanned_at FROM roots ORDER BY position"
+            "SELECT id, label, path, position, removable, reachable, scanned_at, root_file FROM roots ORDER BY position"
         )
         return tuple(
             CatalogRoot(
@@ -510,32 +515,54 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 removable=bool(removable),
                 reachable=None if reachable is None else bool(reachable),
                 scanned_at=scanned_at,
+                root_file=None if root_file is None else Path(root_file),
             )
-            for root_id, label, path, position, removable, reachable, scanned_at in cursor
+            for root_id, label, path, position, removable, reachable, scanned_at, root_file in cursor
         )
 
-    def reconcile_roots(self, roots: Sequence[MappedRoot]) -> None:
+    def reconcile_roots(self, roots: Sequence[MappedRoot], held_files: Collection[Path] = ()) -> frozenset[UUID]:
         """Bring the ``roots`` table in line with a ``.rehuco``'s roots, matched by id.
 
         A root already here keeps its resources whatever changed about it -- label, path, order, the
-        removable flag. A new id gets a row with nothing scanned under it; an id the ``.rehuco`` no longer
-        has loses its row, and its resources with it.
+        removable flag, the ``.rehuroot`` it was read from. A new id gets a row with nothing scanned under it. An id
+        the ``.rehuco`` no longer has loses its row, and its resources with it -- unless the row was read from one of
+        ``held_files``: a root whose ``.rehuroot`` the ``.rehuco`` still lists but cannot read, whose rows are kept as
+        an offline root's are, until the root is removed from the ``.rehuco`` (#577).
 
-        :param roots: the ``.rehuco``'s roots, in its order.
+        :param roots: the ``.rehuco``'s roots this machine reaches, in its order.
+        :param held_files: the ``.rehuroot`` files the ``.rehuco`` lists and cannot read.
+        :returns: the ids of the rows kept for ``held_files``.
         """
         wanted = {str(root.root_id) for root in roots}
+        held_keys = {os.path.normcase(str(path)) for path in held_files}
         with self.__transaction() as connection:
             for position, root in enumerate(roots):
                 connection.execute(
-                    "INSERT INTO roots (id, label, path, position, removable) VALUES (?, ?, ?, ?, ?) "
+                    "INSERT INTO roots (id, label, path, position, removable, root_file) VALUES (?, ?, ?, ?, ?, ?) "
                     "ON CONFLICT (id) DO UPDATE SET label = excluded.label, path = excluded.path, "
-                    "position = excluded.position, removable = excluded.removable",
-                    (str(root.root_id), root.label, str(root.path), position, int(root.removable)),
+                    "position = excluded.position, removable = excluded.removable, root_file = excluded.root_file",
+                    (
+                        str(root.root_id),
+                        root.label,
+                        str(root.path),
+                        position,
+                        int(root.removable),
+                        None if root.file is None else str(root.file),
+                    ),
                 )
-            stale = [(root_id,) for (root_id,) in connection.execute("SELECT id FROM roots") if root_id not in wanted]
+            held: set[UUID] = set()
+            stale: list[tuple[str]] = []
+            for root_id, root_file in connection.execute("SELECT id, root_file FROM roots"):
+                if root_id in wanted:
+                    continue
+                if root_file is not None and os.path.normcase(root_file) in held_keys:
+                    held.add(UUID(root_id))
+                else:
+                    stale.append((root_id,))
             connection.executemany("DELETE FROM roots WHERE id = ?", stale)
             if stale:
                 self.__prune_values(connection)
+        return frozenset(held)
 
     def mark_root_unreachable(self, root_id: UUID) -> None:
         """Record that a root would not list -- and nothing else: its rows stay exactly as they were.

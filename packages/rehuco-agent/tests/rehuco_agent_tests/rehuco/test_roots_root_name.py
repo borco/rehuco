@@ -21,6 +21,7 @@ from rehuco_core import RehucoRoot, TaskQueue
 from rehuco_agent_tests.mapped_roots import mapped_root
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
+    HOME,
     REHUCO_PATH,
     CatalogDocks,
     GateJob,
@@ -74,19 +75,17 @@ def finish_name(dock: CatalogDocks) -> None:
     dock.roots.root_name_edit.editingFinished.emit()
 
 
-def written_labels(saves: MagicMock) -> list[str]:
-    """The root labels of the last ``.rehuco`` written.
+def saved_labels() -> list[str]:
+    """The roots' labels as their root files hold them now (#577): what a save wrote there, or as served.
 
-    :param saves: the mock capturing the writes.
-    :returns: one label per root.
+    :returns: one label per root, in ``HOME``'s order.
     """
-    return [root["label"] for root in json.loads(saves.call_args[0][1])["roots"]]
+    files = (REHUCO_PATH.parent / f"{root['id']}.rehuroot" for root in HOME["roots"])
+    return [json.loads(file.read_text(encoding="utf-8"))["label"] for file in files]
 
 
-@mark.usefixtures("served")
-def test_an_empty_name_is_saved_as_typed_without_a_question(
-    mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock
-) -> None:
+@mark.usefixtures("served", "saves")
+def test_an_empty_name_is_saved_as_typed_without_a_question(mocker: MockerFixture, dock: CatalogDocks) -> None:
     """Emptying the name is allowed: nothing is asked and the empty string is what the file holds.
 
     **Test steps:**
@@ -102,7 +101,7 @@ def test_an_empty_name_is_saved_as_typed_without_a_question(
     finish_name(dock)
 
     warning.assert_not_called()
-    assert written_labels(saves) == ["tutorials", ""]
+    assert saved_labels() == ["tutorials", ""]
     assert dock.roots.root_name_edit.text() == ""
 
 
@@ -147,7 +146,7 @@ def test_the_column_shows_the_folder_while_the_label_is_empty(dock: CatalogDocks
 
 
 @mark.usefixtures("served", "saves")
-def test_the_column_follows_what_is_typed_before_it_is_saved(dock: CatalogDocks, saves: MagicMock) -> None:
+def test_the_column_follows_what_is_typed_before_it_is_saved(dock: CatalogDocks) -> None:
     """The row's label is what is in the field while it is being edited, and nothing is written until the edit ends.
 
     **Test steps:**
@@ -164,16 +163,16 @@ def test_the_column_follows_what_is_typed_before_it_is_saved(dock: CatalogDocks,
     assert shown_labels(dock) == ["tutorials", "Packs & Co"]
     type_name(dock, "  ")
     assert shown_labels(dock) == ["tutorials", folder]
-    saves.assert_not_called()
+    assert saved_labels() == ["tutorials", "packs"]
 
     finish_name(dock)
 
-    assert written_labels(saves) == ["tutorials", ""]
+    assert saved_labels() == ["tutorials", ""]
 
 
-@mark.usefixtures("served")
+@mark.usefixtures("served", "saves")
 def test_the_default_name_button_wins_over_a_name_saved_as_the_focus_left_for_it(
-    dock: CatalogDocks, saves: MagicMock, has_focus: MagicMock
+    dock: CatalogDocks, has_focus: MagicMock
 ) -> None:
     """Pressing the button takes the focus from the field in the app -- the dock's scroll area takes it -- so what was
     typed is saved first; the button then gives the root its default name all the same, in the field too.
@@ -189,13 +188,13 @@ def test_the_default_name_button_wins_over_a_name_saved_as_the_focus_left_for_it
     type_name(dock, "xxx")
     has_focus.return_value = False
     finish_name(dock)
-    assert written_labels(saves) == ["tutorials", "xxx"]
+    assert saved_labels() == ["tutorials", "xxx"]
 
     dock.roots.default_root_name_action.trigger()
 
     assert dock.roots.root_name_edit.text() == "packs"
     assert shown_labels(dock) == ["tutorials", "packs"]
-    assert written_labels(saves) == ["tutorials", "packs"]
+    assert saved_labels() == ["tutorials", "packs"]
 
 
 @mark.usefixtures("served", "saves")
@@ -230,9 +229,9 @@ def default_button(dock: CatalogDocks) -> QToolButton:
     return next(button for button in dock.roots.findChildren(QToolButton) if button.defaultAction() is action)
 
 
-@mark.usefixtures("served")
+@mark.usefixtures("served", "saves")
 def test_the_default_name_is_the_placeholder_and_the_button_gives_it_to_the_root(
-    dock: CatalogDocks, saves: MagicMock
+    dock: CatalogDocks,
 ) -> None:
     """The name a root was added with -- the last segment of its location -- shows in the empty field, and its button
     renames the root to it at once, though the field never had the focus.
@@ -251,14 +250,14 @@ def test_the_default_name_is_the_placeholder_and_the_button_gives_it_to_the_root
 
     type_name(dock, "Other")
     finish_name(dock)
-    assert written_labels(saves) == ["tutorials", "Other"]
+    assert saved_labels() == ["tutorials", "Other"]
     assert default.isEnabled()
 
     default.trigger()
 
     assert dock.roots.root_name_edit.text() == "packs"
     assert shown_labels(dock) == ["tutorials", "packs"]
-    assert written_labels(saves) == ["tutorials", "packs"]
+    assert saved_labels() == ["tutorials", "packs"]
     assert not default.isEnabled()
 
 
@@ -304,9 +303,9 @@ def test_the_default_name_button_stays_off_while_the_names_cannot_be_edited(
     assert not dock.roots.default_root_name_action.isEnabled()
 
 
-@mark.usefixtures("served")
+@mark.usefixtures("served", "saves")
 def test_a_name_another_root_has_is_still_refused_and_the_column_goes_back(
-    mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock
+    mocker: MockerFixture, dock: CatalogDocks
 ) -> None:
     """Only an empty name is let through: a clash still asks, writes nothing, and the field and column show the label
     the root has.
@@ -324,7 +323,7 @@ def test_a_name_another_root_has_is_still_refused_and_the_column_goes_back(
     finish_name(dock)
 
     warning.assert_called_once()
-    saves.assert_not_called()
+    assert saved_labels() == ["tutorials", "packs"]
     assert dock.roots.root_name_edit.text() == "packs"
     assert shown_labels(dock) == ["tutorials", "packs"]
 

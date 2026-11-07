@@ -90,6 +90,11 @@ findings kept in [[packaging-deployment#glibc-canary]]). Nodes must tolerate the
 (+ `pytest-mock`, `-qt`, `-cov`, `-benchmark`, `-freezer`, `-explicit`), `mkdocs`. VSCode is configured for
 ruff formatting/linting; pylint, mypy, and black are disabled there.
 
+**Check a dependency's licence before adding it** ([[packaging-deployment#licensing-policy]]): a runtime dependency of
+any package is permissive or LGPL, never GPL/AGPL or unlicensed, so every package can stay MIT; GPL is allowed only for
+a dev or build tool that is never shipped. Name the licence in the comment above it in `pyproject.toml`. Unidecode
+(GPL-2.0+) slipped in unchecked and sat in the agent for four months before #577 caught it.
+
 Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint`, `check-slugs`,
 `qa` (format + check-slugs + cov + bandit + pyright + pylint), `docs-icons` (the site's generated
 favicon/logo — both docs targets depend on it, so a bare `mkdocs serve` on a fresh checkout lacks

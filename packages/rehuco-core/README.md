@@ -30,8 +30,8 @@ It provides:
   one file or skip whatever was checked recently
 - **Content enumeration** — which files a resource covers, the images inside a reference pack's
   archives, and measured size on disk and video duration
-- **A catalog** — the `.rehuco` file naming folder roots, and the `.rehudb` SQLite cache of the records found under
-  them: an incremental scan, targeted updates after a save or rename, and filtered reads
+- **A catalog** — the `.rehuco` file listing folder roots, each a `.rehuroot` file of its own that catalogs share, a
+  root's path layouts rendered per record, and the `.rehudb` SQLite cache of the records found under them: an incremental scan, targeted updates after a save or rename, and filtered reads
 - **Staged images** — an image taken out of a resource, written unchanged under a name that traces it back
 - **A task queue** — one long job at a time, pausable, cancellable, reorderable, optionally persisted
   across restarts
