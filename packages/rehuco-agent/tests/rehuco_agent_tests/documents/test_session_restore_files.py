@@ -5,6 +5,7 @@ browsed and the sort. Their columns stay auto-sized, so a sort is all there is t
 # the tables are reached through their name-mangled members, as these views' own tests do
 # pylint: disable=protected-access
 
+import sys
 from typing import Any
 
 import cbor2
@@ -74,7 +75,7 @@ def test_the_top_is_saved_as_the_top(qtbot: QtBot) -> None:
     assert cbor2.loads(files_view(qtbot).save_state())["folder"] == "."
 
 
-@mark.parametrize("folder", ["../elsewhere", "sub/../..", "C:/elsewhere", "/elsewhere", ".." + chr(92) + "x", 3, None])
+@mark.parametrize("folder", ["../elsewhere", "sub/../..", "/elsewhere", ".." + chr(92) + "x", 3, None])
 def test_a_folder_that_would_leave_the_resource_is_not_gone_to(qtbot: QtBot, folder: Any) -> None:
     """A hand-damaged state stays inside the resource's folder, as the browser itself does.
 
@@ -86,6 +87,20 @@ def test_a_folder_that_would_leave_the_resource_is_not_gone_to(qtbot: QtBot, fol
     view = files_view(qtbot, cbor2.dumps({"folder": folder}))
 
     assert view.directory == DIRECTORY
+
+
+def test_a_drive_path_leaves_the_resource_only_on_windows(qtbot: QtBot) -> None:
+    """Only Windows reads ``C:`` as a drive, so a state naming ``C:/elsewhere`` is not gone to there; everywhere else it
+    names a subfolder beneath the resource, which is.
+
+    **Test steps:**
+
+    * restore a state naming ``C:/elsewhere``, then show the browser
+    * verify it is at the top on Windows, and in that subfolder elsewhere
+    """
+    view = files_view(qtbot, cbor2.dumps({"folder": "C:/elsewhere"}))
+
+    assert view.directory == (DIRECTORY if sys.platform == "win32" else DIRECTORY / "C:" / "elsewhere")
 
 
 def test_a_folder_no_longer_there_goes_back_to_the_top(qtbot: QtBot, listing: Any) -> None:
