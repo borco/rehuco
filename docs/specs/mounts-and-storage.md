@@ -161,7 +161,9 @@ references** to such files and nothing more about a root: its role is to aggrega
 - **A reference whose `.rehuroot` is missing or unreadable** — a file on a share that is offline, one deleted by
   hand — does not refuse the catalog: the root is listed greyed under its file's name, with one row saying its file
   cannot be read and the reason as the tooltip, offering neither *Map…* nor a name to edit; the reference survives a
-  save, and *Remove Root* drops it.
+  save, and *Remove Root* drops it. **The cache keeps what it held of that root**, matched to it by the file, as it
+  keeps an offline root's: its records still show, greyed, and nothing scans or watches it. Only *Remove Root* clears
+  them; a reference this machine never read holds nothing to keep.
 - **Adding a root** is picking existing `.rehuroot` files, or a folder, which makes one with a layout chosen from the
   default root layouts the settings keep ([[plugins#rehuco-dock]]); the Roots view edits a root's layouts and
   fallbacks beside its name.

@@ -164,8 +164,8 @@ def test_a_version_6_cache_upgrades_with_a_file_identity_column_and_its_index(
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     cache_path = tmp_path / "catalog.rehudb"
     rehuco, first, _ = two_roots()
-    with CatalogCache.open(cache_path, chain=CHAIN[:6]) as old:
-        old.reconcile_roots(mapped(rehuco))
+    with CatalogCache.open(cache_path, chain=CHAIN[:6]):
+        database.insert_roots(mapped(rehuco))
         database.keeper.execute(
             "INSERT INTO resources (root_id, path, path_key, kind, title, mtime_ns, size, content_hash, scanned_at) "
             "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'T', 42, 7, 'abc', 0)",
@@ -174,7 +174,7 @@ def test_a_version_6_cache_upgrades_with_a_file_identity_column_and_its_index(
     assert "file_id" not in {name for (_, name, *_) in database.keeper.execute("PRAGMA table_info(resources)")}
 
     with CatalogCache.open(cache_path) as upgraded:
-        assert upgraded.schema_version == CURRENT_VERSION == 7
+        assert upgraded.schema_version == CURRENT_VERSION
         assert [row.record.title for row in upgraded.rows()] == ["T"]
 
     assert file_ids(database) == {"a/info.rehu": None}

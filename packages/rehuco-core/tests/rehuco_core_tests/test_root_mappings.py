@@ -180,12 +180,13 @@ def test_reading_changes_nothing(tmp_path: Path) -> None:
 
 
 def test_a_catalog_splits_into_mapped_and_unmapped_roots(tmp_path: Path, mocker: MockerFixture) -> None:
-    """The roots this machine reaches carry their folder and storage; the others are the shared roots alone.
+    """The roots this machine reaches carry their folder, storage and root file; the others are the shared roots alone.
 
     **Test steps:**
 
     * map only the second root of a two-root catalog
-    * verify ``mapped`` holds that root with its folder and label, and ``unmapped`` the first, in display order
+    * verify ``mapped`` holds that root with its folder, label and root file, and ``unmapped`` the first, in display
+      order
     """
     mocker.patch(f"{MODULE}.storage_of", return_value=RootStorage.REMOVABLE)
     file = catalog_with_two_roots()
@@ -196,6 +197,7 @@ def test_a_catalog_splits_into_mapped_and_unmapped_roots(tmp_path: Path, mocker:
     assert mappings.mapped(file) == (
         MappedRoot(second.root_id, "Downloads", "//ryzen/d/Downloads", tmp_path, RootStorage.REMOVABLE),
     )
+    assert mappings.mapped(file)[0].file == second.file
     assert mappings.unmapped(file) == (first,)
 
 

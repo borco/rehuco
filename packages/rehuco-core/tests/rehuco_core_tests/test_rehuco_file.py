@@ -467,6 +467,21 @@ def test_a_root_file_that_cannot_be_read_is_kept_with_why(tmp_path: Path, write:
     assert read_json(path)["roots"][1] == {"file": "discs.rehuroot", "some_future_reference_key": 7}
 
 
+def test_the_unreadable_files_are_those_of_the_roots_that_cannot_be_read(tmp_path: Path) -> None:
+    """What a cache is to hold a root's rows for is the file of each reference that cannot be read, and only those.
+
+    **Test steps:**
+
+    * load ``HOME`` with every root file there, then again with the ``discs`` file missing
+    * verify the first lists no file, the second only the ``discs`` file
+    """
+    path = write_home(tmp_path)
+    assert not RehucoFile.load(path).unreadable_files
+    (tmp_path / "discs.rehuroot").unlink()
+
+    assert RehucoFile.load(path).unreadable_files == (tmp_path / "discs.rehuroot",)
+
+
 def test_an_unreadable_root_cannot_be_relabeled(tmp_path: Path) -> None:
     """There is no file to write a label into.
 

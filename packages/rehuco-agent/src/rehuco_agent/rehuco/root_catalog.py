@@ -348,7 +348,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :returns: what the catalog is to read, or ``None`` with :attr:`load_error` saying why.
         """
         try:
-            return self.__catalog.prepare(rehudb_path(cache_folder(), file.rehuco_id), mappings.mapped(file))
+            path = rehudb_path(cache_folder(), file.rehuco_id)
+            return self.__catalog.prepare(path, mappings.mapped(file), file.unreadable_files)
         except CatalogUnreadable as error:
             self.__fail(str(error))
             return None
@@ -432,12 +433,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
     def unreachable_roots(self) -> frozenset[UUID]:
         """The roots of the open file whose folder could not be reached when last looked at -- by its notifier or a
-        scan (#511); none while no file is open, or when the cache cannot be read."""
+        scan (#511) -- or whose ``.rehuroot`` cannot be read (#577); none while no file is open, or no cache read."""
         try:
-            return frozenset(root.root_id for root in self.__catalog.roots() if root.reachable is False)
+            roots = self.__catalog.roots()
         except CatalogUnreadable as error:
             LOG.error("%s", error)
             return frozenset()
+        held = set() if self.__file is None else set(self.__file.unreadable_files)
+        return frozenset(root.root_id for root in roots if root.reachable is False or root.root_file in held)
 
     def mapped_roots(self) -> tuple[MappedRoot, ...]:
         """The roots of the open file this machine reaches, in the file's order; none while none is open."""
@@ -645,13 +648,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if file is None or mappings is None or cache_path is None or file.lock_reason is not None:
             return False
         removed = file.remove_root(row)
-        mapping = mappings.mapping(removed.root_id)
+        cached = removed if removed.readable else self.__held_root(removed)
+        mapping = None if cached is None else mappings.mapping(cached.root_id)
         saved = self.__save_file()
-        if saved and removed.readable:
-            self.__catalog.hide(removed.root_id)
-            where = removed.location if mapping is None else str(mapping.path)
+        if saved and cached is not None:
+            self.__catalog.hide(cached.root_id)
+            where = cached.location if mapping is None else str(mapping.path)
             self.__enqueue(
-                RemoveCatalogRootJob(cache_path, removed.root_id, root_label=removed.label or where), Path(where)
+                RemoveCatalogRootJob(cache_path, cached.root_id, root_label=cached.label or where), Path(where)
             )
         if self.__file is not None:
             self.__follow_roots()
@@ -714,7 +718,21 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """Bring the cache's roots in line with the file's after an edit, and show those roots; a failure is
         logged, since the next scan rebuilds the cache anyway."""
         if self.__file is not None:
-            self.__catalog.reconcile(self.mapped_roots())
+            self.__catalog.reconcile(self.mapped_roots(), self.__file.unreadable_files)
+
+    def __held_root(self, root: RehucoRoot) -> RehucoRoot | None:
+        """A root whose ``.rehuroot`` cannot be read, as the cache's row of it knows it -- its id is in that file, its
+        folder standing in for its location (#577).
+
+        :param root: the root.
+        :returns: it; ``None`` when the cache holds no row of it, or cannot be read.
+        """
+        try:
+            row = None if root.file is None else self.__catalog.root_read_from(root.file)
+        except CatalogUnreadable as error:
+            LOG.error("%s", error)
+            return None
+        return None if row is None else RehucoRoot(row.root_id, row.label, str(row.path))
 
     # endregion
 

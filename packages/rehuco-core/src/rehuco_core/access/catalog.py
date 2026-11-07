@@ -59,6 +59,16 @@ class Catalog:
         except (OSError, sqlite3.Error) as error:
             raise CatalogUnreadable(f"Could not read the roots of {session.cache_path}: {error}") from error
 
+    def root_read_from(self, root_file: Path) -> CatalogRoot | None:
+        """The view's root last read from ``root_file`` -- how a root whose ``.rehuroot`` can no longer be read, its id
+        being in it, is still found (#577).
+
+        :param root_file: the ``.rehuroot``.
+        :returns: the root; ``None`` when no root of the view was read from it.
+        :raises CatalogUnreadable: when the cache cannot be read.
+        """
+        return next((root for root in self.roots() if root.root_file == root_file), None)
+
     def query(self, query: CatalogQuery, *, ids: Collection[int] | None = None) -> list[CatalogRow]:
         """The rows ``query`` matches under the view's roots.
 
@@ -131,12 +141,14 @@ class Catalog:
         return None if session is None else session.cache_path
 
     @staticmethod
-    def prepare(cache_path: Path, roots: Sequence[MappedRoot]) -> CatalogSession:
+    def prepare(cache_path: Path, roots: Sequence[MappedRoot], held_files: Collection[Path] = ()) -> CatalogSession:
         """Open a cache, bring its roots in line with a ``.rehuco``'s, and describe the session over it -- without
         attaching it, so a file that then fails to open leaves the attached one as it was.
 
         :param cache_path: the cache file; created when missing.
-        :param roots: the ``.rehuco``'s roots, in its order.
+        :param roots: the ``.rehuco``'s roots this machine reaches, in its order.
+        :param held_files: the ``.rehuroot`` files the ``.rehuco`` lists and cannot read, whose roots' rows are kept and
+            listed, as an offline root's are (:meth:`~rehuco_core.rehudb.CatalogCache.reconcile_roots`).
         :returns: the session.
         :raises CatalogUnreadable: when the cache could not be opened or reconciled.
         """
@@ -146,10 +158,10 @@ class Catalog:
             raise CatalogUnreadable(f"Could not open the cache of {cache_path}: {error}") from error
         try:
             with cache:
-                cache.reconcile_roots(roots)
+                held = cache.reconcile_roots(roots, held_files)
         except sqlite3.Error as error:
             raise CatalogUnreadable(f"Could not read the cache of {cache_path}: {error}") from error
-        return CatalogSession(cache_path, frozenset(root.root_id for root in roots))
+        return CatalogSession(cache_path, frozenset(root.root_id for root in roots) | held)
 
     def attach(self, session: CatalogSession) -> None:
         """Read through ``session`` from now on, replacing the one attached.
@@ -162,17 +174,18 @@ class Catalog:
         """Read nothing from now on. A no-op when nothing is attached."""
         self.__session = None
 
-    def reconcile(self, roots: Sequence[MappedRoot]) -> None:
+    def reconcile(self, roots: Sequence[MappedRoot], held_files: Collection[Path] = ()) -> None:
         """Bring the cache's roots in line with the ``.rehuco``'s after an edit, and show those roots. A failure is
         logged: the next scan rebuilds the cache anyway.
 
-        :param roots: the ``.rehuco``'s roots, in its order. A no-op while nothing is attached.
+        :param roots: the ``.rehuco``'s roots this machine reaches, in its order. A no-op while nothing is attached.
+        :param held_files: the ``.rehuroot`` files the ``.rehuco`` lists and cannot read (:meth:`prepare`).
         """
         session = self.__session
         if session is None:
             return
         try:
-            self.__session = self.prepare(session.cache_path, roots)
+            self.__session = self.prepare(session.cache_path, roots, held_files)
         except CatalogUnreadable as error:
             LOG.error("Could not update the cache %s: %s", session.cache_path, error.__cause__ or error)
             self.__session = replace(session, root_ids=frozenset(root.root_id for root in roots))

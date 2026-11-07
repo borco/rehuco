@@ -9,6 +9,7 @@ tested on its own (`test_rehudb`), as is the verify updater (`test_rehudb_update
 import logging
 import sqlite3
 import threading
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import MagicMock
@@ -51,6 +52,7 @@ def fixture_cache(mocker: MockerFixture) -> MagicMock:
     """
     cache = mocker.MagicMock(spec=CatalogCache)
     cache.__enter__.return_value = cache
+    cache.reconcile_roots.return_value = frozenset()
     mocker.patch.object(CatalogCache, "open", return_value=cache)
     return cache
 
@@ -167,6 +169,25 @@ def test_the_roots_and_rows_are_those_of_the_view(cache: MagicMock) -> None:
 
     assert [root.root_id for root in catalog.roots()] == [LIBRARY_ID, PACKS_ID]
     assert paths_of(catalog) == [(LIBRARY_ID, "a/info.rehu"), (PACKS_ID, "p/info.rehu")]
+
+
+def test_a_root_of_the_view_is_found_by_the_file_it_was_read_from(cache: MagicMock) -> None:
+    """The one way to a root whose ``.rehuroot`` can no longer be read is the file its row names (#577).
+
+    **Test steps:**
+
+    * make the cache hold two roots, the second read from a file, and view both
+    * verify that file finds the second root, and another file finds none
+    """
+    read_from = Path("/fake/packs.rehuroot")
+    cache.roots.return_value = (cached_root(LIBRARY, 0), replace(cached_root(PACKS, 1), root_file=read_from))
+    catalog = attached(LIBRARY, PACKS)
+
+    found = catalog.root_read_from(read_from)
+
+    assert found is not None
+    assert found.root_id == PACKS_ID
+    assert catalog.root_read_from(Path("/fake/other.rehuroot")) is None
 
 
 def test_a_query_and_an_update_in_place_are_passed_to_the_cache(cache: MagicMock) -> None:
@@ -361,9 +382,27 @@ def test_preparing_reconciles_the_roots_and_describes_the_session(cache: MagicMo
     session = Catalog.prepare(CACHE_PATH, (LIBRARY, PACKS))
 
     CatalogCache.open.assert_called_once_with(CACHE_PATH)  # type: ignore[attr-defined]  # patched by the fixture
-    cache.reconcile_roots.assert_called_once_with((LIBRARY, PACKS))
+    cache.reconcile_roots.assert_called_once_with((LIBRARY, PACKS), ())
     cache.__exit__.assert_called_once()
     assert (session.cache_path, session.root_ids) == (CACHE_PATH, frozenset({LIBRARY_ID, PACKS_ID}))
+
+
+def test_a_root_the_cache_holds_for_an_unreadable_file_is_in_the_session(cache: MagicMock) -> None:
+    """The roots the cache kept for the ``.rehuroot`` files that cannot be read are listed with the rest, so their rows
+    are still read, as an offline root's are (#577).
+
+    **Test steps:**
+
+    * make the reconcile hold one root for one file, and prepare a session over the other root with that file
+    * verify the cache was handed the file, and the session names both roots
+    """
+    held_file = Path("/fake/packs.rehuroot")
+    cache.reconcile_roots.return_value = frozenset({PACKS_ID})
+
+    session = Catalog.prepare(CACHE_PATH, (LIBRARY,), (held_file,))
+
+    cache.reconcile_roots.assert_called_once_with((LIBRARY,), (held_file,))
+    assert session.root_ids == frozenset({LIBRARY_ID, PACKS_ID})
 
 
 def test_preparing_a_cache_that_cannot_be_opened_or_reconciled_says_which(
@@ -403,7 +442,7 @@ def test_reconciling_follows_an_edit_of_the_roots(cache: MagicMock) -> None:
 
     catalog.reconcile([PACKS, added])
 
-    cache.reconcile_roots.assert_called_with([PACKS, added])
+    cache.reconcile_roots.assert_called_with([PACKS, added], ())
     assert [root.root_id for root in catalog.roots()] == [PACKS_ID, added.root_id]
     assert paths_of(catalog) == [(PACKS_ID, "p/info.rehu")]
 

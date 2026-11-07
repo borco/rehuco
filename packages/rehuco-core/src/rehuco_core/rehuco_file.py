@@ -248,6 +248,12 @@ class RehucoFile:
         return tuple(reference.shown for reference in self.__references)
 
     @property
+    def unreadable_files(self) -> tuple[Path, ...]:
+        """The ``.rehuroot`` files the catalog lists and cannot read, in display order -- whose roots' rows a cache
+        keeps as it keeps an offline root's (:meth:`~rehuco_core.rehudb.CatalogCache.reconcile_roots`)."""
+        return tuple(reference.path for reference in self.__references if reference.root is None)
+
+    @property
     def count(self) -> int:
         """How many roots the file holds."""
         return len(self.__references)

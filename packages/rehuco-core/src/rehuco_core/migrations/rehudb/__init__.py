@@ -222,6 +222,17 @@ def add_file_identity_v7(connection: sqlite3.Connection) -> None:
     connection.execute("CREATE INDEX resources_file_id ON resources (file_id)")
 
 
+def add_root_file_v8(connection: sqlite3.Connection) -> None:
+    """7 -> 8: the ``.rehuroot`` file a root was read from (#577), so a root whose file can no longer be read is still
+    matched to its rows and keeps them, as an offline root does, until it is removed from the ``.rehuco``.
+
+    A row written before this step reads ``NULL`` until the next open of its catalog writes it.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    connection.execute("ALTER TABLE roots ADD COLUMN root_file TEXT")
+
+
 CHAIN: Final[SchemaChain] = (
     (1, create_schema_v1),
     (2, add_join_spellings_v2),
@@ -230,6 +241,7 @@ CHAIN: Final[SchemaChain] = (
     (5, add_folded_search_columns_v5),
     (6, add_cache_meta_v6),
     (7, add_file_identity_v7),
+    (8, add_root_file_v8),
 )
 """This target's ordered ``(target, step)`` chain."""
 

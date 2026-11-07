@@ -23,7 +23,7 @@ mappings start empty, its catalogs' roots being added again anyway.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
@@ -74,6 +74,8 @@ class MappedRoot:
     :param location: where the root is, spelled the same on every machine.
     :param path: the root's folder on this machine.
     :param storage: what that folder lives on.
+    :param file: the ``.rehuroot`` it was read from, which the cache keeps so the root's rows outlive the file
+        becoming unreadable; ``None`` for a root not read from one.
     """
 
     root_id: UUID
@@ -81,6 +83,7 @@ class MappedRoot:
     location: str
     path: Path
     storage: RootStorage = RootStorage.LOCAL
+    file: Path | None = field(default=None, compare=False)
 
     @property
     def removable(self) -> bool:
@@ -188,7 +191,9 @@ class RootMappings:
         for root in file.roots:
             mapping = self.mapping(root.root_id) if root.readable else None
             if mapping is not None:
-                mapped.append(MappedRoot(root.root_id, root.label, root.location, mapping.path, mapping.storage))
+                mapped.append(
+                    MappedRoot(root.root_id, root.label, root.location, mapping.path, mapping.storage, root.file)
+                )
         return tuple(mapped)
 
     def unmapped(self, file: RehucoFile) -> tuple[RehucoRoot, ...]:

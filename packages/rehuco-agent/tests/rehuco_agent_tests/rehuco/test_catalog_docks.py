@@ -17,7 +17,7 @@ import logging
 import os
 import threading
 import warnings
-from collections.abc import Generator, Sequence
+from collections.abc import Collection, Generator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final, cast
@@ -132,7 +132,8 @@ def hold(catalog: Mock, cache: MagicMock, rows: list[CatalogRow]) -> None:
     them:
 
     * the roots are the ones the catalog was last handed (``prepare``, ``reconcile``), never scanned, each as
-      reachable as ``mark_reachable`` last said;
+      reachable as ``mark_reachable`` last said -- and, as the cache does, any it held before whose ``.rehuroot`` is
+      among the held files handed with them (#577);
     * a read, a read by ids, a lookup by key and a root's count answer from ``rows``;
     * a rename moves the rows at or beneath its source (``follow``);
     * a scan's write replaces its root's rows with what it found, each record keeping its id from one scan to the next,
@@ -146,12 +147,14 @@ def hold(catalog: Mock, cache: MagicMock, rows: list[CatalogRow]) -> None:
     reachable: dict[UUID, bool] = {}
     ids: dict[tuple[UUID, str], int] = {}
 
-    def take_roots(roots: Sequence[MappedRoot]) -> None:
+    def take_roots(roots: Sequence[MappedRoot], held_files: Collection[Path] = ()) -> None:
+        wanted = {root.root_id for root in roots}
+        held = [root for root in file_roots.values() if root.root_id not in wanted and root.file in held_files]
         file_roots.clear()
-        file_roots.update((root.root_id, root) for root in roots)
+        file_roots.update((root.root_id, root) for root in [*roots, *held])
 
-    def prepare(cache_path: Path, roots: Sequence[MappedRoot]) -> CatalogSession:
-        take_roots(roots)
+    def prepare(cache_path: Path, roots: Sequence[MappedRoot], held_files: Collection[Path] = ()) -> CatalogSession:
+        take_roots(roots, held_files)
         return CatalogSession(cache_path, frozenset(file_roots))
 
     def key_of(row: CatalogRow) -> Path | None:
@@ -191,8 +194,13 @@ def hold(catalog: Mock, cache: MagicMock, rows: list[CatalogRow]) -> None:
     catalog.prepare.side_effect = prepare
     catalog.reconcile.side_effect = take_roots
     catalog.roots.side_effect = lambda: tuple(
-        CatalogRoot(root.root_id, root.label, root.path, position, root.removable, reachable.get(root.root_id), None)
+        CatalogRoot(
+            root.root_id, root.label, root.path, position, root.removable, reachable.get(root.root_id), None, root.file
+        )
         for position, root in enumerate(file_roots.values())
+    )
+    catalog.root_read_from.side_effect = lambda root_file: next(
+        (root for root in catalog.roots() if root.root_file == root_file), None
     )
     catalog.mark_reachable.side_effect = reachable.__setitem__
     catalog.query.side_effect = lambda _query, *, ids=None: [
@@ -229,12 +237,13 @@ def mock_catalog(mocker: MockerFixture) -> Mock:
     """
     catalog = mocker.Mock(spec=Catalog)
     catalog.cache_path = None
-    catalog.prepare.side_effect = lambda cache_path, roots: CatalogSession(
+    catalog.prepare.side_effect = lambda cache_path, roots, _held_files=(): CatalogSession(
         cache_path, frozenset(root.root_id for root in roots)
     )
     catalog.attach.side_effect = lambda session: setattr(catalog, "cache_path", session.cache_path)
     catalog.detach.side_effect = lambda: setattr(catalog, "cache_path", None)
     catalog.roots.return_value = ()
+    catalog.root_read_from.return_value = None
     catalog.query.return_value = []
     catalog.row.return_value = None
     catalog.count.return_value = 0
@@ -634,9 +643,10 @@ def test_opening_lists_the_roots_and_reconciles_the_cache(dock: CatalogDocks, ca
 
     assert dock.catalog.rehuco_path == REHUCO_PATH
     assert shown_labels(dock) == ["tutorials", "packs"]
-    cache_path, roots = catalog.prepare.call_args.args
+    cache_path, roots, held_files = catalog.prepare.call_args.args
     assert cache_path.name == f"{REHUCO_ID}.rehudb"
     assert [root.label for root in roots] == ["tutorials", "packs"]
+    assert not held_files
     assert catalog.cache_path == cache_path
 
 

@@ -49,6 +49,9 @@ def mapped(file: RehucoFile) -> tuple[MappedRoot, ...]:
     """Every root of a catalog whose locations :func:`location_at` spelled, mapped to its folder.
 
     :param file: the catalog.
-    :returns: its roots, in display order, each on the local storage.
+    :returns: its roots, in display order, each on the local storage and carrying its root file.
     """
-    return tuple(MappedRoot(root.root_id, root.label, root.location, path_at(root.location)) for root in file.roots)
+    return tuple(
+        MappedRoot(root.root_id, root.label, root.location, path_at(root.location), file=root.file)
+        for root in file.roots
+    )

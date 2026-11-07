@@ -154,7 +154,8 @@ location that reads the same on every machine (`//nas/data/Tutorials`), so two c
 the root. Where a machine finds a root is that machine's own mapping, kept in its data folder under the root's id,
 not in either file: opening a catalog maps the roots whose share the machine has mounted, asks about the rest, and
 leaves a root nobody mapped listed but greyed, with `Map…` to map it later. A root whose `.rehuroot` is missing or
-unreadable is listed greyed too, with the reason. Where the storage is a share, a drive or a disc is detected, never
+unreadable is listed greyed too, with the reason, and its records already in the cache stay listed, greyed, until the
+root is removed. Where the storage is a share, a drive or a disc is detected, never
 chosen. A catalog written before roots were files of their own is not opened; its roots are added to a new one.
 `Root Catalog` >
 `New…` or `Open…` opens one, one at a time, in two app-wide panels — **Root Catalog**, which lists its roots, and
