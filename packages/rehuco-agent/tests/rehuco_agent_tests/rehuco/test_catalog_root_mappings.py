@@ -23,7 +23,6 @@ from rehuco_agent_tests.mapped_roots import location_at, resolve_test_location
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     HOME,
     PACKS,
-    REHUCO_ID,
     REHUCO_PATH,
     ROOT_IDS,
     TUTORIALS,
@@ -37,6 +36,9 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_queue,
     fixture_saves,
     fixture_served,
+    served_rehuco,
+    served_rehuroot,
+    written_root_contents,
 )
 
 AWAY: Final = "//nas/data/Tutorials"
@@ -92,7 +94,7 @@ def test_opening_maps_the_roots_this_machine_finds_on_its_own_and_remembers_them
 
     * serve a file of two roots whose locations this machine resolves, and open it
     * verify both are mapped and none is asked about, the cache was given both folders, and the mappings file holds
-      each folder and storage under the file's id
+      each folder and storage under its root's id
     """
     del served
     assert dock.catalog.open_rehuco(REHUCO_PATH)
@@ -102,7 +104,7 @@ def test_opening_maps_the_roots_this_machine_finds_on_its_own_and_remembers_them
     assert dock.catalog.unmapped_root_ids() == frozenset()
     assert dock.catalog.root_paths() == {UUID(ROOT_IDS[0]): TUTORIALS, UUID(ROOT_IDS[1]): PACKS}
     assert [root.path for root in catalog.prepare.call_args.args[1]] == [TUTORIALS, PACKS]
-    entries = json.loads((machine / MAPPINGS_FILE).read_text(encoding="utf-8"))["rehucos"][REHUCO_ID]
+    entries = json.loads((machine / MAPPINGS_FILE).read_text(encoding="utf-8"))["roots"]
     assert {UUID(key): Path(value["path"]) for key, value in entries.items()} == {
         UUID(ROOT_IDS[0]): TUTORIALS,
         UUID(ROOT_IDS[1]): PACKS,
@@ -152,7 +154,7 @@ def test_a_skipped_root_is_not_asked_about_again_and_stays_unmapped(
 
     assert dock.catalog.unmapped_roots() == ()
     assert dock.catalog.unmapped_root_ids() == frozenset({AWAY_ID})
-    assert stored(machine).skipped(UUID(REHUCO_ID), AWAY_ID)
+    assert stored(machine).skipped(AWAY_ID)
     served["roots"][2]["location"] = location_at(TUTORIALS / "again")
     assert dock.catalog.open_rehuco(REHUCO_PATH)
     assert dock.catalog.unmapped_roots() == ()
@@ -184,10 +186,10 @@ def test_mapping_a_root_later_maps_it_replaces_a_skip_and_queues_its_scan(
 
     assert dock.catalog.root_paths()[AWAY_ID] == folder
     assert dock.catalog.unmapped_root_ids() == frozenset()
-    mapping = stored(machine).mapping(UUID(REHUCO_ID), AWAY_ID)
+    mapping = stored(machine).mapping(AWAY_ID)
     assert mapping is not None
     assert mapping.path == folder
-    assert not stored(machine).skipped(UUID(REHUCO_ID), AWAY_ID)
+    assert not stored(machine).skipped(AWAY_ID)
     assert [root.label for root in catalog.reconcile.call_args.args[0]] == ["tutorials", "packs", "away"]
     changed.assert_called_once_with()
     scan.assert_called_once_with(AWAY_ID)
@@ -279,8 +281,8 @@ def test_adding_a_root_names_it_by_location_and_maps_it_here(
     **Test steps:**
 
     * open a catalog and add a folder
-    * verify the new row, the written file holds the location only, the mapping is stored, and the cache was given the
-      three roots
+    * verify the new row, the root file written holds the location and nothing of this machine, the mapping is stored
+      under its id, and the cache was given the three roots
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     folder = TUTORIALS.parent / "refs"
@@ -288,10 +290,10 @@ def test_adding_a_root_names_it_by_location_and_maps_it_here(
     row = dock.catalog.add_root(folder)
 
     assert row == 2
-    written = json.loads(saves.call_args[0][1])["roots"][2]
+    written = written_root_contents(saves)[2]
     assert written["location"] == location_at(folder)
-    assert set(written) == {"id", "label", "location"}
-    mapping = stored(machine).mapping(UUID(REHUCO_ID), UUID(written["id"]))
+    assert set(written) == {"format_version", "id", "label", "location", "layouts", "fallbacks"}
+    mapping = stored(machine).mapping(UUID(written["id"]))
     assert mapping is not None
     assert mapping.path == folder
     assert [root.path for root in catalog.reconcile.call_args.args[0]] == [TUTORIALS, PACKS, folder]
@@ -313,7 +315,7 @@ def test_adding_a_root_labels_it_as_asked_or_by_its_folders_name(
 
     assert dock.catalog.add_root(TUTORIALS.parent / "refs", label) == 2
 
-    assert json.loads(saves.call_args[0][1])["roots"][2]["label"] == expected
+    assert written_root_contents(saves)[2]["label"] == expected
 
 
 @mark.usefixtures("served")
@@ -378,8 +380,8 @@ def test_a_file_changed_on_disk_since_it_was_read_is_not_overwritten_but_read_ag
 
     **Test steps:**
 
-    * open a catalog, then change the file on disk under it: a root relabelled and a third one added
-    * relabel a root here and commit
+    * open a catalog, then change the file on disk under it: the roots reordered and a third one added
+    * move a root here and commit
     * verify the commit returned false, nothing was written, the reason says the file changed, and the catalog now lists
       what is on disk with the new root mapped
     """
@@ -387,9 +389,10 @@ def test_a_file_changed_on_disk_since_it_was_read_is_not_overwritten_but_read_ag
     file = dock.catalog.file
     assert file is not None
     late = {"id": str(AWAY_ID), "location": location_at(TUTORIALS.parent / "late"), "label": "late"}
-    changed = {**HOME, "roots": [{**HOME["roots"][0], "label": "by another machine"}, HOME["roots"][1], late]}
-    on_disk[REHUCO_PATH] = json.dumps(changed)
-    file.relabel_root(0, "mine")
+    changed = {**HOME, "roots": [HOME["roots"][1], HOME["roots"][0], late]}
+    on_disk[REHUCO_PATH] = json.dumps(served_rehuco(changed))
+    on_disk[REHUCO_PATH.parent / f"{AWAY_ID}.rehuroot"] = json.dumps(served_rehuroot(late))
+    file.move_to_bottom(0)
 
     with caplog.at_level(logging.WARNING):
         assert not dock.catalog.commit_roots()
@@ -398,21 +401,55 @@ def test_a_file_changed_on_disk_since_it_was_read_is_not_overwritten_but_read_ag
     assert "changed on disk" in dock.catalog.save_error
     assert "make the edit again" in dock.catalog.save_error
     assert dock.catalog.file is not None
-    assert [root.label for root in dock.catalog.file.roots] == ["by another machine", "packs", "late"]
-    assert [root.label for root in dock.catalog.mapped_roots()] == ["by another machine", "packs", "late"]
+    assert [root.label for root in dock.catalog.file.roots] == ["packs", "tutorials", "late"]
+    assert [root.label for root in dock.catalog.mapped_roots()] == ["packs", "tutorials", "late"]
     assert "changed on disk" in caplog.text
 
 
 @mark.usefixtures("served")
-def test_a_save_that_fails_reads_the_file_back_and_says_why(dock: CatalogDocks, saves: MagicMock) -> None:
+def test_a_root_file_changed_on_disk_is_not_overwritten_and_the_catalog_is_read_again(
+    dock: CatalogDocks, on_disk: dict[Path, str], saves: MagicMock, caplog: LogCaptureFixture
+) -> None:
+    """A label lives in its root's own file (#577), which another catalog may share: another machine's relabel is
+    never written over either, and the catalog shows what is on disk.
+
+    **Test steps:**
+
+    * open a catalog, then relabel a root in its root file on disk
+    * relabel the same root here and commit
+    * verify the commit returned false, the ``.rehuco`` was not written, the reason names the root file and says to
+      make the edit again, and the catalog shows the other machine's label
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    file = dock.catalog.file
+    assert file is not None
+    root_file = REHUCO_PATH.parent / f"{ROOT_IDS[0]}.rehuroot"
+    on_disk[root_file] = json.dumps(served_rehuroot({**HOME["roots"][0], "label": "by another machine"}))
+    file.relabel_root(0, "mine")
+
+    with caplog.at_level(logging.WARNING):
+        assert not dock.catalog.commit_roots()
+
+    saves.assert_not_called()
+    assert f"The .rehuroot changed on disk: {root_file}" in dock.catalog.save_error
+    assert "make the edit again" in dock.catalog.save_error
+    assert [root.label for root in dock.catalog.mapped_roots()] == ["by another machine", "packs"]
+    assert "the catalog was read again" in caplog.text
+
+
+@mark.usefixtures("served")
+def test_a_save_that_fails_reads_the_file_back_and_says_why(
+    mocker: MockerFixture, dock: CatalogDocks, saves: MagicMock
+) -> None:
     """After a write fails the edit is gone from the catalog, which is the file on disk again.
 
     **Test steps:**
 
-    * open a catalog, make the write fail, relabel a root and commit
+    * open a catalog, make every write fail -- the root file's, where a label is, first -- relabel a root and commit
     * verify the commit failed with the reason, and the old label is back
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
+    mocker.patch("rehuco_core.rehuroot_file.atomic_write_text", side_effect=PermissionError("read-only folder"))
     saves.side_effect = PermissionError("read-only folder")
     file = dock.catalog.file
     assert file is not None
@@ -425,15 +462,16 @@ def test_a_save_that_fails_reads_the_file_back_and_says_why(dock: CatalogDocks, 
     assert [root.label for root in dock.catalog.mapped_roots()] == ["tutorials", "packs"]
 
 
-def test_removing_a_root_forgets_where_this_machine_had_it(
+def test_removing_a_root_keeps_where_this_machine_has_it(
     dock: CatalogDocks, machine: Path, saves: MagicMock, served: dict[str, Any], queue: TaskQueue
 ) -> None:
-    """A root that is gone from the file leaves nothing behind in the mappings, mapped or not.
+    """A root removed from one catalog may be listed by another (#577), so what this machine knows of it stays: its
+    mapping, or its skip.
 
     **Test steps:**
 
-    * open a file with an unmapped root; remove it, then a mapped one
-    * verify each removal succeeded and neither root has a mapping or a skip left
+    * open a file with a skipped root; remove it, then a mapped one
+    * verify each removal succeeded, the skip is still remembered and the mapping still there
     """
     serve_away(served)
     dock.catalog.open_rehuco(REHUCO_PATH)
@@ -444,10 +482,9 @@ def test_removing_a_root_forgets_where_this_machine_had_it(
 
     saves.assert_called()
     kept = stored(machine)
-    assert kept.mapping(UUID(REHUCO_ID), AWAY_ID) is None
-    assert not kept.skipped(UUID(REHUCO_ID), AWAY_ID)
-    assert kept.mapping(UUID(REHUCO_ID), UUID(ROOT_IDS[0])) is None
-    assert kept.mapping(UUID(REHUCO_ID), UUID(ROOT_IDS[1])) is not None
+    assert kept.skipped(AWAY_ID)
+    assert kept.mapping(UUID(ROOT_IDS[0])) is not None
+    assert kept.mapping(UUID(ROOT_IDS[1])) is not None
     queue.wait_until_idle()
 
 

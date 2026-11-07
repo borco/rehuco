@@ -22,14 +22,13 @@ from rehuco_core import (
     CatalogRootScan,
     HardlinkedRecord,
     RecordSignature,
-    RehucoFile,
     RenameCoordinator,
     RootScanEffects,
     RootScanResult,
     enumerate_content_files,
 )
 
-from rehuco_core_tests.mapped_roots import location_at, mapped
+from rehuco_core_tests.mapped_roots import location_at, mapped, new_catalog
 from rehuco_core_tests.real_links import directory_link, hardlink
 from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unused-import
     MemoryDatabase,
@@ -275,7 +274,7 @@ def test_one_file_under_two_roots_keeps_one_row_under_the_earlier_root_either_or
     first_name = write_record(tmp_path / "one" / "a.rehu")
     (tmp_path / "two").mkdir()
     hardlink(tmp_path / "two" / "b.rehu", first_name)
-    rehuco = RehucoFile.new()
+    rehuco = new_catalog()
     rehuco.add_root(location_at(tmp_path / "one"))
     rehuco.add_root(location_at(tmp_path / "two"))
     first, second = mapped(rehuco)

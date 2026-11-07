@@ -65,6 +65,7 @@ from .root_storage import (
     ROOT_STORAGE_ICONS,
     ROOT_STORAGE_OFFLINE_ROWS,
     ROOT_STORAGE_OFFLINE_TOOLTIPS,
+    UNREADABLE_ROW,
 )
 from .roots_checksum import BOOKKEEPING_KINDS, row_checksum
 from .roots_node import (
@@ -324,7 +325,8 @@ class RootsFolderModel(QAbstractItemModel):
         """
         lister = self.__lister
         if isinstance(node.root, RehucoRoot):
-            self.__insert(node, 0, [RootsNode(NOT_MAPPED_ROW, RootsNodeKind.UNREACHABLE, node)])
+            row = NOT_MAPPED_ROW if node.root.readable else UNREADABLE_ROW
+            self.__insert(node, 0, [RootsNode(row, RootsNodeKind.UNREACHABLE, node)])
             return
         if lister is None:
             return
@@ -882,7 +884,7 @@ class RootsFolderModel(QAbstractItemModel):
                     checksum = node.checksum
                     return None if checksum is None else checksum_tooltip_for(checksum.state, checksum.untrusted)
                 if isinstance(root, RehucoRoot):
-                    return root.location
+                    return root.problem or root.location
                 tooltip = str(root.path)
                 if unreachable:
                     tooltip += "\n" + ROOT_STORAGE_OFFLINE_TOOLTIPS[root.storage]

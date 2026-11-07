@@ -40,9 +40,9 @@ and *Open* starts there; putting one on the share is the user's choice, and noth
 - the **roots**, each with a stable **id** the cache keys its rows on, a **label** (defaulting to the folder's name,
   made unique with a suffix on a clash; what the browser shows and what a folder filter addresses,
   `folder="<label>/<relative path>"`, [[plugins#browsers]]) and a machine-independent **location** (below) — nothing
-  that is a fact about one machine; where each machine finds a root is that machine's **mapping**, kept apart. **As
-  built (format 3) these sit inline; with [[mounts-and-storage#rehuroot]] (format 4) each root is a `.rehuroot` file
-  of its own and the `.rehuco` holds only an ordered list of references to them;**
+  that is a fact about one machine; where each machine finds a root is that machine's **mapping**, kept apart. Each
+  root is a `.rehuroot` file of its own ([[mounts-and-storage#rehuroot]], format 4), and the `.rehuco` holds only an
+  ordered list of references to them;
 - which plugins ([[plugins#overview]]) to load;
 - a **home** for each kind of grouping-entity document — creators, collections, learning paths
   ([[plugins#grouping-entities]]) — as `homes: {"creator": {"root": <root id>, "path": <relative path>}, "collection":
@@ -61,31 +61,30 @@ machine and by address on another is two locations.
 
 ```json
 {
-  "format_version": 3,
+  "format_version": 4,
   "id": "…",
-  "roots": [ { "id": "…", "label": "Tutorials", "location": "//nas/data/Tutorials" } ]
+  "roots": [ { "file": "tutorials.rehuroot" } ]
 }
 ```
 
-**A mapping is kept per machine, in that machine's data folder, never in the `.rehuco`.** It says where this machine
+**A mapping is kept per machine, in that machine's data folder, never in a shared file.** It says where this machine
 finds a root and carries what is a fact about this machine rather than about the root — the folder and the storage —
 plus whether the user chose to skip the root:
 
 ```json
 {
-  "format_version": 1,
-  "rehucos": { "<rehuco id>": {
+  "format_version": 2,
+  "roots": {
     "<root id>": { "path": "U:\\Tutorials", "storage": "network" },
     "<root id>": { "skipped": true }
-  } }
+  }
 }
 ```
 
 One machine writes it, so it takes no lock. The agent and the node of one machine read the same file
-([[nodes#node-actions]]), so a root mapped in the agent is served by the node. A mapping is keyed by the rehuco id and
-the root id, so moving or renaming the `.rehuco` keeps it; a machine that is renamed loses nothing, since nothing in the
-shared file names it. With `.rehuroot` the rehuco level goes: a root's id is the same in every catalog that lists it,
-so a mapping is keyed by the root id alone ([[mounts-and-storage#rehuroot]]).
+([[nodes#node-actions]]), so a root mapped in the agent is served by the node. A root's id is the same in every
+catalog that lists it, so a mapping is keyed by the root id alone ([[mounts-and-storage#rehuroot]]): moving or
+renaming a `.rehuco` keeps it, and a machine that is renamed loses nothing, since nothing in a shared file names it.
 
 - **The storage kind is detected, not declared** — local disk, network share, removable drive or disc — from the drive
   type on Windows and the mount table elsewhere, when the mapping is written; the notifier picks its backend from it
@@ -98,8 +97,8 @@ so a mapping is keyed by the root id alone ([[mounts-and-storage#rehuroot]]).
   nor skipped (the wizard was cancelled) is asked again at the next open. *Map…* in the Roots view maps a root later,
   once the share is mounted or the folder shared, and replaces a skip. A root a machine cannot reach by nature (another
   box's local disk, not shared) sits there the same way.
-- **The `.rehuco` changes only when the roots do** — one added, removed, relabelled or moved — so two machines rarely
-  save it at once, and mapping a root never writes it. The save goes through the same lock as a `.rehu`
+- **The `.rehuco` changes only when the roots do** — one added, removed or moved; a relabel writes the root's
+  `.rehuroot` instead — so two machines rarely save it at once, and mapping a root never writes it. The save goes through the same lock as a `.rehu`
   ([[sync#overview]]) and then compares the file with what this machine last read or wrote: if another machine changed
   it since, nothing is written, the catalog is read again and the user is told to repeat the edit. There is no merge of
   structural edits.
@@ -108,7 +107,9 @@ so a mapping is keyed by the root id alone ([[mounts-and-storage#rehuroot]]).
 
 **Per `.rehuco`, not per machine singleton.** A machine may keep several `.rehuco` files — each a set of roots browsed
 together — and the agent opens one at a time ([[data-model#local-file-trio]], #371). Removing a root asks first, states
-that its files stay where they are, and drops only the root's cached entries ([[data-model#cache-schema]]).
+that its files stay where they are, and drops only the reference and the root's cached entries
+([[data-model#cache-schema]]): its `.rehuroot` and this machine's mapping of it stay, since another catalog may list
+it.
 
 **Roots do not overlap** within one file ([[multiplicity#instances]]), and no root has an owner.
 
@@ -153,15 +154,20 @@ references** to such files and nothing more about a root: its role is to aggrega
   value `*` means *keep the record's current folder name*, at the root's top. The default `{"*": "*"}` admits
   anything under its current name; `{"tutorial": "{authors}/{title}{{ [{year}]}}"}` groups tutorials under their
   authors **and admits no other type** — a type with no entry and no `*` cannot be moved here.
-- **`fallbacks`** names what a placeholder renders as when the record leaves it empty. An empty placeholder outside
-  an optional group with no fallback **forbids** the root for that record, and the renderer says why — the path row
-  shows the root greyed with the reason ([[plugins#tutorial-plugin]]).
+- **`fallbacks`** names what a placeholder renders as when the record leaves it empty — **outside an optional group
+  only**: a group whose placeholder is empty drops out, a fallback for it notwithstanding. An empty placeholder
+  outside an optional group with no fallback **forbids** the root for that record, and the renderer says why — the
+  path row shows the root greyed with the reason ([[plugins#tutorial-plugin]]). A field's own `/` opens no level.
+- **A reference whose `.rehuroot` is missing or unreadable** — a file on a share that is offline, one deleted by
+  hand — does not refuse the catalog: the root is listed greyed under its file's name, with one row saying its file
+  cannot be read and the reason as the tooltip, offering neither *Map…* nor a name to edit; the reference survives a
+  save, and *Remove Root* drops it.
 - **Adding a root** is picking existing `.rehuroot` files, or a folder, which makes one with a layout chosen from the
   default root layouts the settings keep ([[plugins#rehuco-dock]]); the Roots view edits a root's layouts and
   fallbacks beside its name.
 - **Nothing is migrated**, as format 2 was not: a format-3 `.rehuco` is refused with a message saying to add its
-  roots again, and a format-1 mapping file is set aside. Overlap is checked across the catalog's `.rehuroot`s as it
-  was across its roots.
+  roots again, and a format-1 mapping file is set aside, as `root-mappings.format-1.json`. Overlap is checked across
+  the catalog's `.rehuroot`s as it was across its roots.
 
 ## §9.4 The node serves what its machine reaches
 

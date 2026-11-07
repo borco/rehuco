@@ -21,13 +21,12 @@ from rehuco_core import (
     CatalogRoot,
     RecordKind,
     RecordSignature,
-    RehucoFile,
     RehuDocument,
     RenameCoordinator,
     check_records,
 )
 
-from rehuco_core_tests.mapped_roots import location_at, mapped
+from rehuco_core_tests.mapped_roots import location_at, mapped, new_catalog
 
 ROOT: Final = Path("/fake/library")
 RECORD: Final = ROOT / "course/info.rehu"
@@ -316,7 +315,7 @@ def test_a_converted_record_keeps_its_rows_id_whatever_order_its_findings_come_i
     * plan, check and apply both paths, the ``.tc`` first
     * verify the ``.rehu`` holds the ``.tc``'s row id, the other row is untouched, and only the ``.rehu`` changed
     """
-    rehuco = RehucoFile.new()
+    rehuco = new_catalog()
     rehuco.add_root(location_at(tmp_path / "root"))
     (root,) = mapped(rehuco)
     folder = root.path / "Crochet"

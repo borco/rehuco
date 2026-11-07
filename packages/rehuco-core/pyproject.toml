@@ -20,6 +20,12 @@ classifiers = [
 requires-python = ">=3.14"
 dependencies = [
     "borco-core>=0.3.0",
+    # with pathvalidate, the sanitize step: a name transliterated to ASCII before it is sanitized (#577). ISC, pure
+    # Python -- not Unidecode, whose GPL-2.0+ the licensing policy rules out ([[packaging-deployment#licensing-policy]]).
+    "anyascii>=0.3.2",
+    # a rendered name made one a filesystem keeps ([[mounts-and-storage#rehuroot]], #577): the rename suggestions and
+    # a root's layouts share one sanitize step. MIT, pure Python.
+    "pathvalidate>=3.3.1",
     "pillow",
     # the bundled duration probe (#224). Its wheels carry libmediainfo itself for Windows, macOS and
     # Linux, so the three installers gain a probe rather than a runtime dependency on an FFmpeg the

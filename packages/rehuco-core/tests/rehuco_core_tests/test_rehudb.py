@@ -21,7 +21,6 @@ from pytest import LogCaptureFixture, fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     BUILTIN_PLUGINS,
-    CURRENT_REHUCO_VERSION,
     REHUDB_SUFFIX,
     TYPE_FIELD_COLUMNS,
     CatalogCache,
@@ -40,7 +39,7 @@ from rehuco_core import (
 from rehuco_core.migrations.rehudb import CHAIN, CURRENT_VERSION
 from rehuco_core.rehudb import BUSY_TIMEOUT_MS, FOLD_PROBE
 
-from rehuco_core_tests.mapped_roots import location_at, mapped
+from rehuco_core_tests.mapped_roots import location_at, mapped, new_catalog
 
 CACHE_PATH: Final = Path("/fake/cache/rehuco.rehudb")
 
@@ -121,7 +120,7 @@ def fixture_cache(database: MemoryDatabase) -> Generator[CatalogCache]:
 
 def two_roots() -> tuple[RehucoFile, MappedRoot, MappedRoot]:
     """A ``.rehuco`` with two roots, ``tutorials`` and ``packs``."""
-    rehuco = RehucoFile.new()
+    rehuco = new_catalog()
     rehuco.add_root(location_at("D:/tutorials"))
     rehuco.add_root(location_at("E:/packs"))
     first, second = mapped(rehuco)
@@ -135,8 +134,10 @@ def nesting(*paths: Path) -> RehucoFile:
     :param paths: the roots' folders, in display order.
     :returns: the file.
     """
-    roots = [{"id": str(uuid4()), "location": location_at(path), "label": path.name or str(path)} for path in paths]
-    return RehucoFile({"format_version": CURRENT_REHUCO_VERSION, "id": str(uuid4()), "roots": roots})
+    rehuco = new_catalog()
+    for path in paths:
+        rehuco.add_root(location_at(path), path.name or str(path))
+    return rehuco
 
 
 def record(path: str, **fields: Any) -> CatalogRecord:

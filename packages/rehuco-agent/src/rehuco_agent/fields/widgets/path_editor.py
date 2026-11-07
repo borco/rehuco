@@ -10,10 +10,9 @@ from typing import Final
 
 from borco_pyside.core import SimpleProperty
 from borco_pyside.widgets import ElidedLabel
-from pathvalidate import is_valid_filename, sanitize_filename
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
-from unidecode import unidecode
+from rehuco_core import sanitize_name
 
 from ..colors import WARNING_COLOR
 from .open_link_line import OpenLinkLine
@@ -42,7 +41,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     :attr:`expanded` shows/hides the suggestions panel; the expand control itself lives in the form's
     misc column, not here. :meth:`set_current_name` and :meth:`set_suggestions` are slots so the owner
     can keep them live as the underlying fields change (e.g. editing ``authors`` re-renders the
-    suggestions). Each suggestion is transliterated to ASCII (Unidecode) and sanitized into a valid
+    suggestions). Each suggestion is transliterated to ASCII and sanitized into a valid
     filesystem name (``pathvalidate``); one that reduces to nothing is dropped, one equal to the
     current name renders disabled (a rename to it is a no-op). When the current name matches **none**
     of the suggestions it is drawn in the warning color, since it isn't one of the canonical names.
@@ -220,5 +219,4 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         :param raw: a caller-formatted suggestion string (may hold unicode/invalid characters).
         :returns: the sanitized name, or ``None`` if nothing valid survives.
         """
-        name = sanitize_filename(unidecode(raw)).strip()
-        return name if name and is_valid_filename(name) else None
+        return sanitize_name(raw)

@@ -20,7 +20,7 @@ import warnings
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 from unittest.mock import MagicMock, Mock
 from uuid import UUID, uuid4
 
@@ -108,7 +108,7 @@ WAIT_TIMEOUT_MS: Final = 10_000
 test may be the spin that drains a deferred-deletion backlog."""
 
 HOME: Final = {
-    "format_version": 3,
+    "format_version": 4,
     "id": REHUCO_ID,
     "roots": [
         {"id": ROOT_IDS[0], "location": location_at(TUTORIALS), "label": "tutorials"},
@@ -301,11 +301,40 @@ def fixture_on_disk() -> dict[Path, str]:
     return {}
 
 
+def served_rehuco(document: dict[str, Any]) -> dict[str, Any]:
+    """The ``.rehuco`` a served catalog reads as: each root a reference to ``<root id>.rehuroot`` beside it (#577).
+
+    :param document: the served catalog, its roots inline.
+    :returns: the file's content.
+    """
+    rest = {key: value for key, value in document.items() if key != "roots"}
+    return {**rest, "roots": [{"file": f"{root['id']}.rehuroot"} for root in document.get("roots", [])]}
+
+
+def served_rehuroot(root: dict[str, Any]) -> dict[str, Any]:
+    """The ``.rehuroot`` a served root reads as.
+
+    :param root: the root, as the served catalog holds it inline.
+    :returns: the file's content, in the layout a save writes.
+    """
+    return {"format_version": 1, **root, "layouts": {"*": "*"}, "fallbacks": {}}
+
+
+def written_root_files(on_disk: dict[Path, str]) -> dict[str, dict[str, Any]]:
+    """The root files saves wrote, by root id.
+
+    :param on_disk: what saves left behind.
+    :returns: each written ``.rehuroot``'s content.
+    """
+    written = (json.loads(text) for path, text in on_disk.items() if path.suffix == ".rehuroot")
+    return {root["id"]: root for root in written}
+
+
 @fixture(name="served")
 def fixture_served(mocker: MockerFixture, on_disk: dict[Path, str]) -> dict[str, Any]:
-    """Serve ``HOME`` as the content of every ``.rehuco`` read, unless a save wrote it since; the test may edit what is
-    served. **Every other file is read for real** -- a record the catalog verifies on access (#487) must not read as
-    the catalog.
+    """Serve ``HOME`` as the content of every ``.rehuco`` read, and each of its roots as a ``.rehuroot`` named by its
+    id (#577), unless a save wrote one since; the test may edit what is served, its roots inline. **Every other file
+    is read for real** -- a record the catalog verifies on access (#487) must not read as the catalog.
 
     The text is in the layout a save writes, so a save that checks the file is as this machine last read it finds it
     so (#514).
@@ -317,8 +346,15 @@ def fixture_served(mocker: MockerFixture, on_disk: dict[Path, str]) -> dict[str,
     document = json.loads(json.dumps(HOME))
 
     def read_text(self: Path, *args: Any, **kwargs: Any) -> str:
+        if self in on_disk:
+            return on_disk[self]
         if self.suffix == ".rehuco":
-            return on_disk.get(self) or json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+            return json.dumps(served_rehuco(document), indent=2, ensure_ascii=False) + "\n"
+        if self.suffix == ".rehuroot":
+            root = next((root for root in document.get("roots", []) if root["id"] == self.stem), None)
+            if root is None:
+                raise FileNotFoundError(2, "No such file", str(self))
+            return json.dumps(served_rehuroot(root), indent=2, ensure_ascii=False) + "\n"
         return REAL_READ_TEXT(self, *args, **kwargs)
 
     mocker.patch.object(Path, "read_text", read_text)
@@ -326,12 +362,15 @@ def fixture_served(mocker: MockerFixture, on_disk: dict[Path, str]) -> dict[str,
 
 
 def mock_rehuco_writes(mocker: MockerFixture, on_disk: dict[Path, str]) -> MagicMock:
-    """Capture every write of a ``.rehuco``, taking no lock file: the file is ``/fake``, with no folder to take one in.
+    """Capture every write of a ``.rehuco`` and of a ``.rehuroot``, taking no lock file: the files are ``/fake``, with
+    no folder to take one in.
 
     :param mocker: pytest-mock fixture.
     :param on_disk: where each write is left, for the served file to answer with.
-    :returns: the mock standing in for ``atomic_write_text``.
+    :returns: the mock standing in for the ``.rehuco``'s ``atomic_write_text``.
     """
+    mocker.patch("rehuco_core.rehuroot_file.RecordFileLock")
+    mocker.patch("rehuco_core.rehuroot_file.atomic_write_text", side_effect=on_disk.__setitem__)
     mocker.patch("rehuco_core.rehuco_file.RecordFileLock")
     return mocker.patch("rehuco_core.rehuco_file.atomic_write_text", side_effect=on_disk.__setitem__)
 
@@ -560,10 +599,21 @@ def shown_labels(dock: CatalogDocks) -> list[str]:
     return [model.index(row, 0).data() for row in range(model.rowCount())]
 
 
+def written_root_contents(saves: MagicMock) -> list[dict[str, Any]]:
+    """The roots of the last ``.rehuco`` written, each read from the root file its reference names (#577) --
+    what a save wrote there, or what is served.
+
+    :param saves: the mock standing in for the ``.rehuco``'s ``atomic_write_text``.
+    :returns: each root file's content, in file order.
+    """
+    target, text = cast(tuple[Path, str], saves.call_args.args)
+    references = json.loads(text)["roots"]
+    return [json.loads((target.parent / entry["file"]).read_text(encoding="utf-8")) for entry in references]
+
+
 def written_roots(saves: MagicMock) -> list[str]:
     """The root labels of the last ``.rehuco`` written."""
-    payload = json.loads(saves.call_args[0][1])
-    return [root["label"] for root in payload["roots"]]
+    return [root["label"] for root in written_root_contents(saves)]
 
 
 # region Opening and creating
@@ -3030,7 +3080,7 @@ def written_locations(saves: MagicMock) -> list[str]:
     :param saves: the mock standing in for ``atomic_write_text``.
     :returns: each root's location, in file order.
     """
-    return [root["location"] for root in json.loads(saves.call_args[0][1])["roots"]]
+    return [root["location"] for root in written_root_contents(saves)]
 
 
 @mark.usefixtures("served")
@@ -3145,15 +3195,16 @@ def test_filling_the_card_never_saves(dock: CatalogDocks, saves: MagicMock) -> N
 
 @mark.usefixtures("served")
 def test_renaming_on_the_card_saves_the_label_and_updates_the_row(
-    dock: CatalogDocks, saves: MagicMock, catalog: Mock
+    dock: CatalogDocks, saves: MagicMock, on_disk: dict[Path, str], catalog: Mock
 ) -> None:
-    """A new name is the root's label in the file, the cache and the view; the folder is untouched and the row stays
-    current.
+    """A new name is the root's label in its root file (#577), the cache and the view; the ``.rehuco`` and the
+    folder are untouched and the row stays current.
 
     **Test steps:**
 
     * select the second root, type a name into the card and finish editing
-    * verify the saved labels, the shown labels, the labels the cache was reconciled to and the current row
+    * verify the label saved in the root's file and no ``.rehuco`` written, the shown labels, the labels the cache
+      was reconciled to and the current row
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     select_root(dock, 1)
@@ -3161,7 +3212,8 @@ def test_renaming_on_the_card_saves_the_label_and_updates_the_row(
     dock.roots.root_name_edit.setText("  Packs & Co  ")
     dock.roots.root_name_edit.editingFinished.emit()
 
-    assert written_roots(saves) == ["tutorials", "Packs & Co"]
+    assert written_root_files(on_disk)[ROOT_IDS[1]]["label"] == "Packs & Co"
+    saves.assert_not_called()
     assert shown_labels(dock) == ["tutorials", "Packs & Co"]
     assert [root.label for root in catalog.reconcile.call_args.args[0]] == ["tutorials", "Packs & Co"]
     assert dock.roots.roots_view.currentIndex().row() == 1
@@ -3220,10 +3272,11 @@ def test_a_card_edit_whose_save_fails_is_undone_on_screen(
 
     **Test steps:**
 
-    * select a root and rename it while the write fails
+    * select a root and rename it while every write fails -- the root file's, where the label is, first
     * verify a warning, and the old label in the view and on the card
     """
     mocker.patch("rehuco_agent.rehuco.roots_panel.QMessageBox.warning")
+    mocker.patch("rehuco_core.rehuroot_file.atomic_write_text", side_effect=PermissionError("read-only folder"))
     saves.side_effect = PermissionError("read-only folder")
     dock.catalog.open_rehuco(REHUCO_PATH)
     select_root(dock, 0)
@@ -3253,7 +3306,7 @@ def test_adding_a_root_saves_its_location_and_makes_it_current(
     add_root(qtbot, dock)
 
     assert written_locations(saves)[2] == location_at("/fake/refs")
-    assert all("path" not in root and "storage" not in root for root in json.loads(saves.call_args[0][1])["roots"])
+    assert all("path" not in root and "storage" not in root for root in written_root_contents(saves))
     assert dock.roots.roots_view.currentIndex().row() == 2
     assert dock.roots.root_name_edit.text() == "refs"
     assert dock.roots.root_storage_value.text() in ROOT_STORAGE_LABELS.values()
@@ -4142,7 +4195,7 @@ def test_the_roots_context_menu_shows_the_rows_actions_and_makes_it_current(
 
 @mark.parametrize(
     ("format_version", "add_root_enabled"),
-    [param(3, True, id="editable"), param(99, False, id="newer, read-only")],
+    [param(4, True, id="editable"), param(99, False, id="newer, read-only")],
 )
 def test_a_root_rows_menu_ends_with_scan_add_root_and_refresh_under_a_separator(
     mocker: MockerFixture,

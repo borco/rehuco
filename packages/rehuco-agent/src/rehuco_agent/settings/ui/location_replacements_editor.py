@@ -10,9 +10,9 @@ from typing import Final
 from borco_pyside.widgets import ContentSizedTableView, ItemListEditor
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QWidget
+from rehuco_core import ReplacementRule
 
 from ...item_action_icons import apply_item_action_icons
-from ..location_replacements_settings import ReplacementRule
 from .location_replacements_model import REGEX_COLUMN, REPLACEMENT_COLUMN, TEXT_COLUMN, LocationReplacementsModel
 
 

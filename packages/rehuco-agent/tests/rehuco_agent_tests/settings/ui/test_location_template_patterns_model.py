@@ -11,13 +11,9 @@
 from PySide6.QtCore import QModelIndex, Qt
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.location_templates_settings import (
-    BLANK_PATTERN_PROBLEM,
-    KNOWN_PLACEHOLDERS,
-    NAME_SUGGESTION_PATTERNS,
-    UNKNOWN_PLACEHOLDER_PROBLEM,
-)
+from rehuco_agent.settings.location_templates_settings import NAME_SUGGESTION_PATTERNS
 from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_COLUMN, LocationTemplatePatternsModel
+from rehuco_core import BLANK_PATTERN_PROBLEM, KNOWN_PLACEHOLDERS, UNKNOWN_PLACEHOLDER_PROBLEM
 
 FIRST = "{title}"
 SECOND = "{publisher} - {title}"

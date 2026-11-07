@@ -9,9 +9,10 @@ from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
+from rehuco_core import KNOWN_PLACEHOLDERS, location_pattern_problem
 
 from ...fields.colors import WARNING_COLOR
-from ..location_templates_settings import KNOWN_PLACEHOLDERS, NAME_SUGGESTION_PATTERNS, location_pattern_problem
+from ..location_templates_settings import NAME_SUGGESTION_PATTERNS
 
 PATTERN_COLUMN: Final = 0
 """The row's only column: the raw pattern."""
@@ -43,7 +44,7 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
     only the effective list a document reads skips it.
 
     **The check is the settings module's own**, asked through
-    :func:`~rehuco_agent.settings.location_templates_settings.location_pattern_problem` rather than
+    :func:`~rehuco_core.location_pattern_problem` rather than
     restated here, which is what keeps what this page marks invalid exactly what a suggestion would
     refuse.
 

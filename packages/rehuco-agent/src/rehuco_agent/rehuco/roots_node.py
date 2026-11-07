@@ -14,16 +14,20 @@ from .roots_checksum import RowChecksum
 
 type ShownRoot = MappedRoot | RehucoRoot
 """A root the model shows: a :class:`~rehuco_core.MappedRoot` when this machine reaches it, and so lists it; the
-file's own :class:`~rehuco_core.RehucoRoot` when it does not (#514), which has a name and a location and no folder."""
+file's own :class:`~rehuco_core.RehucoRoot` when it does not (#514), which has a name and a location and no folder --
+or, when its ``.rehuroot`` cannot be read, only that file and the reason (#577)."""
 
 
 def root_where(root: ShownRoot) -> str:
-    """Where a root is, as it is shown: this machine's folder, or the location of a root not mapped here.
+    """Where a root is, as it is shown: this machine's folder, the location of a root not mapped here, or the root file
+    of one that cannot be read.
 
     :param root: the root.
     :returns: the text.
     """
-    return str(root.path) if isinstance(root, MappedRoot) else root.location
+    if isinstance(root, MappedRoot):
+        return str(root.path)
+    return root.location if root.readable else str(root.file)
 
 
 def root_title(root: ShownRoot) -> str:

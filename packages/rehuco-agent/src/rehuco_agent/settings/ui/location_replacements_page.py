@@ -25,7 +25,7 @@ class LocationReplacementsPage(QWidget):
     replacement pair), since unlike a location pattern list an empty table is itself a valid saved
     state (see the module docstring). An empty-text row is **kept**, flagged, the same "fix it in place"
     rule `~rehuco_agent.settings.ui.location_templates_page.LocationTemplatesPage` follows for a broken
-    pattern: only what `~rehuco_agent.settings.location_replacements_settings.apply_location_replacements`
+    pattern: only what `~rehuco_core.apply_location_replacements`
     actually applies skips it.
 
     :param parent: optional Qt parent.

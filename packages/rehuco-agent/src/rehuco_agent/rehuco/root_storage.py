@@ -50,3 +50,7 @@ FOLDER_NOT_FOUND_ROW: Final = "Folder not found"
 
 NOT_MAPPED_ROW: Final = "Not mapped on this machine"
 """The one row a root this machine has no folder for shows, and what the root card says of it (#514)."""
+
+UNREADABLE_ROW: Final = "Its root file cannot be read"
+"""The one row a root whose ``.rehuroot`` is missing or unreadable shows, and what the root card says of it; the
+reason is the row's tooltip (#577)."""

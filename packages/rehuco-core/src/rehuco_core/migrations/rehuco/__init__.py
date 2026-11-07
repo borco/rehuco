@@ -5,14 +5,15 @@ other target -- a ``BASE_VERSION``, a ``CHAIN``, a head derived from it -- stamp
 ``format_version``, the spelling a ``.rehu`` uses.
 
 Version 1 was the first shape the file ever had; version 2 (#378) replaced a root's ``removable`` flag with a
-``storage``; version 3 (#514) replaced a root's ``path`` and ``storage`` with a ``location``, and is not migrated to:
-an older file is refused (:class:`RehucoTooOldError`).
+``storage``; version 3 (#514) replaced a root's ``path`` and ``storage`` with a ``location``; version 4 (#577) replaced
+the roots themselves with references to ``.rehuroot`` files. Neither is migrated to: an older file is refused
+(:class:`RehucoTooOldError`).
 """
 
 from typing import Final
 
 from ..runner import Chain, chain_head, run
-from . import v2_root_storage, v3_root_location
+from . import v2_root_storage, v3_root_location, v4_rehuroot
 from .v3_root_location import RehucoTooOldError
 
 BASE_VERSION: Final = 1
@@ -22,6 +23,7 @@ malformed is read as one rather than refused."""
 CHAIN: Final[Chain] = (
     (v2_root_storage.VERSION, v2_root_storage.upgrade),
     (v3_root_location.VERSION, v3_root_location.upgrade),
+    (v4_rehuroot.VERSION, v4_rehuroot.upgrade),
 )
 """This target's ordered ``(target, step)`` chain."""
 

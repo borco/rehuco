@@ -4,18 +4,14 @@
 
 from PySide6.QtCore import QModelIndex, Qt
 from pytest import fixture
-from rehuco_agent.settings.location_replacements_settings import (
-    DEFAULT_RULES,
-    EMPTY_TEXT_PROBLEM,
-    INVALID_REGEX_PROBLEM,
-    ReplacementRule,
-)
+from rehuco_agent.settings.location_replacements_settings import DEFAULT_RULES
 from rehuco_agent.settings.ui.location_replacements_model import (
     REGEX_COLUMN,
     REPLACEMENT_COLUMN,
     TEXT_COLUMN,
     LocationReplacementsModel,
 )
+from rehuco_core import EMPTY_TEXT_PROBLEM, INVALID_REGEX_PROBLEM, ReplacementRule
 
 FIRST = ReplacementRule(":", "-")
 SECOND = ReplacementRule("|", " - ")

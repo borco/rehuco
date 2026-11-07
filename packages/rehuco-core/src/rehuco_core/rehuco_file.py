@@ -1,42 +1,41 @@
 """The ``.rehuco`` file: one set of folder roots browsed together, read and written
-([[data-model#local-file-trio]], [[mounts-and-storage#rehuco-scope]], #371, #514).
+([[data-model#local-file-trio]], [[mounts-and-storage#rehuco-scope]], [[mounts-and-storage#rehuroot]], #371, #514,
+#577).
 
 A ``.rehuco`` is shareable: it may sit on the share and be opened from every machine, so it holds nothing that is a
-fact about one machine. The shape::
+fact about one machine. Nor does it hold the roots themselves: each is a ``.rehuroot`` file of its own
+(:class:`~rehuco_core.rehuroot_file.RehurootFile`), shared by every catalog that lists it, and the ``.rehuco`` keeps
+an ordered list of references to them, each a path relative to the ``.rehuco``. The shape::
 
     {
-      "format_version": 3,
+      "format_version": 4,
       "id": "6f1c5e0a-...",
-      "roots": [
-        { "id": "a41b9c3d-...", "label": "tutorials", "location": "//nas/data/tutorials" }
-      ]
+      "roots": [ { "file": "tutorials.rehuroot" } ]
     }
 
 **The file's ``id`` is the rehuco id**: the ``.rehudb`` cache is named by it rather than by the file's path, so
-moving or renaming a ``.rehuco`` keeps its cache. **Each root's ``id``** is what the cache keys the root's rows
-on, so relabelling it, reordering it or re-pointing it on a machine never orphans them. A root's **label** defaults to
-its folder's name, made unique with a suffix on a clash; it is what the browser shows and what a folder filter
-addresses (``folder="<label>/<relative path>"``), and changing it touches nothing on disk. The user may empty
-it, and an empty label is kept as it is: the views then show the root by its folder. A root's **location**
-names the place the same way on every machine (:mod:`rehuco_core.root_location`); where *this* machine finds it, and
-what that storage is, lives in the machine's own :class:`~rehuco_core.root_mappings.RootMappings`, not here.
+moving or renaming a ``.rehuco`` keeps its cache. A root's **id**, **label** and **location** are its ``.rehuroot``'s
+(:class:`RehucoRoot`). A reference whose file is missing or cannot be read is **kept**, as a root with a
+:attr:`~RehucoRoot.problem`: the catalog opens, the root shows why it is not there, and the reference survives a save.
 
-What this build does not understand is carried: an unknown top-level key, and an unknown key on a root, come
-back out of a save unchanged (invariant 1 of ``how-it-works.md``). A file stamped newer than this build loads,
-but read-only, with the reason stated (invariant 2); one stamped older is refused, since its roots carry paths and
-no locations (:class:`RehucoFileError`).
+What this build does not understand is carried: an unknown top-level key, and an unknown key on a reference, come
+back out of a save unchanged (invariant 1 of ``how-it-works.md``). A file stamped newer than this build loads, but
+read-only, with the reason stated (invariant 2); one stamped older is refused, since its roots are inline
+(:class:`RehucoFileError`).
 
-A save re-reads the file under its lock and writes only if it is still what this machine last read or wrote
-(:class:`RehucoChangedError` otherwise), so two machines editing the roots never overwrite each other silently.
+A save writes each changed ``.rehuroot`` first, then re-reads the ``.rehuco`` under its lock and writes it only if it
+is still what this machine last read or wrote (:class:`RehucoChangedError` otherwise), so two machines editing the
+roots never overwrite each other silently.
 """
 
-import hashlib
 import json
-from dataclasses import dataclass
+import os
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from borco_core import atomic_write_text
 
@@ -44,21 +43,21 @@ from .lock_reasons import LockReason, LockReasonKind
 from .migrations import CURRENT_REHUCO_VERSION, RehucoTooOldError, migrate_rehuco_data
 from .record_file_lock import RecordFileLock
 from .rehu_format import FORMAT_VERSION_KEY
+from .rehuroot_file import DEFAULT_LAYOUTS, REHUROOT_SUFFIX, RehurootFile, RehurootFileError
+from .sanitized_names import sanitize_name
+from .shared_file_digest import disk_digest, text_digest
 
 REHUCO_ID_KEY: Final = "id"
 """The file's top-level key holding the rehuco id, a UUID string."""
 
 REHUCO_ROOTS_KEY: Final = "roots"
-"""The file's top-level key holding its roots, in display order."""
+"""The file's top-level key holding its references to root files, in display order."""
 
-ROOT_ID_KEY: Final = "id"
-"""A root's key holding its stable id, a UUID string."""
+ROOT_FILE_KEY: Final = "file"
+"""A reference's key holding its ``.rehuroot``'s path, relative to the ``.rehuco`` and spelled with ``/``."""
 
-ROOT_LOCATION_KEY: Final = "location"
-"""A root's key holding its machine-independent location (:mod:`rehuco_core.root_location`)."""
-
-ROOT_LABEL_KEY: Final = "label"
-"""A root's key holding the name the browser shows and a folder filter addresses."""
+DEFAULT_ROOT_FILE_STEM: Final = "root"
+"""The name a new root file takes when its label sanitizes to nothing."""
 
 
 class RootStorage(StrEnum):
@@ -83,9 +82,10 @@ class RootStorage(StrEnum):
 class RehucoFileError(ValueError):
     """A ``.rehuco`` file this build cannot read at all.
 
-    Not text, not JSON, not an object, no usable rehuco id, roots that are not a list of well-formed root
-    objects, or a layout older than this build reads. A file merely stamped *newer* than this build is not one of
-    these: it loads, read-only (:attr:`RehucoFile.lock_reason`).
+    Not text, not JSON, not an object, no usable rehuco id, roots that are not a list of references, two references to
+    one file or to one root, or a layout older than this build reads. A file merely stamped *newer* than this build is
+    not one of these: it loads, read-only (:attr:`RehucoFile.lock_reason`); nor is a reference whose file cannot be
+    read, which is kept as a root with a problem.
     """
 
 
@@ -98,37 +98,76 @@ class RehucoChangedError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class RehucoRoot:
-    """One root of a ``.rehuco``, as parsed -- the view callers reason over, while the raw root object is what
-    the file keeps, so a key this build does not know survives a save.
+    """One root of a ``.rehuco``, as its ``.rehuroot`` says -- the view callers reason over.
 
-    :param root_id: the root's stable id.
-    :param label: the name the browser shows and a folder filter addresses; unique within the file unless empty.
-    :param location: where the root is, spelled the same on every machine.
+    :param root_id: the root's stable id; for an unreadable root, one derived from its file's path, never written.
+    :param label: the name the browser shows and a folder filter addresses; for an unreadable root, its file's stem.
+    :param location: where the root is, spelled the same on every machine; empty for an unreadable root.
+    :param layouts: the path template of each type's main key, ``*`` for any type not named.
+    :param fallbacks: what each placeholder renders as when a record leaves it empty.
+    :param file: the root's ``.rehuroot``; ``None`` for a root built by hand.
+    :param problem: why the root's file could not be read, or ``""`` when it was.
     """
 
     root_id: UUID
     label: str
     location: str
+    layouts: Mapping[str, str] = field(default=DEFAULT_LAYOUTS, compare=False)
+    fallbacks: Mapping[str, str] = field(default_factory=dict, compare=False)
+    file: Path | None = None
+    problem: str = ""
+
+    @property
+    def readable(self) -> bool:
+        """Whether the root's file was read -- what every use of the root but showing it needs."""
+        return not self.problem
 
 
 class RehucoFile:
-    """A ``.rehuco`` in memory: its rehuco id and its ordered, labeled roots.
+    """A ``.rehuco`` in memory: its rehuco id and its ordered roots, each read from its ``.rehuroot``.
 
-    The parsed JSON object is the source of truth; every root operation edits it in place, and
-    :meth:`save` writes it back atomically. The ordering operations speak the vocabulary of
-    ``borco_pyside``'s ``ItemOrderingEditor`` -- each takes a row and returns the row the root ends up at --
-    so a toolbar can drive them directly.
+    The parsed JSON object is the source of truth for the references; every root operation edits it in place, and
+    :meth:`save` writes it back atomically, after each changed root file. The ordering operations speak the vocabulary
+    of ``borco_pyside``'s ``ItemOrderingEditor`` -- each takes a row and returns the row the root ends up at -- so a
+    toolbar can drive them directly.
 
     :param data: the parsed JSON object; migrated in place to the current layout.
-    :param path: the file it was read from, or ``None`` for one not yet saved.
+    :param path: the file it was read from, or ``None`` for one not yet saved; its folder is what references are
+        relative to, so a file with references needs one.
     :param loaded_text: the text ``data`` was parsed from, which a save compares the file on disk with; ``None`` for a
         file not read from disk.
     :raises RehucoFileError: the object does not have a ``.rehuco``'s shape.
     """
 
+    @dataclass(slots=True)
+    class Reference:
+        """One entry of the ``roots`` list: the raw object the file keeps, the root file it names, and that file as
+        read.
+
+        :param raw: the object as read, any unknown key in it carried.
+        :param path: the root file, joined onto the ``.rehuco``'s folder and normalized.
+        :param root: the root file as read, or ``None`` when it could not be.
+        :param problem: why it could not be read, or ``""``.
+        """
+
+        raw: dict[str, Any]
+        path: Path
+        root: RehurootFile | None
+        problem: str = ""
+
+        @property
+        def shown(self) -> RehucoRoot:
+            """The root as callers see it."""
+            root = self.root
+            if root is None:
+                return RehucoRoot(
+                    uuid5(NAMESPACE_URL, str(self.path)), self.path.stem, "", file=self.path, problem=self.problem
+                )
+            return RehucoRoot(root.root_id, root.label, root.location, root.layouts, root.fallbacks, self.path)
+
     def __init__(self, data: dict[str, Any], path: Path | None = None, *, loaded_text: str | None = None) -> None:
         self.__path = path
-        self.__saved_hash = None if loaded_text is None else self.__digest(loaded_text)
+        self.__saved_hash = None if loaded_text is None else text_digest(loaded_text)
         try:
             migrate_rehuco_data(data)
         except RehucoTooOldError as error:
@@ -136,16 +175,11 @@ class RehucoFile:
         self.__data: Final = data
         self.__format_version: Final[int] = data[FORMAT_VERSION_KEY]
         self.__rehuco_id: Final = self.__read_uuid(data.get(REHUCO_ID_KEY), "the rehuco id")
-        roots = data.setdefault(REHUCO_ROOTS_KEY, [])
-        if not isinstance(roots, list):
+        raws = data.get(REHUCO_ROOTS_KEY, [])
+        if not isinstance(raws, list):
             raise self.__error(f"'{REHUCO_ROOTS_KEY}' is not a list")
-        self.__roots: Final[list[dict[str, Any]]] = roots
-        seen: set[UUID] = set()
-        for raw in roots:
-            root_id = self.__parse_root(raw).root_id
-            if root_id in seen:
-                raise self.__error(f"Two roots share the id {root_id}")
-            seen.add(root_id)
+        self.__references: Final[list[RehucoFile.Reference]] = [self.__read_reference(raw) for raw in raws]
+        self.__check_distinct()
 
     @classmethod
     def new(cls) -> RehucoFile:
@@ -157,7 +191,7 @@ class RehucoFile:
 
     @classmethod
     def load(cls, path: Path) -> RehucoFile:
-        """Read a ``.rehuco`` file whole, migrated to the current version.
+        """Read a ``.rehuco`` file whole, migrated to the current version, and each root file it names.
 
         :param path: the file.
         :returns: the file; read-only (:attr:`lock_reason`) when it is stamped newer than this build.
@@ -210,26 +244,30 @@ class RehucoFile:
 
     @property
     def roots(self) -> tuple[RehucoRoot, ...]:
-        """The roots, in display order."""
-        return tuple(self.__parse_root(raw) for raw in self.__roots)
+        """The roots, in display order -- an unreadable one too, with its problem."""
+        return tuple(reference.shown for reference in self.__references)
 
     @property
     def count(self) -> int:
         """How many roots the file holds."""
-        return len(self.__roots)
+        return len(self.__references)
 
     def save(self, path: Path | None = None) -> None:
-        """Write the file back as a current-version ``.rehuco``, atomically, under its lock file like a record
-        ([[mounts-and-storage#rehuco-scope]], #512).
+        """Write each new or changed root file, then the ``.rehuco`` itself as a current-version file, atomically,
+        under its lock file like a record ([[mounts-and-storage#rehuco-scope]], #512).
+
+        The ``.rehuco`` is written only when its text would change -- a relabel writes the root's file alone -- and
+        then its check comes first, under its lock, so a refused save writes no root file either.
 
         The layout is canonical: ``format_version`` first, the rehuco id next, any carried unknown key in the
-        order it was read, the roots last.
+        order it was read, the references last, each naming its file relative to where the ``.rehuco`` is written.
 
         :param path: where to write; ``None`` writes back to :attr:`path`, which then becomes ``path``.
         :raises ValueError: the file is read-only (:attr:`lock_reason`), or there is nowhere to write it.
-        :raises RecordLockedError: someone else held its lock for longer than a save waits.
+        :raises RecordLockedError: someone else held a lock for longer than a save waits.
+        :raises RehurootChangedError: a root file on disk is no longer what this machine last read or wrote.
         :raises RehucoChangedError: the file on disk is no longer what this machine last read or wrote.
-        :raises OSError: the file could not be written.
+        :raises OSError: a file could not be written.
         """
         reason = self.lock_reason
         if reason is not None:
@@ -240,56 +278,89 @@ class RehucoFile:
         payload: dict[str, Any] = {FORMAT_VERSION_KEY: CURRENT_REHUCO_VERSION, REHUCO_ID_KEY: str(self.__rehuco_id)}
         carried = (FORMAT_VERSION_KEY, REHUCO_ID_KEY, REHUCO_ROOTS_KEY)
         payload.update({key: value for key, value in self.__data.items() if key not in carried})
-        payload[REHUCO_ROOTS_KEY] = self.__roots
+        payload[REHUCO_ROOTS_KEY] = [
+            {**reference.raw, ROOT_FILE_KEY: self.__relative(reference.path, target.parent)}
+            for reference in self.__references
+        ]
         text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+        if target == self.__path and text_digest(text) == self.__saved_hash:
+            self.__save_root_files()
+            return
         with RecordFileLock(target):
             self.__check_unchanged(target)
+            self.__save_root_files()
             atomic_write_text(target, text)
         self.__path = target
-        self.__saved_hash = self.__digest(text)
+        self.__saved_hash = text_digest(text)
+
+    def __save_root_files(self) -> None:
+        """Write each root file that is new or changed.
+
+        :raises RecordLockedError: someone else held a root file's lock for longer than a save waits.
+        :raises RehurootChangedError: a root file on disk is no longer what this machine last read or wrote.
+        :raises OSError: a root file could not be written.
+        """
+        for reference in self.__references:
+            if reference.root is not None and reference.root.dirty:
+                reference.root.save()
 
     def add_root(self, location: str, label: str | None = None) -> int:
-        """Append a root, under a fresh id.
+        """Append a root, as a new ``.rehuroot`` beside the ``.rehuco`` under a fresh id and the default layouts; the
+        root file is written by the next :meth:`save`.
 
         :param location: where the root is, as :func:`rehuco_core.root_location.location_of` spells it.
         :param label: the name to show; ``None`` takes the location's last segment. Either way a label already in
-            use (case-insensitively) gets a suffix: ``foo``, ``foo (2)``, ``foo (3)``.
+            use (case-insensitively) gets a suffix: ``foo``, ``foo (2)``, ``foo (3)``. The root file is named after it,
+            with a suffix of its own when a file or a reference already takes that name.
         :returns: the new root's row.
-        :raises ValueError: the location is already a root. Whether its folder overlaps another is the caller's to
-            check over this machine's mapped paths (:meth:`RootOverlap.find`).
+        :raises ValueError: the location is already a root, or the ``.rehuco`` has no folder to put the root file in.
+            Whether its folder overlaps another is the caller's to check over this machine's mapped paths
+            (:meth:`RootOverlap.find`).
         """
+        if self.__path is None:
+            raise ValueError("A root file needs the .rehuco saved first")
         folded = location.casefold()
-        if any(raw[ROOT_LOCATION_KEY].casefold() == folded for raw in self.__roots):
+        if any(root.location.casefold() == folded for root in self.__readable()):
             raise ValueError(f"Already a root: {location}")
-        base = label if label else self.default_label(location)
-        self.__roots.append(
-            {ROOT_ID_KEY: str(uuid4()), ROOT_LABEL_KEY: self.__unique_label(base), ROOT_LOCATION_KEY: location}
-        )
-        return len(self.__roots) - 1
+        unique = self.__unique_label(label if label else self.default_label(location))
+        file = self.__free_root_file(self.__path.parent, sanitize_name(unique) or DEFAULT_ROOT_FILE_STEM)
+        root = RehurootFile.new(file, location, unique)
+        self.__references.append(RehucoFile.Reference({ROOT_FILE_KEY: file.name}, file, root))
+        return len(self.__references) - 1
 
     def remove_root(self, at: int) -> RehucoRoot:
-        """Drop a root from the file; its folder and files are not touched.
+        """Drop a root from the file; its ``.rehuroot``, its folder and its files are not touched -- another catalog
+        may list it.
 
         :param at: the root's row.
         :returns: the root removed.
         :raises IndexError: no such row.
         """
         self.__check_row(at)
-        return self.__parse_root(self.__roots.pop(at))
+        return self.__references.pop(at).shown
 
     def relabel_root(self, at: int, label: str) -> None:
-        """Rename a root's label; nothing on disk changes.
+        """Rename a root's label, in its ``.rehuroot``; nothing else on disk changes, and the next :meth:`save` writes
+        it.
 
         :param at: the root's row.
         :param label: the new label; empty is allowed and kept, and any number of roots may be empty.
         :raises IndexError: no such row.
-        :raises ValueError: another root already uses the label (case-insensitively).
+        :raises ValueError: another root already uses the label (case-insensitively), or the root's file is unreadable
+            or read-only.
         """
         self.__check_row(at)
+        root = self.__references[at].root
+        if root is None:
+            raise ValueError(f"The root's file could not be read: {self.__references[at].problem}")
         folded = label.casefold()
-        if label and any(raw[ROOT_LABEL_KEY].casefold() == folded for row, raw in enumerate(self.__roots) if row != at):
+        if label and any(
+            other.root is not None and other.root.label.casefold() == folded
+            for row, other in enumerate(self.__references)
+            if row != at
+        ):
             raise ValueError(f"Another root is already labeled {label!r}")
-        self.__roots[at][ROOT_LABEL_KEY] = label
+        root.label = label
 
     def move(self, at: int, to: int) -> int:
         """Move a root to any row -- what a drag and drop of one asks for.
@@ -328,7 +399,7 @@ class RehucoFile:
         :returns: the row it ends up at.
         :raises IndexError: no such row.
         """
-        return self.__move(at, min(at + 1, len(self.__roots) - 1))
+        return self.__move(at, min(at + 1, len(self.__references) - 1))
 
     def move_to_bottom(self, at: int) -> int:
         """Move a root to the last row.
@@ -337,30 +408,110 @@ class RehucoFile:
         :returns: the row it ends up at.
         :raises IndexError: no such row.
         """
-        return self.__move(at, len(self.__roots) - 1)
+        return self.__move(at, len(self.__references) - 1)
 
     def __move(self, at: int, to: int) -> int:
+        """Move a root from one row to another, both already checked or clamped.
+
+        :param at: the root's row.
+        :param to: the row it ends up at.
+        :returns: ``to``.
+        :raises IndexError: no such row.
+        """
         self.__check_row(at)
-        self.__roots.insert(to, self.__roots.pop(at))
+        self.__references.insert(to, self.__references.pop(at))
         return to
 
     def __check_row(self, at: int) -> None:
-        if not 0 <= at < len(self.__roots):
+        """Refuse a row the file does not have.
+
+        :param at: the row.
+        :raises IndexError: no such row.
+        """
+        if not 0 <= at < len(self.__references):
             raise IndexError(f"No root at row {at}")
 
-    def __parse_root(self, raw: Any) -> RehucoRoot:
+    def __readable(self) -> list[RehurootFile]:
+        """The root files that were read, in display order."""
+        return [reference.root for reference in self.__references if reference.root is not None]
+
+    def __read_reference(self, raw: Any) -> RehucoFile.Reference:
+        """Read one entry of the ``roots`` list, and the root file it names.
+
+        :param raw: the entry as parsed.
+        :returns: the reference; one whose file is missing or unreadable carries the reason instead of the file.
+        :raises RehucoFileError: the entry is not a reference, or the ``.rehuco`` has no folder to resolve it against.
+        """
         if not isinstance(raw, dict):
             raise self.__error("A root is not an object")
-        location = raw.get(ROOT_LOCATION_KEY)
-        label = raw.get(ROOT_LABEL_KEY)
-        if not isinstance(location, str) or not location:
-            raise self.__error(f"A root has no '{ROOT_LOCATION_KEY}'")
-        if not isinstance(label, str):
-            raise self.__error(f"The root {location!r} has no '{ROOT_LABEL_KEY}'")
-        root_id = self.__read_uuid(raw.get(ROOT_ID_KEY), f"the root {location!r}'s id")
-        return RehucoRoot(root_id=root_id, label=label, location=location)
+        spelled = raw.get(ROOT_FILE_KEY)
+        if not isinstance(spelled, str) or not spelled:
+            raise self.__error(f"A root has no '{ROOT_FILE_KEY}'")
+        if self.__path is None:
+            raise self.__error("A root file cannot be found without the .rehuco's folder")
+        path = Path(os.path.normpath(self.__path.parent / spelled))
+        try:
+            return RehucoFile.Reference(raw, path, RehurootFile.load(path))
+        except FileNotFoundError:
+            return RehucoFile.Reference(raw, path, None, f"The root file is missing: {path}")
+        except (OSError, RehurootFileError) as error:
+            return RehucoFile.Reference(raw, path, None, f"The root file cannot be read: {error}")
+
+    def __check_distinct(self) -> None:
+        """Refuse a file naming one root file, or one root, twice.
+
+        :raises RehucoFileError: two references share a file or a root id.
+        """
+        files: set[str] = set()
+        ids: set[UUID] = set()
+        for reference in self.__references:
+            key = os.path.normcase(str(reference.path))
+            if key in files:
+                raise self.__error(f"Two roots name one file, {reference.path}")
+            files.add(key)
+            if reference.root is not None:
+                if reference.root.root_id in ids:
+                    raise self.__error(f"Two roots share the id {reference.root.root_id}")
+                ids.add(reference.root.root_id)
+
+    def __free_root_file(self, folder: Path, stem: str) -> Path:
+        """A root file name in a folder that no reference names and no file takes.
+
+        :param folder: the ``.rehuco``'s folder.
+        :param stem: the name wanted, without the extension.
+        :returns: ``<stem>.rehuroot``, or ``<stem> (2).rehuroot`` and on.
+        """
+        taken = {os.path.normcase(str(reference.path)) for reference in self.__references}
+        candidate = folder / f"{stem}{REHUROOT_SUFFIX}"
+        suffix = 2
+        while os.path.normcase(str(candidate)) in taken or candidate.exists():
+            candidate = folder / f"{stem} ({suffix}){REHUROOT_SUFFIX}"
+            suffix += 1
+        return candidate
+
+    @staticmethod
+    def __relative(path: Path, folder: Path) -> str:
+        """How a reference names its root file from the ``.rehuco``'s folder.
+
+        :param path: the root file.
+        :param folder: the ``.rehuco``'s folder.
+        :returns: the relative path with ``/`` separators; the whole path, so spelled, when the two are on different
+            drives and no relative one exists.
+        """
+        try:
+            relative = os.path.relpath(path, folder)
+        except ValueError:
+            relative = str(path)
+        return relative.replace("\\", "/")
 
     def __read_uuid(self, value: Any, what: str) -> UUID:
+        """A UUID the file holds.
+
+        :param value: the value as parsed.
+        :param what: what it is, for the message.
+        :returns: the UUID.
+        :raises RehucoFileError: it is missing or is no UUID string.
+        """
         if not isinstance(value, str):
             raise self.__error(f"Missing {what}")
         try:
@@ -378,27 +529,24 @@ class RehucoFile:
         """
         if self.__saved_hash is None or target != self.__path:
             return
-        try:
-            current = self.__digest(target.read_text(encoding="utf-8"))
-        except (FileNotFoundError, UnicodeDecodeError) as error:
-            raise RehucoChangedError(f"The .rehuco changed on disk: {target}") from error
-        if current != self.__saved_hash:
+        if disk_digest(target) != self.__saved_hash:
             raise RehucoChangedError(f"The .rehuco changed on disk: {target}")
 
-    @staticmethod
-    def __digest(text: str) -> str:
-        """What a save compares the file on disk by.
-
-        :param text: the file's text.
-        :returns: its SHA-256, in hex.
-        """
-        return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
     def __error(self, message: str) -> RehucoFileError:
+        """An error naming this file, when it has a path.
+
+        :param message: what is wrong.
+        :returns: the error.
+        """
         return RehucoFileError(f"{message}: {self.__path}" if self.__path is not None else message)
 
     def __unique_label(self, base: str) -> str:
-        taken = {raw[ROOT_LABEL_KEY].casefold() for raw in self.__roots}
+        """A label no other root uses, case-insensitively.
+
+        :param base: the label wanted.
+        :returns: ``base``, or ``base (2)`` and on.
+        """
+        taken = {root.label.casefold() for root in self.__readable()}
         label = base
         suffix = 2
         while label.casefold() in taken:

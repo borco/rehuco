@@ -27,6 +27,7 @@ from rehuco_core import (
     RehucoFile,
     RehucoFileError,
     RehucoRoot,
+    RehurootChangedError,
     RemoveCatalogRootJob,
     RenameCoordinator,
     RootMappings,
@@ -328,9 +329,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """
         found = False
         for root in mappings.unmapped(file):
-            folder = None if mappings.skipped(file.rehuco_id, root.root_id) else resolve_location(root.location)
+            folder = None if mappings.skipped(root.root_id) else resolve_location(root.location)
             if folder is not None:
-                mappings.map(file.rehuco_id, root.root_id, folder)
+                mappings.map(root.root_id, folder)
                 found = True
         if found:
             try:
@@ -456,7 +457,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if self.__file is None or self.__mappings is None:
             return ()
         file, mappings = self.__file, self.__mappings
-        return tuple(root for root in mappings.unmapped(file) if not mappings.skipped(file.rehuco_id, root.root_id))
+        return tuple(root for root in mappings.unmapped(file) if not mappings.skipped(root.root_id))
 
     def root_paths(self) -> dict[UUID, Path]:
         """Where each root of the open file is on this machine, by id; empty while none is open. A root not mapped
@@ -550,9 +551,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         except ValueError as error:
             self.__save_error = str(error)
             return None
-        mappings.map(file.rehuco_id, file.roots[row].root_id, folder)
+        mappings.map(file.roots[row].root_id, folder)
         self.__save_mappings(mappings)
-        # the mapping is kept even when the file is not saved: an entry for a root the file lacks is never read
+        # the mapping is kept even when the file is not saved: an entry for a root no catalog lists is never read
         return row if self.commit_roots() else None
 
     def map_root(self, root_id: UUID, folder: Path) -> bool:
@@ -562,18 +563,19 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
         :param root_id: the root.
         :param folder: its folder on this machine.
-        :returns: whether it was mapped; ``False`` with :attr:`save_error` saying why -- the root is not in the file,
+        :returns: whether it was mapped; ``False`` with :attr:`save_error` saying why -- the root is not in the file
+            or its root file cannot be read,
             the folder is inside or contains a mapped root, or the mappings could not be saved.
         """
         file, mappings = self.__file, self.__mappings
-        if file is None or mappings is None or all(root.root_id != root_id for root in file.roots):
+        if file is None or mappings is None or all(root.root_id != root_id or not root.readable for root in file.roots):
             return False
         others = tuple(root for root in self.mapped_roots() if root.root_id != root_id)
         overlap = RootOverlap.find(folder, others)
         if overlap is not None:
             self.__save_error = overlap.message
             return False
-        mappings.map(file.rehuco_id, root_id, folder)
+        mappings.map(root_id, folder)
         if not self.__save_mappings(mappings):
             return False
         self.__after_mapping_change()
@@ -590,7 +592,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if file is None or mappings is None:
             return False
         for root_id in root_ids:
-            mappings.skip(file.rehuco_id, root_id)
+            mappings.skip(root_id)
         return self.__save_mappings(mappings)
 
     def __save_mappings(self, mappings: RootMappings) -> bool:
@@ -633,7 +635,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         return saved
 
     def remove_root(self, row: int) -> bool:
-        """Remove the root at ``row`` from the file, saving it at once, and its rows from the cache on the queue.
+        """Remove the root at ``row`` from the file, saving it at once, and its rows from the cache on the queue. Its
+        ``.rehuroot`` and this machine's mapping of it stay: another catalog may list it (#577).
 
         :param row: the root's place in the file.
         :returns: whether it was saved; ``False`` with :attr:`save_error` saying why.
@@ -642,11 +645,9 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if file is None or mappings is None or cache_path is None or file.lock_reason is not None:
             return False
         removed = file.remove_root(row)
-        mapping = mappings.mapping(file.rehuco_id, removed.root_id)
+        mapping = mappings.mapping(removed.root_id)
         saved = self.__save_file()
-        if saved:
-            mappings.forget(file.rehuco_id, removed.root_id)
-            self.__save_mappings(mappings)
+        if saved and removed.readable:
             self.__catalog.hide(removed.root_id)
             where = removed.location if mapping is None else str(mapping.path)
             self.__enqueue(
@@ -673,6 +674,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__save_error = (
                 f"{file.path} was changed on disk since it was opened, by another machine perhaps. "
                 "It has been read again: make the edit again."
+            )
+            self.__reload_from_disk(file)
+            return False
+        except RehurootChangedError as error:
+            LOG.warning("%s; the catalog was read again.", error)
+            self.__save_error = (
+                f"{error}, by another machine perhaps, since it was opened. It has been read again: "
+                "make the edit again."
             )
             self.__reload_from_disk(file)
             return False

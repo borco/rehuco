@@ -73,7 +73,7 @@ class RootNameEditor(QObject):
         self.__on_finished()
 
     def __on_finished(self) -> None:
-        """Rename the root to what was typed, as its label; nothing on disk changes.
+        """Rename the root to what was typed, as its label, written to its ``.rehuroot``; no folder changes.
 
         An empty name is kept as it is. A name another root already has is refused with a warning, and the field goes
         back to the label the root has.
