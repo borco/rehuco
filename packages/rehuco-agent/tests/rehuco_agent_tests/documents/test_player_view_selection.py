@@ -14,6 +14,7 @@ from .player_view_support import (  # pylint: disable=unused-import
     BUFFERED,
     LENGTH_MS,
     PLAYING,
+    Listing,
     Media,
     action_of,
     fixture_coordinator,  # noqa: F401
@@ -24,6 +25,7 @@ from .player_view_support import (  # pylint: disable=unused-import
     fixture_recorder,  # noqa: F401
     fixture_view,  # noqa: F401
     load_paused,
+    notices,
     path_of,
     player_of,
     slider_of,
@@ -120,3 +122,23 @@ def test_a_jump_to_the_video_loaded_paused_plays_it_from_the_time(
 
     assert slider_of(view).value() == 20_000
     media.play.assert_called_once_with()
+
+
+def test_a_tutorial_listed_with_no_videos_is_listed_again_when_it_is_reloaded(
+    view: PlayerView, listing: Listing, qtbot: QtBot
+) -> None:
+    """**Test steps:**
+
+    * show the dock on a tutorial with no videos and verify none was selected and the player said so
+    * give the tutorial a video, as extracting its archive would, and show the dock again
+    * verify nothing was raised, the new video was selected and the player no longer says there are none
+    """
+    listing.keys.clear()
+    view.load_last()
+    assert (view.current_key, len(notices(view))) == (None, 1)
+
+    listing.keys.append("01.mp4")
+    with qtbot.waitSignal(view.video_changed) as loaded:
+        view.load_last()
+
+    assert (loaded.args, view.current_key, notices(view)) == (["01.mp4"], "01.mp4", [])

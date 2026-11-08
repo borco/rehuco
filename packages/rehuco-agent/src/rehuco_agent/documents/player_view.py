@@ -410,7 +410,8 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             if self.__session is not Session.PLAY:
                 self.__play_selected()
             return
-        if self.__videos is not None and (key is None or any(known == key for known, _ in self.__videos)):
+        # an empty list is listed again: videos may have been extracted, copied or downloaded since
+        if self.__videos and (key is None or any(known == key for known, _ in self.__videos)):
             self.__select_from(self.__videos, key, play, position)
             return
         self.__intent = (key, play, position)
