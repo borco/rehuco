@@ -274,21 +274,41 @@ def test_file_scoped_leaves_another_records_files_alone(mocker: MockerFixture) -
 
 def test_file_scoped_keeps_a_siblings_own_case_spelling(mocker: MockerFixture) -> None:
     """A sibling whose stem is spelled in another case keeps its own tail verbatim -- only the stem is
-    replaced. (Matching folds case exactly where the filesystem does, via ``normcase``.)
+    replaced. Matching folds case on every platform (#629).
 
     **Test steps:**
 
-    * force Windows-style case folding and list an ``OLD_FILE02.JPG`` sibling
+    * list an ``OLD_FILE02.JPG`` sibling
     * rename
     * verify its destination is the new stem plus that same ``02.JPG`` tail
     """
-    mocker.patch.object(os.path, "normcase", side_effect=lambda path: str(path).lower())
     odd = DIRECTORY / "OLD_FILE02.JPG"
     mock_rename = mock_environment(mocker, siblings=[FILE_PATH, odd])
 
     rename_rehu_resource(FILE_PATH, NEW_NAME)
 
     assert (odd, DIRECTORY / f"{NEW_NAME}02.JPG") in renames(mock_rename)
+
+
+def test_a_sibling_folding_to_the_stem_at_another_length_is_left_alone(mocker: MockerFixture) -> None:
+    """A dotted capital ``İ`` folds to two characters, so ``İnfo0.zip`` folds to a name starting with ``i̇nfo`` while
+    being spelled one character shorter; cut at the record's stem length its tail would read ``.zip``, and it would be
+    renamed with its ``0`` dropped. It does not travel: the stem is matched over the stem's own length.
+
+    **Test steps:**
+
+    * rename ``i̇nfo.rehu`` with an ``İnfo0.zip`` beside it and an ``i̇nfo.zip`` spelled like the record
+    * verify only the record and the like-spelled sibling moved
+    """
+    record = DIRECTORY / "i̇nfo.rehu"
+    shorter = DIRECTORY / "İnfo0.zip"
+    alike = DIRECTORY / "i̇nfo.zip"
+    assert shorter.name.lower().startswith(record.stem.lower()) and shorter.name[len(record.stem) :] == ".zip"
+    mock_rename = mock_environment(mocker, siblings=[record, shorter, alike])
+
+    rename_rehu_resource(record, NEW_NAME)
+
+    assert renames(mock_rename) == [(record, DIRECTORY / f"{NEW_NAME}.rehu"), (alike, DIRECTORY / f"{NEW_NAME}.zip")]
 
 
 def test_file_scoped_collision_on_a_screenshot_refuses_the_whole_plan(mocker: MockerFixture) -> None:
@@ -307,6 +327,26 @@ def test_file_scoped_collision_on_a_screenshot_refuses_the_whole_plan(mocker: Mo
         rename_rehu_resource(FILE_PATH, NEW_NAME)
 
     assert f"{NEW_NAME}01.png" in str(error.value)
+    mock_rename.assert_not_called()
+
+
+def test_two_siblings_that_fold_to_one_destination_refuse_the_whole_plan(mocker: MockerFixture) -> None:
+    """On a case-sensitive disk ``OLD_FILE.zip`` and ``old_file.zip`` are two files named after ``old_file.rehu``;
+    both would become the new ``.zip``, the second over the first, so nothing is renamed (#629).
+
+    **Test steps:**
+
+    * list both spellings of the content beside the record
+    * rename, expecting ``FileExistsError`` naming both
+    * verify nothing was renamed at all
+    """
+    upper, lower = DIRECTORY / "OLD_FILE.zip", DIRECTORY / "old_file.zip"
+    mock_rename = mock_environment(mocker, siblings=[FILE_PATH, upper, lower])
+
+    with raises(FileExistsError) as error:
+        rename_rehu_resource(FILE_PATH, NEW_NAME)
+
+    assert upper.name in str(error.value) and lower.name in str(error.value)
     mock_rename.assert_not_called()
 
 
@@ -385,15 +425,35 @@ def test_conflict_ignores_a_case_only_difference(mocker: MockerFixture) -> None:
 
     **Test steps:**
 
-    * force Windows-style case folding and mock the recased folder as present
+    * mock the recased folder as present and as the folder itself
     * ask for the conflict on the recased name
     * verify it is ``None``
     """
-    mocker.patch.object(os.path, "normcase", side_effect=lambda path: str(path).lower())
     recased = FOLDER.name.upper()
     mock_environment(mocker, existing=frozenset({DIRECTORY / recased}))
+    mocker.patch.object(Path, "samefile", autospec=True, return_value=True)
 
     assert rehu_rename_conflict(INFO_PATH, recased) is None
+
+
+def test_a_different_file_in_another_case_is_a_collision(mocker: MockerFixture) -> None:
+    """On a case-sensitive disk ``old_folder`` and ``OLD_FOLDER`` can be two folders: the other one is a collision,
+    reported and refused, never renamed over.
+
+    **Test steps:**
+
+    * mock the recased folder as present and as a folder other than the resource's
+    * ask for the conflict on the recased name, then rename to it
+    * verify the conflict names it, and the rename is refused with nothing moved
+    """
+    recased = DIRECTORY / FOLDER.name.upper()
+    mock_rename = mock_environment(mocker, existing=frozenset({recased}))
+    mocker.patch.object(Path, "samefile", autospec=True, return_value=False)
+
+    assert rehu_rename_conflict(INFO_PATH, recased.name) == recased
+    with raises(FileExistsError, match="already exists"):
+        rename_rehu_resource(INFO_PATH, recased.name)
+    mock_rename.assert_not_called()
 
 
 @mark.parametrize("name", [param("", id="empty"), param(".", id="dot"), param("sub/name", id="separator")])
@@ -764,13 +824,13 @@ def test_a_case_only_rename_is_performed_not_read_as_a_collision(mocker: MockerF
 
     **Test steps:**
 
-    * mock the destination folder as existing (what Windows reports for a case-only rename)
+    * mock the destination folder as existing and as the folder itself (what a case-insensitive disk reports)
     * rename to the same name in another case
     * verify the rename ran rather than being refused
     """
     recased = FOLDER.name.upper()
     mock_rename = mock_environment(mocker, existing=frozenset({DIRECTORY / recased}))
-    mocker.patch.object(os.path, "normcase", side_effect=lambda path: str(path).lower())
+    mocker.patch.object(Path, "samefile", autospec=True, return_value=True)
 
     result = rename_rehu_resource(INFO_PATH, recased)
 

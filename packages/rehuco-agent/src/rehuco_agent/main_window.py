@@ -2444,7 +2444,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         at once (its ``.rehu`` and its folder or archive), and a rename has to correct both.
 
         The archive match compares stems **exactly**, where :mod:`rehuco_core.rehu_rename` compares
-        them under :func:`os.path.normcase`. The renamer reads sibling names off the disk, which a
+        them case-folded (:func:`~rehuco_core.path_key`). The renamer reads sibling names off the disk, which a
         case-insensitive filesystem may report in a casing other than the one the record was opened
         with, so it has to fold case to recognize its own siblings. Here both sides are paths this
         window resolved itself and handed on -- the recorded entry and the model's path -- so they

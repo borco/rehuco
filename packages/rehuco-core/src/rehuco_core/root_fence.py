@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 from uuid import UUID
 
-from .root_overlap import root_path_key
+from .path_keys import path_key
 
 if TYPE_CHECKING:
     from .rehudb import CatalogRoot
@@ -41,7 +41,7 @@ class RootFence:
     """The other roots of a catalog, as a scan of one root compares its directories against them.
 
     :param identities: each other root's ``(st_dev, st_ino)``, for those whose identity is usable.
-    :param spellings: each other root's spelled key (:func:`~rehuco_core.root_path_key`), for all of them.
+    :param spellings: each other root's spelled key (:func:`~rehuco_core.path_key`), for all of them.
     :param names: the case-folded last components a directory must carry to be stat'ed.
     :param every_directory: whether every directory is stat'ed regardless of its name -- some root has none.
     """
@@ -66,7 +66,7 @@ class RootFence:
         names: set[str] = set()
         every_directory = False
         for root in others:
-            spellings[root_path_key(root.path)] = root.root_id
+            spellings[path_key(root.path)] = root.root_id
             spelled_name = RootFence.__name(str(root.path))
             if spelled_name is None:
                 every_directory = True
@@ -99,7 +99,7 @@ class RootFence:
             the one directory a scan starts from, which may be another root under a second spelling.
         :returns: the root's id, or ``None`` for a directory the walk may enter.
         """
-        spelled = self.spellings.get(root_path_key(directory))
+        spelled = self.spellings.get(path_key(directory))
         if spelled is not None:
             return spelled
         if not self.identities or (by_name and not (self.every_directory or directory.name.casefold() in self.names)):

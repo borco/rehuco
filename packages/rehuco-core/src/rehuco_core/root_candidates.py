@@ -14,6 +14,7 @@ from enum import StrEnum
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from .path_keys import path_key
 from .rehuco_file import DEFAULT_ROOT_FILE_STEM, RehucoFile
 from .rehuroot_file import REHUROOT_SUFFIX, RehurootFile, RehurootFileError
 from .root_location import location_of, resolve_location
@@ -91,15 +92,6 @@ class RootCandidate:  # pylint: disable=too-many-instance-attributes
     def addable(self) -> bool:
         """Whether OK adds it."""
         return not self.problem
-
-
-def path_key(path: Path) -> str:
-    """How two spellings of one path compare on this platform.
-
-    :param path: the path.
-    :returns: its normalized form, case-folded where the platform folds case.
-    """
-    return os.path.normcase(os.path.normpath(path))
 
 
 # a namespace for plan() and the private steps it takes, which a module could not keep private

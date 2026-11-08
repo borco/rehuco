@@ -166,6 +166,7 @@ from .migrations import (
     migrate_rehuco_data,
 )
 from .natural_sort import natural_path_sort_key, natural_sort_key
+from .path_keys import path_key
 from .plugins import (
     BUILTIN_PLUGINS,
     COLLECTION_PLUGIN,
@@ -375,7 +376,7 @@ from .root_mappings import (
     RootMappings,
     RootMappingsError,
 )
-from .root_overlap import RootOverlap, root_path_key
+from .root_overlap import RootOverlap
 from .sanitized_names import sanitize_name
 from .save_record_job import SAVE_RECORD_KIND, SaveOutcome, SavePayload, SaveRecordJob, rebase_payload
 from .staged_images import (
@@ -973,6 +974,7 @@ __all__ = [
     "parse_checksum_entry",
     "parse_staged_name",
     "parse_video_href",
+    "path_key",
     "paths_overlap",
     "payload_changes",
     "plan_progress_renames",
@@ -1014,7 +1016,6 @@ __all__ = [
     "restore_backup",
     "retire_legacy_manifests",
     "rewrite_description_images",
-    "root_path_key",
     "rule_problem",
     "sanitize_name",
     "save_screenshot",

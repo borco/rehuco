@@ -166,7 +166,11 @@ references** to such files and nothing more about a root: its role is to aggrega
   them; a reference this machine never read holds nothing to keep.
 - **Adding a root** is picking existing `.rehuroot` files, or a folder, which makes one with a layout chosen from the
   default root layouts the settings keep ([[plugins#rehuco-dock]]), many at once; the Roots view edits a root's
-  layouts and fallbacks in its edit mode, with its name.
+  layouts and fallbacks in its edit mode, with its name. **Root files and root folders compare case-folded on every
+  platform** (#629), since a `.rehuroot` can land on NTFS, APFS or a share, all of which fold case: a new root file
+  named after `blender` beside a `Blender.rehuroot` is `blender (2).rehuroot`, spelled as its source, and a folder in
+  another case is the same root. A resource's key and the cache's path keys keep the platform's own rule
+  ([[nodes#access-seam]]).
 - **Nothing is migrated**, as format 2 was not: a format-3 `.rehuco` is refused with a message saying to add its
   roots again, and a format-1 mapping file is set aside, as `root-mappings.format-1.json`. Overlap is checked across
   the catalog's `.rehuroot`s as it was across its roots.

@@ -41,6 +41,7 @@ from borco_core import atomic_write_text
 
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import CURRENT_REHUCO_VERSION, RehucoTooOldError, migrate_rehuco_data
+from .path_keys import path_key
 from .record_file_lock import RecordFileLock
 from .rehu_format import FORMAT_VERSION_KEY
 from .rehuroot_file import DEFAULT_LAYOUTS, REHUROOT_SUFFIX, RehurootFile, RehurootFileError
@@ -379,6 +380,9 @@ class RehucoFile:  # pylint: disable=too-many-public-methods
     def free_root_file(self, stem: str, taken: Iterable[Path] = ()) -> Path:
         """A root file name beside the ``.rehuco`` that no reference names, no file takes and ``taken`` does not hold.
 
+        Names compare case-folded on every platform (:func:`~rehuco_core.path_key`); the one returned keeps ``stem``'s
+        spelling.
+
         :param stem: the name wanted, without the extension.
         :param taken: paths to avoid besides -- the root files of roots about to be added.
         :returns: ``<stem>.rehuroot``, or ``<stem> (2).rehuroot`` and on.
@@ -387,10 +391,10 @@ class RehucoFile:  # pylint: disable=too-many-public-methods
         if self.__path is None:
             raise ValueError("A root file needs the .rehuco saved first")
         folder = self.__path.parent
-        avoided = {os.path.normcase(os.path.normpath(path)) for path in taken}
+        avoided = {path_key(path) for path in taken}
         candidate = folder / f"{stem}{REHUROOT_SUFFIX}"
         suffix = 2
-        while self.__lists(candidate) or os.path.normcase(str(candidate)) in avoided or candidate.exists():
+        while self.__lists(candidate) or path_key(candidate) in avoided or candidate.exists():
             candidate = folder / f"{stem} ({suffix}){REHUROOT_SUFFIX}"
             suffix += 1
         return candidate
@@ -548,7 +552,7 @@ class RehucoFile:  # pylint: disable=too-many-public-methods
         files: set[str] = set()
         ids: set[UUID] = set()
         for reference in self.__references:
-            key = os.path.normcase(str(reference.path))
+            key = path_key(reference.path)
             if key in files:
                 raise self.__error(f"Two roots name one file, {reference.path}")
             files.add(key)
@@ -561,10 +565,10 @@ class RehucoFile:  # pylint: disable=too-many-public-methods
         """Whether a reference names a root file.
 
         :param file: the root file, normalized.
-        :returns: whether one does, compared as the platform compares paths.
+        :returns: whether one does, case folded on every platform (:func:`~rehuco_core.path_key`).
         """
-        key = os.path.normcase(str(file))
-        return any(os.path.normcase(str(reference.path)) == key for reference in self.__references)
+        key = path_key(file)
+        return any(path_key(reference.path) == key for reference in self.__references)
 
     @staticmethod
     def __relative(path: Path, folder: Path) -> str:

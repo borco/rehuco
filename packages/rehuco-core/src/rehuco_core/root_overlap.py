@@ -5,7 +5,7 @@ and give each two rows. This is the one place that decides overlap, for the add-
 already nesting, and for whatever later compares roots of different catalogs (#453).
 
 **Spelled and resolved are two separate comparisons, never mixed** (#511). The spelled one is pure string work,
-normalized and case-folded where the platform folds case, and is what :meth:`RehucoFile.add_root
+normalized and case-folded (:func:`~rehuco_core.path_key`), and is what :meth:`RehucoFile.add_root
 <rehuco_core.RehucoFile.add_root>` runs. The resolved one follows links (:func:`os.path.realpath`), so a root that is
 a link into another root is caught -- but on Windows ``realpath`` also follows a mapped drive to its share
 (``T:\\DATA2`` to ``\\\\Nas\\data_14t\\DATA2``) and waits out the network's timeout on an offline one (#464), so it
@@ -20,17 +20,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from .path_keys import path_key
+
 if TYPE_CHECKING:
     from .root_mappings import MappedRoot
-
-
-def root_path_key(path: Path | str) -> str:
-    """A root's folder as overlap compares it: normalized, and case-folded where the platform's paths are.
-
-    :param path: the folder, as spelled.
-    :returns: the key; two spellings of one folder that differ only lexically share it.
-    """
-    return os_path.normcase(os_path.normpath(str(path)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,9 +59,9 @@ class RootOverlap:
         :param roots: the roots to compare it with.
         :returns: the overlap, or ``None`` when the candidate is inside none of them and contains none.
         """
-        key = root_path_key(candidate)
+        key = path_key(candidate)
         for root in roots:
-            encloses = RootOverlap.__relation(root_path_key(root.path), key)
+            encloses = RootOverlap.__relation(path_key(root.path), key)
             if encloses is not None:
                 return RootOverlap(root, Path(candidate), encloses)
         return None
@@ -173,6 +166,6 @@ class RootOverlap:
         worst, never a false one. A caller spares the wait by naming the roots it knows unreachable in ``skip``.
         """
         try:
-            return root_path_key(os_path.realpath(str(path)))
+            return path_key(os_path.realpath(str(path)))
         except OSError, ValueError:
             return None

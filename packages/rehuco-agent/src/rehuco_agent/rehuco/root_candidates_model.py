@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Any, override
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
-from rehuco_core import REHUROOT_SUFFIX, CandidateKind, RootCandidate, RootPick
-from rehuco_core.root_candidates import path_key
+from rehuco_core import REHUROOT_SUFFIX, CandidateKind, RootCandidate, RootPick, path_key
 
 from ..settings.root_catalog_settings import RootLayout
 

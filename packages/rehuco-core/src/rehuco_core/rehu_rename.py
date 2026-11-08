@@ -30,6 +30,7 @@ from typing import Final
 from .checksum_record import checksum_record_path
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import REHU_SUFFIX
+from .path_keys import path_key
 from .record_file_lock import RecordFileLock, is_lock_name
 from .relocation import Relocation
 from .resource_scoping import is_directory_scoped
@@ -188,7 +189,7 @@ class RehuRenamer:
 
         Both scopes ([[data-model#resource-scoping]]) are one rule, :meth:`Relocation.relocate`'s -- **a
         path at or beneath a renamed source lands at the same offset beneath its destination** -- with
-        case folded by the same :func:`os.path.normcase` rule :meth:`__check_no_collisions` uses.
+        case folded as :class:`Relocation` folds it.
 
         Answers about **this instance's** rename and no other: before :meth:`rename` has run, after one
         that was a no-op, and after one that failed and was rolled back, every path comes back
@@ -208,7 +209,7 @@ class RehuRenamer:
         """Whatever already occupies this rename's own destination, or ``None`` when it is free.
 
         Exactly :meth:`__check_no_collisions`'s rule -- destination taken, and not by the source itself
-        under the filesystem's case rules -- applied to the **one** pair every scope has
+        (:meth:`__is_itself`) -- applied to the **one** pair every scope has
         (:meth:`__own_pair`): the folder for a directory-scoped resource, the ``.rehu`` for a
         file-scoped one. Deliberately *not* the whole plan, which for a file-scoped resource must list
         the directory and stat every sibling destination: this answers behind a live suggestion list,
@@ -236,7 +237,7 @@ class RehuRenamer:
         if not self.__is_plain_name():
             return None
         source, destination = self.__own_pair()
-        if os.path.normcase(source) == os.path.normcase(destination):
+        if self.__is_itself(source, destination):
             return None
         return destination if destination.exists() else None
 
@@ -356,35 +357,31 @@ class RehuRenamer:
         **bare prefix**, deliberately wider than the membership rule it undoes: the two asymmetries err
         the same way, toward leaving a file alone.
 
-        Every comparison goes through :func:`os.path.normcase` -- the same rule
-        :meth:`__check_no_collisions` uses to decide whether two names are the same name, folding case
-        on Windows and exact on POSIX.
+        Every comparison folds case on every platform (:func:`~rehuco_core.path_key`): a resource's files
+        share its spelling, and one that does not -- ``FOO.zip`` beside ``foo.rehu`` -- is still one unit.
 
         :returns: the ``.rehu`` first (it is the resource's identity), then the rest sorted by name.
         :raises OSError: the directory cannot be listed -- e.g. an offline mount
             ([[mounts-and-storage#offline-mounts]]); nothing is renamed.
         """
-        stem = os.path.normcase(self.__path.stem)
-        document_name = os.path.normcase(self.__path.name)
+        stem = path_key(self.__path.stem)
+        document_name = path_key(self.__path.name)
         named_after = [
             entry
             for entry in self.__path.parent.iterdir()
-            if not entry.is_dir()
-            and not is_lock_name(entry.name)
-            and self.__named_after(os.path.normcase(entry.name), stem)
+            if not entry.is_dir() and not is_lock_name(entry.name) and self.__named_after(entry.name)
         ]
         foreign = self.__foreign_stems(named_after, stem)
         owned = [
             entry
             for entry in named_after
-            if os.path.normcase(entry.name) != document_name
-            and not any(os.path.normcase(entry.name).startswith(other) for other in foreign)
+            if path_key(entry.name) != document_name
+            and not any(path_key(entry.name).startswith(other) for other in foreign)
         ]
         return [self.__path, *sorted(owned, key=lambda entry: entry.name)]
 
-    @staticmethod
-    def __named_after(name: str, stem: str) -> bool:
-        """Whether the sibling ``name`` is named after the resource whose stem is ``stem``.
+    def __named_after(self, name: str) -> bool:
+        """Whether the sibling ``name`` is named after this resource.
 
         A **separator** decides it, not a bare prefix: what follows the stem must be nothing at all (the
         file simply *is* the resource's name), an extension separator (``foo.zip``, ``foo.sfv``,
@@ -395,48 +392,71 @@ class RehuRenamer:
         exclusion in :meth:`__sibling_set` is then a backstop for the ambiguous digit case, not the only
         thing standing between a rename and somebody else's files.
 
-        :param name: the sibling's normcased filename.
-        :param stem: this resource's normcased stem.
+        The stem is matched over **as many characters as this resource's stem has**, folded
+        (:func:`~rehuco_core.path_key`), which is the slice :meth:`__plan` replaces: a sibling whose spelling folds
+        to the stem but at another length (a dotted capital ``İ`` folds to two characters) is left alone rather than
+        cut at the wrong place.
+
+        :param name: the sibling's filename, as spelled.
         :returns: whether the sibling travels with the resource.
         """
-        if not name.startswith(stem):
+        length = len(self.__path.stem)
+        if path_key(name[:length]) != path_key(self.__path.stem):
             return False
-        tail = name[len(stem) :]
+        tail = name[length:]
         return not tail or tail.startswith(os.extsep) or tail[0].isdigit()
 
     @staticmethod
     def __foreign_stems(named_after: Sequence[Path], stem: str) -> list[str]:
-        """The normcased stems of any *other* ``.rehu`` among ``named_after`` -- each one a resource in
+        """The folded stems of any *other* ``.rehu`` among ``named_after`` -- each one a resource in
         its own right, whose files must not travel with this rename.
 
         :param named_after: the siblings named after this resource.
-        :param stem: this resource's own normcased stem.
+        :param stem: this resource's own folded stem.
         :returns: the extending stems whose files to leave alone.
         """
         return [
-            os.path.normcase(entry.stem)
+            path_key(entry.stem)
             for entry in named_after
-            if entry.suffix.lower() == REHU_SUFFIX and os.path.normcase(entry.stem) != stem
+            if entry.suffix.lower() == REHU_SUFFIX and path_key(entry.stem) != stem
         ]
 
     @staticmethod
     def __check_no_collisions(plan: Sequence[tuple[Path, Path]]) -> None:
-        """Refuse the whole plan if anything already occupies one of its destinations.
+        """Refuse the whole plan if anything already occupies one of its destinations, or two of them are one name.
 
-        A destination that *is* its own source under the filesystem's case rules -- renaming ``foo`` to
-        ``Foo`` on Windows -- is not a collision but the very rename being asked for.
-        :func:`os.path.normcase` applies each platform's own rule: folding case on Windows, and identity
-        on POSIX, where ``foo`` and ``Foo`` genuinely are two different files and a collision between
-        them is real.
+        A destination that is its own source (:meth:`__is_itself`) -- renaming ``foo`` to ``Foo`` -- is not a
+        collision but the very rename being asked for. Two siblings a case-sensitive disk keeps apart, ``FOO.zip``
+        and ``foo.zip``, fold to one destination; renaming both would put the second over the first, so the plan is
+        refused instead.
 
         :param plan: the planned renames.
-        :raises FileExistsError: something already occupies a destination.
+        :raises FileExistsError: something already occupies a destination, or two sources share one.
         """
+        taken: dict[str, Path] = {}
         for source, destination in plan:
-            if os.path.normcase(source) == os.path.normcase(destination):
-                continue
-            if destination.exists():
+            if not RehuRenamer.__is_itself(source, destination) and destination.exists():
                 raise FileExistsError(f'"{destination.name}" already exists.')
+            other = taken.setdefault(path_key(destination), source)
+            if str(other) != str(source):
+                raise FileExistsError(f'"{other.name}" and "{source.name}" would both become "{destination.name}".')
+
+    @staticmethod
+    def __is_itself(source: Path, destination: Path) -> bool:
+        """Whether a destination is its own source in another case, so a rename to it changes only the case.
+
+        The names must fold to one (:func:`~rehuco_core.path_key`), and the destination must be spelled as the source,
+        be missing, or be the source itself: a case-insensitive disk (NTFS, APFS, SMB) shows the source under the new
+        spelling, while on a case-sensitive one ``foo`` and ``Foo`` can be two files, and the other one is a real
+        collision.
+
+        :param source: the file or folder as it is named now.
+        :param destination: the name it would get.
+        :returns: whether the rename only changes the case.
+        """
+        if path_key(source) != path_key(destination):
+            return False
+        return str(source) == str(destination) or not destination.exists() or destination.samefile(source)
 
     def __execute(self, plan: Sequence[tuple[Path, Path]]) -> None:
         """Perform every planned rename, undoing the completed ones if any of them fails.

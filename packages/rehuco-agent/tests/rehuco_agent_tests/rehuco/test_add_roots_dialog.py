@@ -25,8 +25,7 @@ from rehuco_agent.rehuco.root_storage import (
     ROOT_STORAGE_OFFLINE_TOOLTIPS,
 )
 from rehuco_agent.settings.root_catalog_settings import DEFAULT_ROOT_LAYOUTS, RootLayout, shared_root_catalog_settings
-from rehuco_core import CandidateKind, MappedRoot, RehucoFile, RehurootFile, RootStorage, location_of
-from rehuco_core.root_candidates import path_key
+from rehuco_core import CandidateKind, MappedRoot, RehucoFile, RehurootFile, RootStorage, location_of, path_key
 
 from rehuco_agent_tests.conftest import FakeSettings
 
@@ -185,7 +184,7 @@ def test_a_path_staged_twice_is_listed_once_without_a_word(
     first, second = folders(tmp_path, "a", "b")
     dialog.stage([first])
 
-    dialog.stage([Path(str(first).upper()) if Path(str(first).upper()).exists() else first, second])
+    dialog.stage([Path(str(first).upper()), second])
     planned(qtbot, dialog)
 
     assert [index.data(CandidateRole.PICK).path for index in map(dialog.model.index, range(2))] == [first, second]

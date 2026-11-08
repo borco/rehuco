@@ -19,7 +19,7 @@ from typing import Final
 from uuid import UUID
 
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import HardlinkedRecord, MappedRoot, RootOverlap, root_path_key
+from rehuco_core import HardlinkedRecord, MappedRoot, RootOverlap, path_key
 
 from .root_overlap_check import RootOverlapCheck
 
@@ -66,8 +66,8 @@ class RootOverlaps(QObject):
         refuse now -- which the Roots view draws in red."""
         if self.__roots is None:
             return frozenset()
-        by_key = {root_path_key(root.path): root.root_id for root in self.__roots}
-        found = (by_key.get(root_path_key(overlap.other)) for overlap in self.__overlaps())
+        by_key = {path_key(root.path): root.root_id for root in self.__roots}
+        found = (by_key.get(path_key(overlap.other)) for overlap in self.__overlaps())
         return frozenset(root_id for root_id in found if root_id is not None)
 
     def follow(
@@ -125,7 +125,7 @@ class RootOverlaps(QObject):
         overlaps: list[RootOverlap] = []
         seen: set[tuple[UUID, str]] = set()
         for overlap in (*self.__spelled, *self.__resolved, *self.__met_overlaps()):
-            key = (overlap.root.root_id, root_path_key(overlap.other))
+            key = (overlap.root.root_id, path_key(overlap.other))
             if key not in seen:
                 seen.add(key)
                 overlaps.append(overlap)
