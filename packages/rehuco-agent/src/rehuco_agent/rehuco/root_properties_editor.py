@@ -1,8 +1,8 @@
-"""Editing a root's name in the Roots view's details pane (#514).
+"""Editing a root in the Roots view's details pane: its name (#514), its layouts and its fallbacks (#578).
 
 The name is the root's label, saved as typed -- empty included, in which case the column shows where the root is
 (:attr:`~.roots_node.RootsNode.label`). While it is typed the column follows it, in memory only; the file is written
-when the field is left.
+when the field is left. The layouts and fallbacks are written at each edit of their tables.
 """
 
 from collections.abc import Callable
@@ -17,12 +17,13 @@ from .roots_folder_model import RootsFolderModel
 from .roots_preview import RootsPreview
 
 
-class RootNameEditor(QObject):
-    """Connects the details pane's name field and its default-name button to the root that is current.
+class RootPropertiesEditor(QObject):
+    """Connects the details pane's editors -- the name field, its default-name button, the layouts and fallbacks
+    tables -- to the root that is current, and writes what they say to its ``.rehuroot``.
 
-    :param catalog: the open catalog, whose file holds the labels.
+    :param catalog: the open catalog, whose file holds the roots.
     :param model: the Roots view's model, whose rows show the name while it is typed.
-    :param preview: the details pane holding the field and its button.
+    :param preview: the details pane holding the editors.
     :param current_row: asked for the row the actions act on when it is a root row -- its place in the file -- else
         ``-1``.
     :param commit: saves an edit of a root, and shows it.
@@ -48,6 +49,7 @@ class RootNameEditor(QObject):
         preview.root_name_edit.textEdited.connect(self.__on_typing)
         preview.root_name_edit.editingFinished.connect(self.__on_finished)
         preview.default_root_name_action.triggered.connect(self.__on_defaulted)
+        preview.root_layouts_editor.edited.connect(self.__on_layouts_edited)
 
     def __named_root(self) -> RehucoRoot:
         """The root whose name the field shows: the current row, which is a root while the field is shown.
@@ -94,5 +96,27 @@ class RootNameEditor(QObject):
             QMessageBox.warning(self.__owner, "Rename Root", str(error))
             edit.setText(root.label)
             self.__model.set_root_name(root.root_id, root.label)
+            return
+        self.__commit()
+
+    def __on_layouts_edited(self) -> None:
+        """Write the root's layouts and fallbacks as the tables now make them to its ``.rehuroot``.
+
+        A root whose file cannot take them -- unreadable, or read-only -- is refused with a warning, and the tables go
+        back to what the root has.
+        """
+        file, row = self.__catalog.file, self.__current_row()
+        if file is None or file.lock_reason is not None or row < 0:
+            return
+        root = file.roots[row]
+        editor = self.__preview.root_layouts_editor
+        layouts, fallbacks = editor.layouts, editor.fallbacks
+        if layouts == dict(root.layouts) and fallbacks == dict(root.fallbacks):
+            return
+        try:
+            file.set_root_layouts(row, layouts, fallbacks)
+        except ValueError as error:
+            QMessageBox.warning(self.__owner, "Edit Root", str(error))
+            editor.set_values(root.layouts, root.fallbacks)
             return
         self.__commit()

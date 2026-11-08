@@ -875,7 +875,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         roots = self.__roots_panel
         menu = self.__ui.rehuco_menu
         menu.addAction(roots.scan_action)
-        menu.addAction(roots.add_root_action)
+        menu.addAction(roots.add_roots_action)
         menu.addAction(roots.remove_root_action)
         menu.addAction(roots.map_root_action)
         menu.addSeparator()

@@ -31,7 +31,7 @@ class RootsRowActions:
     :param verbs: the checksum verbs a row's menu or buttons end with.
     :param parent: owns the separators, which are made once: a root's menu has two groups to divide, and one action
         cannot sit twice in a menu, while the menu and the details pane ask for a row's actions on every selection.
-        A third, :attr:`catalog_separator`, divides the catalog's Scan, Add Root and Refresh from a root's menu (#543).
+        A third, :attr:`catalog_separator`, divides the catalog's Scan, Add Roots and Refresh from a root's menu (#543).
     """
 
     def __init__(

@@ -201,6 +201,25 @@ def test_a_catalog_splits_into_mapped_and_unmapped_roots(tmp_path: Path, mocker:
     assert mappings.unmapped(file) == (first,)
 
 
+def test_a_mapped_root_carries_its_layouts_and_fallbacks(tmp_path: Path, mocker: MockerFixture) -> None:
+    """What a root's file says of where its records live comes along with this machine's mapping of it (#578).
+
+    **Test steps:**
+
+    * give the second root of a two-root catalog layouts and fallbacks, and map it
+    * verify the mapped root carries both
+    """
+    mocker.patch(f"{MODULE}.storage_of", return_value=RootStorage.LOCAL)
+    file = catalog_with_two_roots()
+    file.set_root_layouts(1, {"tutorial": "{title}"}, {"title": "Untitled"})
+    mappings = RootMappings.load(tmp_path / "root-mappings.json")
+    mappings.map(file.roots[1].root_id, tmp_path)
+
+    mapped = mappings.mapped(file)[0]
+
+    assert (dict(mapped.layouts), dict(mapped.fallbacks)) == ({"tutorial": "{title}"}, {"title": "Untitled"})
+
+
 def test_an_unreadable_root_is_neither_mapped_nor_asked_about(tmp_path: Path, mocker: MockerFixture) -> None:
     """A root whose file cannot be read has nothing to map: it is not reached, and not offered for mapping either.
 

@@ -43,12 +43,12 @@ from pytest import LogCaptureFixture, MonkeyPatch, fixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel, TableBrowser
-from rehuco_agent.rehuco.add_root_dialog import AddRootDialog
+from rehuco_agent.rehuco.add_roots_dialog import AddRootsDialog
 from rehuco_agent.rehuco.browser_presets import browser_presets
 from rehuco_agent.rehuco.catalog_table_model import CatalogColumn
-from rehuco_agent.rehuco.root_name_editor import RootNameEditor
-from rehuco_agent.rehuco.root_overlap_check import RootOverlapCheck
+from rehuco_agent.rehuco.root_properties_editor import RootPropertiesEditor
 from rehuco_agent.rehuco.root_storage import ROOT_STORAGE_LABELS
+from rehuco_agent.rehuco.roots_adding import RootsAdding
 from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
 from rehuco_agent.rehuco.roots_management import managing_record
 from rehuco_agent.rehuco.roots_node import NodeListing, RootsNodeKind
@@ -59,6 +59,7 @@ from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_core import (
     FINISHED_JOB_STATES,
+    CandidateKind,
     Catalog,
     CatalogCache,
     CatalogField,
@@ -73,7 +74,10 @@ from rehuco_core import (
     MappedRoot,
     RecordKind,
     RecordsChecked,
+    RehucoFile,
     Relocation,
+    RootCandidate,
+    RootPick,
     RootScanEffects,
     RootScanOutcome,
     RootScanResult,
@@ -81,6 +85,7 @@ from rehuco_core import (
     TaskJobBase,
     TaskQueue,
     VerifyChecksumsJob,
+    sanitize_name,
 )
 from rehuco_core.access import Changed, FolderChanged, KeyRelocation, ResourceKey
 from rehuco_core.notify import RootNotifiers
@@ -266,7 +271,8 @@ def fixture_machine(mocker: MockerFixture, tmp_path: Path) -> Path:
     """
     mocker.patch("rehuco_agent.rehuco.root_catalog.config_folder", return_value=tmp_path)
     mocker.patch("rehuco_agent.rehuco.root_catalog.resolve_location", side_effect=resolve_test_location)
-    mocker.patch("rehuco_agent.rehuco.root_catalog.location_of", side_effect=location_at)
+    mocker.patch("rehuco_core.root_candidates.location_of", side_effect=location_at)
+    mocker.patch("rehuco_core.root_candidates.resolve_location", side_effect=resolve_test_location)
     mocker.patch("rehuco_core.root_mappings.atomic_write_text")
     return tmp_path
 
@@ -578,8 +584,27 @@ def select_root(dock: CatalogDocks, row: int) -> None:
     dock.roots.roots_view.setCurrentIndex(dock.roots.roots_model.index(row, 0))
 
 
+def folder_candidate(dock: CatalogDocks, folder: str | Path, name: str = "") -> RootCandidate:
+    """The line the Add Roots dialog plans for a folder, made here without reading the disk -- the planning has tests
+    of its own (``test_root_candidates``).
+
+    :param dock: the catalog's docks, a file open.
+    :param folder: the folder.
+    :param name: its label as typed; empty takes the folder's name.
+    :returns: the line, with the default preset's layouts.
+    """
+    file = dock.catalog.file
+    assert file is not None
+    path = Path(folder)
+    label = name or RehucoFile.default_label(path)
+    root_file = file.free_root_file(sanitize_name(label) or "root")
+    return RootCandidate(
+        RootPick(path, name or None), CandidateKind.FOLDER, label, location_at(path), root_file, path, {"*": "*"}
+    )
+
+
 def answer_add_root(mocker: MockerFixture, dock: CatalogDocks, folder: str | None, name: str = "") -> MagicMock:
-    """Make the Add Root question answer, instead of opening its dialog.
+    """Make the Add Roots question answer with one folder, instead of opening its dialog.
 
     :param mocker: pytest-mock fixture.
     :param dock: the catalog's docks.
@@ -587,19 +612,21 @@ def answer_add_root(mocker: MockerFixture, dock: CatalogDocks, folder: str | Non
     :param name: the name to answer with; empty takes the folder's.
     :returns: the mock standing in for the question.
     """
-    return mocker.patch.object(dock.roots, "ask_root_to_add", return_value=None if folder is None else (folder, name))
+    return mocker.patch.object(
+        dock.roots,
+        "ask_roots_to_add",
+        side_effect=lambda: None if folder is None else (folder_candidate(dock, folder, name),),
+    )
 
 
 def add_root(qtbot: QtBot, dock: CatalogDocks) -> None:
-    """Trigger Add Root and wait for its comparison through links to answer, on which the add happens (#498).
+    """Trigger Add Roots, whose question was answered (:func:`answer_add_root`), and let what it set off settle.
 
     :param qtbot: pytest-qt fixture.
-    :param dock: the catalog's docks, the Add Root question already answered with a folder (:func:`answer_add_root`).
+    :param dock: the catalog's docks.
     """
-    check = dock.roots.findChild(RootOverlapCheck, options=Qt.FindChildOption.FindDirectChildrenOnly)
-    assert check is not None
-    with qtbot.waitSignal(check.answered, timeout=WAIT_TIMEOUT_MS):
-        dock.roots.add_root_action.trigger()
+    dock.roots.add_roots_action.trigger()
+    qtbot.wait(0)
 
 
 def shown_labels(dock: CatalogDocks) -> list[str]:
@@ -1141,7 +1168,7 @@ def test_cancelling_the_folder_picker_adds_nothing(
     answer_add_root(mocker, dock, None)
     dock.catalog.open_rehuco(REHUCO_PATH)
 
-    dock.roots.add_root_action.trigger()
+    dock.roots.add_roots_action.trigger()
 
     saves.assert_not_called()
     assert dock.roots.roots_model.rowCount() == 2
@@ -1312,7 +1339,7 @@ def test_a_newer_file_opens_read_only_with_a_banner(dock: CatalogDocks, served: 
     banner = dock.roots.findChild(MessageBanner)
     assert banner is not None
     assert not banner.isHidden()
-    assert not dock.roots.add_root_action.isEnabled()
+    assert not dock.roots.add_roots_action.isEnabled()
     select_root(dock, 0)
     assert not dock.roots.remove_root_action.isEnabled()
     assert dock.roots.scan_action.isEnabled()
@@ -2186,7 +2213,7 @@ def test_the_root_edits_do_nothing_with_no_catalog_open(
     picker = answer_add_root(mocker, dock, "/fake/refs")
     saves = mock_rehuco_writes(mocker, on_disk)
 
-    dock.roots._RootsPanel__on_add_root()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    cast(RootsAdding, dock.roots.findChild(RootsAdding)).start()
     dock.roots._RootsPanel__on_remove_root()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     dock.catalog.scan()
 
@@ -2378,7 +2405,7 @@ def verified(
     """
     catalog.plan_verify.return_value = [MagicMock()]
     check = mocker.patch(
-        "rehuco_agent.rehuco.root_catalog.check_records", return_value=RecordsChecked([MagicMock()], {})
+        "rehuco_agent.rehuco.record_verify.check_records", return_value=RecordsChecked([MagicMock()], {})
     )
 
     def apply(_findings: object) -> tuple[set[int], set[Path]]:
@@ -3077,7 +3104,7 @@ def test_a_read_only_file_turns_the_root_edits_off_but_not_refresh_or_the_filter
 
     assert not any(
         a.isEnabled()
-        for a in (dock.roots.add_root_action, dock.roots.remove_root_action, *dock.roots.move_root_actions)
+        for a in (dock.roots.add_roots_action, dock.roots.remove_root_action, *dock.roots.move_root_actions)
     )
     assert dock.roots.refresh_roots_action.isEnabled()
     assert dock.roots.filter_folder_action.isEnabled()
@@ -3160,30 +3187,31 @@ def test_a_move_with_no_root_selected_does_nothing(dock: CatalogDocks, served: A
 
 @mark.usefixtures("served")
 def test_the_root_editors_show_for_a_root_row_only(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> None:
-    """The details pane edits a root when the root itself is current: the name shows with its value beside the
-    detected storage, and both are hidden for a folder, a file and no row.
+    """The details pane edits a root, in its edit mode, when the root itself is current: the name shows with its value
+    beside the detected storage, and both are hidden for a folder, a file and no row (#578).
 
     **Test steps:**
 
-    * open a catalog and read the editors with no row current
+    * open a catalog, turn the edit mode on, and read the editors with no row current
     * select the second root, then a folder of the first
     * verify the editors are hidden, shown with the root's label and storage, and hidden again
     """
     del folders
     dock.catalog.open_rehuco(REHUCO_PATH)
     dock.roots.show()
-    assert dock.roots.root_name_edit.isHidden()
-    assert dock.roots.root_storage_value.isHidden()
+    dock.roots.edit_root_action.setChecked(True)
+    assert not dock.roots.root_name_edit.isVisibleTo(dock.roots)
+    assert not dock.roots.root_storage_value.isVisibleTo(dock.roots)
 
     select_root(dock, 1)
-    assert not dock.roots.root_name_edit.isHidden()
+    assert dock.roots.root_name_edit.isVisibleTo(dock.roots)
     assert dock.roots.root_name_edit.text() == "packs"
     assert dock.roots.root_name_edit.isEnabled()
     assert dock.roots.root_storage_value.text() == ROOT_STORAGE_LABELS[RootStorage.LOCAL]
 
     open_root_folder(qtbot, dock, "alpha", "sub")
-    assert dock.roots.root_name_edit.isHidden()
-    assert dock.roots.root_storage_value.isHidden()
+    assert not dock.roots.root_name_edit.isVisibleTo(dock.roots)
+    assert not dock.roots.root_storage_value.isVisibleTo(dock.roots)
 
 
 @mark.usefixtures("served")
@@ -3403,24 +3431,27 @@ def test_the_removal_question_says_what_goes_and_what_stays(
     assert RootsPanel.confirm_remove_root(dock.roots, root, cached) is False
 
 
-def test_the_real_add_root_question_returns_what_the_dialog_holds(mocker: MockerFixture, dock: CatalogDocks) -> None:
-    """The dock opens its dialog and answers its folder and name; a cancelled dialog answers nothing.
+@mark.usefixtures("served")
+def test_the_real_add_roots_question_returns_what_the_dialog_would_add(
+    mocker: MockerFixture, dock: CatalogDocks
+) -> None:
+    """The dock opens its dialog over the open file and answers what OK adds; a cancelled dialog, or no file open,
+    answers nothing.
 
     **Test steps:**
 
-    * run the question with the dialog's ``exec`` patched to fill in a folder, then to cancel
-    * verify the answer -- the folder's own name, as none was typed -- and the cancel
+    * ask with no file open; open one, then ask with the dialog accepted holding one line, then cancelled
+    * verify nothing, the line, and nothing
     """
+    assert dock.roots.ask_roots_to_add() is None
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    line = folder_candidate(dock, "/fake/refs")
+    mocker.patch.object(AddRootsDialog, "candidates", new=(line,))
+    mocker.patch.object(AddRootsDialog, "exec", return_value=QDialog.DialogCode.Accepted)
+    assert dock.roots.ask_roots_to_add() == (line,)
 
-    def accept(self: AddRootDialog) -> QDialog.DialogCode:
-        self.folder = "/fake/refs"
-        return QDialog.DialogCode.Accepted
-
-    mocker.patch.object(AddRootDialog, "exec", new=accept)
-    assert dock.roots.ask_root_to_add() == ("/fake/refs", "refs")
-
-    mocker.patch.object(AddRootDialog, "exec", return_value=QDialog.DialogCode.Rejected)
-    assert dock.roots.ask_root_to_add() is None
+    mocker.patch.object(AddRootsDialog, "exec", return_value=QDialog.DialogCode.Rejected)
+    assert dock.roots.ask_roots_to_add() is None
 
 
 @mark.usefixtures("served")
@@ -4147,7 +4178,7 @@ def test_the_root_slots_refuse_without_a_current_root_and_a_move_that_goes_nowhe
     panel = dock.roots
 
     with qtbot.assertNotEmitted(panel.filter_requested):
-        panel.findChild(RootNameEditor)._RootNameEditor__on_finished()  # type: ignore[attr-defined,union-attr]  # pylint: disable=protected-access
+        panel.findChild(RootPropertiesEditor)._RootPropertiesEditor__on_finished()  # type: ignore[attr-defined,union-attr]  # pylint: disable=protected-access
         panel._RootsPanel__move_root(lambda _file, row: row)  # type: ignore[attr-defined]  # pylint: disable=protected-access
         verbs = panel._RootsPanel__verbs  # type: ignore[attr-defined]  # pylint: disable=protected-access
         verbs._RootsChecksumVerbs__on_verify_checksums(old=False)  # pylint: disable=protected-access
@@ -4237,7 +4268,7 @@ def test_a_root_rows_menu_ends_with_scan_add_root_and_refresh_under_a_separator(
     assert shown[: len(own)] == own
     tail = shown[len(own) :]
     assert [action.isSeparator() for action in tail] == [True, False, False, False]
-    assert tail[1:] == [roots.scan_action, roots.add_root_action, roots.refresh_roots_action]
+    assert tail[1:] == [roots.scan_action, roots.add_roots_action, roots.refresh_roots_action]
     on_the_row = [action.isEnabled() for action in tail[1:]]
 
     answers.return_value = QModelIndex()
@@ -5060,7 +5091,7 @@ def test_the_empty_part_of_a_column_opens_its_folders_menu_and_leaves_the_select
 
     ChoosingMenu.chosen = ""
     roots._RootsPanel__on_roots_context_menu(below_the_rows(columns[QModelIndex()]))  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert ChoosingMenu.shown[-1] == ["Scan", "Add Root...", "Refresh"]
+    assert ChoosingMenu.shown[-1] == ["Scan", "Add Roots...", "Refresh"]
     assert view.currentIndex() == current
 
     ChoosingMenu.shown = []
@@ -5112,6 +5143,6 @@ def test_cancelling_the_add_scans_nothing(mocker: MockerFixture, dock: CatalogDo
     dock.catalog.open_rehuco(REHUCO_PATH)
     scan = mocker.patch.object(dock.catalog, "scan_root")
 
-    dock.roots.add_root_action.trigger()
+    dock.roots.add_roots_action.trigger()
 
     scan.assert_not_called()

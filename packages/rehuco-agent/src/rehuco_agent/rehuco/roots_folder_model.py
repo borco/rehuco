@@ -150,9 +150,9 @@ class RootsFolderModel(QAbstractItemModel):
         """Show ``roots``, in this order, changing only what differs from what is shown.
 
         A removed root's rows are removed, a new root is inserted and listed at once -- so an away root reads as
-        away without being clicked -- and a root that moved is moved. A root whose label or storage changed is
-        updated in place; one whose folder changed, or that gained or lost its mapping, drops what it had listed and
-        starts again. The model is never reset.
+        away without being clicked -- and a root that moved is moved. A root whose label, storage, layouts or fallbacks
+        changed is updated in place; one whose folder changed, or that gained or lost its mapping, drops what it had
+        listed and starts again. The model is never reset.
 
         :param roots: the ``.rehuco``'s roots, in its order, each as this machine knows it; empty when no catalog is
             open.
@@ -200,7 +200,8 @@ class RootsFolderModel(QAbstractItemModel):
         :param root: what the file says it is now.
         """
         current = self.__own_root(node)
-        if current == root:
+        # a root's maps are not part of its equality, which a frozen dataclass hashes by
+        if current == root and current.layouts == root.layouts and current.fallbacks == root.fallbacks:
             return
         node.root = root
         node.name = root.label

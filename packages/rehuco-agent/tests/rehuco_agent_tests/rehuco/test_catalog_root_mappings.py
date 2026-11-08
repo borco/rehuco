@@ -8,6 +8,7 @@ tests; the mappings are the one thing here that touches a disk, in ``tmp_path``.
 
 import json
 import logging
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import MagicMock, Mock
@@ -16,7 +17,7 @@ from uuid import UUID
 from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from rehuco_agent.rehuco.root_catalog import RootCatalog
-from rehuco_core import RootMappings, RootStorage, TaskQueue
+from rehuco_core import CandidateKind, RehurootFile, RootCandidate, RootMappings, RootPick, RootStorage, TaskQueue
 
 from rehuco_agent_tests.mapped_roots import location_at, resolve_test_location
 
@@ -36,6 +37,7 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_queue,
     fixture_saves,
     fixture_served,
+    folder_candidate,
     served_rehuco,
     served_rehuroot,
     written_root_contents,
@@ -63,7 +65,8 @@ def fixture_machine(mocker: MockerFixture, tmp_path: Path, real_path_stat: None)
     del real_path_stat
     mocker.patch("rehuco_agent.rehuco.root_catalog.config_folder", return_value=tmp_path)
     mocker.patch("rehuco_agent.rehuco.root_catalog.resolve_location", side_effect=resolve_test_location)
-    mocker.patch("rehuco_agent.rehuco.root_catalog.location_of", side_effect=location_at)
+    mocker.patch("rehuco_core.root_candidates.location_of", side_effect=location_at)
+    mocker.patch("rehuco_core.root_candidates.resolve_location", side_effect=resolve_test_location)
     return tmp_path
 
 
@@ -281,16 +284,16 @@ def test_adding_a_root_names_it_by_location_and_maps_it_here(
     **Test steps:**
 
     * open a catalog and add a folder
-    * verify the new row, the root file written holds the location and nothing of this machine, the mapping is stored
-      under its id, and the cache was given the three roots
+    * verify the new root's id, the root file written holds the location and nothing of this machine, the mapping is
+      stored under its id, and the cache was given the three roots
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     folder = TUTORIALS.parent / "refs"
 
-    row = dock.catalog.add_root(folder)
+    added = dock.catalog.add_roots((folder_candidate(dock, folder),))
 
-    assert row == 2
     written = written_root_contents(saves)[2]
+    assert added == (UUID(written["id"]),)
     assert written["location"] == location_at(folder)
     assert set(written) == {"format_version", "id", "label", "location", "layouts", "fallbacks"}
     mapping = stored(machine).mapping(UUID(written["id"]))
@@ -300,75 +303,118 @@ def test_adding_a_root_names_it_by_location_and_maps_it_here(
 
 
 @mark.usefixtures("served")
-@mark.parametrize(("label", "expected"), [("Mine", "Mine"), (None, "refs"), ("", "refs")])
+@mark.parametrize(("label", "expected"), [("Mine", "Mine"), ("", "refs")])
 def test_adding_a_root_labels_it_as_asked_or_by_its_folders_name(
-    dock: CatalogDocks, saves: MagicMock, label: str | None, expected: str
+    dock: CatalogDocks, saves: MagicMock, label: str, expected: str
 ) -> None:
-    """The label given is the root's; none, or an empty one, is the folder's name.
+    """The label given is the root's; an empty one is the folder's name.
 
     **Test steps:**
 
-    * open a catalog and add a folder with a label, none, and an empty one
+    * open a catalog and add a folder with a label, and with an empty one
     * verify the label written for the new root
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
 
-    assert dock.catalog.add_root(TUTORIALS.parent / "refs", label) == 2
+    assert dock.catalog.add_roots((folder_candidate(dock, TUTORIALS.parent / "refs", label),)) is not None
 
     assert written_root_contents(saves)[2]["label"] == expected
 
 
 @mark.usefixtures("served")
-def test_adding_a_root_that_cannot_be_added_says_why(dock: CatalogDocks) -> None:
-    """Nothing is added with no file open, or for a folder around or inside a mapped root.
+def test_several_roots_are_added_in_order_with_one_save(dock: CatalogDocks, saves: MagicMock) -> None:
+    """Many folders picked at once join in the order picked, each with its preset's layouts, in one save (#578).
 
     **Test steps:**
 
-    * add a folder with no file open
-    * open a catalog and add a folder inside a root, and one around it
-    * verify each returned none, and the reasons name the overlap
+    * open a catalog and add three folders, the second with layouts of its own
+    * verify the ids returned in order, the labels and layouts written, and one ``.rehuco`` write
     """
-    assert dock.catalog.add_root(TUTORIALS) is None
     dock.catalog.open_rehuco(REHUCO_PATH)
+    lines = [folder_candidate(dock, TUTORIALS.parent / name) for name in ("a", "b", "c")]
+    lines[1] = replace(lines[1], layouts={"tutorial": "{title}"}, fallbacks={"title": "?"})
 
-    assert dock.catalog.add_root(TUTORIALS / "python") is None
-    assert "is inside the root tutorials" in dock.catalog.save_error
-    assert dock.catalog.add_root(TUTORIALS.parent) is None
-    assert "contains the root" in dock.catalog.save_error
+    added = dock.catalog.add_roots(lines)
 
-
-def test_a_newer_file_takes_no_new_root(dock: CatalogDocks, served: dict[str, Any]) -> None:
-    """A file written by a newer build is read-only, so a root is not added to it.
-
-    **Test steps:**
-
-    * open a file stamped with a newer format and add a folder
-    * verify nothing was added
-    """
-    served["format_version"] = 99
-    dock.catalog.open_rehuco(REHUCO_PATH)
-
-    assert dock.catalog.add_root(TUTORIALS.parent / "other") is None
+    written = written_root_contents(saves)
+    assert added == tuple(UUID(root["id"]) for root in written[2:])
+    assert [root["label"] for root in written[2:]] == ["a", "b", "c"]
+    assert (written[3]["layouts"], written[3]["fallbacks"]) == ({"tutorial": "{title}"}, {"title": "?"})
+    assert saves.call_count == 1
 
 
 @mark.usefixtures("served")
-def test_adding_the_location_a_root_already_has_is_refused_by_the_file(
-    mocker: MockerFixture, dock: CatalogDocks
+def test_an_existing_root_file_joins_mapped_where_it_resolved_or_unmapped(
+    dock: CatalogDocks, machine: Path, saves: MagicMock, tmp_path: Path
 ) -> None:
-    """Two spellings of the folder that the overlap check does not relate -- here the location is the same while the
-    mapped folder is not -- still stop at the file, whose refusal is the reason given.
+    """A ``.rehuroot`` another catalog made joins as it is: mapped to the folder its location resolved to here, or
+    unmapped when it resolved nowhere (#578).
 
     **Test steps:**
 
-    * open a catalog, make the folder's location the first root's, and add a folder
-    * verify it returned none and the reason is the file's
+    * save two root files, open a catalog and add both, one with a folder and one without
+    * verify both ids, the mapping of the first only, and that the files were left as they were
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
-    mocker.patch("rehuco_agent.rehuco.root_catalog.location_of", return_value=location_at(TUTORIALS))
+    near = RehurootFile.new(tmp_path / "near.rehuroot", location_at(TUTORIALS.parent / "near"), "near")
+    far = RehurootFile.new(tmp_path / "far.rehuroot", "//nohost-578/share/far", "far")
+    near.save()
+    far.save()
+    lines = [
+        RootCandidate(
+            RootPick(near.path), CandidateKind.FILE, "near", near.location, near.path, TUTORIALS.parent, root=near
+        ),
+        RootCandidate(RootPick(far.path), CandidateKind.FILE, "far", far.location, far.path, None, root=far),
+    ]
 
-    assert dock.catalog.add_root(TUTORIALS.parent / "elsewhere") is None
+    added = dock.catalog.add_roots(lines)
+
+    assert added == (near.root_id, far.root_id)
+    mappings = stored(machine)
+    assert mappings.mapping(near.root_id) is not None
+    assert mappings.mapping(far.root_id) is None
+    assert saves.call_count == 1
+
+
+def test_adding_roots_with_no_file_open_or_a_newer_one_adds_nothing(dock: CatalogDocks, served: dict[str, Any]) -> None:
+    """There is nothing to add to with no file open, and a file written by a newer build is read-only.
+
+    **Test steps:**
+
+    * add a folder with no file open; open a file stamped with a newer format and add one
+    * verify neither was added
+    """
+    served["format_version"] = 99
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    line = folder_candidate(dock, TUTORIALS.parent / "other")
+    dock.catalog.close_rehuco()
+
+    assert dock.catalog.add_roots((line,)) is None
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    assert dock.catalog.add_roots((line,)) is None
+
+
+@mark.usefixtures("served")
+def test_a_line_the_file_refuses_now_adds_none_and_says_why(dock: CatalogDocks, saves: MagicMock) -> None:
+    """A plan made before the file changed may hold a line it now refuses -- here a location a root already has: none
+    of the lines is added, the reason is the file's, and the roots shown are what is on disk.
+
+    **Test steps:**
+
+    * open a catalog and add a good folder and one whose location is the first root's
+    * verify none was added, the reason, nothing written, and the two roots still shown
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    good = folder_candidate(dock, TUTORIALS.parent / "fine")
+    clash = replace(folder_candidate(dock, TUTORIALS.parent / "elsewhere"), location=location_at(TUTORIALS))
+
+    assert dock.catalog.add_roots((good, clash)) is None
 
     assert dock.catalog.save_error == f"Already a root: {location_at(TUTORIALS)}"
+    saves.assert_not_called()
+    file = dock.catalog.file
+    assert file is not None
+    assert [root.label for root in file.roots] == ["tutorials", "packs"]
 
 
 @mark.usefixtures("served")

@@ -363,6 +363,7 @@ from .resource_scoping import (
     other_record_stems,
     resource_name,
 )
+from .root_candidates import CandidateKind, RootCandidate, RootPick, RootPlanner
 from .root_destination import RecordNaming, Refusal, destination
 from .root_folders import RootFolderLister
 from .root_location import location_of, machine_name, resolve_location, storage_of
@@ -574,6 +575,7 @@ __all__ = [
     "CURRENT_FORMAT_VERSION",
     "CURRENT_REHUCO_VERSION",
     "CURRENT_REHUSER_VERSION",
+    "CandidateKind",
     "Catalog",
     "CatalogCache",
     "CatalogCheckpoint",
@@ -781,11 +783,14 @@ __all__ = [
     "ResourceKey",
     "ResourceLocation",
     "RetireLegacyManifestJob",
+    "RootCandidate",
     "RootFolderLister",
     "RootMapping",
     "RootMappings",
     "RootMappingsError",
     "RootOverlap",
+    "RootPick",
+    "RootPlanner",
     "RootReachable",
     "RootScanEffects",
     "RootScanOutcome",

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QLabel
 from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.rehuco.record_verify import RecordVerify
 from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.roots_panel import FRESH_LISTING_SECONDS
 from rehuco_agent.resource_events import ResourceEvents
@@ -79,7 +80,7 @@ def checked_on_the_pool(mocker: MockerFixture, catalog: Mock) -> list[threading.
         threads.append(threading.current_thread())
         return RecordsChecked([MagicMock()], {})
 
-    mocker.patch("rehuco_agent.rehuco.root_catalog.check_records", side_effect=check)
+    mocker.patch("rehuco_agent.rehuco.record_verify.check_records", side_effect=check)
     return threads
 
 
@@ -191,7 +192,11 @@ def seam(dock: CatalogDocks, name: str) -> Any:
     :param name: the member's name.
     :returns: it.
     """
-    return getattr(dock.catalog, f"_RootCatalog__{name}")
+    if name == "catalog":
+        return getattr(dock.catalog, "_RootCatalog__catalog")
+    verify = dock.catalog.findChild(RecordVerify)
+    assert verify is not None
+    return getattr(verify, f"_RecordVerify__{name}")
 
 
 @mark.usefixtures("served")
@@ -209,7 +214,7 @@ def test_a_check_that_fails_is_logged_and_still_releases_its_key(
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     catalog.plan_verify.return_value = [MagicMock()]
-    mocker.patch("rehuco_agent.rehuco.root_catalog.check_records", side_effect=RuntimeError("boom"))
+    mocker.patch("rehuco_agent.rehuco.record_verify.check_records", side_effect=RuntimeError("boom"))
     seen = MagicMock()
     dock.catalog.rows_changed.connect(seen)
 
@@ -232,7 +237,7 @@ def test_a_check_superseded_before_it_starts_does_nothing(dock: CatalogDocks, mo
     * verify it compared nothing with the disk
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
-    check = mocker.patch("rehuco_agent.rehuco.root_catalog.check_records")
+    check = mocker.patch("rehuco_agent.rehuco.record_verify.check_records")
     seam(dock, "latest_verify")["probe"] = 2
 
     seam(dock, "run_verify")(1, "probe", seam(dock, "catalog").cache_path, [])
@@ -275,7 +280,7 @@ def test_an_answer_for_a_catalog_that_is_gone_is_dropped_quietly(dock: CatalogDo
     seam(dock, "latest_verify")["probe"] = 1
     dead = mocker.MagicMock()
     dead.answered.emit.side_effect = RuntimeError("Internal C++ object already deleted")
-    mocker.patch.object(dock.catalog, "_RootCatalog__verifier", dead)
+    mocker.patch.object(dock.catalog.findChild(RecordVerify), "_RecordVerify__verifier", dead)
 
     seam(dock, "run_verify")(1, "probe", seam(dock, "catalog").cache_path, [])
 

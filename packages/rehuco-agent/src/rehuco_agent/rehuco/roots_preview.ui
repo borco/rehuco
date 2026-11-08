@@ -50,31 +50,20 @@
        <property name="text">
         <string>Name:</string>
        </property>
-       <property name="buddy">
-        <cstring>root_name_edit</cstring>
-       </property>
       </widget>
      </item>
      <item row="0" column="1">
-      <layout class="QHBoxLayout" name="root_name_layout">
-       <item>
-        <widget class="QLineEdit" name="root_name_edit">
-         <property name="toolTip">
-          <string>What the browser shows for this root and what a folder filter addresses. Nothing on disk changes. Left empty, the root shows where it is.</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QToolButton" name="default_root_name_button">
-         <property name="toolButtonStyle">
-          <enum>Qt::ToolButtonStyle::ToolButtonIconOnly</enum>
-         </property>
-         <property name="autoRaise">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-      </layout>
+      <widget class="QLabel" name="root_name_value">
+       <property name="toolTip">
+        <string>What the browser shows for this root and what a folder filter addresses. Edit (F2) to change it.</string>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+       <property name="textInteractionFlags">
+        <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
+       </property>
+      </widget>
      </item>
      <item row="1" column="0">
       <widget class="QLabel" name="root_storage_label">
@@ -243,7 +232,71 @@
      <item row="13" column="1">
       <widget class="ElidedLabel" name="path_value"/>
      </item>
+     <item row="14" column="0">
+      <widget class="QLabel" name="root_file_label">
+       <property name="text">
+        <string>Root file:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="14" column="1">
+      <widget class="ElidedLabel" name="root_file_value">
+       <property name="toolTip">
+        <string>The .rehuroot file this root is kept in, which every catalog listing the root shares.</string>
+       </property>
+      </widget>
+     </item>
+     <item row="15" column="0">
+      <widget class="QLabel" name="root_layouts_label">
+       <property name="text">
+        <string>Layouts:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="15" column="1">
+      <widget class="QLabel" name="root_layouts_value">
+       <property name="toolTip">
+        <string>Where a record of each type lives under this root; * keeps a record's current name. Edit (F2) to change them.</string>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+       <property name="textInteractionFlags">
+        <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
+       </property>
+      </widget>
+     </item>
+     <item row="16" column="0">
+      <widget class="QLabel" name="root_fallbacks_label">
+       <property name="text">
+        <string>Fallbacks:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="16" column="1">
+      <widget class="QLabel" name="root_fallbacks_value">
+       <property name="toolTip">
+        <string>What a layout's placeholder becomes when a record leaves it empty. Edit (F2) to change them.</string>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+       <property name="textInteractionFlags">
+        <set>Qt::TextInteractionFlag::TextSelectableByMouse</set>
+       </property>
+      </widget>
+     </item>
     </layout>
+   </item>
+   <item>
+    <widget class="QToolButton" name="edit_root_button">
+     <property name="toolButtonStyle">
+      <enum>Qt::ToolButtonStyle::ToolButtonTextBesideIcon</enum>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="RootEditPane" name="root_edit_pane"/>
    </item>
    <item>
     <layout class="QVBoxLayout" name="buttons_layout">
@@ -319,6 +372,11 @@
    <class>ElidedLabel</class>
    <extends>QLabel</extends>
    <header>borco_pyside.widgets.elided_label</header>
+  </customwidget>
+  <customwidget>
+   <class>RootEditPane</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.rehuco.root_edit_pane</header>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -95,8 +95,9 @@ def test_an_unreadable_roots_card_has_no_name_to_edit(gone_dock: CatalogDocks) -
     **Test steps:**
 
     * select the unreadable root and read the card
-    * verify the name field and its default button are disabled and the storage line says the file cannot be read
-    * select a readable root and verify the name field is enabled again
+    * verify the name field, its default button and the Edit toggle are disabled, and the storage line says the file
+      cannot be read
+    * select a readable root and verify the name field and the Edit toggle are enabled again
     """
     roots = gone_dock.roots
 
@@ -104,11 +105,13 @@ def test_an_unreadable_roots_card_has_no_name_to_edit(gone_dock: CatalogDocks) -
 
     assert not roots.root_name_edit.isEnabled()
     assert not roots.default_root_name_action.isEnabled()
+    assert not roots.edit_root_action.isEnabled()
     assert roots.root_storage_value.text() == UNREADABLE_ROW
 
     select_root(gone_dock, 0)
 
     assert roots.root_name_edit.isEnabled()
+    assert roots.edit_root_action.isEnabled()
     assert roots.root_storage_value.text() != NOT_MAPPED_ROW
 
 

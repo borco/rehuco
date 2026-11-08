@@ -4,6 +4,7 @@ its menu, which asks for a folder and maps it; removing it and adding a root rep
 The panel runs over the mock catalog of ``test_catalog_docks``, with the ``.rehuco`` served and its writes captured.
 """
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
 from unittest.mock import MagicMock
@@ -26,7 +27,6 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     TUTORIALS,
     CatalogDocks,
     add_root,
-    answer_add_root,
     fixture_cache,
     fixture_cached_rows,
     fixture_catalog,
@@ -37,6 +37,7 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_queue,
     fixture_saves,
     fixture_served,
+    folder_candidate,
     select_root,
 )
 
@@ -262,22 +263,27 @@ def test_the_removal_question_names_where_the_files_are(
 def test_a_root_the_catalog_refuses_to_add_is_reported_with_its_reason(
     mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, served: dict[str, Any], saves: MagicMock
 ) -> None:
-    """Add Root asks the catalog, and what it refuses -- here a location the file already lists -- is shown as the
-    warning, with nothing written.
+    """Add Roots asks the catalog, and what it refuses -- here a location the file came to list since the dialog
+    planned it -- is shown as the warning, with nothing written.
 
     **Test steps:**
 
-    * open a catalog and add a folder whose location is the first root's
-    * verify a warning titled Add Root with the file's reason, nothing written, and no new row
+    * open a catalog and add a folder whose line has the first root's location
+    * verify a warning titled Add Roots with the file's reason, nothing written, and no new row
     """
     del served
     warning = mocker.patch(WARNING)
-    mocker.patch("rehuco_agent.rehuco.root_catalog.location_of", return_value=location_at(TUTORIALS))
-    answer_add_root(mocker, dock, str(PACKS.parent / "elsewhere"))
+    mocker.patch.object(
+        dock.roots,
+        "ask_roots_to_add",
+        side_effect=lambda: (
+            replace(folder_candidate(dock, PACKS.parent / "elsewhere"), location=location_at(TUTORIALS)),
+        ),
+    )
     dock.catalog.open_rehuco(REHUCO_PATH)
 
     add_root(qtbot, dock)
 
-    warning.assert_called_once_with(dock.roots, "Add Root", f"Already a root: {location_at(TUTORIALS)}")
+    warning.assert_called_once_with(dock.roots, "Add Roots", f"Already a root: {location_at(TUTORIALS)}")
     saves.assert_not_called()
     assert dock.roots.roots_model.rowCount() == 2

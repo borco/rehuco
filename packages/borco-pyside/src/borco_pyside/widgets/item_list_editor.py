@@ -96,6 +96,9 @@ class ItemListEditor(QWidget):
         unaware. Only :attr:`current_index` and :meth:`set_current_index` know the difference, because a
         row number is the one thing the two row spaces disagree about -- and those are stated in **source**
         rows, the space every model call is already in, so a caller never has to map either.
+    :param delegate: the delegate the rows are drawn and edited with -- a `RowBandDelegate` subclass, for a
+        column that wants an editor of its own; a plain `RowBandDelegate` when ``None``. Given here rather than
+        set afterwards, because this widget listens to the delegate's ``closeEditor``.
     """
 
     values_changed = Signal()
@@ -104,7 +107,7 @@ class ItemListEditor(QWidget):
     current_index_changed = Signal()
     """Fires whenever :attr:`current_index` changes -- the `ItemViewer` contract."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         view: QAbstractItemView,
         model: QAbstractItemModel,
@@ -112,6 +115,7 @@ class ItemListEditor(QWidget):
         *,
         with_ordering: bool = True,
         proxy: QAbstractProxyModel | None = None,
+        delegate: RowBandDelegate | None = None,
     ) -> None:
         super().__init__(parent)
         # the application this widget filters focus events on while a blank insert waits to be left,
@@ -143,7 +147,7 @@ class ItemListEditor(QWidget):
         view.setAlternatingRowColors(True)
         # a selected row as one band rather than per-cell boxes; installed before `__wire`, which connects
         # the view's *current* delegate's `closeEditor`
-        view.setItemDelegate(RowBandDelegate(view))
+        view.setItemDelegate(delegate if delegate is not None else RowBandDelegate(view))
 
         # the concrete model is expected to satisfy both protocols; QAbstractItemModel's own typing has
         # no way to express that intersection, so the two lines below are where it's asserted

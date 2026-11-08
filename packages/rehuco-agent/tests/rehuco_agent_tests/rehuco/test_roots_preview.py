@@ -1,6 +1,7 @@
 """Tests for the preview the Roots view shows for a file or an empty folder (#378)."""
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
@@ -50,7 +51,8 @@ class Shown:
         record_for: RecordForRow | None = None,
         pack_for: PackForRow | None = None,
     ) -> None:
-        root = mapped_root(library, "lib", RootStorage.LOCAL)
+        self.root_file = library.parent / "lib.rehuroot"
+        root = replace(mapped_root(library, "lib", RootStorage.LOCAL), file=self.root_file)
         self.model = RootsFolderModel()
         self.model.set_roots([root], RootFolderLister([root]))
         self.preview = RootsPreview(self.model, RenameCoordinator(), actions_for, record_for, pack_for)
@@ -184,32 +186,67 @@ def test_a_listed_root_counts_what_it_holds_and_an_unlisted_folder_says_nothing(
     assert shown.hidden("contents_label")
 
 
-def test_a_root_shows_its_name_editor_and_its_detected_storage_and_nothing_else_does(shown: Shown) -> None:
-    """The name field is for a root row: it takes its label without telling anyone, beside the storage the system
-    detected as plain text; both go away for any other row, whose bold name header takes their place.
+def test_a_root_shows_its_rows_read_only_and_nothing_else_does(shown: Shown) -> None:
+    """A root row shows its name, the storage the system detected, its root file, its layouts and its fallbacks as
+    plain text, its editors hidden; all go away for any other row, whose bold name header takes their place (#578).
 
     **Test steps:**
 
-    * show the root, watching the name signal, then a file
-    * verify the root's name is filled and quiet, its storage line reads the storage, its name header is hidden, and a
-      file has the reverse
+    * show the root, then a file
+    * verify the root's rows and that its editors and name header are hidden, and that a file has the reverse
     """
-    told: list[object] = []
-    shown.preview.root_name_edit.textChanged.connect(told.append)
+    preview = shown.preview
+    preview.show_index(shown.root)
 
-    shown.preview.show_index(shown.root)
-
-    assert not shown.preview.root_name_edit.isHidden()
-    assert shown.preview.root_name_edit.text() == "lib"
-    assert not shown.preview.root_storage_value.isHidden()
-    assert shown.preview.root_storage_value.text() == ROOT_STORAGE_LABELS[RootStorage.LOCAL]
+    assert preview.root_texts == {
+        "name": "lib",
+        "file": str(shown.root_file),
+        "layouts": "* \N{RIGHTWARDS ARROW} *",
+        "fallbacks": "None",
+    }
+    assert preview.root_storage_value.text() == ROOT_STORAGE_LABELS[RootStorage.LOCAL]
+    for name in ("root_name_value", "root_storage_value", "root_file_value", "root_layouts_value"):
+        assert not shown.hidden(name)
+    assert not preview.root_edit_pane.isVisibleTo(preview)
     assert shown.hidden("name_label")
+
+    preview.show_index(shown.row("clip.mp4"))
+    for name in ("root_name_value", "root_storage_value", "root_file_value", "root_layouts_value"):
+        assert shown.hidden(name)
+    assert not shown.hidden("name_label")
+
+
+def test_the_edit_mode_shows_a_roots_editors_filled_quietly_and_lasts_from_root_to_root(shown: Shown) -> None:
+    """While the edit mode is on a root row shows its editors -- the name, the layouts and the fallbacks, filled
+    without telling anyone -- in place of the read-only rows; a file shows neither, and the mode stays on for the next
+    root shown (#578).
+
+    **Test steps:**
+
+    * watch the editors' signals, turn the edit mode on and show the root
+    * verify the editors are shown and filled, the read-only rows hidden, and nothing was told
+    * show a file, then the root again, and verify the editors are hidden, then shown again
+    """
+    preview = shown.preview
+    told: list[object] = []
+    preview.root_name_edit.textChanged.connect(told.append)
+    preview.root_layouts_editor.edited.connect(lambda: told.append("edited"))
+
+    preview.set_editing(True)
+    preview.show_index(shown.root)
+
+    assert preview.root_edit_pane.isVisibleTo(preview)
+    assert preview.root_name_edit.text() == "lib"
+    assert (preview.root_layouts_editor.layouts, preview.root_layouts_editor.fallbacks) == ({"*": "*"}, {})
+    assert shown.hidden("root_name_value")
+    assert shown.hidden("root_layouts_value")
+    assert not shown.hidden("root_storage_value")
     assert not told
 
-    shown.preview.show_index(shown.row("clip.mp4"))
-    assert shown.preview.root_name_edit.isHidden()
-    assert shown.preview.root_storage_value.isHidden()
-    assert not shown.hidden("name_label")
+    preview.show_index(shown.row("clip.mp4"))
+    assert not preview.root_edit_pane.isVisibleTo(preview)
+    preview.show_index(shown.root)
+    assert preview.root_edit_pane.isVisibleTo(preview)
 
 
 def test_a_root_this_machine_does_not_map_shows_its_location_and_says_so(qtbot: QtBot) -> None:
@@ -263,18 +300,23 @@ def test_a_root_whose_file_cannot_be_read_shows_its_file_and_takes_no_name(qtbot
 
 
 def test_editing_can_be_switched_off(shown: Shown) -> None:
-    """A read-only catalog leaves the root's name visible and unusable.
+    """A read-only catalog leaves the root's editors visible and unusable.
 
     **Test steps:**
 
-    * switch editing off, then on
-    * verify the name follows
+    * show the root in edit mode, switch editing off, then on
+    * verify the name and the layouts follow
     """
+    shown.preview.set_editing(True)
+    shown.preview.show_index(shown.root)
+
     shown.preview.set_editable(False)
     assert not shown.preview.root_name_edit.isEnabled()
+    assert not shown.preview.root_layouts_editor.isEnabled()
 
     shown.preview.set_editable(True)
     assert shown.preview.root_name_edit.isEnabled()
+    assert shown.preview.root_layouts_editor.isEnabled()
 
 
 def test_each_action_of_a_row_is_a_button_in_order_with_the_default_in_bold(qtbot: QtBot, tmp_path: Path) -> None:

@@ -8,7 +8,13 @@ row that can be filled in any order is abandoned.
 
 from typing import Any, override
 
-from borco_pyside.widgets import ContentSizedListView, ContentSizedTableView, ItemListEditor, StringItemListModel
+from borco_pyside.widgets import (
+    ContentSizedListView,
+    ContentSizedTableView,
+    ItemListEditor,
+    RowBandDelegate,
+    StringItemListModel,
+)
 from PySide6.QtCore import (
     QAbstractTableModel,
     QModelIndex,
@@ -53,6 +59,26 @@ def editor(qtbot: QtBot) -> ItemListEditor:
     with qtbot.waitExposed(widget):
         widget.show()
     return widget
+
+
+def test_a_delegate_given_draws_and_edits_the_rows(qtbot: QtBot) -> None:
+    """A caller's own delegate is the view's, in place of the plain row band.
+
+    **Test steps:**
+
+    * build an editor with a delegate of its own, and one without
+    * verify the first view holds that delegate and the second a plain row band
+    """
+    view = ContentSizedListView()
+    delegate = RowBandDelegate(view)
+    given = ItemListEditor(view, StringItemListModel(), delegate=delegate)
+    plain = ItemListEditor(ContentSizedListView(), StringItemListModel())
+    qtbot.addWidget(given)
+    qtbot.addWidget(plain)
+
+    assert given.view.itemDelegate() is delegate
+    assert isinstance(plain.view.itemDelegate(), RowBandDelegate)
+    assert plain.view.itemDelegate() is not delegate
 
 
 def test_the_view_shows_the_proxy_and_the_editor_still_holds_the_model(editor: ItemListEditor) -> None:

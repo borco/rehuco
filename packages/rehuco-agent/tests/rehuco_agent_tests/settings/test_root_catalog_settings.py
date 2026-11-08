@@ -1,15 +1,22 @@
 """Tests for RootCatalogSettings: how the Root Catalog dock behaves while it is browsed (#457)."""
 
-from pytest import fixture
+import logging
+
+from pytest import LogCaptureFixture, fixture, mark, param
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import root_catalog_settings
 from rehuco_agent.settings.root_catalog_settings import (
     AUTO_PREVIEW_KEY,
     DEFAULT_AUTO_PREVIEW,
+    DEFAULT_LAYOUTS_KEY,
+    DEFAULT_ROOT_LAYOUTS,
     DEFAULT_SCAN_AFTER_ADDING,
     GROUP,
+    LABEL_KEY,
+    LAYOUTS_KEY,
     SCAN_AFTER_ADDING_KEY,
     RootCatalogSettings,
+    RootLayout,
     shared_root_catalog_settings,
 )
 
@@ -147,3 +154,93 @@ def test_the_scan_after_adding_choice_is_saved_and_announced(stored: FakeSetting
     stored.endGroup()
     assert heard == [False]
     assert reloaded.scan_after_adding is False
+
+
+def test_the_default_layouts_start_as_the_current_name_layout(stored: FakeSettings) -> None:
+    """A fresh install offers one layout, which keeps any record's name, as every root had before #578.
+
+    **Test steps:**
+
+    * load from an empty store
+    * verify the one seeded layout and its maps
+    """
+    settings = RootCatalogSettings()
+
+    settings.load(stored)  # type: ignore[arg-type]
+
+    assert settings.default_layouts == DEFAULT_ROOT_LAYOUTS == (RootLayout("Keep folder names", {"*": "*"}, {}),)
+
+
+def test_the_default_layouts_round_trip_and_a_shorter_list_leaves_nothing_behind(stored: FakeSettings) -> None:
+    """Names and maps are read back as saved, in order; saving fewer layouts later drops the extra ones (#578).
+
+    **Test steps:**
+
+    * save two layouts, one with fallbacks, and load them into a second object
+    * save one layout over them and load again
+    * verify both reads and that no stale entry is left in the store
+    """
+    layouts = (
+        RootLayout("By author", {"tutorial": "{authors}/{title}"}, {"authors": "Unknown"}),
+        RootLayout("Flat", {"*": "*"}, {}),
+    )
+    settings = RootCatalogSettings()
+    settings.default_layouts = layouts
+    settings.save(stored)  # type: ignore[arg-type]
+    reloaded = RootCatalogSettings()
+    reloaded.load(stored)  # type: ignore[arg-type]
+    assert reloaded.default_layouts == layouts
+
+    settings.default_layouts = layouts[1:]
+    settings.save(stored)  # type: ignore[arg-type]
+    again = RootCatalogSettings()
+    again.load(stored)  # type: ignore[arg-type]
+
+    assert again.default_layouts == layouts[1:]
+    stored.beginGroup(GROUP)
+    assert stored.value(f"{DEFAULT_LAYOUTS_KEY}/2/{LABEL_KEY}") is None
+    stored.endGroup()
+
+
+def test_an_empty_list_of_layouts_reads_back_as_the_seed(stored: FakeSettings) -> None:
+    """A root made from a folder always needs a layout, so a list saved empty reads back as the shipped one.
+
+    **Test steps:**
+
+    * save an empty list and load it into a second object
+    * verify the seed
+    """
+    settings = RootCatalogSettings()
+    settings.default_layouts = ()
+    settings.save(stored)  # type: ignore[arg-type]
+    reloaded = RootCatalogSettings()
+
+    reloaded.load(stored)  # type: ignore[arg-type]
+
+    assert reloaded.default_layouts == DEFAULT_ROOT_LAYOUTS
+
+
+@mark.parametrize("text", [param("not json", id="not-json"), param('{"*": 1}', id="not-strings")])
+def test_a_layout_map_that_cannot_be_read_is_dropped_and_logged(
+    stored: FakeSettings, caplog: LogCaptureFixture, text: str
+) -> None:
+    """A map edited by hand into something no root can hold is read as empty, and the log says so; the layout stays.
+
+    **Test steps:**
+
+    * save a layout, then overwrite its layouts with ``text``, and load
+    * verify the layout is kept with empty layouts and its fallbacks, and the warning
+    """
+    settings = RootCatalogSettings()
+    settings.default_layouts = (RootLayout("Kept", {"*": "*"}, {"title": "Untitled"}),)
+    settings.save(stored)  # type: ignore[arg-type]
+    stored.beginGroup(GROUP)
+    stored.setValue(f"{DEFAULT_LAYOUTS_KEY}/1/{LAYOUTS_KEY}", text)
+    stored.endGroup()
+    reloaded = RootCatalogSettings()
+
+    with caplog.at_level(logging.WARNING, logger=root_catalog_settings.__name__):
+        reloaded.load(stored)  # type: ignore[arg-type]
+
+    assert reloaded.default_layouts == (RootLayout("Kept", {}, {"title": "Untitled"}),)
+    assert "are not an object of strings" in caplog.text
