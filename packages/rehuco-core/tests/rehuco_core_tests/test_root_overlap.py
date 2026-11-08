@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from pytest import fixture, mark, param
 from pytest_mock import MockerFixture
-from rehuco_core import MappedRoot, RootOverlap, root_path_key
+from rehuco_core import MappedRoot, RootOverlap, path_key
 
 from rehuco_core_tests.mapped_roots import location_at
 from rehuco_core_tests.real_links import directory_link
@@ -65,6 +65,7 @@ def fixture_windows_paths(mocker: MockerFixture) -> Mock:
         "rehuco_core.root_overlap.os_path",
         SimpleNamespace(normcase=ntpath.normcase, normpath=ntpath.normpath, sep=ntpath.sep, realpath=realpath),
     )
+    mocker.patch("rehuco_core.path_keys.os_path", ntpath)
     return realpath
 
 
@@ -118,24 +119,26 @@ def test_a_sibling_or_the_same_folder_is_no_overlap(candidate: str) -> None:
     assert RootOverlap.find(candidate, [root("D:\\lib")]) is None
 
 
-def test_a_case_variant_is_another_folder_where_paths_do_not_fold_case(mocker: MockerFixture) -> None:
-    """On POSIX paths, ``/data/Tutorials/x`` is not inside ``/data/tutorials``.
+def test_a_case_variant_is_the_same_folder_on_posix_paths_too(mocker: MockerFixture) -> None:
+    """On POSIX paths as well, ``/data/Tutorials/x`` is inside ``/data/tutorials``: a root can sit on a share or an
+    APFS disk, which fold case whatever the platform (#629).
 
     **Test steps:**
 
     * compare paths the way ``posixpath`` does
-    * verify the case variant does not overlap, and the true child does
+    * verify both the case variant and the true child overlap
     """
     mocker.patch("rehuco_core.root_overlap.os_path", posixpath)
+    mocker.patch("rehuco_core.path_keys.os_path", posixpath)
     stored = MappedRoot(uuid4(), "tutorials", location_at(Path("/data/tutorials")), Path("/data/tutorials"))
     spelled = str(stored.path)  # built from the stored path, which a Windows host spells with backslashes
 
-    assert RootOverlap.find(spelled.replace("tutorials", "Tutorials") + "/x", [stored]) is None
+    assert RootOverlap.find(spelled.replace("tutorials", "Tutorials") + "/x", [stored]) is not None
     assert RootOverlap.find(spelled + "/x", [stored]) is not None
 
 
 @mark.usefixtures("windows_paths")
-def test_a_root_path_key_folds_what_the_platform_folds() -> None:
+def test_a_path_key_matches_two_spellings_of_one_folder() -> None:
     """Two spellings of one folder share a key; another folder does not.
 
     **Test steps:**
@@ -143,7 +146,7 @@ def test_a_root_path_key_folds_what_the_platform_folds() -> None:
     * key two spellings of one folder and a sibling, Windows-style
     * verify the first two match and the sibling differs
     """
-    assert root_path_key("D:/Lib/") == root_path_key("d:\\lib") != root_path_key("D:\\lib2")
+    assert path_key("D:/Lib/") == path_key("d:\\lib") != path_key("D:\\lib2")
 
 
 @mark.parametrize(

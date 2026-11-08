@@ -55,6 +55,7 @@ from borco_core import fold
 from .constants import REHUDB_SUFFIX
 from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, SchemaChain
 from .migrations.runner import chain_head
+from .path_keys import path_key
 from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
 from .root_mappings import MappedRoot
 
@@ -534,7 +535,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         :returns: the ids of the rows kept for ``held_files``.
         """
         wanted = {str(root.root_id) for root in roots}
-        held_keys = {os.path.normcase(str(path)) for path in held_files}
+        held_keys = {path_key(path) for path in held_files}
         with self.__transaction() as connection:
             for position, root in enumerate(roots):
                 connection.execute(
@@ -555,7 +556,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             for root_id, root_file in connection.execute("SELECT id, root_file FROM roots"):
                 if root_id in wanted:
                     continue
-                if root_file is not None and os.path.normcase(root_file) in held_keys:
+                if root_file is not None and path_key(root_file) in held_keys:
                     held.add(UUID(root_id))
                 else:
                     stale.append((root_id,))

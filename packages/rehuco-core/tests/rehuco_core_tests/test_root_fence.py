@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from pytest import LogCaptureFixture, mark, param
 from pytest_mock import MockerFixture
-from rehuco_core import CatalogRoot, root_path_key
+from rehuco_core import CatalogRoot, path_key
 from rehuco_core.root_fence import RootFence
 
 from rehuco_core_tests.real_links import directory_link
@@ -69,7 +69,7 @@ def test_reading_a_root_keeps_its_identity_spelling_and_name(tmp_path: Path) -> 
     fence = RootFence.read([root])
 
     assert fence.identities == {identity(tmp_path / "Lib"): root.root_id}
-    assert fence.spellings == {root_path_key(tmp_path / "Lib"): root.root_id}
+    assert fence.spellings == {path_key(tmp_path / "Lib"): root.root_id}
     assert fence.names == frozenset({"lib"})
     assert not fence.every_directory
 
@@ -105,7 +105,7 @@ def test_a_share_root_makes_every_directory_a_candidate_without_being_read(mocke
     fence = RootFence.read([share])
 
     assert fence.every_directory
-    assert (fence.spellings, fence.identities) == ({root_path_key(share.path): share.root_id}, {})
+    assert (fence.spellings, fence.identities) == ({path_key(share.path): share.root_id}, {})
     stat.assert_not_called()
 
 
@@ -122,7 +122,7 @@ def test_an_unreachable_root_is_spelled_only_and_never_stated(tmp_path: Path, mo
 
     fence = RootFence.read([root])
 
-    assert fence.spellings == {root_path_key(root.path): root.root_id}
+    assert fence.spellings == {path_key(root.path): root.root_id}
     assert (fence.identities, fence.names) == ({}, frozenset({"away"}))
     stat.assert_not_called()
 
@@ -141,7 +141,7 @@ def test_a_root_that_will_not_stat_is_spelled_only(tmp_path: Path, caplog: LogCa
     with caplog.at_level(logging.INFO, logger="rehuco_core.root_fence"):
         fence = RootFence.read([root])
 
-    assert fence.spellings == {root_path_key(root.path): root.root_id}
+    assert fence.spellings == {path_key(root.path): root.root_id}
     assert not fence.identities
     assert "by spelling only" in caplog.text
 
@@ -163,7 +163,7 @@ def test_a_root_reporting_no_inode_is_spelled_only(
     with caplog.at_level(logging.INFO, logger="rehuco_core.root_fence"):
         fence = RootFence.read([root])
 
-    assert fence.spellings == {root_path_key(root.path): root.root_id}
+    assert fence.spellings == {path_key(root.path): root.root_id}
     assert not fence.identities
     assert "no file identity" in caplog.text
 
@@ -187,14 +187,13 @@ def test_a_directory_is_matched_by_identity_whatever_its_path(tmp_path: Path) ->
     root = other_root(directory_link(tmp_path / "m", tmp_path / "a") / "lib")
     fence = RootFence.read([root])
 
-    assert root_path_key(tmp_path / "a" / "lib") not in fence.spellings
+    assert path_key(tmp_path / "a" / "lib") not in fence.spellings
     assert fence.match(tmp_path / "a" / "lib") == root.root_id
     assert fence.match(tmp_path / "b" / "lib") is None
 
 
-@mark.windows
 def test_a_case_variant_of_a_root_is_that_root(tmp_path: Path) -> None:
-    """Spelled in another case, a root folder is the same folder.
+    """Spelled in another case, a root folder is the same folder, on every platform (#629).
 
     **Test steps:**
 
@@ -255,7 +254,7 @@ def test_a_root_known_by_spelling_alone_needs_no_stat(mocker: MockerFixture) -> 
     stat = counted_stat(mocker)
     root_id = uuid4()
     spelled = Path(Path.cwd().anchor) / "away" / "lib"
-    fence = RootFence({}, {root_path_key(spelled): root_id}, frozenset({"lib"}), False)
+    fence = RootFence({}, {path_key(spelled): root_id}, frozenset({"lib"}), False)
 
     assert fence.match(spelled) == root_id
     assert fence.match(spelled.parent / "x" / "lib") is None

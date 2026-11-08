@@ -1077,6 +1077,8 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   whole set into `foo`'s rename.
   A resource whose `.rehu` is **not on disk** is refused outright: a missing record's remedy is a re-read
   ([[data-model#write-integrity]]), and with the record gone there is nothing left to establish what its set was.
+  Names compare case-folded on every platform (#629), so `FOO.zip` beside `foo.rehu` is one set, and a
+  destination differing only in case is the resource itself unless the disk shows a second file there.
   The set is collision-checked whole before the first rename runs and rolled back if one
   of them fails, so a resource is never left split between two names ([[data-model#write-integrity]]) — and the one
   case a rollback cannot fix says so by name. Both scopes rename within a single directory and so are same-filesystem

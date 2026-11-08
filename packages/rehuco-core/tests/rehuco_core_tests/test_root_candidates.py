@@ -16,8 +16,9 @@ from rehuco_core import (
     RootPick,
     RootPlanner,
     location_of,
+    path_key,
 )
-from rehuco_core.root_candidates import ALREADY_A_ROOT, SAME_LOCATION_ABOVE, SAME_ROOT_ABOVE, path_key
+from rehuco_core.root_candidates import ALREADY_A_ROOT, SAME_LOCATION_ABOVE, SAME_ROOT_ABOVE
 
 UNREACHABLE: str = "//nohost-578/share/far"
 """A location no machine here resolves."""
@@ -78,7 +79,7 @@ def test_folders_become_new_roots_named_after_them_with_root_files_beside_the_ca
     tmp_path: Path, home: RehucoFile
 ) -> None:
     """Sibling folders each become a root, labelled by its folder, its root file beside the ``.rehuco`` -- one taken
-    name suffixed, a label typed followed.
+    name suffixed in its own spelling, a label typed followed.
 
     **Test steps:**
 
@@ -98,11 +99,8 @@ def test_folders_become_new_roots_named_after_them_with_root_files_beside_the_ca
     assert [line.label for line in lines] == ["Blender", "blender", "Painting"]
     assert [line.location for line in lines] == [location_of(pick.path) for pick in picks]
     assert [line.folder for line in lines] == [pick.path for pick in picks]
-    assert [path_key(line.root_file) for line in lines] == [
-        path_key(catalog / "Blender.rehuroot"),
-        path_key(catalog / "blender (2).rehuroot"),
-        path_key(catalog / "Painting.rehuroot"),
-    ]
+    assert {path_key(line.root_file.parent) for line in lines} == {path_key(catalog)}
+    assert [line.root_file.name for line in lines] == ["Blender.rehuroot", "blender (2).rehuroot", "Painting.rehuroot"]
     assert all(line.addable for line in lines)
 
 

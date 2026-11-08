@@ -17,7 +17,7 @@ from typing import Any, Final
 from uuid import uuid4
 
 from borco_core import fold
-from pytest import LogCaptureFixture, fixture, mark, raises
+from pytest import LogCaptureFixture, fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     BUILTIN_PLUGINS,
@@ -366,13 +366,17 @@ def test_a_root_the_rehuco_no_longer_has_cascades_away(database: MemoryDatabase,
     assert database.scalar("SELECT count(*) FROM authors") == 0
 
 
-def test_a_root_whose_file_cannot_be_read_is_held_with_its_rows(cache: CatalogCache) -> None:
-    """A root the ``.rehuco`` still lists but whose ``.rehuroot`` cannot be read is matched to its row by that file, and
-    kept with its rows, as an offline root is (#577).
+@mark.parametrize("spelled", [param(str, id="as-spelled"), param(str.upper, id="another-case")])
+def test_a_root_whose_file_cannot_be_read_is_held_with_its_rows(
+    cache: CatalogCache, spelled: Callable[[str], str]
+) -> None:
+    """A root the ``.rehuco`` still lists but whose ``.rehuroot`` cannot be read is matched to its row by that file, in
+    any case on every platform (#629), and kept with its rows, as an offline root is (#577).
 
     **Test steps:**
 
     * reconcile two roots, scan a record into the first, then reconcile the second alone, holding the first's file
+      as spelled or in upper case
     * verify the first's id is returned as held, its row and its record are kept, and the row names its file
     """
     rehuco, first, second = two_roots()
@@ -380,7 +384,7 @@ def test_a_root_whose_file_cannot_be_read_is_held_with_its_rows(cache: CatalogCa
     cache.apply_root_scan(first.root_id, [record("a/info.rehu")])
     assert first.file is not None
 
-    held = cache.reconcile_roots([second], [first.file])
+    held = cache.reconcile_roots([second], [Path(spelled(str(first.file)))])
 
     assert held == {first.root_id}
     assert [row.record.path for row in cache.rows()] == ["a/info.rehu"]
