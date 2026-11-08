@@ -141,6 +141,93 @@ def test_setting_the_same_label_changes_nothing(tutorials: RehurootFile) -> None
     assert not tutorials.dirty
 
 
+def test_new_layouts_and_fallbacks_are_saved_and_copied(tmp_path: Path, tutorials: RehurootFile) -> None:
+    """Layouts and fallbacks set are the file's own copies, written by the next save, the unknown key carried (#578).
+
+    **Test steps:**
+
+    * set new layouts and fallbacks from dicts, then change those dicts
+    * verify the file holds what was set and is dirty
+    * save and verify the file's content
+    """
+    layouts = {"*": "*", "tutorial": "{title}"}
+    fallbacks = {"title": "Untitled"}
+    tutorials.layouts = layouts
+    tutorials.fallbacks = fallbacks
+    layouts["*"] = "changed"
+    fallbacks.clear()
+
+    assert dict(tutorials.layouts) == {"*": "*", "tutorial": "{title}"}
+    assert dict(tutorials.fallbacks) == {"title": "Untitled"}
+    assert tutorials.dirty
+    tutorials.save()
+    assert read_json(tmp_path / "tutorials.rehuroot") == {
+        **TUTORIALS,
+        "layouts": {"*": "*", "tutorial": "{title}"},
+        "fallbacks": {"title": "Untitled"},
+    }
+
+
+def test_setting_the_same_layouts_and_fallbacks_changes_nothing(tutorials: RehurootFile) -> None:
+    """Maps equal to what the file holds leave nothing to save.
+
+    **Test steps:**
+
+    * set the layouts and fallbacks to copies of their own values and verify the file is not dirty
+    """
+    tutorials.layouts = dict(TUTORIALS["layouts"])
+    tutorials.fallbacks = dict(TUTORIALS["fallbacks"])
+
+    assert not tutorials.dirty
+
+
+def test_a_read_only_file_refuses_new_layouts_and_fallbacks(tmp_path: Path) -> None:
+    """A file stamped newer than this build is not edited.
+
+    **Test steps:**
+
+    * load a file stamped newer
+    * verify setting its layouts and its fallbacks each raises ``ValueError`` and leaves them as they were
+    """
+    root = RehurootFile.load(write_json(tmp_path / "newer.rehuroot", {**TUTORIALS, "format_version": 2}))
+
+    with pytest.raises(ValueError, match="read-only"):
+        root.layouts = {"*": "*"}
+    with pytest.raises(ValueError, match="read-only"):
+        root.fallbacks = {}
+    assert dict(root.layouts) == TUTORIALS["layouts"]
+    assert dict(root.fallbacks) == TUTORIALS["fallbacks"]
+
+
+def test_a_new_file_takes_the_layouts_and_fallbacks_given(tmp_path: Path) -> None:
+    """``RehurootFile.new`` starts with the maps it is given, copied (#578).
+
+    **Test steps:**
+
+    * create a new file with layouts and fallbacks, then change the dict given
+    * save and verify the file holds what was given
+    """
+    layouts = {"tutorial": "{authors}/{title}"}
+    root = RehurootFile.new(tmp_path / "a.rehuroot", "//nas/data/a", "a", layouts=layouts, fallbacks={"authors": "?"})
+    layouts.clear()
+
+    root.save()
+
+    saved = read_json(tmp_path / "a.rehuroot")
+    assert (saved["layouts"], saved["fallbacks"]) == ({"tutorial": "{authors}/{title}"}, {"authors": "?"})
+
+
+def test_a_new_file_refuses_layouts_that_are_not_strings(tmp_path: Path) -> None:
+    """Maps a ``.rehuroot`` could not hold are refused when the file is made.
+
+    **Test steps:**
+
+    * create a new file whose layouts hold a number and verify ``RehurootFileError``
+    """
+    with pytest.raises(RehurootFileError, match="'layouts' is not an object of strings"):
+        RehurootFile.new(tmp_path / "a.rehuroot", "//nas/data/a", "a", layouts={"*": 1})  # type: ignore[dict-item]
+
+
 def test_a_new_file_has_a_fresh_id_and_the_default_layouts(tmp_path: Path) -> None:
     """``RehurootFile.new`` mints a uuid4 id, takes the default layouts and no fallbacks, and is dirty until saved.
 

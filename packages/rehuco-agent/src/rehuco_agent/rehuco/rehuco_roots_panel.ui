@@ -50,12 +50,12 @@
     <string>Scan every root into the cache, on the task queue.</string>
    </property>
   </action>
-  <action name="add_root_action">
+  <action name="add_roots_action">
    <property name="text">
-    <string>Add Root...</string>
+    <string>Add Roots...</string>
    </property>
    <property name="toolTip">
-    <string>Add a folder as a root of this .rehuco.</string>
+    <string>Add folders, or existing .rehuroot files, as roots of this .rehuco.</string>
    </property>
   </action>
   <action name="remove_root_action">
@@ -83,6 +83,23 @@
    </property>
    <property name="shortcut">
     <string>F5</string>
+   </property>
+   <property name="shortcutContext">
+    <enum>Qt::ShortcutContext::WidgetWithChildrenShortcut</enum>
+   </property>
+  </action>
+  <action name="edit_root_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Edit</string>
+   </property>
+   <property name="toolTip">
+    <string>Edit the root's name, layouts and fallbacks in the details pane, or stop. Stays on while another root is selected.</string>
+   </property>
+   <property name="shortcut">
+    <string>F2</string>
    </property>
    <property name="shortcutContext">
     <enum>Qt::ShortcutContext::WidgetWithChildrenShortcut</enum>

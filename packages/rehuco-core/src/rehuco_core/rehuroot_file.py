@@ -82,8 +82,8 @@ class RehurootChangedError(RuntimeError):
 class RehurootFile:
     """A ``.rehuroot`` in memory.
 
-    The parsed JSON object is the source of truth; :attr:`label` edits it in place and marks the file :attr:`dirty`
-    until :meth:`save` writes it back.
+    The parsed JSON object is the source of truth; :attr:`label`, :attr:`layouts` and :attr:`fallbacks` edit it in
+    place and mark the file :attr:`dirty` until :meth:`save` writes it back.
 
     :param data: the parsed JSON object.
     :param path: the file it was read from, or is to be saved to.
@@ -110,21 +110,32 @@ class RehurootFile:
         self.__read_strings(data.setdefault(FALLBACKS_KEY, {}), FALLBACKS_KEY)
 
     @classmethod
-    def new(cls, path: Path, location: str, label: str) -> RehurootFile:
-        """A root file never saved: a fresh id, the default layouts and no fallbacks.
+    def new(
+        cls,
+        path: Path,
+        location: str,
+        label: str,
+        *,
+        layouts: Mapping[str, str] = DEFAULT_LAYOUTS,
+        fallbacks: Mapping[str, str] | None = None,
+    ) -> RehurootFile:
+        """A root file never saved, under a fresh id.
 
         :param path: where it is to be saved.
         :param location: where the root is, as :func:`rehuco_core.root_location.location_of` spells it.
         :param label: the name to show.
+        :param layouts: where a record of each type lives under the root; the default keeps any record's name.
+        :param fallbacks: what a placeholder renders as when a record leaves it empty; none when ``None``.
         :returns: the file, :attr:`dirty` until its first :meth:`save`.
+        :raises RehurootFileError: the layouts or fallbacks are not strings.
         """
         data: dict[str, Any] = {
             FORMAT_VERSION_KEY: REHUROOT_FORMAT_VERSION,
             ROOT_ID_KEY: str(uuid4()),
             ROOT_LABEL_KEY: label,
             ROOT_LOCATION_KEY: location,
-            LAYOUTS_KEY: dict(DEFAULT_LAYOUTS),
-            FALLBACKS_KEY: {},
+            LAYOUTS_KEY: dict(layouts),
+            FALLBACKS_KEY: dict(fallbacks or {}),
         }
         return cls(data, path)
 
@@ -184,10 +195,33 @@ class RehurootFile:
         """The path template of each type's main key, ``*`` for any type not named."""
         return MappingProxyType(self.__data[LAYOUTS_KEY])
 
+    @layouts.setter
+    def layouts(self, value: Mapping[str, str]) -> None:
+        self.__replace(LAYOUTS_KEY, value)
+
     @property
     def fallbacks(self) -> Mapping[str, str]:
         """What each placeholder renders as when a record leaves it empty."""
         return MappingProxyType(self.__data[FALLBACKS_KEY])
+
+    @fallbacks.setter
+    def fallbacks(self, value: Mapping[str, str]) -> None:
+        self.__replace(FALLBACKS_KEY, value)
+
+    def __replace(self, key: str, value: Mapping[str, str]) -> None:
+        """Replace one of the maps, marking the file dirty only when it changes.
+
+        :param key: :data:`LAYOUTS_KEY` or :data:`FALLBACKS_KEY`.
+        :param value: the new map, copied.
+        :raises ValueError: the file is read-only (:attr:`lock_reason`).
+        """
+        reason = self.lock_reason
+        if reason is not None:
+            raise ValueError(f"Refusing to edit a read-only .rehuroot: {reason.message}")
+        copied = dict(value)
+        if copied != self.__data[key]:
+            self.__data[key] = copied
+            self.__dirty = True
 
     @property
     def dirty(self) -> bool:

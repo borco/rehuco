@@ -3,7 +3,7 @@ button for everything its context menu offers (#378), what a record says about i
 made of (#456)."""
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,6 +47,8 @@ from ..settings.markdown_rendering_settings import shared_markdown_rendering_set
 from ..settings.reference_images_settings import shared_reference_images_settings
 from ..svg_icon_cache import SvgIconCache
 from .record_images import RecordImages
+from .root_edit_pane import RootEditPane
+from .root_layouts_editor import RootLayoutsEditor
 from .root_storage import NOT_MAPPED_ROW, ROOT_STORAGE_LABELS, UNREADABLE_ROW
 from .roots_checksum import BAD_INK, OLD_BAD_INK, RowChecksum, checksum_lines, warning_ink
 from .roots_folder_model import RootsFolderModel
@@ -120,6 +122,9 @@ DEFAULT_NAME_ICON: Final = ":/icons/settings_reset_to_defaults.svg"
 TITLE_ICON_SIZE: Final = 16
 """The state icon beside the title is as big as the one in the column."""
 
+NO_FALLBACKS: Final = "None"
+"""What the *Fallbacks* row says for a root that has none."""
+
 SMALL_FONT_SCALE: Final = 0.85
 """How much smaller than the pane's font the *Checked on* row is drawn, dimmed."""
 
@@ -137,8 +142,8 @@ def format_size(size: int) -> str:
 
 
 # the pane is one surface: what a row is, a root's two editors and the row's buttons all turn on the same row, and
-# splitting them would only pass that row around
-# pylint: disable-next=too-many-instance-attributes
+# splitting them would only pass that row around; the root's rows and edit mode are part of that one surface
+# pylint: disable-next=too-many-instance-attributes,too-many-public-methods
 class RootsPreview(QWidget):
     """The pane beside the Roots view's columns, showing the current row whatever it is: name, type, size, when it was
     changed, how much a folder holds, where it is, and the picture itself for an image.
@@ -227,6 +232,10 @@ class RootsPreview(QWidget):
         """Whether a root's name may be changed at all, as :meth:`set_editable` last said."""
         self.__renamable = True
         """Whether the root shown has a file its name can be written to (#577)."""
+        self.__editing = False
+        """Whether the edit mode is on, as :meth:`set_editing` last said (#578)."""
+        self.__root_file = ""
+        """The full path the *Root file* row shows, which the label itself may have elided."""
         self.__default_name = ""
         self.__images: Final = RecordImages()
         self.__default_name_action: Final = QAction("Use Default Name", self)
@@ -242,8 +251,45 @@ class RootsPreview(QWidget):
 
     @property
     def root_name_edit(self) -> QLineEdit:
-        """The name field of a root row."""
-        return self.__ui.root_name_edit
+        """The name field of a root row, in the edit pane."""
+        return self.__ui.root_edit_pane.name_edit
+
+    @property
+    def root_layouts_editor(self) -> RootLayoutsEditor:
+        """The layouts and fallbacks of a root row, in the edit pane."""
+        return self.__ui.root_edit_pane.layouts_editor
+
+    @property
+    def root_edit_pane(self) -> RootEditPane:
+        """The editors of a root row, shown while :meth:`set_editing` says so."""
+        return self.__ui.root_edit_pane
+
+    @property
+    def root_texts(self) -> dict[str, str]:
+        """What the read-only root rows say, by row: ``name``, ``file``, ``layouts`` and ``fallbacks``, for tests."""
+        ui = self.__ui
+        return {
+            "name": ui.root_name_value.text(),
+            "file": self.__root_file,
+            "layouts": ui.root_layouts_value.text(),
+            "fallbacks": ui.root_fallbacks_value.text(),
+        }
+
+    def set_edit_action(self, action: QAction) -> None:
+        """Put the owner's *Edit* toggle on the button the root rows show.
+
+        :param action: the checkable action that turns the edit mode on and off.
+        """
+        self.__ui.edit_root_button.setDefaultAction(action)
+
+    def set_editing(self, editing: bool) -> None:
+        """Show a root's editors in place of its read-only name, layouts and fallbacks, or the other way back. The
+        mode outlives the row: another root shown while it is on is shown in its editors.
+
+        :param editing: whether the edit mode is on.
+        """
+        self.__editing = editing
+        self.refresh()
 
     @property
     def default_root_name_action(self) -> QAction:
@@ -261,13 +307,13 @@ class RootsPreview(QWidget):
         action = self.__default_name_action
         action.setToolTip("Use the default name: the one the root was added with")
         ActionIconThemeHandler(action, DEFAULT_NAME_ICON)
-        self.__ui.default_root_name_button.setDefaultAction(action)
-        self.__ui.root_name_edit.textChanged.connect(self.__update_default_name)
+        self.__ui.root_edit_pane.default_name_button.setDefaultAction(action)
+        self.root_name_edit.textChanged.connect(self.__update_default_name)
         self.__update_default_name()
 
     def __update_default_name(self) -> None:
         """Enable the button while the name field is usable and not the default name."""
-        edit = self.__ui.root_name_edit
+        edit = self.root_name_edit
         self.__default_name_action.setEnabled(edit.isEnabled() and edit.text().strip() != self.__default_name)
 
     @property
@@ -326,18 +372,24 @@ class RootsPreview(QWidget):
     @property
     def buttons(self) -> tuple[QToolButton, ...]:
         """The row's buttons, in the order of its context menu."""
-        beside_name = self.__ui.default_root_name_button
-        return tuple(
-            button for button in self.findChildren(QToolButton) if not button.isHidden() and button is not beside_name
-        )
+        layout = self.__ui.buttons_layout
+        items = (layout.itemAt(at) for at in range(layout.count()))
+        widgets = (None if item is None else item.widget() for item in items)
+        return tuple(widget for widget in widgets if isinstance(widget, QToolButton) and not widget.isHidden())
 
     def set_editable(self, editable: bool) -> None:
-        """Say whether a root's name may be changed -- it may not while the file is read-only or none is open.
+        """Say whether a root may be edited -- it may not while the file is read-only or none is open.
 
         :param editable: whether it may.
         """
         self.__editable = editable
-        self.__ui.root_name_edit.setEnabled(editable and self.__renamable)
+        self.__enable_root_editors()
+
+    def __enable_root_editors(self) -> None:
+        """Let the editors be used only while the file may be edited and the root shown has a file to write to."""
+        usable = self.__editable and self.__renamable
+        self.root_name_edit.setEnabled(usable)
+        self.root_layouts_editor.setEnabled(usable)
         self.__update_default_name()
 
     def __image_token(self, point: QPoint) -> object | None:
@@ -520,41 +572,66 @@ class RootsPreview(QWidget):
         return root_where(root) if isinstance(root, RehucoRoot) else ""
 
     def __show_root_editors(self, root: ShownRoot | None) -> None:
-        """Show a root's name and storage, or hide them for any other row.
+        """Show a root's rows -- its name, layouts and fallbacks read-only, or in their editors while the edit mode is
+        on, and its storage and root file either way -- or hide them for any other row.
 
-        A name being typed is left alone while the same root is still shown, so a listing that lands meanwhile does not
-        eat it. Filling the editor never tells anyone.
+        What is being edited is left alone while the same root is still shown, so a listing or a save that lands
+        meanwhile does not eat it. Filling the editors never tells anyone.
 
         :param root: the root of a root row, or ``None`` for any other.
         """
         ui = self.__ui
-        for widget in (
-            ui.root_name_label,
-            ui.root_name_edit,
-            ui.default_root_name_button,
-            ui.root_storage_label,
-            ui.root_storage_value,
-        ):
-            widget.setVisible(root is not None)
+        self.__renamable = root is not None and (isinstance(root, MappedRoot) or root.readable)
+        editing = root is not None and self.__editing and self.__renamable
+        shown = {
+            ui.root_storage_label: root is not None,
+            ui.root_storage_value: root is not None,
+            ui.root_file_label: root is not None and root.file is not None,
+            ui.root_file_value: root is not None and root.file is not None,
+            ui.edit_root_button: self.__renamable,
+            ui.root_edit_pane: editing,
+            ui.root_name_label: root is not None and not editing,
+            ui.root_name_value: root is not None and not editing,
+            ui.root_layouts_label: self.__renamable and not editing,
+            ui.root_layouts_value: self.__renamable and not editing,
+            ui.root_fallbacks_label: self.__renamable and not editing,
+            ui.root_fallbacks_value: self.__renamable and not editing,
+        }
+        for widget, visible in shown.items():
+            widget.setVisible(visible)
         if root is None:
             self.__shown_root = None
             return
+        layouts, fallbacks = root.layouts, root.fallbacks
+        ui.root_name_value.setText(root.label or root_where(root))
+        ui.root_layouts_value.setText(RootsPreview.__map_lines(layouts))
+        ui.root_fallbacks_value.setText(RootsPreview.__map_lines(fallbacks) or NO_FALLBACKS)
+        self.__root_file = "" if root.file is None else str(root.file)
+        ui.root_file_value.set_text(self.__root_file)
         self.__default_name = RehucoFile.default_label(root.location)
-        ui.root_name_edit.setPlaceholderText(self.__default_name)
-        retyping = self.__shown_root == root.root_id and ui.root_name_edit.hasFocus()
+        self.root_name_edit.setPlaceholderText(self.__default_name)
+        retyping = self.__shown_root == root.root_id and ui.root_edit_pane.editing_here()
         self.__shown_root = root.root_id
         if not retyping:
-            blocked = ui.root_name_edit.blockSignals(True)
-            ui.root_name_edit.setText(root.label)
-            ui.root_name_edit.blockSignals(blocked)
-        self.__update_default_name()
-        self.__renamable = isinstance(root, MappedRoot) or root.readable
-        ui.root_name_edit.setEnabled(self.__editable and self.__renamable)
-        self.__update_default_name()
+            edit = self.root_name_edit
+            blocked = edit.blockSignals(True)
+            edit.setText(root.label)
+            edit.blockSignals(blocked)
+            self.root_layouts_editor.set_values(layouts, fallbacks)
+        self.__enable_root_editors()
         if isinstance(root, MappedRoot):
             ui.root_storage_value.setText(ROOT_STORAGE_LABELS[root.storage])
         else:
             ui.root_storage_value.setText(NOT_MAPPED_ROW if root.readable else UNREADABLE_ROW)
+
+    @staticmethod
+    def __map_lines(mapping: Mapping[str, str]) -> str:
+        """A map as the read-only rows show it, one ``key → value`` line per entry.
+
+        :param mapping: the layouts or the fallbacks.
+        :returns: the lines; empty for an empty map.
+        """
+        return "\n".join(f"{key} \N{RIGHTWARDS ARROW} {value}" for key, value in mapping.items())
 
     def __rebuild_buttons(self, index: QModelIndex) -> None:
         """Make one button for each action the row's context menu holds.

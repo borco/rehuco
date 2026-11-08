@@ -1,4 +1,5 @@
-"""Root Catalog settings page: how the Roots view drives the Documents preview (#457)."""
+"""Root Catalog settings page: how the Roots view drives the Documents preview (#457), and the layouts a new root can
+start with (#578)."""
 
 from typing import Final
 
@@ -6,53 +7,58 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget
 
 from ..persistent_settings import persistent_settings
-from ..root_catalog_settings import DEFAULT_AUTO_PREVIEW, shared_root_catalog_settings
+from ..root_catalog_settings import DEFAULT_AUTO_PREVIEW, DEFAULT_ROOT_LAYOUTS, shared_root_catalog_settings
 from .root_catalog_page_ui import Ui_RootCatalogPage
 
 
 class RootCatalogPage(QWidget):
-    """Configure whether the Roots view previews the record of the row it stands on.
+    """Configure whether the Roots view previews the record of the row it stands on, and the default root layouts.
 
-    One checkbox, staged in the widget until :meth:`save_changes` writes it, like every settings page here. **The
-    choice also lives in the Root Catalog menu**, which applies it as it is clicked -- so the saved value can change
-    behind the page's back. The page says so (:attr:`saved_changed`) and the dialog rebases it: a page with no edit
-    shows the new saved value and stays clean; a page with an edit keeps it, and it stops being one if it now equals
-    the saved value.
+    Both are staged in the widgets until :meth:`save_changes` writes them, like every settings page here. **Both can
+    also be saved behind the page's back**: the preview choice by the Root Catalog menu, which applies it as it is
+    clicked, and the layouts by the Add Roots dialog's *New layout…*. The page says so (:attr:`saved_changed`) and the
+    dialog rebases it: a page with no edit shows the new saved values and stays clean; a page with an edit keeps it,
+    and it stops being one if it now equals the saved values.
 
     :param parent: optional Qt parent.
     """
 
     saved_changed = Signal()
-    """Emitted whenever the saved value changes -- by this page's Apply or by the menu's toggle."""
+    """Emitted whenever a saved value changes -- by this page's Apply, the menu's toggle or *New layout…*."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__ui: Final = Ui_RootCatalogPage()
         self.__ui.setupUi(self)
         self.drop_changes()
-        shared_root_catalog_settings().auto_preview_changed.connect(lambda _value: self.saved_changed.emit())
+        settings = shared_root_catalog_settings()
+        settings.auto_preview_changed.connect(lambda _value: self.saved_changed.emit())
+        settings.default_layouts_changed.connect(lambda _value: self.saved_changed.emit())
 
     def is_dirty(self) -> bool:
-        """Whether the staged checkbox differs from what is saved."""
-        return self.__ui.auto_preview_check_box.isChecked() != shared_root_catalog_settings().auto_preview
+        """Whether the staged choices differ from what is saved."""
+        settings = shared_root_catalog_settings()
+        return (
+            self.__ui.auto_preview_check_box.isChecked() != settings.auto_preview
+            or self.__ui.default_layouts_editor.layouts != settings.default_layouts
+        )
 
     def save_changes(self) -> None:
-        """Apply the staged choice, to every place that shows it, and persist it."""
+        """Apply the staged choices, to every place that shows them, and persist them."""
         settings = shared_root_catalog_settings()
         settings.auto_preview = self.__ui.auto_preview_check_box.isChecked()
+        settings.default_layouts = self.__ui.default_layouts_editor.layouts or DEFAULT_ROOT_LAYOUTS
         settings.save(persistent_settings())
+        # a list applied empty is the seed again: show what was saved, so the page is clean
+        self.drop_changes()
 
     def drop_changes(self) -> None:
-        """Discard the staged edit, re-seeding the checkbox from the shared setting."""
-        self.__stage(shared_root_catalog_settings().auto_preview)
+        """Discard the staged edits, re-seeding the widgets from the shared settings."""
+        settings = shared_root_catalog_settings()
+        self.__ui.auto_preview_check_box.setChecked(settings.auto_preview)
+        self.__ui.default_layouts_editor.layouts = settings.default_layouts
 
     def seed_defaults(self) -> None:
-        """Stage the factory value (#342)."""
-        self.__stage(DEFAULT_AUTO_PREVIEW)
-
-    def __stage(self, checked: bool) -> None:
-        """Show ``checked`` in the checkbox.
-
-        :param checked: whether the box is ticked.
-        """
-        self.__ui.auto_preview_check_box.setChecked(checked)
+        """Stage the factory values (#342)."""
+        self.__ui.auto_preview_check_box.setChecked(DEFAULT_AUTO_PREVIEW)
+        self.__ui.default_layouts_editor.layouts = DEFAULT_ROOT_LAYOUTS

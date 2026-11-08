@@ -7858,7 +7858,7 @@ def test_root_catalog_holds_the_catalog_files_then_the_docks_own_actions(qtbot: 
     assert actions[3].isSeparator()
     assert actions[4:8] == [
         roots.scan_action,
-        roots.add_root_action,
+        roots.add_roots_action,
         roots.remove_root_action,
         roots.map_root_action,
     ]
@@ -7882,13 +7882,13 @@ def test_root_catalog_entries_follow_the_dock_and_scan_wakes_once_a_catalog_is_o
     qtbot.addWidget(window)
     roots = roots_panel(window)
     assert not any(
-        action.isEnabled() for action in (roots.scan_action, roots.add_root_action, roots.remove_root_action)
+        action.isEnabled() for action in (roots.scan_action, roots.add_roots_action, roots.remove_root_action)
     )
 
     open_catalog_stand_in(window)
 
     assert roots.scan_action.isEnabled()
-    assert roots.add_root_action.isEnabled()
+    assert roots.add_roots_action.isEnabled()
     assert not roots.remove_root_action.isEnabled()
 
 
@@ -8010,7 +8010,7 @@ def test_neither_catalog_dock_has_a_toolbar_and_each_title_bar_carries_its_own_a
     assert not browsers.findChildren(QToolBar)
     assert rehuco_dock_widget(window).titleBarActions() == [roots.refresh_roots_action]
     assert browsers_dock_widget(window).titleBarActions() == [browsers.new_browser_action]
-    assert {roots.scan_action, roots.add_root_action, roots.remove_root_action} <= set(ui.rehuco_menu.actions())
+    assert {roots.scan_action, roots.add_roots_action, roots.remove_root_action} <= set(ui.rehuco_menu.actions())
     assert {browsers.new_browser_action, browsers.rename_browser_action} <= set(ui.browsers_menu.actions())
     assert ui.rehuco_action in ui.view_menu.actions()
 

@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>RootLayoutsEditor</class>
+ <widget class="QWidget" name="RootLayoutsEditor">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>320</width>
+    <height>240</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="layouts_label">
+     <property name="text">
+      <string>Layouts:</string>
+     </property>
+     <property name="buddy">
+      <cstring>layouts_editor</cstring>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="StringMapEditor" name="layouts_editor">
+     <property name="toolTip">
+      <string>Where a record of each type lives under the root: a path template, with / between levels, or * to keep the record's current name at the root's top. The type * stands for every type not named. A type with no row, and no * row, cannot be moved here.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="fallbacks_label">
+     <property name="text">
+      <string>Fallbacks:</string>
+     </property>
+     <property name="buddy">
+      <cstring>fallbacks_editor</cstring>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="StringMapEditor" name="fallbacks_editor">
+     <property name="toolTip">
+      <string>What a placeholder of a layout becomes when a record leaves it empty, outside an optional group. With no fallback, an empty placeholder keeps the record from this root.</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>StringMapEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.rehuco.string_map_editor</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

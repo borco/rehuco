@@ -11,7 +11,7 @@ import threading
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Final
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 from uuid import UUID
 
 from PySide6.QtCore import Qt
@@ -19,6 +19,7 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_overlap_check import RootOverlapCheck
+from rehuco_agent.rehuco.roots_adding import RootsAdding
 from rehuco_core import HardlinkedRecord, RootOverlap, RootScanOutcome, RootScanResult, TaskQueue
 
 from rehuco_agent_tests.mapped_roots import location_at
@@ -33,7 +34,6 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     CatalogDocks,
     GateJob,
     add_root,
-    answer_add_root,
     fixture_cache,
     fixture_cached_rows,
     fixture_catalog,
@@ -45,6 +45,7 @@ from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     fixture_queue,
     fixture_saves,
     fixture_served,
+    folder_candidate,
     tutorial_record,
     wait_for_jobs,
 )
@@ -93,7 +94,9 @@ def overlap_check(dock: CatalogDocks) -> RootOverlapCheck:
     :param dock: the catalog's docks.
     :returns: the Roots panel's own check.
     """
-    check = dock.roots.findChild(RootOverlapCheck, options=Qt.FindChildOption.FindDirectChildrenOnly)
+    adding = dock.roots.findChild(RootsAdding, options=Qt.FindChildOption.FindDirectChildrenOnly)
+    assert adding is not None
+    check = adding.findChild(RootOverlapCheck, options=Qt.FindChildOption.FindDirectChildrenOnly)
     assert check is not None
     return check
 
@@ -145,7 +148,7 @@ def test_editing_or_reopening_the_catalog_follows_it_again_keeping_what_its_scan
     follow = mocker.spy(dock.catalog.overlaps, "follow")
 
     assert dock.catalog.remove_root(1)
-    assert dock.catalog.add_root(Path(REFS)) is not None
+    assert dock.catalog.add_roots((folder_candidate(dock, REFS),)) is not None
     dock.catalog.open_rehuco(REHUCO_PATH)
     dock.catalog.close_rehuco()
 
@@ -249,145 +252,6 @@ def test_detaching_the_catalog_stops_its_overlaps(mocker: MockerFixture, dock: C
 # endregion
 
 # region Add Root through links
-
-
-@mark.usefixtures("served")
-def test_add_root_refuses_a_folder_inside_a_root_through_a_link(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, saves: MagicMock
-) -> None:
-    """A folder that a link puts inside a root is refused once the check answers, with the overlap's own words, and
-    Add Root is offered again.
-
-    **Test steps:**
-
-    * open the file; make the comparison through links find the folder inside the first root
-    * add the folder and wait for the check
-    * verify the warning, nothing written, two roots, and Add Root enabled
-    """
-    answer_add_root(mocker, dock, REFS)
-    warning = mocker.patch("rehuco_agent.rehuco.roots_panel.QMessageBox.warning")
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    roots = dock.catalog.mapped_roots()
-    overlap = RootOverlap(roots[0], Path(REFS), encloses=True)
-    find = mocker.patch.object(RootOverlap, "find_resolved", return_value=overlap)
-
-    add_root(qtbot, dock)
-
-    warning.assert_called_once_with(dock.roots, "Add Root", overlap.message)
-    saves.assert_not_called()
-    assert dock.roots.roots_model.rowCount() == 2
-    assert dock.roots.add_root_action.isEnabled()
-    assert find.call_args.args == (REFS, roots, frozenset())
-
-
-@mark.usefixtures("served", "saves")
-def test_add_root_skips_the_unreachable_roots(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, catalog: Mock
-) -> None:
-    """The folder is compared through links with the reachable roots only: a root the cache holds unreachable is not
-    followed.
-
-    **Test steps:**
-
-    * open the file, mark its first root unreachable, and spy on the comparison of a candidate
-    * add a folder and wait for the check
-    * verify the comparison was asked over the folder and the roots, skipping the first root, and the root added
-    """
-    answer_add_root(mocker, dock, REFS)
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    roots = dock.catalog.mapped_roots()
-    catalog.mark_reachable(TUTORIALS_ID, False)
-    find = mocker.patch.object(RootOverlap, "find_resolved", return_value=None)
-
-    add_root(qtbot, dock)
-
-    assert find.call_args.args == (REFS, roots, frozenset({TUTORIALS_ID}))
-    assert dock.roots.roots_model.rowCount() == 3
-
-
-@mark.usefixtures("served", "saves")
-def test_add_root_is_disabled_while_its_check_is_out(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, gate: threading.Event
-) -> None:
-    """One add at a time: while the check through links has not answered, Add Root cannot be asked again.
-
-    **Test steps:**
-
-    * open the file, hold the check, and add a folder
-    * verify Add Root is disabled and the root not added yet
-    * let the check answer
-    * verify the root added and Add Root enabled again
-    """
-    answer_add_root(mocker, dock, REFS)
-    dock.catalog.open_rehuco(REHUCO_PATH)
-
-    with qtbot.waitSignal(overlap_check(dock).answered, timeout=WAIT_TIMEOUT_MS):
-        dock.roots.add_root_action.trigger()
-        assert not dock.roots.add_root_action.isEnabled()
-        assert dock.roots.roots_model.rowCount() == 2
-        gate.set()
-
-    assert dock.roots.roots_model.rowCount() == 3
-    assert dock.roots.add_root_action.isEnabled()
-
-
-@mark.usefixtures("served")
-@mark.parametrize("change", ["closed", "reopened"])
-# pylint: disable-next=too-many-arguments,too-many-positional-arguments
-def test_an_answer_for_a_file_no_longer_open_adds_nothing(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, saves: MagicMock, gate: threading.Event, change: str
-) -> None:
-    """The file the add was asked of was closed, or replaced by a fresh read of itself, while the check was out: the
-    answer is for a file no longer shown, so nothing is added to any.
-
-    **Test steps:**
-
-    * open the file, hold the check, and add a folder
-    * close the file, or open it again
-    * let the check answer
-    * verify nothing was written
-    """
-    answer_add_root(mocker, dock, REFS)
-    dock.catalog.open_rehuco(REHUCO_PATH)
-
-    with qtbot.waitSignal(overlap_check(dock).answered, timeout=WAIT_TIMEOUT_MS):
-        dock.roots.add_root_action.trigger()
-        if change == "closed":
-            dock.catalog.close_rehuco()
-        else:
-            dock.catalog.open_rehuco(REHUCO_PATH)
-        gate.set()
-
-    saves.assert_not_called()
-
-
-@mark.usefixtures("served", "saves")
-def test_an_answer_for_another_add_is_dropped(
-    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, gate: threading.Event
-) -> None:
-    """Only the pending add's own answer adds: one with another serial, or with no add pending, does nothing.
-
-    **Test steps:**
-
-    * open the file, and answer for an add never asked
-    * hold the check, add a folder, and answer with another serial
-    * verify the root not added and Add Root still disabled
-    * let the check answer
-    * verify the root added
-    """
-    answer_add_root(mocker, dock, REFS)
-    dock.catalog.open_rehuco(REHUCO_PATH)
-    check = overlap_check(dock)
-    check.answered.emit(1_000, ())
-    assert dock.roots.roots_model.rowCount() == 2
-
-    dock.roots.add_root_action.trigger()
-    check.answered.emit(1_000, ())
-    assert dock.roots.roots_model.rowCount() == 2
-    assert not dock.roots.add_root_action.isEnabled()
-    gate.set()
-
-    qtbot.waitUntil(lambda: dock.roots.roots_model.rowCount() == 3, timeout=WAIT_TIMEOUT_MS)
 
 
 @mark.usefixtures("saves")

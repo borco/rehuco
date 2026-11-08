@@ -2,17 +2,15 @@
 [[plugins#rehuco-dock]], [[data-model#cache-schema]]).
 """
 
-import itertools
 import logging
 import threading
 from collections.abc import Hashable, Iterable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, cast
 from uuid import UUID
 
 from borco_core.logging import LogScope
-from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from rehuco_core import (
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
@@ -21,8 +19,6 @@ from rehuco_core import (
     CatalogRow,
     JobStatus,
     MappedRoot,
-    RecordCheck,
-    RecordsChecked,
     RehucoChangedError,
     RehucoFile,
     RehucoFileError,
@@ -30,14 +26,13 @@ from rehuco_core import (
     RehurootChangedError,
     RemoveCatalogRootJob,
     RenameCoordinator,
+    RootCandidate,
     RootMappings,
     RootMappingsError,
     RootOverlap,
     ScanCatalogRootJob,
     TaskJob,
     TaskQueue,
-    check_records,
-    location_of,
     rehudb_path,
     resolve_location,
 )
@@ -45,7 +40,6 @@ from rehuco_core.access import (
     Catalog,
     CatalogSession,
     CatalogUnreadable,
-    Changed,
     KeyRelocation,
     ResourceKey,
 )
@@ -53,6 +47,7 @@ from rehuco_core.notify import RootNotifiers
 
 from ..resource_events import ResourceEvents
 from ..settings.persistent_settings import cache_folder, config_folder
+from .record_verify import RecordVerify
 from .root_overlaps import RootOverlaps
 
 LOG: Final = logging.getLogger(__name__)
@@ -134,23 +129,6 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         queue_changed = Signal()
         """Carries nothing: the payload is whatever the queue says by the time the slot runs."""
 
-    class Verifier(QObject):
-        """Carries a verify-on-access answer from the pool to the GUI thread, and nothing else."""
-
-        answered = Signal(int, object, object, object)
-        """``(serial, key, cache path, findings)``: one check's answer, judged on the GUI thread."""
-
-    @dataclass(frozen=True, slots=True)
-    class FromFeed:
-        """What a verify of files the change feed said changed is about -- the files themselves.
-
-        Its answer is not published back on the feed, as a verify for an access or a listing is: the feed has said it.
-
-        :param keys: the files.
-        """
-
-        keys: tuple[ResourceKey, ...]
-
     def __init__(  # pylint: disable=too-many-arguments
         self,
         queue: TaskQueue,
@@ -184,17 +162,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         self.__overlaps: Final = RootOverlaps(self)
         self.__marshaller: Final = RootCatalog.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
-        self.__verifier: Final = RootCatalog.Verifier(self)
-        self.__verifier.answered.connect(self.__on_verified, Qt.ConnectionType.QueuedConnection)
-        self.__verify_serials: Final = itertools.count(1)
-        self.__latest_verify: Final[dict[Hashable, int]] = {}
-        """The newest verify asked for per key, under :attr:`__lock`: an older one still queued does nothing, and an
-        older answer is dropped."""
+        self.__verify: Final = RecordVerify(
+            self.__catalog, rename_coordinator, resource_events, self.rows_changed, self
+        )
         queue.add_listener(self)
         if resource_events is not None:
             resource_events.moved.connect(self.__on_moved)
-            resource_events.changed.connect(self.__on_files_changed)
-            resource_events.accessed.connect(self.__on_accessed)
+            resource_events.changed.connect(self.__verify.on_files_changed)
+            resource_events.accessed.connect(self.__verify.on_accessed)
             resource_events.root_stale.connect(self.scan_root)
             resource_events.root_reachable.connect(self.__on_root_reachable)
 
@@ -290,8 +265,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         if self.__events is not None and self.__listening_to_events:
             self.__listening_to_events = False
             self.__events.moved.disconnect(self.__on_moved)
-            self.__events.changed.disconnect(self.__on_files_changed)
-            self.__events.accessed.disconnect(self.__on_accessed)
+            self.__events.changed.disconnect(self.__verify.on_files_changed)
+            self.__events.accessed.disconnect(self.__verify.on_accessed)
             self.__events.root_stale.disconnect(self.scan_root)
             self.__events.root_reachable.disconnect(self.__on_root_reachable)
         self.__release_session()
@@ -531,33 +506,43 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
 
     # region editing the roots
 
-    def add_root(self, folder: Path, label: str | None = None) -> int | None:
-        """Add a folder as a root of the open file, mapped here, and save at once.
+    def add_roots(self, candidates: Sequence[RootCandidate]) -> tuple[UUID, ...] | None:
+        """Add roots to the open file, in order, map each one this machine reaches, and save once (#578).
 
-        The root is named by the folder's location (:func:`~rehuco_core.location_of`) and mapped to the folder on this
-        machine; its storage is detected. The comparison through links is the caller's, off the GUI thread.
+        Each line is one :meth:`~rehuco_core.RootPlanner.plan` made, which read the files, resolved the locations and
+        compared the folders through their links off the GUI thread: an existing ``.rehuroot`` joins as it is,
+        mapped to where its location resolved, or unmapped; a folder becomes a new ``.rehuroot`` at the line's root
+        file, with the line's label, layouts and fallbacks, mapped to the folder, its storage detected.
 
-        :param folder: an absolute folder.
-        :param label: the root's label; ``None`` or empty takes the default, the folder's name.
-        :returns: the new root's row; ``None`` with :attr:`save_error` saying why it was not added -- no editable
-            file open, the location already a root, the folder inside or containing a root, or the save failed.
+        :param candidates: the lines to add, each addable.
+        :returns: the new roots' ids, in order; ``None`` with :attr:`save_error` saying why none was added -- no
+            editable file open, a line the file refuses now, or the save failed. Either way the file shown is what is
+            on disk.
         """
         file, mappings = self.__file, self.__mappings
         if file is None or mappings is None or file.lock_reason is not None:
             return None
-        overlap = RootOverlap.find(folder, self.mapped_roots())
-        if overlap is not None:
-            self.__save_error = overlap.message
-            return None
+        added: list[UUID] = []
         try:
-            row = file.add_root(location_of(folder), label)
+            for line in candidates:
+                if line.root is not None:
+                    row = file.add_root_file(line.root)
+                else:
+                    row = file.add_root(
+                        line.location, line.label, layouts=line.layouts, fallbacks=line.fallbacks, file=line.root_file
+                    )
+                added.append(file.roots[row].root_id)
+                if line.folder is not None:
+                    mappings.map(added[-1], line.folder)
         except ValueError as error:
             self.__save_error = str(error)
+            self.__reload_from_disk(file)
+            if self.__file is not None:
+                self.__after_mapping_change()
             return None
-        mappings.map(file.roots[row].root_id, folder)
         self.__save_mappings(mappings)
-        # the mapping is kept even when the file is not saved: an entry for a root no catalog lists is never read
-        return row if self.commit_roots() else None
+        # the mappings are kept even when the file is not saved: an entry for a root no catalog lists is never read
+        return tuple(added) if self.commit_roots() else None
 
     def map_root(self, root_id: UUID, folder: Path) -> bool:
         """Say where this machine finds a root of the open file, and bring the cache and the watches in line.
@@ -875,88 +860,13 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     # region verify-on-access
 
     def verify_records(self, paths: Iterable[Path], *, key: Hashable) -> None:
-        """Check each record's row against its file and bring the cache in line, off the GUI thread (#487,
-        [[data-model#scan-and-staleness]]).
-
-        What the cache holds is read here, the ``stat`` and any read run on the pool, and the answer is written back
-        on this thread -- a share can block a ``stat`` for its whole timeout, and the cache is this thread's.
-        **A newer call with the same** ``key`` **supersedes an older one** still out: its answer is dropped, and one
-        not yet started does nothing.
+        """Check each record's row against its file and bring the cache in line, off the GUI thread
+        (:meth:`RecordVerify.verify_records <.record_verify.RecordVerify.verify_records>`, #487).
 
         :param paths: records' absolute paths; those that are no record, or under no root, are passed over.
         :param key: what the call is about -- a listed folder, an opened record -- for superseding.
         """
-        cache_path = self.__catalog.cache_path
-        if cache_path is None:
-            return
-        keys: list[ResourceKey] = []
-        for path in paths:
-            try:
-                keys.append(ResourceKey(path))
-            except ValueError:  # a relative path is no record of any root
-                continue
-        checks = self.__catalog.plan_verify(keys)
-        if not checks:
-            return
-        serial = next(self.__verify_serials)
-        with self.__lock:
-            self.__latest_verify[key] = serial  # pylint: disable=unsupported-assignment-operation
-        QThreadPool.globalInstance().start(lambda: self.__run_verify(serial, key, cache_path, checks))
-
-    def __run_verify(self, serial: int, key: Hashable, cache_path: Path, checks: list[RecordCheck]) -> None:
-        """Compare the records with the disk, on a pool thread, and answer; never touches the cache.
-
-        :param serial: the call's serial.
-        :param key: what the call is about.
-        :param cache_path: only handed back, to tell the answer which cache it was planned against.
-        :param checks: what to compare.
-        """
-        with self.__lock:
-            if self.__latest_verify.get(key) != serial:
-                return
-        try:
-            checked = check_records(checks, self.__rename_coordinator)
-        except Exception:  # pylint: disable=broad-exception-caught  # the pool swallows what escapes: no answer would come
-            LOG.exception("Could not verify %d records against the disk.", len(checks))
-            checked = RecordsChecked([], {})
-        try:
-            self.__verifier.answered.emit(serial, key, cache_path, checked)
-        except RuntimeError:  # the catalog was destroyed while the check was out
-            pass
-
-    def __on_verified(self, serial: int, key: Hashable, cache_path: Path, checked: RecordsChecked) -> None:
-        """Say what the disk showed, and write what the cache did not know into it -- unless the check was superseded,
-        or the cache is not this one any more (GUI thread). The same ``.rehuco`` closed and opened again is the same
-        cache, so an answer planned before the close is still written: the updater drops any finding its row moved
-        past meanwhile.
-
-        :param serial: the call's serial.
-        :param key: what the call is about.
-        :param cache_path: the cache the check was planned against.
-        :param checked: what the disk said.
-        """
-        with self.__lock:
-            if self.__latest_verify.get(key) != serial:
-                return
-            del self.__latest_verify[key]  # pylint: disable=unsupported-delete-operation
-        findings = checked.findings
-        if cache_path != self.__catalog.cache_path or not findings:
-            return
-        affected, changed = self.__catalog.apply_verify(findings)
-        if not changed:
-            return
-        self.rows_changed.emit(affected)
-        if self.__events is not None and not isinstance(key, RootCatalog.FromFeed):
-            # a change no event reported, found by the catch-all: every other view hears of it the same way
-            self.__events.changes.publish(Changed(tuple(ResourceKey(path) for path in changed)))
-
-    def __on_accessed(self, keys: tuple[ResourceKey, ...]) -> None:
-        """Verify the records the app is opening (#487).
-
-        :param keys: the records.
-        """
-        paths = tuple(key.path for key in keys)
-        self.verify_records(paths, key=paths)
+        self.__verify.verify_records(paths, key=key)
 
     # endregion
 
@@ -975,18 +885,6 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         affected = self.__catalog.follow(moved_keys)
         if affected:
             self.rows_changed.emit(affected)
-
-    def __on_files_changed(self, keys: tuple[ResourceKey, ...]) -> None:
-        """Check each changed file against its row on the pool, and bring the rows in line (#376, #379, #511).
-
-        A folder deleted or replaced stands for every record the cache holds beneath it. A path that is not a record,
-        or not under a root, is passed over by the planner itself.
-
-        :param keys: the files or folders that changed.
-        """
-        paths = dict.fromkeys(key.path for key in keys)
-        paths.update(dict.fromkeys(self.__catalog.record_paths(keys)))
-        self.verify_records(paths, key=RootCatalog.FromFeed(keys))
 
     def __on_root_reachable(self, root_id: UUID, reachable: bool) -> None:
         """Write what a root's notifier says of its folder into the cache (#511).

@@ -30,7 +30,7 @@ roots never overwrite each other silently.
 
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -123,7 +123,9 @@ class RehucoRoot:
         return not self.problem
 
 
-class RehucoFile:
+# the public surface is the file's own verbs -- load, save, and each edit of its roots -- which the Roots view
+# drives one by one; splitting them would split one file's state
+class RehucoFile:  # pylint: disable=too-many-public-methods
     """A ``.rehuco`` in memory: its rehuco id and its ordered roots, each read from its ``.rehuroot``.
 
     The parsed JSON object is the source of truth for the references; every root operation edits it in place, and
@@ -310,18 +312,28 @@ class RehucoFile:
             if reference.root is not None and reference.root.dirty:
                 reference.root.save()
 
-    def add_root(self, location: str, label: str | None = None) -> int:
-        """Append a root, as a new ``.rehuroot`` beside the ``.rehuco`` under a fresh id and the default layouts; the
-        root file is written by the next :meth:`save`.
+    def add_root(
+        self,
+        location: str,
+        label: str | None = None,
+        *,
+        layouts: Mapping[str, str] = DEFAULT_LAYOUTS,
+        fallbacks: Mapping[str, str] | None = None,
+        file: Path | None = None,
+    ) -> int:
+        """Append a root, as a new ``.rehuroot`` under a fresh id; the root file is written by the next :meth:`save`.
 
         :param location: where the root is, as :func:`rehuco_core.root_location.location_of` spells it.
         :param label: the name to show; ``None`` takes the location's last segment. Either way a label already in
-            use (case-insensitively) gets a suffix: ``foo``, ``foo (2)``, ``foo (3)``. The root file is named after it,
-            with a suffix of its own when a file or a reference already takes that name.
+            use (case-insensitively) gets a suffix: ``foo``, ``foo (2)``, ``foo (3)``.
+        :param layouts: where a record of each type lives under the root; the default keeps any record's name.
+        :param fallbacks: what a placeholder renders as when a record leaves it empty; none when ``None``.
+        :param file: where the root file goes; ``None`` puts it beside the ``.rehuco``, named after the label
+            (:meth:`free_root_file`).
         :returns: the new root's row.
-        :raises ValueError: the location is already a root, or the ``.rehuco`` has no folder to put the root file in.
-            Whether its folder overlaps another is the caller's to check over this machine's mapped paths
-            (:meth:`RootOverlap.find`).
+        :raises ValueError: the location is already a root, the file chosen is already there or already listed, or
+            the ``.rehuco`` has no folder to put the root file in. Whether its folder overlaps another is the
+            caller's to check over this machine's mapped paths (:meth:`RootOverlap.find`).
         """
         if self.__path is None:
             raise ValueError("A root file needs the .rehuco saved first")
@@ -329,10 +341,75 @@ class RehucoFile:
         if any(root.location.casefold() == folded for root in self.__readable()):
             raise ValueError(f"Already a root: {location}")
         unique = self.__unique_label(label if label else self.default_label(location))
-        file = self.__free_root_file(self.__path.parent, sanitize_name(unique) or DEFAULT_ROOT_FILE_STEM)
-        root = RehurootFile.new(file, location, unique)
-        self.__references.append(RehucoFile.Reference({ROOT_FILE_KEY: file.name}, file, root))
+        if file is None:
+            file = self.free_root_file(sanitize_name(unique) or DEFAULT_ROOT_FILE_STEM)
+        else:
+            # a relative file is meant beside the .rehuco, never wherever the process happens to run
+            file = Path(os.path.normpath(self.__path.parent / file))
+            if self.__lists(file) or file.exists():
+                raise ValueError(f"A root file is already there: {file}")
+        root = RehurootFile.new(file, location, unique, layouts=layouts, fallbacks=fallbacks)
+        reference = {ROOT_FILE_KEY: self.__relative(file, self.__path.parent)}
+        self.__references.append(RehucoFile.Reference(reference, file, root))
         return len(self.__references) - 1
+
+    def add_root_file(self, root: RehurootFile) -> int:
+        """Append an existing ``.rehuroot``, read already, as a root with its own id, label, location, layouts and
+        fallbacks; the next :meth:`save` writes the reference to it, named relative to the ``.rehuco``, and leaves the
+        file as it is. Reading it is the caller's, where a read may block (:meth:`RootPlanner.plan
+        <rehuco_core.root_candidates.RootPlanner.plan>`).
+
+        :param root: the root file as read -- beside the ``.rehuco`` or anywhere else both reach, such as a share.
+        :returns: the new root's row.
+        :raises ValueError: the ``.rehuco`` was never saved, the file is already listed, or its root -- by id or by
+            location -- already is.
+        """
+        if self.__path is None:
+            raise ValueError("A root file needs the .rehuco saved first")
+        file = Path(os.path.normpath(root.path))
+        if self.__lists(file):
+            raise ValueError(f"Already a root file of this catalog: {file}")
+        folded = root.location.casefold()
+        if any(other.root_id == root.root_id or other.location.casefold() == folded for other in self.__readable()):
+            raise ValueError(f"Already a root of this catalog: {root.location}")
+        reference = {ROOT_FILE_KEY: self.__relative(file, self.__path.parent)}
+        self.__references.append(RehucoFile.Reference(reference, file, root))
+        return len(self.__references) - 1
+
+    def free_root_file(self, stem: str, taken: Iterable[Path] = ()) -> Path:
+        """A root file name beside the ``.rehuco`` that no reference names, no file takes and ``taken`` does not hold.
+
+        :param stem: the name wanted, without the extension.
+        :param taken: paths to avoid besides -- the root files of roots about to be added.
+        :returns: ``<stem>.rehuroot``, or ``<stem> (2).rehuroot`` and on.
+        :raises ValueError: the ``.rehuco`` has no folder yet.
+        """
+        if self.__path is None:
+            raise ValueError("A root file needs the .rehuco saved first")
+        folder = self.__path.parent
+        avoided = {os.path.normcase(os.path.normpath(path)) for path in taken}
+        candidate = folder / f"{stem}{REHUROOT_SUFFIX}"
+        suffix = 2
+        while self.__lists(candidate) or os.path.normcase(str(candidate)) in avoided or candidate.exists():
+            candidate = folder / f"{stem} ({suffix}){REHUROOT_SUFFIX}"
+            suffix += 1
+        return candidate
+
+    def set_root_layouts(self, at: int, layouts: Mapping[str, str], fallbacks: Mapping[str, str]) -> None:
+        """Replace a root's layouts and fallbacks, in its ``.rehuroot``; the next :meth:`save` writes it.
+
+        :param at: the root's row.
+        :param layouts: where a record of each type lives under the root.
+        :param fallbacks: what a placeholder renders as when a record leaves it empty.
+        :raises IndexError: no such row.
+        :raises ValueError: the root's file is unreadable or read-only.
+        """
+        self.__check_row(at)
+        root = self.__references[at].root
+        if root is None:
+            raise ValueError(f"The root's file could not be read: {self.__references[at].problem}")
+        root.layouts = layouts
+        root.fallbacks = fallbacks
 
     def remove_root(self, at: int) -> RehucoRoot:
         """Drop a root from the file; its ``.rehuroot``, its folder and its files are not touched -- another catalog
@@ -480,20 +557,14 @@ class RehucoFile:
                     raise self.__error(f"Two roots share the id {reference.root.root_id}")
                 ids.add(reference.root.root_id)
 
-    def __free_root_file(self, folder: Path, stem: str) -> Path:
-        """A root file name in a folder that no reference names and no file takes.
+    def __lists(self, file: Path) -> bool:
+        """Whether a reference names a root file.
 
-        :param folder: the ``.rehuco``'s folder.
-        :param stem: the name wanted, without the extension.
-        :returns: ``<stem>.rehuroot``, or ``<stem> (2).rehuroot`` and on.
+        :param file: the root file, normalized.
+        :returns: whether one does, compared as the platform compares paths.
         """
-        taken = {os.path.normcase(str(reference.path)) for reference in self.__references}
-        candidate = folder / f"{stem}{REHUROOT_SUFFIX}"
-        suffix = 2
-        while os.path.normcase(str(candidate)) in taken or candidate.exists():
-            candidate = folder / f"{stem} ({suffix}){REHUROOT_SUFFIX}"
-            suffix += 1
-        return candidate
+        key = os.path.normcase(str(file))
+        return any(os.path.normcase(str(reference.path)) == key for reference in self.__references)
 
     @staticmethod
     def __relative(path: Path, folder: Path) -> str:

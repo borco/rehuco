@@ -24,20 +24,19 @@ from rehuco_core import (
     RehucoFile,
     RehucoRoot,
     RenameCoordinator,
+    RootCandidate,
     RootFolderLister,
-    RootOverlap,
     TaskQueue,
 )
 from rehuco_core.access import KeyRelocation, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..settings.catalog_state_store import CatalogStateStore
-from ..settings.root_catalog_settings import shared_root_catalog_settings
-from .add_root_dialog import AddRootDialog
+from .add_roots_dialog import AddRootsDialog
 from .rehuco_roots_panel_ui import Ui_RehucoRootsPanel
 from .root_catalog import RootCatalog
-from .root_name_editor import RootNameEditor
-from .root_overlap_check import RootOverlapCheck
+from .root_properties_editor import RootPropertiesEditor
+from .roots_adding import RootsAdding
 from .roots_checksum_verbs import RootsChecksumVerbs
 from .roots_column_view import RootsColumnView
 from .roots_folder_model import RootsFolderModel
@@ -55,6 +54,8 @@ SCAN_ICON: Final = ":/icons/roots_scan.svg"
 ADD_ROOT_ICON: Final = ":/icons/roots_add.svg"
 REMOVE_ROOT_ICON: Final = ":/icons/roots_delete.svg"
 REFRESH_ROOTS_ICON: Final = ":/icons/refresh.svg"
+EDIT_ROOT_ICON: Final = ":/icons/items_edit.svg"
+"""The pencil the list editors wear, on the Edit toggle of a root's details (#578)."""
 MOVE_TO_TOP_ICON: Final = ":/icons/items_top.svg"
 MOVE_UP_ICON: Final = ":/icons/items_up.svg"
 MOVE_DOWN_ICON: Final = ":/icons/items_down.svg"
@@ -78,7 +79,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     (:class:`~.browsers_dock.BrowsersDock`).
 
     **A row's actions have one home**, :class:`~.roots_row_actions.RootsRowActions`: the menu, the details pane's
-    buttons and what a double-click runs. Scan, Add Root and Remove Root are
+    buttons and what a double-click runs. Scan, Add Roots and Remove Root are
     rare enough that the ``Root Catalog`` menu is their home (Remove Root is also a root's own menu and button), and
     the dock holding this panel shows only Refresh on its title bar (:attr:`title_bar_actions`,
     [[appendices.code-conventions#command-surfaces]]).
@@ -141,10 +142,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         which the menu leaves where it was; every action reads the row it acts on through :meth:`__acting_index`."""
         self.__notice = ""
         """What the last thing asked of a row has to say, on the banner until the selection moves."""
-        self.__overlap_check: Final = RootOverlapCheck(self)
-        self.__adding: tuple[int, RehucoFile, str, str] | None = None
-        """The root Add Root is checking through its links: the check's serial, the file it is for, the folder and the
-        name -- ``None`` while no add is pending."""
         self.__fallback: tuple[UUID, tuple[str, ...]] | None = None
         """Where the Roots selection goes once the rows it was in are removed: the folder they were in."""
         # connected before the view's selection model exists, so it runs before that model moves the current row to a
@@ -156,6 +153,12 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
         self.__roots_ui: Final = Ui_RehucoRootsPanel()
         self.__roots_ui.setupUi(self)
+
+        def ask() -> tuple[RootCandidate, ...] | None:
+            """Ask through the modal this instance has when asked -- one a test replaced, too."""
+            return self.ask_roots_to_add()
+
+        self.__adding: Final = RootsAdding(catalog, self.__roots_model, self.__roots_ui.roots_view, ask, self)
         self.__opening: Final = RootsOpening(
             self.__roots_model, self.__roots_ui, catalog, rename_coordinator, self, self.__show_notice
         )
@@ -186,6 +189,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__roots_ui.main_layout.insertWidget(0, self.__banner)
         # F5 works from any column, since they are all this panel's children
         self.addAction(self.__roots_ui.refresh_roots_action)
+        # F2 as well, the details pane's editors included
+        self.addAction(self.__roots_ui.edit_root_action)
 
         self.__setup_actions()
         # selection_model() is None only before a model is set (setModel just did)
@@ -200,7 +205,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ):
             signal.connect(self.__on_roots_current_changed)
         # parented to the panel, which keeps it alive
-        RootNameEditor(
+        RootPropertiesEditor(
             catalog, self.__roots_model, self.__preview, self.__current_root_row, self.__commit_root_edit, self
         )
         self.__follow_the_catalog(catalog)
@@ -222,7 +227,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def detach(self) -> None:
         """Stop listening to the change feed, and hearing from a root check still out on a link, before the window
         goes. Safe to call again: the second time there is nothing left to disconnect."""
-        self.__overlap_check.stop()
         if self.__events is not None and self.__listening_to_events:
             self.__listening_to_events = False
             self.__events.moved.disconnect(self.__on_moved)
@@ -270,9 +274,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         return self.__roots_ui.scan_action
 
     @property
-    def add_root_action(self) -> QAction:
+    def add_roots_action(self) -> QAction:
         """Adds a folder as a root."""
-        return self.__roots_ui.add_root_action
+        return self.__roots_ui.add_roots_action
+
+    @property
+    def edit_root_action(self) -> QAction:
+        """Turns the details pane's edit mode for a root on and off (F2); it stays on from one root to the next."""
+        return self.__roots_ui.edit_root_action
 
     @property
     def map_root_action(self) -> QAction:
@@ -423,9 +432,10 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui = self.__roots_ui
         for action, icon in (
             (ui.scan_action, SCAN_ICON),
-            (ui.add_root_action, ADD_ROOT_ICON),
+            (ui.add_roots_action, ADD_ROOT_ICON),
             (ui.remove_root_action, REMOVE_ROOT_ICON),
             (ui.refresh_roots_action, REFRESH_ROOTS_ICON),
+            (ui.edit_root_action, EDIT_ROOT_ICON),
             (ui.move_to_top_action, MOVE_TO_TOP_ICON),
             (ui.move_up_action, MOVE_UP_ICON),
             (ui.move_down_action, MOVE_DOWN_ICON),
@@ -433,8 +443,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ):
             ActionIconThemeHandler(action, icon)
         ui.scan_action.triggered.connect(self.__catalog.scan)
-        ui.add_root_action.triggered.connect(self.__on_add_root)
-        self.__overlap_check.answered.connect(self.__on_add_root_checked)
+        ui.add_roots_action.triggered.connect(self.__adding.start)
+        ui.edit_root_action.toggled.connect(self.__preview.set_editing)
+        self.__preview.set_edit_action(ui.edit_root_action)
         self.__catalog.overlaps.changed.connect(self.__show_duplicates)
         ui.remove_root_action.triggered.connect(self.__on_remove_root)
         ui.map_root_action.triggered.connect(self.__on_map_root)
@@ -468,9 +479,12 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__preview.set_editable(editable)
         self.__roots_model.set_reorderable(editable)
         ui.scan_action.setEnabled(is_open)
-        ui.add_root_action.setEnabled(editable and self.__adding is None)
+        ui.add_roots_action.setEnabled(editable)
         ui.remove_root_action.setEnabled(editable and row >= 0)
         shown = self.__roots_model.root_at(current)
+        # checked or not, the mode stays as it is when it cannot be used: it is sticky (#578)
+        readable = shown is not None and (not isinstance(shown, RehucoRoot) or shown.readable)
+        ui.edit_root_action.setEnabled(editable and readable)
         ui.map_root_action.setEnabled(isinstance(shown, RehucoRoot) and shown.readable)
         ui.refresh_roots_action.setEnabled(is_open)
         ui.move_to_top_action.setEnabled(editable and row > 0)
@@ -775,7 +789,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Open the Roots view's context menu on the row under the pointer, making it the current row first so the
         actions act on it. **On the empty part of a column** it opens the menu of the folder that column lists, as a
         file manager does for a folder's background, and the selection stays where it was (#469); on the column of
-        roots that is Scan, Add Root and Refresh. **A root row's menu ends with the same three** under a separator
+        roots that is Scan, Add Roots and Refresh. **A root row's menu ends with the same three** under a separator
         (#543), for when the roots fill the column and leave no background; folder and file rows do not get them.
 
         :param position: where it was asked for, in the view's coordinates.
@@ -800,12 +814,12 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             self.__exec_menu(self.__catalog_actions(), global_position, None)
 
     def __catalog_actions(self) -> list[QAction]:
-        """The catalog-wide actions the Roots view's menus offer (#543): Scan, Add Root and Refresh.
+        """The catalog-wide actions the Roots view's menus offer (#543): Scan, Add Roots and Refresh.
 
         :returns: the actions in menu order.
         """
         ui = self.__roots_ui
-        return [ui.scan_action, ui.add_root_action, ui.refresh_roots_action]
+        return [ui.scan_action, ui.add_roots_action, ui.refresh_roots_action]
 
     def __exec_menu(self, actions: list[QAction], position: QPoint, target: QPersistentModelIndex | None) -> None:
         """Show a menu of actions at a point and run what is chosen.
@@ -861,17 +875,20 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
     # region editing the roots
 
-    def ask_root_to_add(self) -> tuple[str, str] | None:
-        """Ask for the folder of a root to add, and its name. The one modal behind Add Root, so a test replaces it per
+    def ask_roots_to_add(self) -> tuple[RootCandidate, ...] | None:
+        """Ask for the roots to add to the open file. The one modal behind Add Roots, so a test replaces it per
         instance.
 
-        :returns: the folder and the name -- the folder's own when none was typed -- or ``None`` if the dialog was
-            cancelled.
+        :returns: what OK adds, in order, or ``None`` if the dialog was cancelled or no file is open.
         """
-        dialog = AddRootDialog(self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        file = self.__catalog.file
+        if file is None:
             return None
-        return dialog.folder, dialog.name
+        dialog = AddRootsDialog(file, self.__catalog.mapped_roots(), self.__catalog.unreachable_roots(), self)
+        try:
+            return dialog.candidates if dialog.exec() == QDialog.DialogCode.Accepted else None
+        finally:
+            dialog.deleteLater()
 
     def ask_root_folder(self, root: RehucoRoot) -> Path | None:
         """Ask for the folder of this machine a root is. The one modal behind Map, so a test replaces it per instance.
@@ -901,47 +918,6 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             QMessageBox.StandardButton.No,
         )
         return answer == QMessageBox.StandardButton.Yes
-
-    def __on_add_root(self) -> None:
-        """Ask for a folder, then compare it with the roots through their links -- off the GUI thread, since following
-        a mapped drive can wait out a network timeout (#498) -- before adding it."""
-        file = self.__catalog.file
-        if file is None or file.lock_reason is not None:
-            return
-        chosen = self.ask_root_to_add()
-        if chosen is None:
-            return
-        folder, name = chosen
-        serial = self.__overlap_check.find(folder, self.__catalog.mapped_roots(), self.__catalog.unreachable_roots())
-        self.__adding = (serial, file, folder, name)
-        self.__update_enablement()
-
-    def __on_add_root_checked(self, serial: int, overlaps: tuple[RootOverlap, ...]) -> None:
-        """Add the folder Add Root asked for, unless it overlaps a root through a link, saving the file at once,
-        make it current, and scan it when *Scan after adding* is on (#542).
-
-        :param serial: the check's serial; an answer for another add, or for a file since closed, is dropped.
-        :param overlaps: what the check found, empty for none.
-        """
-        adding = self.__adding
-        if adding is None or adding[0] != serial:
-            return
-        self.__adding = None
-        self.__update_enablement()
-        _, file, folder, name = adding
-        if file is not self.__catalog.file or file.lock_reason is not None:
-            return
-        if overlaps:
-            QMessageBox.warning(self, "Add Root", overlaps[0].message)
-            return
-        row = self.__catalog.add_root(Path(folder), name)
-        if row is None:
-            QMessageBox.warning(self, "Add Root", self.__catalog.save_error)
-            return
-        root_id = file.roots[row].root_id
-        self.__roots_ui.roots_view.setCurrentIndex(self.__roots_model.index_for(root_id, ()))
-        if shared_root_catalog_settings().scan_after_adding:
-            self.__catalog.scan_root(root_id)
 
     def __on_remove_root(self) -> None:
         """Remove the current root from the file, once confirmed, saving it at once, and its rows from the cache on

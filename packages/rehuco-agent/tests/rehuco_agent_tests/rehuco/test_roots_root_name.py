@@ -56,6 +56,15 @@ def fixture_has_focus(mocker: MockerFixture, dock: CatalogDocks) -> MagicMock:
     return mocker.patch.object(dock.roots.root_name_edit, "hasFocus", return_value=True)
 
 
+@fixture(name="editing", autouse=True)
+def fixture_editing(dock: CatalogDocks) -> None:
+    """Turn the Roots view's edit mode on, where the name field is (#578).
+
+    :param dock: the docks.
+    """
+    dock.roots.edit_root_action.setChecked(True)
+
+
 def type_name(dock: CatalogDocks, text: str) -> None:
     """Type into the card's name field the way a person does: the field says it was edited.
 
@@ -267,19 +276,19 @@ def test_the_default_name_button_is_shown_beside_a_roots_name_only(dock: Catalog
 
     **Test steps:**
 
-    * select a root and verify the default-name button is shown and is not among the pane's buttons
+    * in edit mode, select a root and verify the default-name button is shown and is not among the pane's buttons
     * select no root and verify it is hidden
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     select_root(dock, 0)
     preview = dock.roots._RootsPanel__preview  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    assert not default_button(dock).isHidden()
+    assert default_button(dock).isVisibleTo(preview)
     assert default_button(dock) not in preview.buttons
 
     dock.roots.roots_view.setCurrentIndex(QModelIndex())
 
-    assert default_button(dock).isHidden()
+    assert not default_button(dock).isVisibleTo(preview)
 
 
 @mark.usefixtures("saves")

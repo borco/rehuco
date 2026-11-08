@@ -62,7 +62,7 @@ class RootOverlaps(QObject):
 
     @property
     def duplicates(self) -> frozenset[UUID]:
-        """The roots that duplicate an earlier one -- the later root of each overlapping pair, the one Add Root would
+        """The roots that duplicate an earlier one -- the later root of each overlapping pair, the one Add Roots would
         refuse now -- which the Roots view draws in red."""
         if self.__roots is None:
             return frozenset()

@@ -64,6 +64,43 @@
     </widget>
    </item>
    <item>
+    <widget class="QFrame" name="layouts_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="layouts_frame_layout">
+      <item>
+       <widget class="QLabel" name="layouts_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Default root layouts</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="DefaultRootLayoutsEditor" name="default_layouts_editor"/>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="layouts_note_label">
+        <property name="text">
+         <string>A root added from a folder starts with the layouts and fallbacks of the one picked in the Add Roots dialog; editing them here changes no root already added. A root's own layouts are edited in the Roots view (Edit, F2).</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <spacer name="bottom_spacer">
      <property name="orientation">
       <enum>Qt::Orientation::Vertical</enum>
@@ -78,6 +115,18 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>DefaultRootLayoutsEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.settings.ui.default_root_layouts_editor</header>
+  </customwidget>
+  <customwidget>
+   <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
