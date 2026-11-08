@@ -592,7 +592,7 @@ catalog* ([[data-model#local-file-trio]], #377, #461): the **Root Catalog** dock
 **Browsers** dock its browsers, each named as its menu is, each with its own `View` toggle, and both revealed when a
 catalog is opened. The word *collection* is not used for it: that is a resource type ([[plugins#grouping-entities]]).
 **Neither dock has a toolbar.** The Root Catalog dock's title bar holds *Refresh* and the Browsers dock's *New Table
-Browser*; *Scan*, *Add Root* and *Remove Root* are entries of `Root Catalog` and *Rename Browser* of `Browsers`, the
+Browser*; *Scan*, *Add Roots* and *Remove Root* are entries of `Root Catalog` and *Rename Browser* of `Browsers`, the
 rare actions being the menu's ([[appendices.code-conventions#command-surfaces]]). **One object owns the open file
 and its cache** — the catalog — and both docks read it and hear from it when it changed; neither holds the file. A
 third, the **Tag Browser**, lists the values its records share ([[plugins#tag-browser]]).
@@ -601,10 +601,10 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
   ([[plugins#files-subdock]]) but with no `..` row, which a column view has no use for. It is **navigation, not
   membership**: what the catalog holds is still decided by records, never by the tree ([[plugins#grouping-entities]]).
-  The `Root Catalog` menu holds **Scan**, **Add Root** and **Remove Root**; a root's context menu holds, in four
+  The `Root Catalog` menu holds **Scan**, **Add Roots** and **Remove Root**; a root's context menu holds, in four
   groups, the folder filter and Open in file explorer; the four moves — top, up, down, bottom, with the ordering
   icons the settings lists use but not their list editor, whose inline insert, rename, duplicate and reset have no
-  meaning for a root; Remove Root, apart; and, last, the catalog's own **Scan**, **Add Root** and **Refresh**, as the
+  meaning for a root; Remove Root, apart; and, last, the catalog's own **Scan**, **Add Roots** and **Refresh**, as the
   empty part of the roots column offers them, enabled alike — the roots can fill the column and leave none (#543).
   A root row is two lines, its name and under it its folder,
   smaller and fainter and elided to fit, with its storage glyph centred beside both. Its details pane has no move buttons, the grip being the way to move one.
@@ -640,26 +640,37 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   becomes a shadow; the one shadow follows the pointer to where the root would land, the other roots closing up around
   it; leaving the list puts it back at the root's place. The drop is saved at once, like a move. The root
   edits act only while a root row is current, and **Remove Root asks first**, saying the files stay
-  on disk and how many cached entries go. **Add Root** asks for the folder and a name: what the folder lives on is
-  detected, the root is named by its location and mapped to the folder on this machine
-  ([[mounts-and-storage#rehuco-scope]]). The name defaults to the folder's: it is the field's placeholder, filled in
-  when the first folder is chosen while the field is empty, left alone when another folder is chosen over a name that
-  is there, put back by a button beside the field, and used when the dialog closes with the field empty; its *Scan after adding* checkbox, on by default and remembered however the dialog closes,
-  queues a scan of the new root once the file is saved (#542). **It becomes Add Roots** (#578) once a root is a
-  `.rehuroot` file of its own ([[mounts-and-storage#rehuroot]]): one dialog, two ways in — **existing `.rehuroot`
-  files**, a multi-select picker starting in the `.rehuco`'s folder, each joining the catalog with its own name and
-  location, unmapped if this machine cannot resolve where it is; or **a folder**, which makes a `.rehuroot` beside the
-  `.rehuco` with the folder's name as above, the location from the mount table, and a **layout chosen in a combo** of
-  the default root layouts kept in the settings ([[appendices.settings-pages#category-groups]]), whose last entry *New
-  layout…* adds one from the dialog. *Scan after adding* stays; storage is still detected, never asked.
-  When a **root** is current the details pane shows its editors in place of a type line: its **Name** (the
-  label, which nothing on disk follows: saved as typed when the field is left, even empty -- the column then shows where
-  the root is -- and shown in the column while it is typed; a button beside the field gives the root its default
-  name, the one it was added with, which is also the empty field's placeholder) and,
-  read-only, its **Storage** as detected — a local folder, a network share,
-  a removable drive or a CD or DVD, each with its own glyph — and its location; with `.rehuroot` (#578), also its
-  **layouts** and **fallbacks**, editable and written to the root's file as the name is, and the file's path,
-  read-only. **A root this machine has not mapped**
+  on disk and how many cached entries go. **Add Roots** (#578) adds many roots at once, folders and existing
+  `.rehuroot` files ([[mounts-and-storage#rehuroot]]) alike, from one dialog with no dialog over it. **On the left, a
+  file browser** opening in the `.rehuco`'s folder shows folders and `.rehuroot` files, many selectable with Ctrl and
+  Shift; the row under the pointer, and the current one, show a **`+`**, which stages that row -- or, when it is
+  selected, every selected row in the tree's order -- and a path already staged is passed over without a word. **On
+  the right, the staging list**, planned again off the GUI thread at every change (*Checking…* until it is, OK waiting
+  for it): a **`.rehuroot`** shows its file, its label and location, its layouts, and the folder this machine finds it
+  at -- or that it joins unmapped, to be mapped later; a **folder** shows its editors, always open: its **Label** (the
+  folder's name as the placeholder), its **Root file** (the one planned beside the `.rehuco`, unique-suffixed, as the
+  placeholder, following the label while left empty; typed or browsed to, it may go anywhere both catalogs reach, such
+  as the NAS) and its **Layout**, a combo of the default root layouts kept in the settings
+  ([[appendices.settings-pages#category-groups]]) whose last entry, *New layout…*, asks for a preset and saves it with
+  the others at once. Each row has an **×** that takes it out. A folder that a staged `.rehuroot` is the root of is
+  shown only as the file, whichever came first. **A row that cannot be added says why** in the warning colour -- a
+  root file unreadable or already listed, a location already a root, a folder inside or around a root or a row above
+  it (through links too), a root file already there -- and is left out; **OK adds the rest** in order with one save,
+  maps each one this machine reaches, its storage detected, never asked, makes the first current, and, with *Scan
+  after adding* on (by default, remembered however the dialog closes), scans each one (#542). A line the file refuses
+  by the time OK is pressed adds none of them, says why, and leaves the file as it is on disk.
+  When a **root** is current the details pane shows, in place of a type line, its **Name**, its **Storage** as
+  detected — a local folder, a network share, a removable drive or a CD or DVD, each with its own glyph — its
+  location, its **Root file** (the `.rehuroot`'s path) and its **Layouts** and **Fallbacks**, one `type → template`
+  line each, all read-only, above an **Edit** button. **Edit** (also `F2`, from anywhere in the Roots view, the
+  pane's tables included) turns the **edit mode** on and off (#578): the name, the layouts and the fallbacks become
+  editors, and the mode **stays on** from one root to the next, each shown in the editors, until it is turned off.
+  The **Name** is the label, which nothing on disk follows: saved as typed when the field is left, even empty -- the
+  column then shows where the root is -- and shown in the column while it is typed; a button beside the field gives
+  the root its default name, the one it was added with, which is also the empty field's placeholder. The
+  **Layouts** and **Fallbacks** are two tables, the type picked from `*` and the installed types or typed; each edit
+  is written to the root's file at once, and a row with no key, or a key an earlier row has, is flagged and left out.
+  A root whose file cannot be read, or a catalog open read-only, offers no edit. **A root this machine has not mapped**
   is listed in its place, greyed, with one row saying so, never read; its **Map…** action (the root's menu and its
   details pane) asks for the folder, and the *Map roots* question opens with the catalog for the roots nobody has
   answered for ([[mounts-and-storage#rehuco-scope]]). `F5` re-lists the visible columns: a
@@ -798,7 +809,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
 **The menu bar is the complete index** (#402, #465): `File`, `Root Catalog`, `Browsers`, `View` and `Tools`.
 `File` and `Browsers` are twins — the verbs that open or create, the verbs on the open set, then the open list,
 A–Z, with the focused one checked; `File` ends with Settings and Quit. `Root Catalog` is the same shape without a list,
-there being one catalog: New, Open, Open Recent, then Scan, Add Root and Remove Root, which are the dock's own
+there being one catalog: New, Open, Open Recent, then Scan, Add Roots and Remove Root, which are the dock's own
 actions and so are enabled as the dock enables them. `Browsers` leads with *New Table Browser* and *Save Search…* ([[plugins#saved-searches]]); the image
 browser (#403) adds its own entry and kind icon when it lands. `View` is what is visible — themes and the dock
 toggles — and `Tools` holds the catalog-wide maintenance operations.

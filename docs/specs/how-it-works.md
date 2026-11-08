@@ -149,9 +149,11 @@ machine: Revert goes back to it and opening the record shows it, and only droppi
 app-wide **Tasks** panel shows the queue, with a filter for the saves not yet landed, beside an app-wide **Log**.
 
 A **root catalog** is a `.rehuco` file listing, in order, the folders to catalog — its **roots**. Each root is a
-`.rehuroot` file of its own beside the `.rehuco`, made when the root is added, holding its id, its label and a
-location that reads the same on every machine (`//nas/data/Tutorials`), so two catalogs listing one root file share
-the root. Where a machine finds a root is that machine's own mapping, kept in its data folder under the root's id,
+`.rehuroot` file of its own, by default beside the `.rehuco`, made when the root is added, holding its id, its label,
+a location that reads the same on every machine (`//nas/data/Tutorials`), and where each type of record lives under
+it (its layouts and fallbacks, edited in the Roots view's edit mode), so two catalogs listing one root file share the
+root. `Add Roots…` adds many at once: folders, which become new root files with a layout preset from the settings,
+and root files another catalog made, picked from a file browser in one dialog. Where a machine finds a root is that machine's own mapping, kept in its data folder under the root's id,
 not in either file: opening a catalog maps the roots whose share the machine has mounted, asks about the rest, and
 leaves a root nobody mapped listed but greyed, with `Map…` to map it later. A root whose `.rehuroot` is missing or
 unreadable is listed greyed too, with the reason, and its records already in the cache stay listed, greyed, until the

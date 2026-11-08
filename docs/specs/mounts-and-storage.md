@@ -165,8 +165,8 @@ references** to such files and nothing more about a root: its role is to aggrega
   keeps an offline root's: its records still show, greyed, and nothing scans or watches it. Only *Remove Root* clears
   them; a reference this machine never read holds nothing to keep.
 - **Adding a root** is picking existing `.rehuroot` files, or a folder, which makes one with a layout chosen from the
-  default root layouts the settings keep ([[plugins#rehuco-dock]]); the Roots view edits a root's layouts and
-  fallbacks beside its name.
+  default root layouts the settings keep ([[plugins#rehuco-dock]]), many at once; the Roots view edits a root's
+  layouts and fallbacks in its edit mode, with its name.
 - **Nothing is migrated**, as format 2 was not: a format-3 `.rehuco` is refused with a message saying to add its
   roots again, and a format-1 mapping file is set aside, as `root-mappings.format-1.json`. Overlap is checked across
   the catalog's `.rehuroot`s as it was across its roots.
@@ -358,10 +358,12 @@ machine's mount table, answers the same question without writing anything into t
 
 [[[mounts-and-storage#folder-add]]]
 
-Retired as a primary/remote declaration; there is no owner to declare ([[multiplicity#instances]]). Adding a root is:
-pick the folder, detect its storage kind and its location from this machine's mount table, refuse it if it overlaps a
-root already listed, write this machine's mapping ([[mounts-and-storage#rehuco-scope]]) — or, with
-[[mounts-and-storage#rehuroot]], pick existing `.rehuroot` files, which already know their location.
+Retired as a primary/remote declaration; there is no owner to declare ([[multiplicity#instances]]). Adding roots is
+picking folders and existing `.rehuroot` files, many at once ([[plugins#rehuco-dock]], #578): a folder's location is
+read from this machine's mount table and it becomes a new `.rehuroot`; an existing file keeps its own, and is mapped
+where it resolves here or left unmapped. A pick that overlaps a root already listed, or one picked before it, is
+refused, through links too; the rest are added with one save, and this machine's mappings written
+([[mounts-and-storage#rehuco-scope]]).
 
 ## §9.12 Measuring a machine's throughput
 
