@@ -52,6 +52,7 @@ configure_file(launcher.rc.in "${CMAKE_CURRENT_BINARY_DIR}/launcher.rc")
 add_executable(rehuco-agent-dev WIN32
     launcher.c
     "${CMAKE_CURRENT_BINARY_DIR}/launcher.rc"
+    launcher.manifest   # longPathAware, merged into the linker's own manifest (#628)
 )
 
 target_include_directories(rehuco-agent-dev PRIVATE

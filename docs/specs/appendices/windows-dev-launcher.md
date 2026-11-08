@@ -221,3 +221,17 @@ Also carried over correctly from the spike: `SetCurrentProcessExplicitAppUserMod
 a process's first top-level HWND at *creation* time. Calling it after a window already exists
 has no retroactive effect. Call it as literally the first statement in the launcher's entry
 point, before Python initializes (which is itself before any Qt code can run).
+
+## 11. A path of 260 characters or more fails with `WinError 3`
+
+[[[appendices.windows-dev-launcher#long-path-aware]]]
+
+A process gets paths past the old `MAX_PATH` only when its executable's manifest declares `longPathAware` (and the
+system allows it: `LongPathsEnabled = 1`). The linker's own manifest holds only `requestedExecutionLevel`, so the
+launcher opened and scanned nothing of 260 characters or more while Explorer and `python.exe` (both aware) opened
+the same files (#628). `launcher.manifest` is listed among the sources in `CMakeLists.txt`, which merges it into the
+linker's; the same fix for the Briefcase stub, `Rehuco.exe`, is `tools/set_long_path_aware.py`, run by
+`agent-dist-build` and `agent-dist-package` after the prune. The stub stores its manifest under English (1033), the
+linker's default, and the tool rewrites it under every language it finds rather than adding a neutral one: measured
+on a copy of `python.exe` with its own declaration stripped, a neutral manifest beside an unaware English one did
+take effect here, but that is the loader's preference, not something a build should lean on.

@@ -225,7 +225,8 @@ AGENT_DEV_BUILD := .build/packages/rehuco-agent/launcher
 AGENT_DEV_EXE := $(AGENT_DEV_BUILD)/Release/rehuco-agent-dev.exe
 
 AGENT_DEV_SRC := packages/rehuco-agent/launcher/launcher.c packages/rehuco-agent/launcher/CMakeLists.txt \
-	packages/rehuco-agent/launcher/config.h.in packages/rehuco-agent/launcher/launcher.rc.in
+	packages/rehuco-agent/launcher/config.h.in packages/rehuco-agent/launcher/launcher.rc.in \
+	packages/rehuco-agent/launcher/launcher.manifest
 
 # $(AGENT_DEV_EXE) (not agent-dev-build itself) is the real target, so make only re-invokes cmake
 # when a source/icon actually changed -- cmake's own incremental build already no-ops
@@ -284,11 +285,20 @@ endif
 # the wheel, and `package`, which wraps the bundle -- never after, or the installer would carry what was removed.
 AGENT_PRUNE := uv run python tools/prune_pyside_addons.py $(AGENT_APP_PACKAGES)
 
+# Windows only: the Briefcase stub, Rehuco.exe, is prebuilt and its manifest lacks longPathAware, so the installed app cannot open
+# a path of 260 characters or more (#628). Declared after `build`, before `package` wraps it.
+ifeq ($(OS),Windows_NT)
+AGENT_LONG_PATHS := uv run python tools/set_long_path_aware.py packages/rehuco-agent/build/rehuco-agent/windows/app/src/Rehuco.exe
+else
+AGENT_LONG_PATHS := @true
+endif
+
 # `uis` first: Briefcase copies src/rehuco_agent verbatim into the bundle, so the gitignored
 # *_ui.py/*_rc.py must already exist -- a bundle built without them dies on the first import.
 agent-dist-build: uis $(ICON_FILES) $(INSTALLER_IMAGES)
 	$(BRIEFCASE) build $(BRIEFCASE_ARGS)
 	$(AGENT_PRUNE)
+	$(AGENT_LONG_PATHS)
 
 # Seconds, not minutes: re-syncs the sources into the bundle built above, without reinstalling the
 # dependency tree ([[appendices.briefcase-packaging#build-and-iterate]]).
@@ -300,6 +310,7 @@ agent-dist-update: uis
 agent-dist-package: uis $(ICON_FILES) $(INSTALLER_IMAGES)
 	$(BRIEFCASE) build
 	$(AGENT_PRUNE)
+	$(AGENT_LONG_PATHS)
 	$(BRIEFCASE) package $(BRIEFCASE_ARGS)
 
 agent-dist-clean:

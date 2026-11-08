@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Merged into the manifest the linker already embeds (requestedExecutionLevel), not a replacement for it.
+  longPathAware lifts the 260-character MAX_PATH limit for this process; it only takes effect where the system allows
+  it too (LongPathsEnabled = 1), and without it every such path fails with WinError 3 (#628).
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+</assembly>
