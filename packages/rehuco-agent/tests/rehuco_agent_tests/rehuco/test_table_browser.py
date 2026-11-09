@@ -3,6 +3,7 @@ remembering (#396, #398, #379)."""
 
 from collections.abc import Iterator
 from dataclasses import replace
+from datetime import timedelta, timezone
 from itertools import count
 from uuid import uuid4
 
@@ -13,7 +14,7 @@ from pytest import MonkeyPatch, fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import TableBrowser, table_browser
 from rehuco_agent.rehuco.browser_presets import BrowserPreset, browser_presets
-from rehuco_agent.rehuco.catalog_delegates import DurationDelegate, SizeDelegate
+from rehuco_agent.rehuco.catalog_delegates import DurationDelegate, LocalTimeDelegate, SizeDelegate
 from rehuco_agent.rehuco.catalog_table_model import DEFAULT_HIDDEN, CatalogColumn
 from rehuco_agent.rehuco.table_browser import FILTER_HELP, FILTER_SETTLE_MS, PROBLEMS_ACTION_NAME
 from rehuco_agent.settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
@@ -251,6 +252,38 @@ def test_a_size_reads_short_while_the_cell_keeps_its_bytes(browser: TableBrowser
     assert durations.displayText(8100, locale) == "2h 15m"
     assert sizes.displayText("text", locale) == "text"
     assert durations.displayText(None, locale) == ""
+
+
+def test_updated_and_released_read_in_local_time_while_the_cell_keeps_its_stamp(browser: TableBrowser) -> None:
+    """The model holds the stored UTC stamp; the columns' delegate shows it in local time (#623).
+
+    The view's delegates show the machine's zone; the wording is checked on one given a zone two hours ahead, so
+    the check holds on a machine in any zone.
+
+    **Test steps:**
+
+    * show a row updated at a UTC stamp
+    * verify the cell holds the stamp and both columns' delegates word stamps
+    * verify a delegate two hours ahead of UTC words the stamp as that local time
+    * verify a date alone, an empty value and an unparsable one read as stored
+    """
+    stamp = "2026-11-08T15:32:54Z"
+    stamped = row("a/info.rehu", 1)
+    stamped = replace(stamped, record=replace(stamped.record, updated=stamp))
+    browser.set_rows([stamped], [ROOT_ID])
+    view = browser.view
+    locale = view.locale()
+
+    assert browser.model.index(0, CatalogColumn.UPDATED).data() == stamp
+    for column in (CatalogColumn.UPDATED, CatalogColumn.RELEASED):
+        assert isinstance(view.itemDelegateForColumn(column), LocalTimeDelegate)
+
+    stamps = LocalTimeDelegate(view, tz=timezone(timedelta(hours=2)))
+    assert stamps.displayText(stamp, locale) == "2026-11-08 17:32:54"
+    assert stamps.displayText("2026-11-08", locale) == "2026-11-08"
+    assert stamps.displayText("", locale) == ""
+    assert stamps.displayText("soon", locale) == "soon"
+    assert stamps.displayText(None, locale) == ""
 
 
 def test_renaming_a_browser_shows_in_its_state(browser: TableBrowser) -> None:
