@@ -23,7 +23,7 @@ from borco_pyside.theming import ActionIconThemeHandler, GlyphActionIconThemeHan
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
 from PySide6.QtCore import QEvent, QMimeData, QObject, Qt, Signal, SignalInstance
 from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon
-from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QToolBar, QWidget
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QToolBar, QWidget, QWidgetAction
 from rehuco_core import (
     IMAGE_EXTENSIONS,
     REFERENCE_IMAGES_PLUGIN,
@@ -993,7 +993,12 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # ahead of (#320), so the type's toggles close the common run whenever they are built -- here,
         # or at a placeholder's first read
         self.__toolbar: Final = toolbar
-        self.__toolbar_stretch_action: Final = toolbar.addWidget(ToolBarStretch())
+        # made here, not by `addWidget()`: the wrapper of the action Qt makes there was invalidated while the action
+        # lived, by another document's dock being deleted, so this document's first read failed to insert its toggles
+        # (#630); a Python-made one is not (as the File menu's separator, 4ad99fa)
+        self.__toolbar_stretch_action: Final = QWidgetAction(toolbar)
+        self.__toolbar_stretch_action.setDefaultWidget(ToolBarStretch())
+        toolbar.addAction(self.__toolbar_stretch_action)
         for dock in self.__type_docks.values():
             toolbar.insertAction(self.__toolbar_stretch_action, dock.toggleViewAction())
         toolbar.addAction(self.__apply_default_layout_action)
