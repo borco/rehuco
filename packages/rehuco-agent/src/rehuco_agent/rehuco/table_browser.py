@@ -18,7 +18,14 @@ from ..glyphs import FILTER_PROBLEM_GLYPH
 from ..settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
 from .browser_presets import DEFAULT_BROWSER_NAME, DEFAULT_PRESET, BrowserPreset
 from .catalog_delegates import COLUMN_DELEGATES
-from .catalog_table_model import DEFAULT_HIDDEN, CatalogColumn, CatalogTableModel, CatalogTotals, RowKey
+from .catalog_table_model import (
+    DEFAULT_HIDDEN,
+    HIDDEN_WHEN_ADDED_LATER,
+    CatalogColumn,
+    CatalogTableModel,
+    CatalogTotals,
+    RowKey,
+)
 from .filter_line import parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 from .status_line_label import StatusLineLabel
@@ -274,14 +281,17 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         """Put back the header state a browser was saved with, then sort as the header now says.
 
         A state saved before the later columns existed covers only the first ones: Qt shows every column past it, so
-        those past it are put back to the defaults -- as is every column, for a state the header refuses.
+        those past it are put back to the defaults, or hidden if a column came later -- as is every column, for a
+        state the header refuses.
 
         :param header_state: bytes from :meth:`state`; empty leaves the defaults.
         """
         header = self.__ui.catalog_view.horizontalHeader()
         if header_state:
             covered = self.saved_column_count(header_state) if self.__sections_menu.restore_state(header_state) else 0
-            for column in DEFAULT_HIDDEN:
+            # a state the header refuses is back to the defaults, a new browser's: the later columns shown
+            later = HIDDEN_WHEN_ADDED_LATER if covered else frozenset()
+            for column in DEFAULT_HIDDEN | later:
                 if column >= covered:
                     header.setSectionHidden(column, True)
         self.__model.sort(header.sortIndicatorSection(), header.sortIndicatorOrder())

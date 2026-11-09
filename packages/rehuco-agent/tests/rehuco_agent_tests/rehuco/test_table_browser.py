@@ -395,7 +395,8 @@ def test_a_header_saved_before_the_later_columns_existed_keeps_them_at_their_def
 
     * save a four-column header with Type hidden and Title widened
     * build a browser from it
-    * verify Type and the default hidden columns are hidden, and the width came back
+    * verify Type, the default hidden columns and the Server -- added since -- are hidden, and the width came
+      back
     """
     old = QTableView()
     qtbot.addWidget(old)
@@ -408,8 +409,31 @@ def test_a_header_saved_before_the_later_columns_existed_keeps_them_at_their_def
     qtbot.addWidget(browser)
 
     assert TableBrowser.saved_column_count(saved) == 4
-    assert hidden_columns(browser) == DEFAULT_HIDDEN | {CatalogColumn.TYPE}
+    assert hidden_columns(browser) == DEFAULT_HIDDEN | {CatalogColumn.TYPE, CatalogColumn.SERVER}
     assert browser.view.horizontalHeader().sectionSize(CatalogColumn.TITLE) == 321
+
+
+def test_a_header_saved_with_the_server_column_keeps_it_shown_or_hidden_as_saved(qtbot: QtBot) -> None:
+    """A state that covers the Server column is the reader's own: shown stays shown, hidden stays hidden.
+
+    **Test steps:**
+
+    * build a browser, hide Server, save its state and build another from it
+    * verify Server is hidden in the copy; show it again, save, build once more, and verify it is shown
+    """
+    first = TableBrowser(BrowserState(uuid4(), TABLE_BROWSER_KIND, "First", "", b""))
+    qtbot.addWidget(first)
+    assert CatalogColumn.SERVER not in hidden_columns(first)
+
+    set_column_shown(first, "Server", False)
+    second = TableBrowser(first.state())
+    qtbot.addWidget(second)
+    assert CatalogColumn.SERVER in hidden_columns(second)
+
+    set_column_shown(second, "Server", True)
+    third = TableBrowser(second.state())
+    qtbot.addWidget(third)
+    assert CatalogColumn.SERVER not in hidden_columns(third)
 
 
 def test_a_header_state_the_header_refuses_leaves_the_defaults(qtbot: QtBot) -> None:

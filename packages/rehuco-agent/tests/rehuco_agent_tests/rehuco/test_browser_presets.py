@@ -67,9 +67,9 @@ def test_a_typed_preset_shows_its_types_columns_hides_the_others_and_filters_by_
     tutorial = preset_labelled("Tutorial Columns", presets)
     reference = preset_labelled("Reference Images Columns", presets)
 
-    assert tutorial.hidden == COUNTS | {CatalogColumn.URL}
+    assert tutorial.hidden == COUNTS | {CatalogColumn.URL, CatalogColumn.ROOT}
     assert tutorial.filter == "type:tutorial"
-    assert reference.hidden == DURATIONS | {CatalogColumn.URL}
+    assert reference.hidden == DURATIONS | {CatalogColumn.URL, CatalogColumn.ROOT}
     assert reference.filter == "type:reference_images"
 
 

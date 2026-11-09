@@ -20,7 +20,7 @@ from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QInputDialog, QMainWindow, QMenu, QWidget
-from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile
+from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile, server_of
 
 from ..dock_maximize import attach_maximize_handler
 from ..filter_urls import filter_url_token
@@ -106,6 +106,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__loader: Final = CatalogRowsLoader(catalog.rows, self)
         self.__loader.loaded.connect(self.__on_loaded)
         self.__offline: dict[UUID, str] = {}
+        self.__servers: dict[UUID, str] = {}
         """Why each root that cannot be reached cannot, by its id."""
 
         self.__dock_manager: Final = QtAds.CDockManager(self)
@@ -312,12 +313,22 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         :param root_ids: the roots that cannot be reached.
         """
-        storages = {root.root_id: root.storage for root in self.__catalog.mapped_roots()}
+        mapped = self.__catalog.mapped_roots()
+        storages = {root.root_id: root.storage for root in mapped}
+        self.__servers = {root.root_id: server_of(root.location) for root in mapped}
         self.__offline = {
             root_id: ROOT_STORAGE_OFFLINE_TOOLTIPS[storages[root_id]] for root_id in root_ids if root_id in storages
         }
         for browser in self.__browsers.values():
-            browser.model.set_offline_roots(self.__offline)
+            self.__show_roots_state(browser)
+
+    def __show_roots_state(self, browser: TableBrowser) -> None:
+        """Tell a browser's model which roots cannot be reached and which server each is on.
+
+        :param browser: the browser.
+        """
+        browser.model.set_offline_roots(self.__offline)
+        browser.model.set_servers(self.__servers)
 
     def __on_loaded(self, load: CatalogRowsLoad) -> None:
         """Show what a read brought in every browser: all its rows anew after a read of every row; after a read of a
@@ -329,7 +340,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # one pick per distinct query, browsers filtering alike sharing it
         matching: dict[CatalogQuery, list[CatalogRow]] = {}
         for browser in self.__browsers.values():
-            browser.model.set_offline_roots(self.__offline)
+            self.__show_roots_state(browser)
             if browser.query not in matching:
                 matching[browser.query] = snapshot.select(browser.query, affected)
             if affected is None:
@@ -344,7 +355,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param browser: the browser.
         """
         snapshot = self.__loader.snapshot
-        browser.model.set_offline_roots(self.__offline)
+        self.__show_roots_state(browser)
         browser.set_rows(snapshot.select(browser.query), snapshot.root_ids)
 
     # endregion

@@ -101,6 +101,23 @@ def location_of(path: Path, mounts: Sequence[Mount] | None = None) -> str:
     return "/".join([share, *path.relative_to(best.point).parts])
 
 
+LOCAL_SERVER: Final = "local"
+"""What :func:`server_of` says for a location on this machine's own disks."""
+
+
+def server_of(location: str) -> str:
+    """The server a location is stored on, as the share is mapped from -- never asked of the server.
+
+    :param location: a root's location.
+    :returns: :data:`LOCAL_SERVER` for this machine's own disks; else the location's host, lower-cased (``nas``, or an
+        address when the share is mapped by one); empty for a string that is no location.
+    """
+    if not location.startswith(LOCATION_PREFIX):
+        return ""
+    host = location.removeprefix(LOCATION_PREFIX).partition("/")[0].casefold()
+    return LOCAL_SERVER if host == machine_name() else host
+
+
 def resolve_location(location: str, mounts: Sequence[Mount] | None = None) -> Path | None:
     """Where this machine finds ``location``, if it can without being told.
 

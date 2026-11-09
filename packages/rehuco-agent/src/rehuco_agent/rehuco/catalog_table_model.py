@@ -55,6 +55,8 @@ class CatalogColumn(IntEnum):
     LEVEL = 14
     ADVERTISED_COUNT = 15
     CURRENT_COUNT = 16
+    SERVER = 17
+    ROOT = 18
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,11 +155,19 @@ COLUMNS: Final[Mapping[CatalogColumn, ColumnSpec]] = {
     CatalogColumn.CURRENT_COUNT: ColumnSpec(
         "Current count", lambda entry: entry.record.current_count, default_visible=False, numeric=True
     ),
+    # a row alone does not know where its root is mapped from: the model fills the cell in
+    CatalogColumn.SERVER: ColumnSpec("Server", lambda _entry: "", sort_key=folded),
+    CatalogColumn.ROOT: ColumnSpec("Root", lambda entry: entry.root_label, default_visible=False, sort_key=folded),
 }
 """Every column, in :class:`CatalogColumn` order."""
 
 DEFAULT_HIDDEN: Final = frozenset(column for column, spec in COLUMNS.items() if not spec.default_visible)
-"""The columns a plain browser starts with hidden: the URL, and the type-specific ones a preset shows (#400)."""
+"""The columns a plain browser starts with hidden: the URL, the root's label, and the type-specific ones a preset
+shows (#400)."""
+
+HIDDEN_WHEN_ADDED_LATER: Final = frozenset({CatalogColumn.SERVER})
+"""The columns a new browser shows but one saved before they existed hides -- on top of :data:`DEFAULT_HIDDEN`, which
+that one hides too -- so a browser set up by hand does not change under its user (#627)."""
 
 TYPE_COLUMNS: Final[Mapping[str, CatalogColumn]] = {
     "advertised_duration": CatalogColumn.ADVERTISED_DURATION,
@@ -271,11 +281,14 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         self.__sort_order = Qt.SortOrder.AscendingOrder
         self.__column_keys: dict[int, tuple[CatalogRow, tuple[int, Any]]] = {}
         """Each row's key in the sorted column, by resource id, with the row it was worked out for. A key depends on
-        the record and the root's label alone, so a read that found a row unchanged keeps its key."""
+        the record and the root's label alone -- the Server's, though, goes when the roots' servers change
+        (:meth:`set_servers`) -- so a read that found a row unchanged keeps its key."""
         self.__declares_count: dict[str, bool] = {}
         self.__tally = _Tally()
         self.__offline: dict[UUID, str] = {}
         """Why each root that cannot be reached cannot, by its id: its rows are greyed and say so (#511)."""
+        self.__servers: dict[UUID, str] = {}
+        """The server each root's files are on, by its id: what the Server column shows (#627)."""
 
     @property
     def totals(self) -> CatalogTotals:
@@ -348,6 +361,26 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
                 self.index(0, 0),
                 self.index(len(self.__rows) - 1, len(COLUMNS) - 1),
                 [Qt.ItemDataRole.ForegroundRole, Qt.ItemDataRole.ToolTipRole],
+            )
+
+    def set_servers(self, servers: Mapping[UUID, str]) -> None:
+        """Say which server each root's files are on, for the Server column (#627).
+
+        :param servers: the server of each root with a location here, by its id (``local`` for this machine's own
+            disks); a root left out shows none.
+        """
+        if dict(servers) == self.__servers:
+            return
+        self.__servers = dict(servers)
+        if self.__sort_column == CatalogColumn.SERVER:
+            # the keys held are the Server column's, worked out from the old map
+            self.__column_keys.clear()
+            self.sort(self.__sort_column, self.__sort_order)
+        if self.__rows:
+            self.dataChanged.emit(
+                self.index(0, CatalogColumn.SERVER),
+                self.index(len(self.__rows) - 1, CatalogColumn.SERVER),
+                [Qt.ItemDataRole.DisplayRole],
             )
 
     def offline_reason(self, root_id: UUID) -> str | None:
@@ -436,6 +469,12 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
             return Descending(key), self.__cache_key(entry)
         return key, self.__cache_key(entry)
 
+    def __value(self, entry: CatalogRow, column: CatalogColumn) -> object:
+        """What a row's cell in ``column`` holds: the column's own value, but for the Server, which is its root's."""
+        if column is CatalogColumn.SERVER:
+            return self.__servers.get(entry.root_id, "")
+        return COLUMNS[column].value(entry)
+
     def __column_key(self, entry: CatalogRow) -> tuple[int, Any]:
         """Where ``entry`` sorts by the sorted column alone, ascending: its value, a missing one as the smallest.
 
@@ -453,8 +492,9 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
                 # re-pointed at the new object, so the next lookup is the identity test
                 keys[entry.resource_id] = (entry, key)
                 return key
-        spec = COLUMNS[CatalogColumn(self.__sort_column)]
-        value = spec.value(entry)
+        column = CatalogColumn(self.__sort_column)
+        spec = COLUMNS[column]
+        value = self.__value(entry, column)
         if spec.is_missing(value):
             key: tuple[int, Any] = (0, 0)
         else:
@@ -573,7 +613,7 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         entry = self.__rows[index.row()]
         column = CatalogColumn(index.column())
         if role == Qt.ItemDataRole.DisplayRole:
-            value = COLUMNS[column].value(entry)
+            value = self.__value(entry, column)
             return None if value == "" else value
         offline = self.__offline.get(entry.root_id)
         if role == Qt.ItemDataRole.ToolTipRole:

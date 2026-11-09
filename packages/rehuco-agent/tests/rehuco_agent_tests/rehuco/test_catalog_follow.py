@@ -367,6 +367,20 @@ def test_a_root_out_of_reach_is_written_into_the_cache_and_greys_its_rows(
     assert model.index(0, CatalogColumn.TITLE).data(Qt.ItemDataRole.ForegroundRole) is None
 
 
+def test_a_browser_shows_the_server_of_its_rows_roots(followed: tuple[CatalogDocks, ResourceEvents]) -> None:
+    """The dock tells each browser's model the server each root's files are on, from the roots' locations, so the
+    Server column reads the host a location names (#627).
+
+    **Test steps:**
+
+    * read the Server cell of the first browser's first row
+    * verify it is the host of the root's location, ``test``
+    """
+    dock, _events = followed
+
+    assert first_browser(dock).model.index(0, CatalogColumn.SERVER).data() == "test"
+
+
 def test_a_double_click_on_a_row_of_a_root_out_of_reach_says_why_and_opens_nothing(
     qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
 ) -> None:

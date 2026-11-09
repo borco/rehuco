@@ -15,10 +15,12 @@ from pytest import mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core.rehuco_file import RootStorage
 from rehuco_core.root_location import (
+    LOCAL_SERVER,
     location_of,
     machine_name,
     mount_share,
     resolve_location,
+    server_of,
     share_location,
     storage_of,
 )
@@ -54,6 +56,36 @@ def test_the_machine_name_is_the_first_label_in_lower_case(mocker: MockerFixture
     mocker.patch(f"{MODULE}.socket.gethostname", return_value="Ryzen-5600.local")
 
     assert machine_name() == "ryzen-5600"
+
+
+@mark.parametrize(
+    ("location", "server"),
+    [
+        ("//nas/data/Tutorials", "nas"),
+        ("//NAS/data", "nas"),
+        ("//192.168.1.5/data/x", "192.168.1.5"),
+        ("//ryzen-5600/d/Downloads", LOCAL_SERVER),
+        ("//Ryzen-5600", LOCAL_SERVER),
+        ("//", ""),
+        ("d:/Downloads", ""),
+        ("", ""),
+    ],
+)
+def test_the_server_of_a_location_is_its_host_or_local_for_this_machine(
+    mocker: MockerFixture, location: str, server: str
+) -> None:
+    """A share's server is the host it is mapped from, as spelled; this machine's own disks are ``local``; a string
+    that is no location, or names no host, has none.
+
+    **Test steps:**
+
+    * replace the host name with ``Ryzen-5600.local``
+    * ask the server of a share, an address, this machine's folder and strings that are no location
+    * verify the host, lower-cased, ``local`` for this machine, and nothing otherwise
+    """
+    mocker.patch(f"{MODULE}.socket.gethostname", return_value="Ryzen-5600.local")
+
+    assert server_of(location) == server
 
 
 def test_a_cifs_mount_is_a_share_location() -> None:
