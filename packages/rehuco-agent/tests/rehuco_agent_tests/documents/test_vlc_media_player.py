@@ -2,7 +2,7 @@
 rendered into memory ([[appendices.vlc#python-vlc-events]], [[appendices.vlc#memory-rendering]], #319)."""
 
 # fixture-heavy tests, and small stand-ins for python-vlc's objects
-# pylint: disable=too-many-arguments,too-many-positional-arguments,too-few-public-methods
+# pylint: disable=too-few-public-methods
 
 import ctypes
 import sys
@@ -117,7 +117,7 @@ class FakeLibvlc:
         :param index: which media, in the order made.
         :returns: the count.
         """
-        return self.media[index].release.call_count  # pylint: disable=no-member
+        return self.media[index].release.call_count
 
     def opened(self, index: int) -> tuple[str, tuple[str, ...]]:
         """What one of the media made was opened as.

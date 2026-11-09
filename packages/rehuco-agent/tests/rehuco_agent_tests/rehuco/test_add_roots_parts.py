@@ -2,12 +2,13 @@
 delegate, a folder's editors, and *New layout…*.
 """
 
+import os
 from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QModelIndex, QPoint, QPointF, QRect, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QMouseEvent, QPainter
-from PySide6.QtWidgets import QStyle, QStyleOptionViewItem, QWidget
+from PySide6.QtWidgets import QLineEdit, QStyle, QStyleOptionViewItem, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -100,13 +101,12 @@ def fixture_browser(qtbot: QtBot, tmp_path: Path) -> RootsBrowser:
 
 
 def test_the_browser_lists_folders_and_root_files_only_and_goes_up(browser: RootsBrowser, tmp_path: Path) -> None:
-    """Other files are left out; the up button shows the folder above, and a path that is no folder changes nothing;
-    at a drive's top there is nothing above.
+    """Other files are left out; the up button shows the folder above, and a path that is no folder changes nothing.
 
     **Test steps:**
 
-    * read the rows; show a file's path; go up; show the drive's top and go up
-    * verify the names, the folder kept, the parent shown, then the top kept
+    * read the rows; show a file's path; go up
+    * verify the names, the folder kept, the parent shown
     """
     tree = browser.tree_view
     model = tree.model()
@@ -119,10 +119,60 @@ def test_the_browser_lists_folders_and_root_files_only_and_goes_up(browser: Root
     browser.findChild(QWidget, "up_button").click()  # type: ignore[union-attr]
     assert browser.folder == tmp_path.parent
 
+
+@mark.skipif(os.name == "nt", reason="Windows has the drives above a drive's top")
+def test_up_stops_at_the_filesystem_root(browser: RootsBrowser, tmp_path: Path) -> None:
+    """Where ``/`` is the top, Up there changes nothing.
+
+    **Test steps:**
+
+    * show the top and click Up
+    * verify the top is still shown
+    """
     top = Path(tmp_path.anchor)
     browser.show_folder(top)
     browser.findChild(QWidget, "up_button").click()  # type: ignore[union-attr]
     assert browser.folder == top
+
+
+@mark.skipif(os.name != "nt", reason="only Windows has drives above the top of a folder tree")
+def test_up_from_a_drive_shows_the_drives_and_stops_there(browser: RootsBrowser, qtbot: QtBot, tmp_path: Path) -> None:
+    """One Up above a drive's top lists the machine's drives with the path field empty; Up is then disabled, and a
+    path typed or shown brings it back.
+
+    **Test steps:**
+
+    * show a drive's top and click Up; stage the drive's row; click Up again
+    * verify the drives listed, the field empty, Up disabled, the drive staged and the view unchanged
+    * show a folder
+    * verify Up enabled and the folder's path in the field
+    """
+    up_button = browser.findChild(QWidget, "up_button")
+    path_edit = browser.findChild(QLineEdit, "path_edit")
+    tree = browser.tree_view
+    staged: list[list[Path]] = []
+    browser.add_requested.connect(staged.append)
+    drive = Path(tmp_path.anchor)
+    browser.show_folder(drive)
+
+    up_button.click()  # type: ignore[union-attr]
+    qtbot.waitUntil(lambda: tree.model().rowCount(tree.rootIndex()) > 0, timeout=5000)
+    assert not tree.rootIndex().isValid()
+    assert path_edit.text() == ""  # type: ignore[union-attr]
+    assert not up_button.isEnabled()  # type: ignore[union-attr]
+    drive_row = browser.index_of(drive)
+    assert drive_row.isValid() and drive_row.parent() == tree.rootIndex()
+
+    browser.stage(drive_row)
+    assert len(staged) == 1
+    assert staged[0] == [drive]
+
+    up_button.click()  # type: ignore[union-attr]
+    assert not tree.rootIndex().isValid()
+
+    browser.show_folder(tmp_path)
+    assert up_button.isEnabled()  # type: ignore[union-attr]
+    assert path_edit.text() == str(tmp_path)  # type: ignore[union-attr]
 
 
 def test_the_plus_stages_its_row_or_every_selected_row_in_order(browser: RootsBrowser, tmp_path: Path) -> None:
