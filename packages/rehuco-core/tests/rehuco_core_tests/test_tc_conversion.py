@@ -44,6 +44,8 @@ TC_YAML_WITH_MEMBERSHIPS: Final = (
     "  - Path A\n"
 )
 
+TC_YAML_WITH_USER_VALUES: Final = "type: Tutorial\ntitle: Some Title\nkeep: true\n"
+
 TC_YAML_WITH_SIZE: Final = "type: Tutorial\ntitle: Some Title\ncurrent_size: 500 MB\n"
 
 MTIME: Final = 1700000000.0
@@ -194,12 +196,12 @@ def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFix
 
     **Test steps:**
 
-    * convert a `.tc` under an explicit username
+    * convert a `.tc` carrying one per-user value under an explicit username
     * verify the saved record's block is current-stamped and holds no ``users`` map, that username's sidecar
-      holds the per-user flags and no other sidecar was written, and the returned document reads them back as
+      holds the per-user value and no other sidecar was written, and the returned document reads it back as
       that identity
     """
-    mocks = mock_environment(mocker)
+    mocks = mock_environment(mocker, tc_yaml=TC_YAML_WITH_USER_VALUES)
 
     document = convert_tc(TC_PATH, keep_backups=True, username="alice")
 
@@ -208,7 +210,8 @@ def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFix
     assert "users" not in saved["tutorial"]
     assert {call.args[0] for call in mocks["write"].call_args_list} == {TARGET_PATH, sidecar_path("alice")}
     flags = written(mocks, sidecar_path("alice"))["tutorial"]
-    assert flags["favorite"] is False
+    assert flags == {"keep": True}
+    assert document.active_block["users"]["alice"]["keep"] is True
     assert document.username == "alice"
     # the source `.tc` carried no rating, so none is fabricated: it is omitted, and reads back unrated
     # ([[field-schema#deferred-items]]) -- 0 is a genuine rating, so absent must not coerce to it
@@ -216,24 +219,58 @@ def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFix
     assert document.rating is None
 
 
-def test_convert_files_per_user_flags_under_the_unknown_user_by_default(mocker: MockerFixture) -> None:
-    """Converting without an explicit username files the imported per-user flags under the *unknown* user
-    (``unknown``) -- the flags were not set by this install's identity (#109).
+def test_convert_files_per_user_values_under_the_unknown_user_by_default(mocker: MockerFixture) -> None:
+    """Converting without an explicit username files a per-user value under the *unknown* user
+    (``unknown``) -- it was not set by this install's identity (#109).
 
     See [[field-schema#per-user-shared]].
 
     **Test steps:**
 
-    * convert a `.tc` with no username
-    * verify the per-user flags are written only to ``unknown``'s sidecar, and the document adopts it
+    * convert a `.tc` carrying one per-user value, with no username
+    * verify it is written only to ``unknown``'s sidecar, and the document adopts that user
+    """
+    mocks = mock_environment(mocker, tc_yaml=TC_YAML_WITH_USER_VALUES)
+
+    document = convert_tc(TC_PATH, keep_backups=True)
+
+    assert {call.args[0] for call in mocks["write"].call_args_list} == {TARGET_PATH, sidecar_path("unknown")}
+    assert written(mocks, sidecar_path("unknown"))["tutorial"] == {"keep": True}
+    assert document.username == "unknown"
+
+
+def test_convert_writes_no_sidecar_when_every_per_user_value_is_a_default(mocker: MockerFixture) -> None:
+    """A `.tc` whose per-user values all equal a new record's leaves nobody a sidecar (#622).
+
+    **Test steps:**
+
+    * convert a `.tc` carrying no per-user value, with no username
+    * verify only the record was written, and the document still adopts the given user
     """
     mocks = mock_environment(mocker)
 
     document = convert_tc(TC_PATH, keep_backups=True)
 
-    assert {call.args[0] for call in mocks["write"].call_args_list} == {TARGET_PATH, sidecar_path("unknown")}
-    assert "favorite" in written(mocks, sidecar_path("unknown"))["tutorial"]
+    assert {call.args[0] for call in mocks["write"].call_args_list} == {TARGET_PATH}
     assert document.username == "unknown"
+
+
+def test_convert_files_only_the_deviations_under_the_converting_user(mocker: MockerFixture) -> None:
+    """A `.tc` with one value off its default gives the converting user a sidecar holding only it (#622).
+
+    **Test steps:**
+
+    * convert a `.tc` with ``keep: true`` and every other per-user value at its default, as ``alice``
+    * verify ``alice``'s sidecar holds ``keep`` and nothing else
+    """
+    mocks = mock_environment(mocker, tc_yaml=TC_YAML_WITH_USER_VALUES)
+
+    convert_tc(TC_PATH, keep_backups=True, username="alice")
+
+    assert written(mocks, sidecar_path("alice")) == {
+        "format_version": written(mocks, sidecar_path("alice"))["format_version"],
+        "tutorial": {"keep": True},
+    }
 
 
 def test_convert_round_trips_collection_and_owned_learning_paths(mocker: MockerFixture) -> None:

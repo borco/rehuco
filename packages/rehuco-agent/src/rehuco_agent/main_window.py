@@ -1186,12 +1186,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __on_import_legacy_catalog(self) -> None:
         """Open the bulk `.tc` import wizard (``Tools`` > ``Import Legacy Catalog...``, #192).
 
-        Filed under the **unknown** identity, the same rule an in-app `.tc` open already follows
-        (``DocumentsDock``): the per-user flags a legacy file carries were not set by this install's
-        own identity ([[field-schema#per-user-shared]], #109).
+        Filed under the **current** user (#622), as the dock's own *Convert* is: a legacy file's per-user
+        values that differ from a new record's go to the one converting, and values at their defaults
+        write nothing, so no sidecar lands under the unknown user ([[field-schema#per-user-shared]]). Only
+        a `.tc` *opened* in-app, read-only, is still shown under the unknown identity (#109).
         """
         wizard = ImportLegacyCatalogWizard(
-            self.__task_queue, username=shared_identity_settings().unknown_username, parent=self
+            self.__task_queue, username=shared_identity_settings().current_username, parent=self
         )
         wizard.exec()
 

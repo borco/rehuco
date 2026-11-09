@@ -30,6 +30,7 @@ from rehuco_agent.documents import record_reader
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, key_label
 from rehuco_agent.fields import FieldsTab, UnknownField
+from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
@@ -1787,21 +1788,23 @@ def test_convert_failure_does_not_emit_reloaded(mocker: MockerFixture) -> None:
 
 
 def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture) -> None:
-    """convert() forwards this document's path, keyword arguments, and username to the records' ``convert``.
+    """convert() forwards this document's path and keyword arguments to the records' ``convert``, with the
+    **current** user as the one converting.
 
-    The username is the wrapped document's **own** -- the identity it was opened with (#99), so
-    the conversion files the imported per-user flags under the same owner
-    ([[field-schema#per-user-shared]]), not whatever the identity setting says by then.
+    The username is the identity setting's current user (#622), not the unknown one the legacy document was
+    opened as (#109): the ``.tc``'s per-user values that differ from a new record's are filed under the person
+    converting ([[field-schema#per-user-shared]]).
 
     **Test steps:**
 
-    * build a model over a legacy ``.tc``-backed document at a known path, opened as ``alice``
-    * mock the records' ``convert``
+    * build a model over a legacy ``.tc``-backed document at a known path, opened as ``unknown``
+    * set the current user to ``alice`` and mock the records' ``convert``
     * call ``model.convert`` with specific ``keep_backups``/``overwrite`` values
     * verify the records' ``convert`` was called with the document's key, those exact values, and ``alice``
     """
     tc_path = FAKE / "info.tc"
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True, username="alice"))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True, username="unknown"))
+    shared_identity_settings().current_username = "alice"
     mock_convert = converts_to(mocker, RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")))
     deleter = mocker.Mock()
     mocker.patch("rehuco_agent.documents.rehu_document_model.configured_deleter", return_value=deleter)

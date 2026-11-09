@@ -78,6 +78,20 @@ class TcDocument:
     ([[plugins#plugin-blocks]]), so both come from the plugin's own declaration rather than from a second
     table that could drift out of step with it."""
 
+    __USER_FLAG_DEFAULTS: Final = {
+        "keep": False,
+    }
+    """The per-user flags every type with a block imports, by their ``.tc`` key, each with what it is on a new
+    record -- so what a ``.tc`` that is silent is taken to say. A per-user value equal to its default is not
+    written (#622)."""
+
+    __TUTORIAL_USER_FLAG_DEFAULTS: Final = {
+        "todo": False,
+        "viewed": False,
+    }
+    """The per-user flags only a Tutorial imports, by their ``.tc`` key, with their defaults: a reference-image
+    pack has no progress through timed material ([[field-schema#resource-types]], #195)."""
+
     __SIZE_SUFFIXES: Final = {
         "B": 1,
         "KB": 1000,
@@ -242,7 +256,7 @@ class TcDocument:
         (:func:`~rehuco_core.current_block_version`), so :meth:`~rehuco_core.RehuDocument` treats it as
         current and never re-migrates it.
 
-        ``favorite`` is minted ``False`` -- it is new to rehuco with no tc4 source key
+        ``favorite`` is new to rehuco with no tc4 source key, so it is never written
         ([[field-schema#per-user-shared]]). The optional scalars ``rating``/``original_duration`` are
         *omitted* unless the ``.tc`` carried them (an explicit ``0`` imports; a missing field is not
         fabricated, [[field-schema#deferred-items]]), and the reference-images count pair
@@ -269,11 +283,25 @@ class TcDocument:
         # scalar: neither half of the count pair is written on import, not even as null.
         return block
 
+    def __put_flag(self, user: dict[str, Any], key: str, default: bool) -> None:
+        """Store the ``.tc``'s ``key`` flag in ``user`` unless it equals ``default`` (#622).
+
+        :param user: the per-user map being built.
+        :param key: the flag's key, in the ``.tc`` and in the map.
+        :param default: what the flag is on a new record, and what the ``.tc`` is taken to say when it is silent.
+        """
+        value = self.__coerced_bool(key, default)
+        if value != default:
+            user[key] = value
+
     def __user_fields(self) -> dict[str, Any]:
         """Build this user's per-user subset ([[field-schema#per-user-shared]]).
 
-        The boolean flags keep their coercion defaults; the optional ``rating`` scalar is omitted unless the
-        ``.tc`` carried it (an explicit value, even ``0``, imports; absent is not ``0``,
+        A value equal to a new record's -- a ``False`` flag, no learning paths, no rating -- is left out, so a
+        ``.tc`` whose per-user values are all defaults leaves an empty map, which
+        :func:`~rehuco_core.user_sidecars.split_user_sidecars` writes no sidecar for (#622). ``favorite`` is
+        never written: tc4 had no such key, so it is always the default. The optional ``rating`` scalar is
+        omitted unless the ``.tc`` carried it (an explicit value, even ``0``, imports; absent is not ``0``,
         [[field-schema#deferred-items]]).
 
         ``viewed``/``todo`` import for a **Tutorial only** ([[field-schema#resource-types]], #195): tc4
@@ -284,14 +312,15 @@ class TcDocument:
 
         :returns: the per-user field map.
         """
-        user: dict[str, Any] = {
-            "favorite": False,
-            "keep": self.__coerced_bool("keep", False),
-            "learning_paths": self.__learning_paths(),
-        }
+        user: dict[str, Any] = {}
+        flag_defaults = dict(self.__USER_FLAG_DEFAULTS)
         if self.__type == "Tutorial":
-            user["todo"] = self.__coerced_bool("todo", False)
-            user["viewed"] = self.__coerced_bool("viewed", False)
+            flag_defaults.update(self.__TUTORIAL_USER_FLAG_DEFAULTS)
+        for key, default in flag_defaults.items():
+            self.__put_flag(user, key, default)
+        learning_paths = self.__learning_paths()
+        if learning_paths:
+            user["learning_paths"] = learning_paths
         self.__put_optional(user, "rating", self.__optional_int_field("rating"))
         return user
 
