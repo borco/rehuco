@@ -20,7 +20,7 @@ from .rehuroot_file import REHUROOT_SUFFIX, RehurootFile, RehurootFileError
 from .root_location import location_of, resolve_location
 from .root_mappings import MappedRoot
 from .root_overlap import RootOverlap
-from .sanitized_names import sanitize_name
+from .sanitized_names import location_stem
 
 ALREADY_A_ROOT = "Already a root of this catalog."
 """Why a pick whose location the catalog already lists cannot be added."""
@@ -48,8 +48,8 @@ class RootPick:
 
     :param path: the ``.rehuroot`` or the folder, as picked.
     :param label: a folder's label as typed; ``None`` or empty takes the folder's name. Ignored for a ``.rehuroot``.
-    :param root_file: where a folder's new ``.rehuroot`` goes, as typed; ``None`` names it after the label, beside
-        the ``.rehuco``. Ignored for a ``.rehuroot``.
+    :param root_file: where a folder's new ``.rehuroot`` goes, as typed; ``None`` names it after the folder's location
+        (:func:`~rehuco_core.sanitized_names.location_stem`), beside the ``.rehuco``. Ignored for a ``.rehuroot``.
     """
 
     path: Path
@@ -229,7 +229,8 @@ class RootPlanner:  # pylint: disable=too-few-public-methods
     @staticmethod
     def __with_root_file(file: RehucoFile, line: RootCandidate, taken: Sequence[Path]) -> RootCandidate:
         """A folder's line with the root file it would get: the one typed -- refused when it is no ``.rehuroot``, or
-        when a file, a root of the catalog or a line before has it -- or one named after its label, free of all three.
+        when a file, a root of the catalog or a line before has it -- or one named after its location, free of all
+        three.
 
         :param file: the catalog.
         :param line: the folder's line.
@@ -238,7 +239,7 @@ class RootPlanner:  # pylint: disable=too-few-public-methods
         """
         chosen = line.pick.root_file
         if chosen is None:
-            stem = sanitize_name(line.label) or DEFAULT_ROOT_FILE_STEM
+            stem = location_stem(line.location) or DEFAULT_ROOT_FILE_STEM
             return replace(line, root_file=file.free_root_file(stem, taken))
         if not chosen.is_absolute() and file.path is not None:
             # a bare name is meant beside the .rehuco, never wherever the process happens to run

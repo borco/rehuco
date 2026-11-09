@@ -377,7 +377,7 @@ from .root_mappings import (
     RootMappingsError,
 )
 from .root_overlap import RootOverlap
-from .sanitized_names import sanitize_name
+from .sanitized_names import location_stem, sanitize_name
 from .save_record_job import SAVE_RECORD_KIND, SaveOutcome, SavePayload, SaveRecordJob, rebase_payload
 from .staged_images import (
     StagedImageName,
@@ -947,6 +947,7 @@ __all__ = [
     "location_of",
     "location_pattern_is_valid",
     "location_pattern_problem",
+    "location_stem",
     "location_values",
     "lock_path_for",
     "locked_record",

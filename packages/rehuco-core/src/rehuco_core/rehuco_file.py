@@ -45,7 +45,7 @@ from .path_keys import path_key
 from .record_file_lock import RecordFileLock
 from .rehu_format import FORMAT_VERSION_KEY
 from .rehuroot_file import DEFAULT_LAYOUTS, REHUROOT_SUFFIX, RehurootFile, RehurootFileError
-from .sanitized_names import sanitize_name
+from .sanitized_names import location_stem
 from .shared_file_digest import disk_digest, text_digest
 
 REHUCO_ID_KEY: Final = "id"
@@ -329,8 +329,8 @@ class RehucoFile:  # pylint: disable=too-many-public-methods
             use (case-insensitively) gets a suffix: ``foo``, ``foo (2)``, ``foo (3)``.
         :param layouts: where a record of each type lives under the root; the default keeps any record's name.
         :param fallbacks: what a placeholder renders as when a record leaves it empty; none when ``None``.
-        :param file: where the root file goes; ``None`` puts it beside the ``.rehuco``, named after the label
-            (:meth:`free_root_file`).
+        :param file: where the root file goes; ``None`` puts it beside the ``.rehuco``, named after the
+            location (:func:`~rehuco_core.sanitized_names.location_stem`, then :meth:`free_root_file`).
         :returns: the new root's row.
         :raises ValueError: the location is already a root, the file chosen is already there or already listed, or
             the ``.rehuco`` has no folder to put the root file in. Whether its folder overlaps another is the
@@ -343,7 +343,7 @@ class RehucoFile:  # pylint: disable=too-many-public-methods
             raise ValueError(f"Already a root: {location}")
         unique = self.__unique_label(label if label else self.default_label(location))
         if file is None:
-            file = self.free_root_file(sanitize_name(unique) or DEFAULT_ROOT_FILE_STEM)
+            file = self.free_root_file(location_stem(location) or DEFAULT_ROOT_FILE_STEM)
         else:
             # a relative file is meant beside the .rehuco, never wherever the process happens to run
             file = Path(os.path.normpath(self.__path.parent / file))
