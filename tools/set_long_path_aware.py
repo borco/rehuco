@@ -33,11 +33,6 @@ MANIFEST_ID: Final = 1
 
 LOAD_LIBRARY_AS_DATAFILE: Final = 0x2
 
-ENUM_LANGUAGES: Final = ctypes.WINFUNCTYPE(
-    wintypes.BOOL, wintypes.HMODULE, ctypes.c_void_p, ctypes.c_void_p, wintypes.WORD, ctypes.c_void_p
-)
-"""The callback :func:`read_manifests` enumerates the manifest's languages with."""
-
 
 def with_long_path_aware(manifest: str) -> str:
     """Add the long-path declaration to a manifest.
@@ -61,6 +56,10 @@ def read_manifests(executable: Path) -> dict[int, str]:  # pragma: no cover -- t
     :returns: each manifest's XML by the language it is stored under.
     :raises OSError: the executable cannot be loaded or has no manifest.
     """
+    # Built here, not at module level: ``WINFUNCTYPE`` exists only on Windows, and the module is imported everywhere.
+    enum_languages = ctypes.WINFUNCTYPE(
+        wintypes.BOOL, wintypes.HMODULE, ctypes.c_void_p, ctypes.c_void_p, wintypes.WORD, ctypes.c_void_p
+    )
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.LoadLibraryExW.restype = wintypes.HMODULE
     kernel.LoadLibraryExW.argtypes = [wintypes.LPCWSTR, wintypes.HANDLE, wintypes.DWORD]
@@ -68,7 +67,7 @@ def read_manifests(executable: Path) -> dict[int, str]:  # pragma: no cover -- t
         wintypes.HMODULE,
         ctypes.c_void_p,
         ctypes.c_void_p,
-        ENUM_LANGUAGES,
+        enum_languages,
         ctypes.c_void_p,
     ]
     kernel.FindResourceExW.restype = wintypes.HANDLE
@@ -87,7 +86,7 @@ def read_manifests(executable: Path) -> dict[int, str]:  # pragma: no cover -- t
     manifests: dict[int, str] = {}
     try:
         kernel.EnumResourceLanguagesW(
-            module, RT_MANIFEST, MANIFEST_ID, ENUM_LANGUAGES(lambda *args: languages.append(args[3]) or True), None
+            module, RT_MANIFEST, MANIFEST_ID, enum_languages(lambda *args: languages.append(args[3]) or True), None
         )
         if not languages:
             raise ctypes.WinError(ctypes.get_last_error())
