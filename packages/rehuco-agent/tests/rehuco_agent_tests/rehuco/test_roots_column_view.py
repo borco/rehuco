@@ -6,7 +6,7 @@ from typing import Any, Final, NamedTuple
 
 from borco_pyside.widgets import RowBandDelegate
 from PySide6.QtCore import QModelIndex, QPoint, QRect
-from PySide6.QtGui import QColor, QFont, QImage, QPainter
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPalette
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QListView, QStyle, QStyleOptionViewItem
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -159,6 +159,69 @@ def test_the_row_under_a_screen_point_is_found_in_whichever_column(
     assert view.index_at_global(first.viewport().mapToGlobal(first.visualRect(root).center())) == root
     assert view.index_at_global(second.viewport().mapToGlobal(second.visualRect(alpha).center())) == alpha
     assert not view.index_at_global(QPoint(-5000, -5000)).isValid()
+
+
+def test_an_empty_view_has_a_first_column_with_the_model_that_answers_a_menu(
+    qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
+) -> None:
+    """With no roots ``QColumnView`` shows a bare column with no model, drawn grey and skipped by the menu's lookup
+    (#570); the column of roots has the model from the start, and keeps it when roots come and go.
+
+    **Test steps:**
+
+    * show a view over a model with no roots
+    * verify a visible column has the model, fills its background with the base colour, and answers the lookup with
+      the invalid index; and again after a reset, and after a style change, each with the fill turned off first
+    * add a root, and verify the column gave the model back and collapsed to no width, as the preview column
+    * remove the root again and verify the first point; then that a view with no model at all is left alone, a style
+      change included, and that a view has no column before it has a model
+    """
+    model = delete_at_teardown(RootsFolderModel())
+    view = RootsColumnView()
+    view.setModel(model)
+    qtbot.addWidget(view)
+    view.resize(520, 260)
+    view.show()
+    qtbot.waitExposed(view)
+
+    def check() -> None:
+        """Verify the empty view's column and what asking it for a menu finds."""
+        column = next(c for c in view.findChildren(QAbstractItemView) if c is not view and c.isVisible())
+        viewport = column.viewport()
+        assert column.model() is model
+        assert viewport.autoFillBackground()
+        assert viewport.palette().color(viewport.backgroundRole()) == viewport.palette().color(QPalette.ColorRole.Base)
+        found = view.column_root_at_global(viewport.mapToGlobal(viewport.rect().center()))
+        assert found is not None
+        assert not found.isValid()
+
+    check()
+
+    # the Windows style's unpolish leaves the preview column's viewport unfilled, which a stylesheet set on an
+    # ancestor brings about; the offscreen style does not, so the fill is turned off by hand before each
+    bare = next(c for c in view.findChildren(QAbstractItemView) if c is not view and c.isVisible())
+    bare.viewport().setAutoFillBackground(False)
+    model.modelReset.emit()  # with the column already holding the model, the reset leaves it and fills it
+    check()
+    bare.viewport().setAutoFillBackground(False)
+    view.setStyleSheet("QLabel { color: red; }")  # a style change, the children restyled before the view hears
+    check()
+
+    roots = [mapped_root(tmp_path, "lib", RootStorage.LOCAL)]
+    model.set_roots(roots, RootFolderLister(roots))
+    qtbot.waitUntil(lambda: model.rowCount() == 1, timeout=WAIT_TIMEOUT_MS)
+    # released to be the preview column, it is collapsed as one, although the column of roots was made before that
+    assert bare.model() is None
+    qtbot.waitUntil(lambda: bare.width() == 0, timeout=WAIT_TIMEOUT_MS)
+    model.set_roots([], RootFolderLister([]))
+    qtbot.waitUntil(lambda: model.rowCount() == 0, timeout=WAIT_TIMEOUT_MS)
+    check()
+
+    view.setModel(None)  # no model, nothing to give
+    view.setStyleSheet("QLabel { color: blue; }")  # and nothing to fill
+
+    assert view.model() is None
+    assert RootsColumnView().findChildren(QAbstractItemView) == []  # no column at all before a model is set
 
 
 def test_a_file_current_opens_no_column_of_its_own(
