@@ -141,6 +141,10 @@ class CDockContainerWidget(QWidget):
     def dockAreaCount(self) -> int:
         """How many areas this container holds, hidden ones included."""
 
+    def hasOpenDockAreas(self) -> bool:
+        """Whether any area of this container holds an open dock -- `False` for a floating window whose docks
+        were all closed ([[appendices.qt-ads#restore-shows-floating]])."""
+
     def addDockWidget(
         self,
         area: DockWidgetArea,

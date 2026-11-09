@@ -6807,17 +6807,25 @@ def test_a_restored_floating_dock_is_shown_plainly_elsewhere(mocker: MockerFixtu
     no_fade.assert_not_called()
 
 
-def test_catalog_docks_tabbed_in_one_floating_window_restore_together(mocker: MockerFixture, qtbot: QtBot) -> None:
+@mark.parametrize("closed", [False, True], ids=["open", "closed"])
+def test_catalog_docks_tabbed_in_one_floating_window_restore_together(
+    mocker: MockerFixture, qtbot: QtBot, closed: bool
+) -> None:
     """The Browsers and Root Catalog docks tabbed together in a floating window come back in one floating window, held
-    back for the main window like any restored floating dock (#102, #488).
+    back for the main window like any restored floating dock (#102, #488) -- and, every dock in it closed, kept off
+    the screen when the main window shows (#624).
 
     The case the opaque layout lost: a floating window the outer manager had stopped tracking was not saved at all.
+    The closed case is the empty floating window a start used to show: the guard handed the container back with the
+    open ones, and ``raise_and_activate`` showed it with nothing in it.
 
     **Test steps:**
 
-    * float one window's Browsers dock, tab the Root Catalog dock into its window, and save the window state
+    * float one window's Browsers dock, tab the Root Catalog dock into its window, close both when ``closed``, and
+      save the window state
     * seed ``MainWindowSettings.load`` with that layout and construct a second window
-    * verify both docks are open in one floating container, held back until ``raise_and_activate`` shows it
+    * verify both docks are in one floating container, open or closed as saved, held back until
+      ``raise_and_activate``, which shows it only while its docks are open
     """
     first = MainWindow()
     qtbot.addWidget(first)
@@ -6828,6 +6836,9 @@ def test_catalog_docks_tabbed_in_one_floating_window_restore_together(mocker: Mo
     rehuco.toggleView(True)
     dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, rehuco, browsers.dockAreaWidget())
     assert rehuco.floatingDockContainer() is browsers.floatingDockContainer() is not None
+    if closed:
+        browsers.toggleView(False)
+        rehuco.toggleView(False)
     first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     saved = first._MainWindow__window_settings.outer_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -6845,13 +6856,13 @@ def test_catalog_docks_tabbed_in_one_floating_window_restore_together(mocker: Mo
     container = restored_browsers.floatingDockContainer()
     assert container is not None
     assert restored_rehuco.floatingDockContainer() is container
-    assert restored_browsers.isClosed() is False
-    assert restored_rehuco.isClosed() is False
+    assert restored_browsers.isClosed() is closed
+    assert restored_rehuco.isClosed() is closed
     assert container.isVisible() is False
 
     second.raise_and_activate()
 
-    assert container.isVisible() is True
+    assert container.isVisible() is not closed
 
 
 # endregion

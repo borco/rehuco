@@ -574,7 +574,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # a layout describing a floating window can have it shown there and then, before this window exists on screen
         # -- QtAds holds back a window holding one dock until its manager shows, but tabbing a second dock into it
         # shows it at once (#102) -- the guard kept that off the screen; released here, it hands the container back
-        # hidden, to wait for raise_and_activate, which shows it above this window instead of ahead of it (#306)
+        # hidden, to wait for raise_and_activate, which shows it above this window instead of ahead of it (#306) --
+        # and only while one of its docks is open, a window of closed docks being an empty one (#624)
         self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
         # and anything else already on screen as construction ends waits the same way -- nothing
         # should be, every show during __init__ having been guarded, so this is belt over braces
@@ -2515,7 +2516,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__show_at_once(self, self.__show_restored if self.isMinimized() else self.show)
         self.__floating_docks_hidden_with_window.extend(floating_show_guard.release())
         for container in self.__floating_docks_hidden_with_window:
-            self.__show_at_once(container, container.show)
+            # a restored floating window whose docks were all saved closed comes back held too, the guard holding
+            # whatever was shown while the layout was rebuilt; shown, it is an empty window (#624)
+            if container.dockContainer().hasOpenDockAreas():
+                self.__show_at_once(container, container.show)
         self.__floating_docks_hidden_with_window.clear()
         self.raise_()
         self.activateWindow()
