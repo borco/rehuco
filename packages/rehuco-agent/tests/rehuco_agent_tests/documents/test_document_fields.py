@@ -9,6 +9,7 @@ from pathlib import Path
 from threading import Event
 from typing import cast
 
+from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QCoreApplication, QThreadPool
 from PySide6.QtWidgets import QGridLayout, QLabel, QRadioButton, QToolButton, QWidget
 from pytest import fixture
@@ -45,8 +46,10 @@ from rehuco_agent.fields.widgets import (
 )
 from rehuco_agent.fields.widgets.content_count_edit import APPLY_TOOLTIP, COMPUTE_TOOLTIP
 from rehuco_agent.fields.widgets.duration_measurement_edit import COMPUTE_TOOLTIP as DURATION_COMPUTE_TOOLTIP
+from rehuco_agent.fields.widgets.location_line import LocationLine
 from rehuco_agent.fields.widgets.size_measurement_edit import COMPUTE_TOOLTIP as SIZE_COMPUTE_TOOLTIP
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
+from rehuco_agent.settings.record_url_settings import shared_record_url_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.videos_settings import shared_videos_settings
 from rehuco_core import (
@@ -298,6 +301,87 @@ def test_the_viewer_splits_the_strip_and_the_description_off_the_record_fields(
     main = grids[VIEWER_MAIN_TAB]
     assert main.findChild(ImageStrip) is None
     assert main.findChild(MarkdownView) is None
+
+
+def grid_row_of(grid: QGridLayout, widget: QWidget) -> int:
+    """The row of ``grid`` holding ``widget``, directly or inside a row's container.
+
+    :param grid: the viewer grid.
+    :param widget: the widget to find.
+    :returns: its row.
+    """
+    for row in range(grid.rowCount()):
+        for column in (LABEL_COLUMN, MISC_COLUMN, CONTENT_COLUMN):
+            item = grid.itemAtPosition(row, column)
+            held = item.widget() if item is not None else None
+            if held is not None and (held is widget or held.isAncestorOf(widget)):
+                return row
+    raise AssertionError("the widget is in no row")
+
+
+def url_links(grid: QWidget) -> list[ElidedLabel]:
+    """The record url links in a viewer grid -- the `ElidedLabel`s that are not the location line.
+
+    :param grid: a viewer grid widget.
+    :returns: the url links.
+    """
+    return [link for link in grid.findChildren(ElidedLabel) if not isinstance(link, LocationLine)]
+
+
+def test_the_record_url_sits_between_the_strip_and_the_description_and_on_the_main_view(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """The url is drawn on both views -- on the description view between the image strip and the
+    description (#620).
+
+    **Test steps:**
+
+    * build the viewer surfaces over a model with a url
+    * verify the main view holds one url link
+    * verify the description view holds one, in a row after the strip's and before the Markdown view's
+    """
+    model.url = "https://example.com"
+    grids = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_viewer(model)
+    for grid in grids.values():
+        qtbot.addWidget(grid)
+
+    assert len(url_links(grids[VIEWER_MAIN_TAB])) == 1
+    description = grids[VIEWER_DESCRIPTION_TAB]
+    links = url_links(description)
+    assert len(links) == 1
+    layout = cast(QGridLayout, description.layout())
+    strip, markdown = description.findChild(ImageStrip), description.findChild(MarkdownView)
+    assert strip is not None and markdown is not None
+    assert grid_row_of(layout, strip) < grid_row_of(layout, links[0]) < grid_row_of(layout, markdown)
+
+
+def test_each_record_url_placement_follows_its_setting_live(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Each view's url line shows and hides with its own setting while the document stays open (#620).
+
+    **Test steps:**
+
+    * build the viewer surfaces in a shown host, both settings on
+    * turn the Main View's setting off, then back on, and verify only the main view's link follows
+    * do the same for the Description View's setting
+    """
+    model.url = "https://example.com"
+    grids = build_document_form(model, NameSuggestionModel(model), RehuDocumentImageOrganizer(model)).make_viewer(model)
+    for grid in grids.values():
+        qtbot.addWidget(grid)
+        grid.show()
+    (main,) = url_links(grids[VIEWER_MAIN_TAB])
+    (description,) = url_links(grids[VIEWER_DESCRIPTION_TAB])
+    settings = shared_record_url_settings()
+
+    assert (main.isVisible(), description.isVisible()) == (True, True)
+    settings.show_on_main_view = False
+    assert (main.isVisible(), description.isVisible()) == (False, True)
+    settings.show_on_main_view = True
+    assert (main.isVisible(), description.isVisible()) == (True, True)
+    settings.show_on_description_view = False
+    assert (main.isVisible(), description.isVisible()) == (True, False)
+    settings.show_on_description_view = True
+    assert (main.isVisible(), description.isVisible()) == (True, True)
 
 
 def test_the_description_viewer_fills_the_height_its_strip_leaves(qtbot: QtBot, model: RehuDocumentModel) -> None:

@@ -334,13 +334,20 @@ class FieldsForm:
         :param header: the top-line widgets (label, optional misc), in order.
         :param content: the full-width body widget (viewer or editor) placed below the header.
         """
+        top = [widget for widget in header if widget is not None]
+        span = CONTENT_COLUMN - LABEL_COLUMN + 1
+        if not top and content is not None:
+            # a header-less row is its content alone, placed directly: hiding the content then hides the
+            # whole row, and the grid drops a hidden row's spacing, where a wrapper would keep it (#620)
+            grid.addWidget(content, row, LABEL_COLUMN, 1, span)
+            return
         container = QWidget()
         column = QVBoxLayout(container)
         column.setContentsMargins(0, 0, 0, 0)
-        top = [widget for widget in header if widget is not None]
+        # past the early return the header is non-empty: an all-``None`` bundle never reaches here
         if len(top) == 1:
             column.addWidget(top[0])
-        elif top:
+        else:
             line = QHBoxLayout()
             for widget in top:
                 line.addWidget(widget)
@@ -348,7 +355,7 @@ class FieldsForm:
             column.addLayout(line)
         if content is not None:
             column.addWidget(content)
-        grid.addWidget(container, row, LABEL_COLUMN, 1, CONTENT_COLUMN - LABEL_COLUMN + 1)
+        grid.addWidget(container, row, LABEL_COLUMN, 1, span)
 
     @staticmethod
     def __add_header_pinned_row(  # pylint: disable=too-many-arguments,too-many-positional-arguments

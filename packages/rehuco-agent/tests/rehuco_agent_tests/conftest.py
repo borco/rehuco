@@ -107,6 +107,9 @@ from rehuco_agent_tests.record_reads import (  # noqa: F401  # pylint: disable=u
     fixture_held_reads,
     fixture_inline_record_reads,
 )
+from rehuco_agent_tests.record_url_isolation import (  # noqa: F401  # pylint: disable=unused-import
+    fixture_isolate_shared_record_url_settings,
+)
 from rehuco_agent_tests.settings_page_stubs import (  # noqa: F401  # pylint: disable=unused-import
     fixture_real_settings_pages,
     fixture_stub_settings_pages,

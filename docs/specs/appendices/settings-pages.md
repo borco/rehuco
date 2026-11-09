@@ -519,8 +519,8 @@ row's Defaults now says the same thing, from one place. A page the generic path 
 an editor the filter cannot read (a table model), or state kept off its widgets — takes over all three
 buttons by satisfying `FrameRestoringPage` (`apply_frame(frame)` / `reset_frame(frame)` /
 `restore_frame_defaults(frame)`), which the dialog prefers when present. `DescriptionsPage` is the one
-that does: its two frames map one-to-one onto `MarkdownRenderingSettings` and
-`DescriptionEditorSettings`, so each hook saves, reverts or re-seeds one object exactly, hidden CSS
+that does: its three frames map one-to-one onto `MarkdownRenderingSettings`, `DescriptionEditorSettings`
+and `RecordUrlSettings` (#620), so each hook saves, reverts or re-seeds one object exactly, hidden CSS
 draft included — which also makes its engine frame's Reset clear the page where a widget-only restore
 could not.
 

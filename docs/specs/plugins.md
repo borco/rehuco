@@ -979,7 +979,9 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   ([[plugins#viewer-editor-both]]): read-only field display on the **main view**; on the **description view**, a
   horizontal image strip with click-to-maximize, prev/next navigation, hideable thumbnail strip, ESC to
   close, over the rendered Markdown
-  description. **Where** a clicked screenshot maximizes is a user preference (the "Images / Display" settings page,
+  description. The record's URL is a line on the main view, on the description view (under the strip, unlabelled, full
+  width), or both -- two checkboxes on the Descriptions settings page, both on by default (#620). **Where** a clicked
+  screenshot maximizes is a user preference (the "Images / Display" settings page,
   [[appendices.settings-pages#category-groups]]), not a fixed choice: an overlay over the open document's own client
   area (the default — the surrounding dock chrome, menus, and toolbars stay visible), an overlay over the whole main
   window's client area, or a frameless full-screen window. The strip itself only reports *which* screenshot was

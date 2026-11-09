@@ -41,6 +41,7 @@ from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.identity_settings import shared_identity_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from ..settings.record_url_settings import shared_record_url_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
 from ..settings.videos_settings import shared_videos_settings
 from .name_suggestion_model import NameSuggestionModel
@@ -79,6 +80,10 @@ LEARNING_PATHS_FIELD_NAME: Final = "learning_paths"
 """The learning-paths field's model name ([[field-schema#learning-path-ownership]]) -- the one record field
 whose editor needs to know **who is editing**, plus where the next file-scoped ``ref`` comes from (#235),
 named here so :func:`build_document_form` can hand it both."""
+
+URL_FIELD_NAME: Final = "url"
+"""The record url's model name ([[field-schema#sources]]) -- the one field drawn on two viewer surfaces
+(#620), named here so :func:`build_document_form` can hand it the second surface and its settings."""
 
 IMAGES_FIELD_NAME: Final = "hidden_images"
 """The images field's model name -- the lightbox's curated-out screenshots ([[data-model#image-meanings]])."""
@@ -519,6 +524,19 @@ def build_document_form(
         "username": model.document.username,
         "next_ref": lambda: model.document.next_learning_path_ref(),  # pylint: disable=unnecessary-lambda
         "unknown_username": shared_identity_settings().unknown_username,
+    }
+    # the url is drawn on the Main View and again on the Description View, between the strip and the
+    # description (#620): the second surface is this layer's to name, and each placement follows its own
+    # setting live
+    record_url_settings = shared_record_url_settings()
+    runtime_kwargs[URL_FIELD_NAME] = {
+        "description_tab": VIEWER_DESCRIPTION_TAB,
+        "main_visible": record_url_settings.show_on_main_view,
+        "main_visible_changed": record_url_settings.show_on_main_view_changed,  # type: ignore[attr-defined]
+        "description_visible": record_url_settings.show_on_description_view,
+        "description_visible_changed": (
+            record_url_settings.show_on_description_view_changed  # type: ignore[attr-defined]
+        ),
     }
     for spec in composed_field_specs(model):
         # a pair spec's second name is passed as an ordinary constructor argument, so the registry stays

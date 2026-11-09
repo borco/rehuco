@@ -116,6 +116,14 @@ class ContentlessField(TextField):
         return replace(super().make_editor(binding), editor=None)
 
 
+class VerticalLabelLessField(VerticalField):
+    """A vertical sample field with content but no label (the description view's url line, #620)."""
+
+    @override
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
+        return replace(super().make_viewer(binding), label=None)
+
+
 class VerticalContentlessField(VerticalField):
     """A vertical sample field with a label but no content (its full-width body is ``None``)."""
 
@@ -452,6 +460,29 @@ def test_vertical_viewer_row_stacks_label_over_viewer_full_width(qtbot: QtBot, m
     assert len(stacked) == 2
     assert isinstance(stacked[0], QLabel)
     assert stacked[0].text() == "Title"
+
+
+def test_a_label_less_vertical_viewer_row_is_its_content_alone_spanning_all_columns(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """A vertical bundle with content and no label is placed directly across the three columns, with no
+    container around it (#620): hiding the content hides the row, and the grid then skips its spacing.
+
+    **Test steps:**
+
+    * build a viewer form over a label-less vertical field
+    * verify the content widget itself sits in all three columns of its row
+    """
+    form = FieldsForm([VerticalLabelLessField("title")])
+    widget = sole_grid_widget(form.make_viewer(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    content = widget_at(grid, 0, LABEL_COLUMN)
+    assert isinstance(content, QLabel)
+    assert content.text() == model.title
+    assert widget_at(grid, 0, MISC_COLUMN) is content
+    assert widget_at(grid, 0, CONTENT_COLUMN) is content
 
 
 def test_vertical_editor_row_stacks_label_over_editor_full_width(qtbot: QtBot, model: RehuDocumentModel) -> None:

@@ -6,12 +6,13 @@ from typing import Any
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings import description_editor_settings, markdown_rendering_settings
+from rehuco_agent.settings import description_editor_settings, markdown_rendering_settings, record_url_settings
 from rehuco_agent.settings.description_editor_settings import (
     DescriptionEditorSettings,
     shared_description_editor_settings,
 )
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from rehuco_agent.settings.record_url_settings import shared_record_url_settings
 from rehuco_agent.settings.ui import descriptions_page
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
@@ -58,6 +59,7 @@ def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
     fake = FakeSettings()
     mocker.patch.object(markdown_rendering_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(description_editor_settings, "persistent_settings", return_value=fake)
+    mocker.patch.object(record_url_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(descriptions_page, "persistent_settings", return_value=fake)
     return fake
 
@@ -68,9 +70,11 @@ def clear_shared_instance_cache() -> Iterator[None]:
     ``test_markdown_rendering_settings.py`` for the full rationale)."""
     shared_markdown_rendering_settings.cache_clear()
     shared_description_editor_settings.cache_clear()
+    shared_record_url_settings.cache_clear()
     yield
     shared_markdown_rendering_settings.cache_clear()
     shared_description_editor_settings.cache_clear()
+    shared_record_url_settings.cache_clear()
 
 
 # endregion
@@ -580,6 +584,117 @@ def test_restoring_the_engine_frames_defaults_empties_both_drafts(qtbot: QtBot) 
     assert ui.css_edit.toPlainText() == ""
     ui.mistletoe_engine_radio_button.setChecked(True)
     assert ui.css_edit.toPlainText() == ""
+
+
+def test_the_record_url_frame_starts_with_both_views_on(qtbot: QtBot) -> None:
+    """The Record URL frame shows the URL on both views by default, and is clean (#620).
+
+    **Test steps:**
+
+    * build the page over unloaded settings
+    * verify both checkboxes are checked and the page is not dirty
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert ui.url_on_main_view_check_box.isChecked() is True
+    assert ui.url_on_description_view_check_box.isChecked() is True
+    assert page.is_dirty() is False
+
+
+def test_the_record_url_choices_are_staged_until_saved(qtbot: QtBot) -> None:
+    """Unchecking a Record URL box dirties the page and changes nothing until Apply (#620).
+
+    **Test steps:**
+
+    * uncheck both boxes
+    * verify the page is dirty and the shared settings are unchanged
+    * save the page and verify the shared settings follow, and the page is clean
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    ui.url_on_main_view_check_box.setChecked(False)
+    ui.url_on_description_view_check_box.setChecked(False)
+
+    assert page.is_dirty() is True
+    assert shared_record_url_settings().show_on_main_view is True
+    assert shared_record_url_settings().show_on_description_view is True
+
+    page.save_changes()
+
+    assert shared_record_url_settings().show_on_main_view is False
+    assert shared_record_url_settings().show_on_description_view is False
+    assert page.is_dirty() is False
+
+
+def test_applying_the_record_url_frame_saves_it_alone(qtbot: QtBot) -> None:
+    """Applying the Record URL frame persists its two choices and leaves the editor frame staged.
+
+    **Test steps:**
+
+    * uncheck the Main View box and the line-numbers box
+    * apply the Record URL frame
+    * verify the URL setting was saved, the editor setting was not, and the page is still dirty
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.url_on_main_view_check_box.setChecked(False)
+    ui.line_numbers_check_box.setChecked(False)
+
+    page.apply_frame(ui.record_url_frame)
+
+    assert shared_record_url_settings().show_on_main_view is False
+    assert shared_description_editor_settings().show_line_numbers is True
+    assert page.is_dirty() is True
+
+
+def test_resetting_the_record_url_frame_reverts_it_and_leaves_the_editor_frame_alone(qtbot: QtBot) -> None:
+    """Reset puts the Record URL boxes back to the saved values and touches no other frame.
+
+    **Test steps:**
+
+    * uncheck the Description View box and the line-numbers box
+    * reset the Record URL frame
+    * verify the URL box is checked again and the line-numbers box is still unchecked
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.url_on_description_view_check_box.setChecked(False)
+    ui.line_numbers_check_box.setChecked(False)
+
+    page.reset_frame(ui.record_url_frame)
+
+    assert ui.url_on_description_view_check_box.isChecked() is True
+    assert ui.line_numbers_check_box.isChecked() is False
+
+
+def test_restoring_the_record_url_frames_defaults_leaves_the_editor_frame_alone(qtbot: QtBot) -> None:
+    """Defaults stages both Record URL boxes on, without saving, and touches no other frame.
+
+    **Test steps:**
+
+    * save both URL choices off, then uncheck the line-numbers box
+    * restore the Record URL frame's defaults
+    * verify the URL boxes are checked, the saved settings still off, and the line-numbers box unchecked
+    """
+    shared_record_url_settings().show_on_main_view = False
+    shared_record_url_settings().show_on_description_view = False
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.line_numbers_check_box.setChecked(False)
+
+    page.restore_frame_defaults(ui.record_url_frame)
+
+    assert ui.url_on_main_view_check_box.isChecked() is True
+    assert ui.url_on_description_view_check_box.isChecked() is True
+    assert shared_record_url_settings().show_on_main_view is False
+    assert ui.line_numbers_check_box.isChecked() is False
 
 
 # endregion

@@ -4,8 +4,13 @@ from borco_pyside.widgets import ElidedLabel
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.fields import FieldsTab
+from rehuco_agent.settings.record_url_settings import RecordUrlSettings
 
+from rehuco_agent_tests.fields.field_testers import TEST_VIEWER_TAB
 from rehuco_agent_tests.fields.field_testers import UrlFieldTester as UrlField
+
+DESCRIPTION_TAB = FieldsTab("Description", ":/icons/document_viewer_description.svg")
 
 
 def test_url_field_viewer_is_an_elided_external_link(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -150,3 +155,117 @@ def test_url_field_editor_preserves_the_cursor_when_typing_mid_string(qtbot: QtB
 
     assert editor.text() == "https://xexample.com"
     assert editor.cursorPosition() == 9
+
+
+def test_url_field_draws_one_row_without_a_second_tab(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """With no ``description_tab`` the field is the single row it always was.
+
+    **Test steps:**
+
+    * build the viewer rows of a field given no second tab
+    * verify there is one, on the field's own tab
+    """
+    field = UrlField("url")
+
+    rows = field.make_viewer_rows([model.bind(field)])
+
+    assert [row.tab for row in rows] == [TEST_VIEWER_TAB]
+    for row in rows:
+        qtbot.addWidget(row.viewer)
+
+
+def test_url_field_draws_a_row_on_each_tab_and_both_follow_the_url(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Given a ``description_tab`` the field draws the url on both surfaces, each a link of its own.
+
+    **Test steps:**
+
+    * build the viewer rows of a field given a description tab
+    * verify the main tab's row comes first and the description tab's second, with no label of its own
+    * change ``model.url`` and verify both links follow
+    """
+    field = UrlField("url", description_tab=DESCRIPTION_TAB)
+
+    rows = field.make_viewer_rows([model.bind(field)])
+    assert len(rows) == 2
+    main, description = rows[0], rows[1]
+    for row in (main, description):
+        assert isinstance(row.viewer, ElidedLabel)
+        qtbot.addWidget(row.viewer)
+
+    assert (main.tab, description.tab) == (TEST_VIEWER_TAB, DESCRIPTION_TAB)
+    assert main.viewer is not description.viewer
+    assert main.label is not None and description.label is None
+    assert (main.vertical, description.vertical) == (False, True)
+    model.url = "https://changed.example"
+    for row in (main, description):
+        assert isinstance(row.viewer, ElidedLabel)
+        assert ">https://changed.example</a>" in row.viewer.text()
+
+
+def test_url_field_hides_a_placement_that_starts_off(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A placement whose setting starts off is built hidden -- label and link -- the other shown.
+
+    **Test steps:**
+
+    * build both rows with the Main View off
+    * parent them to a shown widget
+    * verify the main row's label and link are hidden and the description row's shown
+    """
+    field = UrlField("url", description_tab=DESCRIPTION_TAB, main_visible=False)
+    rows = field.make_viewer_rows([model.bind(field)])
+    assert len(rows) == 2
+    main, description = rows[0], rows[1]
+    host = QLabel()
+    qtbot.addWidget(host)
+    for widget in (main.label, main.viewer, description.viewer):
+        assert widget is not None
+        widget.setParent(host)
+    host.show()
+
+    assert main.label is not None and main.viewer is not None and description.viewer is not None
+    assert (main.label.isVisible(), main.viewer.isVisible()) == (False, False)
+    assert description.viewer.isVisible() is True
+
+
+def test_url_field_placements_follow_their_settings_live(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Each placement shows and hides with its own setting, the other untouched, with no rebuild.
+
+    **Test steps:**
+
+    * build both rows over a `RecordUrlSettings`' values and signals, in a shown host
+    * turn the Main View off, then on, and verify only the main row follows
+    * turn the Description View off, then on, and verify only the description row follows
+    """
+    settings = RecordUrlSettings()
+    field = UrlField(
+        "url",
+        description_tab=DESCRIPTION_TAB,
+        main_visible=settings.show_on_main_view,
+        main_visible_changed=settings.show_on_main_view_changed,  # type: ignore[attr-defined]
+        description_visible=settings.show_on_description_view,
+        description_visible_changed=settings.show_on_description_view_changed,  # type: ignore[attr-defined]
+    )
+    rows = field.make_viewer_rows([model.bind(field)])
+    assert len(rows) == 2
+    main, description = rows[0], rows[1]
+    host = QLabel()
+    qtbot.addWidget(host)
+    for widget in (main.label, main.viewer, description.viewer):
+        assert widget is not None
+        widget.setParent(host)
+    host.show()
+    main_label, main_link, description_link = main.label, main.viewer, description.viewer
+    assert main_label is not None and main_link is not None and description_link is not None
+
+    def shown() -> tuple[bool, bool]:
+        return main_link.isVisible() and main_label.isVisible(), description_link.isVisible()
+
+    assert shown() == (True, True)
+    settings.show_on_main_view = False
+    assert shown() == (False, True)
+    settings.show_on_main_view = True
+    assert shown() == (True, True)
+    settings.show_on_description_view = False
+    assert shown() == (True, False)
+    settings.show_on_description_view = True
+    assert shown() == (True, True)
