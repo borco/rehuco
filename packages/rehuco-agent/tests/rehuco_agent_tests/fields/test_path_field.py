@@ -1,4 +1,4 @@
-"""Tests for PathField: the native-path text + ``(open)`` viewer, the PathEditor editor, the misc-column
+"""Tests for PathField: the native-path link viewer, the PathEditor editor, the misc-column
 expand toggle, and the live suggestion/current-name wiring.
 """
 
@@ -7,12 +7,12 @@ from pathlib import Path
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QLabel, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.path_field import REVEAL_HINT
-from rehuco_agent.fields.widgets import ExpandToggleButton, OpenLinkLine, PathEditor
+from rehuco_agent.fields.widgets import ExpandToggleButton, LocationLine, PathEditor
 
 from rehuco_agent_tests.fields.field_testers import PathFieldTester as PathField
 
@@ -27,13 +27,13 @@ class Emitter(QObject):
 # endregion
 
 
-def editor_name_label(editor: PathEditor) -> ElidedLabel:
+def editor_name_label(editor: PathEditor) -> LocationLine:
     """Read the editor's private current-name label.
 
     :param editor: the editor to inspect.
     :returns: the internal current-name label.
     """
-    return editor._PathEditor__name_line.text_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return editor._PathEditor__name_line  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def editor_suggestion_labels(editor: PathEditor) -> dict[str, ElidedLabel]:
@@ -54,49 +54,51 @@ def editor_suggestion_names(editor: PathEditor) -> list[str]:
     return list(editor_suggestion_labels(editor))
 
 
-def location_line(widget: QWidget | None) -> OpenLinkLine:
-    """Narrow a built viewer/editor widget to the plain-text-plus-``(open)`` line.
+def location_line(widget: QWidget | None) -> LocationLine:
+    """Narrow a built viewer/editor widget to the location link line.
 
     :param widget: the widget a field built.
-    :returns: it, as an `OpenLinkLine`.
+    :returns: it, as a `LocationLine`.
     """
-    assert isinstance(widget, OpenLinkLine)
+    assert isinstance(widget, LocationLine)
     return widget
 
 
 # region viewer
-def test_viewer_is_plain_native_path_text_with_an_open_link(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The viewer shows the native path as plain text, and only ``(open)`` is an anchor.
+def test_viewer_is_the_native_path_as_a_link(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The viewer shows the native path, itself the link, with no ``(open)`` after it (#621).
 
     **Test steps:**
 
     * seed a posix-style location and build the viewer
-    * verify the text is the native path with no anchor around it
-    * verify the ``(open)`` link is shown, its tooltip is the reveal hint
+    * verify the whole text is one anchor, in the palette's link color, and nothing follows it
+    * verify the tooltip carries the reveal hint
     """
     model.location = "C:/tutorials/foo"
     field = PathField("location")
     viewer = location_line(field.make_viewer(model.bind(field)).viewer)
     qtbot.addWidget(viewer)
+    viewer.resize(300, viewer.sizeHint().height())
 
-    text = viewer.text_label
-    assert text.textFormat() == Qt.TextFormat.PlainText
-    assert text.text() == str(Path("C:/tutorials/foo"))
-    assert "<a " not in text.text()
-    assert not viewer.link_label.isHidden()
-    assert "open" in viewer.link_label.text()
-    assert viewer.link_label.toolTip() == REVEAL_HINT
+    link_color = viewer.palette().color(QPalette.ColorRole.Link).name()
+    assert viewer.textFormat() == Qt.TextFormat.RichText
+    assert str(Path("C:/tutorials/foo")) in viewer.text()
+    assert viewer.text().startswith("<a ")
+    assert link_color in viewer.text()
+    assert "(open)" not in viewer.text()
+    assert viewer.toolTip() == REVEAL_HINT
+    assert not viewer.findChildren(QLabel)
 
 
-def test_clicking_open_reveals_the_path_in_the_file_browser(
+def test_clicking_the_location_reveals_the_path_in_the_file_browser(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
-    """Activating ``(open)`` reveals the document's path.
+    """A click on the location reveals the document's path.
 
     **Test steps:**
 
     * seed a location and build the viewer
-    * activate the ``(open)`` link
+    * activate the location's link
     * verify the reveal helper was called with the location as a `Path`
     """
     reveal = mocker.patch("rehuco_agent.fields.path_field.reveal_in_file_browser")
@@ -106,26 +108,25 @@ def test_clicking_open_reveals_the_path_in_the_file_browser(
     viewer = location_line(field.make_viewer(model.bind(field)).viewer)
     qtbot.addWidget(viewer)
 
-    viewer.link_label.linkActivated.emit("#open")
+    viewer.linkActivated.emit("#open")
 
     reveal.assert_called_once_with(location)
 
 
 def test_viewer_renders_nothing_when_empty(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """An empty location shows no text and no ``(open)`` link.
+    """An empty location shows no text, so there is nothing to click.
 
     **Test steps:**
 
     * clear the location and build the viewer
-    * verify the text is empty and the link hidden
+    * verify the text is empty
     """
     model.location = ""
     field = PathField("location")
     viewer = location_line(field.make_viewer(model.bind(field)).viewer)
     qtbot.addWidget(viewer)
 
-    assert viewer.text_label.text() == ""
-    assert viewer.link_label.isHidden()
+    assert viewer.text() == ""
 
 
 def test_viewer_tracks_the_bound_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -134,7 +135,7 @@ def test_viewer_tracks_the_bound_value(qtbot: QtBot, model: RehuDocumentModel) -
     **Test steps:**
 
     * build the viewer over an empty location, then set a value
-    * verify the text updates and ``(open)`` appears
+    * verify the text updates and is a link
     """
     field = PathField("location")
     viewer = location_line(field.make_viewer(model.bind(field)).viewer)
@@ -142,18 +143,17 @@ def test_viewer_tracks_the_bound_value(qtbot: QtBot, model: RehuDocumentModel) -
 
     model.location = "C:/x/y"
 
-    assert viewer.text_label.text() == str(Path("C:/x/y"))
-    assert not viewer.link_label.isHidden()
+    assert str(Path("C:/x/y")) in viewer.text()
+    assert viewer.text().startswith("<a ")
 
 
-def test_a_narrow_line_elides_the_text_and_keeps_open_whole(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """Squeezing the line elides the text while ``(open)`` keeps its full width.
+def test_a_narrow_line_elides_the_text(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Squeezing the line elides the link's text in the middle.
 
     **Test steps:**
 
     * seed a long location, build the viewer and show it at a narrow width
-    * verify the text is elided (shorter than the path)
-    * verify the ``(open)`` label is as wide as it asks to be
+    * verify the tooltip, shown only while the text is elided, starts with the full path
     """
     model.location = "C:/" + "/".join(["a_long_folder_name"] * 8)
     field = PathField("location")
@@ -162,9 +162,7 @@ def test_a_narrow_line_elides_the_text_and_keeps_open_whole(qtbot: QtBot, model:
     viewer.resize(200, viewer.sizeHint().height())
     viewer.show()
 
-    link = viewer.link_label
-    assert len(viewer.text_label.text()) < len(str(Path(model.location)))
-    assert link.width() >= link.sizeHint().width()
+    assert viewer.toolTip().startswith(str(Path(model.location)))
 
 
 # endregion
@@ -177,7 +175,7 @@ def test_editor_without_suggestions_is_a_read_only_label(qtbot: QtBot, model: Re
     **Test steps:**
 
     * build the editor with no suggestions
-    * verify its editor is the viewer's text-plus-``(open)`` line (not a ``PathEditor``), with no misc widget
+    * verify its editor is the viewer's link line (not a ``PathEditor``), with no misc widget
     """
     model.location = "C:/foo"
     field = PathField("location")
@@ -186,8 +184,8 @@ def test_editor_without_suggestions_is_a_read_only_label(qtbot: QtBot, model: Re
     qtbot.addWidget(editor)
 
     assert widgets.misc is None
-    assert editor.text_label.text() == str(Path("C:/foo"))
-    assert not editor.link_label.isHidden()
+    assert str(Path("C:/foo")) in editor.text()
+    assert editor.text().startswith("<a ")
 
 
 # endregion
@@ -239,7 +237,7 @@ def test_editor_is_a_path_editor_seeded_with_current_name_and_suggestions(
     _field, editor, _misc = build_editor(model, suggestions=["Alpha", "Beta"], current_name="folder")
     qtbot.addWidget(editor)
 
-    assert editor_name_label(editor).text() == "folder"
+    assert "folder" in editor_name_label(editor).text()
     assert editor_suggestion_names(editor) == ["Alpha", "Beta"]
 
 
@@ -312,47 +310,72 @@ def test_current_name_refreshes_when_the_bound_value_changes(qtbot: QtBot, model
     editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, PathEditor)
     qtbot.addWidget(editor)
-    assert editor_name_label(editor).text() == "old_name"
+    assert "old_name" in editor_name_label(editor).text()
 
     name[0] = "new_name"
     model.location = "C:/trigger"  # fires location_changed -> refresh
 
-    assert editor_name_label(editor).text() == "new_name"
+    assert "new_name" in editor_name_label(editor).text()
 
 
-def test_editor_open_reveals_the_path_and_needs_one(
+def test_editor_name_reveals_the_path_and_needs_one(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
-    """The editor's ``(open)`` reveals the bound path, and is absent for a path-less document.
+    """The editor's current name is the link revealing the bound path, and plain text for a path-less document.
 
     **Test steps:**
 
-    * build an editor over an empty location and verify the link is hidden
-    * set a location and verify the link appears
+    * build an editor over an empty location and verify the name is no link
+    * set a location and verify the name becomes a link
     * activate it and verify the reveal helper got the location
     """
     reveal = mocker.patch("rehuco_agent.fields.path_field.reveal_in_file_browser")
     _field, editor, _misc = build_editor(model)
     qtbot.addWidget(editor)
-    link = editor._PathEditor__name_line.link_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert link.isHidden()
+    name = editor_name_label(editor)
+    assert "<a " not in name.text()
 
     location = Path("/tutorials/foo").resolve()
     model.location = str(location)
-    assert not link.isHidden()
+    assert name.text().startswith("<a ")
 
-    link.linkActivated.emit("#open")
+    name.linkActivated.emit("#open")
 
     reveal.assert_called_once_with(location)
 
 
-def test_open_with_no_location_reveals_nothing(qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture) -> None:
-    """A click on ``(open)`` while the location is empty reveals nothing.
+def test_clicking_a_suggestion_still_renames_and_not_reveals(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A click on a suggestion selects it, and reveals nothing.
+
+    **Test steps:**
+
+    * build an editor over a location with two suggestions
+    * activate the first suggestion's link
+    * verify it was selected and the reveal helper was not called
+    """
+    reveal = mocker.patch("rehuco_agent.fields.path_field.reveal_in_file_browser")
+    selected: list[str] = []
+    model.location = str(Path("/tutorials/foo").resolve())
+    _field, editor, _misc = build_editor(model, suggestions=["Alpha", "Beta"], selected=selected)
+    qtbot.addWidget(editor)
+
+    editor_suggestion_labels(editor)["Alpha"].linkActivated.emit("#")
+
+    assert selected == ["Alpha"]
+    reveal.assert_not_called()
+
+
+def test_a_click_with_no_location_reveals_nothing(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A click on the line while the location is empty reveals nothing.
 
     **Test steps:**
 
     * build a viewer over an empty location
-    * activate the ``(open)`` link
+    * activate the line as a link would
     * verify the reveal helper was not called
     """
     reveal = mocker.patch("rehuco_agent.fields.path_field.reveal_in_file_browser")
@@ -361,24 +384,46 @@ def test_open_with_no_location_reveals_nothing(qtbot: QtBot, model: RehuDocument
     viewer = location_line(field.make_viewer(model.bind(field)).viewer)
     qtbot.addWidget(viewer)
 
-    viewer.link_label.linkActivated.emit("#open")
+    viewer.linkActivated.emit("#open")
 
     reveal.assert_not_called()
 
 
-def test_open_link_follows_a_palette_change(qtbot: QtBot) -> None:
-    """The ``(open)`` anchor is re-drawn in the new link color when the palette changes.
+def test_location_link_follows_a_palette_change(qtbot: QtBot) -> None:
+    """The location's anchor is re-drawn in the new link color when the palette changes.
 
     **Test steps:**
 
-    * build the link line and set a palette with a distinct link color
+    * build a link line over some text and set a palette with a distinct link color
     * verify the label text carries that color
     """
-    line = OpenLinkLine()
+    line = LocationLine()
     qtbot.addWidget(line)
+    line.set_location("C:/foo")
+    line.set_openable(True)
     palette = line.palette()
     palette.setColor(QPalette.ColorRole.Link, QColor("#123456"))
 
-    line.link_label.setPalette(palette)
+    line.setPalette(palette)
 
-    assert "#123456" in line.link_label.text()
+    assert "#123456" in line.text()
+
+
+def test_set_text_on_a_location_line_is_set_location(qtbot: QtBot) -> None:
+    """`ElidedLabel`'s ``set_text`` on a `LocationLine` sets the location, keeping the line's own link and hint.
+
+    **Test steps:**
+
+    * build an openable line with a hint and call ``set_text`` with a foreign link target and hint
+    * verify the text is a link to the line's own target, with the line's own hint as its tooltip
+    """
+    line = LocationLine(hint="Show in Explorer")
+    qtbot.addWidget(line)
+    line.resize(300, line.sizeHint().height())
+    line.set_openable(True)
+
+    line.set_text("C:/foo", href="#other", hint="other")
+
+    assert 'href="#open"' in line.text()
+    assert "#other" not in line.text()
+    assert line.toolTip() == "Show in Explorer"

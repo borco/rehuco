@@ -28,13 +28,13 @@ from .image_strip import ImageStrip
 from .index_spin_box_delegate import IndexSpinBoxDelegate
 from .learning_paths_table_model import LearningPathScopeFilterProxyModel, LearningPathsTableModel
 from .line_edit import LineEdit
+from .location_line import LocationLine
 from .markdown_edit import MarkdownEdit
 from .markdown_view import MarkdownView
 from .measured_value_edit import MeasuredValueEdit
 from .measurement_result import MeasurementResult
 from .membership_table_model import MembershipTableModel
 from .memberships_editor import CollectionsEditor, LearningPathsEditor, MembershipsEditor
-from .open_link_line import OpenLinkLine
 from .overlay_surface import OverlayMode, viewer_mode_for
 from .path_editor import PathEditor
 from .rating_slider import RatingSlider
@@ -90,11 +90,11 @@ __all__ = [
     "image_size",
     "image_size_at",
     "LineEdit",
+    "LocationLine",
     "MarkdownEdit",
     "MarkdownView",
     "MeasuredValueEdit",
     "MeasurementResult",
-    "OpenLinkLine",
     "PathEditor",
     "RatingSlider",
     "SingleChoiceComboBox",

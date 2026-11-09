@@ -11,12 +11,12 @@ from borco_pyside.file_browser import reveal_in_file_browser
 from PySide6.QtCore import SignalInstance
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
-from .widgets import ExpandToggleButton, OpenLinkLine, PathEditor
+from .widgets import ExpandToggleButton, LocationLine, PathEditor
 
 REVEAL_HINT: Final = {"win32": "Show in Explorer", "darwin": "Reveal in Finder"}.get(
     sys.platform, "Show in file manager"
 )
-"""What a click on the ``(open)`` link does, named for the tooltip -- the OS's own term where the two
+"""What a click on the location does, named for the tooltip -- the OS's own term where the two
 main desktops have one, else the generic phrase (#314)."""
 
 
@@ -27,12 +27,12 @@ class PathField(Field[str]):
     therefore constructed directly by its owner (`DocumentSubDocks`) with model-aware callbacks, not
     resolved generically through the field list.
 
-    **Viewer** -- plain text followed by an ``(open)`` link that reveals the folder; the text is the value
+    **Viewer** -- the value as a link that reveals the folder; the text is the value
     rendered with the OS-native path separators (backslashes on Windows), even though the bound value
     itself is stored posix-style.
 
-    **Editor** -- a :class:`~rehuco_agent.fields.widgets.PathEditor` (current name, then the same
-    ``(open)`` link, over collapsible clickable rename suggestions). ``suggestions`` and ``current_name``
+    **Editor** -- a :class:`~rehuco_agent.fields.widgets.PathEditor` (current name, itself the same
+    link, over collapsible clickable rename suggestions). ``suggestions`` and ``current_name``
     are pushed into it on build, on every bound-value change, and whenever ``suggestions_changed``
     fires -- so editing a field a suggestion is built from (title/authors/publisher/released) updates
     the list live. A clicked
@@ -77,7 +77,7 @@ class PathField(Field[str]):
         self.__conflicts = conflicts
         self.__expanded = expanded
         self.__location = ""
-        """The bound location as last seen, for ``(open)`` to reveal: a `FieldBinding` holds only its value
+        """The bound location as last seen, for the link to reveal: a `FieldBinding` holds only its value
         at bind time, so a click reads this, kept current by ``__track``."""
 
     @override
@@ -113,14 +113,14 @@ class PathField(Field[str]):
         editor.expanded_changed.connect(toggle.setChecked)
         return FieldEditorWidgets(self.editor_tab, self.make_label(), editor, toggle)
 
-    def __make_location_line(self, binding: FieldBinding[str]) -> OpenLinkLine:
-        """Build the native path as plain text followed by an ``(open)`` link, bound to ``binding`` --
+    def __make_location_line(self, binding: FieldBinding[str]) -> LocationLine:
+        """Build the native path as a link, bound to ``binding`` --
         the viewer, and the read-only (no-suggestions) editor variant.
 
         :param binding: the value/signal to bind.
-        :returns: an `OpenLinkLine` that re-renders on every change.
+        :returns: a `LocationLine` that re-renders on every change.
         """
-        line = OpenLinkLine(hint=REVEAL_HINT)
+        line = LocationLine(hint=REVEAL_HINT)
         line.open_requested.connect(self.__reveal)
         self.__track(binding)
         self.__render_line(line, binding.value)
@@ -148,7 +148,7 @@ class PathField(Field[str]):
             reveal_in_file_browser(Path(self.__location))
 
     def __on_value_changed(self, editor: PathEditor, value: str) -> None:
-        """Show ``(open)`` only while there is a path, then re-pull the name and suggestions.
+        """Draw the name as a link only while there is a path, then re-pull the name and suggestions.
 
         :param editor: the editor to update.
         :param value: the new location.
@@ -165,12 +165,12 @@ class PathField(Field[str]):
         editor.set_suggestions(self.__suggestions() if self.__suggestions is not None else [])
 
     @staticmethod
-    def __render_line(line: OpenLinkLine, value: str) -> None:
-        """Show ``value`` as middle-elided plain text with native-separator display, and the ``(open)``
-        link after it -- or nothing when empty, since there is nothing to reveal.
+    def __render_line(line: LocationLine, value: str) -> None:
+        """Show ``value`` as a middle-elided link with native-separator display -- or nothing when empty,
+        since there is nothing to reveal.
 
         :param line: the viewer line to update.
         :param value: the new path (stored posix-style; displayed OS-native).
         """
-        line.set_text(str(Path(value)) if value else "")
+        line.set_location(str(Path(value)) if value else "")
         line.set_openable(bool(value))

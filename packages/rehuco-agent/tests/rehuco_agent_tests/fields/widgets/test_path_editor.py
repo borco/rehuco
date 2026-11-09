@@ -3,18 +3,20 @@ rename suggestions, unavailable candidates, and the live setters.
 """
 
 from borco_pyside.widgets import ElidedLabel
+from PySide6.QtGui import QColor, QPalette
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.colors import WARNING_COLOR
+from rehuco_agent.fields.widgets import LocationLine
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX, PathEditor
 
 
-def name_label(editor: PathEditor) -> ElidedLabel:
+def name_label(editor: PathEditor) -> LocationLine:
     """Return the editor's private current-name label -- ``PathEditor`` exposes no accessor.
 
     :param editor: the widget to inspect.
     :returns: the internal current-name ``ElidedLabel``.
     """
-    return editor._PathEditor__name_line.text_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return editor._PathEditor__name_line  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def suggestion_labels(editor: PathEditor) -> dict[str, ElidedLabel]:
@@ -57,47 +59,49 @@ def test_set_current_name_shows_it_in_the_name_label(qtbot: QtBot) -> None:
 
     editor.set_current_name("some_folder")
 
-    assert name_label(editor).text() == "some_folder"
+    assert full_text(name_label(editor)) == "some_folder"
 
 
-def test_open_link_follows_openable_and_emits_open_requested(qtbot: QtBot) -> None:
-    """The ``(open)`` link after the name shows only while openable, and a click is forwarded (#389).
+def test_current_name_is_a_link_only_while_openable_and_emits_open_requested(qtbot: QtBot) -> None:
+    """The current name is a link only while openable, with the hint in its tooltip, and a click is forwarded (#621).
 
     **Test steps:**
 
-    * build an editor with a hint: the link is hidden, since nothing is openable yet
-    * mark it openable and verify the link is shown with the hint as its tooltip
+    * build an editor with a hint and a current name: the name is plain, no "(open)" after it
+    * mark it openable and verify the name is an anchor with the hint as its tooltip
     * activate the link and verify ``open_requested`` fires once
     """
     editor = PathEditor(open_hint="Show in Explorer")
     qtbot.addWidget(editor)
-    link = editor._PathEditor__name_line.link_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert link.isHidden()
+    editor.set_current_name("some_folder")
+    label = name_label(editor)
+    assert "<a " not in label.text()
 
     editor.set_openable(True)
-    assert not link.isHidden()
-    assert link.toolTip() == "Show in Explorer"
+    assert label.text().startswith("<a ")
+    assert "(open)" not in label.text()
+    assert label.toolTip() == "Show in Explorer"
 
     with qtbot.waitSignal(editor.open_requested, timeout=1000):
-        link.linkActivated.emit("#open")
+        label.linkActivated.emit("#open")
 
 
-def test_header_height_is_the_same_with_or_without_the_open_link(qtbot: QtBot) -> None:
-    """Showing the ``(open)`` link does not change ``header_height``, which the form reads once at build.
+def test_header_height_is_the_same_whether_the_name_is_a_link_or_not(qtbot: QtBot) -> None:
+    """Making the name a link does not change ``header_height``, which the form reads once at build.
 
     **Test steps:**
 
-    * build an editor with a current name and read ``header_height`` with the link hidden
+    * build an editor with a current name and read ``header_height`` with the name plain
     * mark it openable and verify ``header_height`` is unchanged
     """
     editor = PathEditor()
     qtbot.addWidget(editor)
     editor.set_current_name("some_folder")
-    hidden_height = editor.header_height
+    plain_height = editor.header_height
 
     editor.set_openable(True)
 
-    assert editor.header_height == hidden_height
+    assert editor.header_height == plain_height
 
 
 def test_current_name_warns_when_it_matches_no_suggestion(qtbot: QtBot) -> None:
@@ -114,10 +118,54 @@ def test_current_name_warns_when_it_matches_no_suggestion(qtbot: QtBot) -> None:
 
     editor.set_current_name("messy_download")
     editor.set_suggestions(["Clean Title"])
-    assert WARNING_COLOR in name_label(editor).styleSheet()
+    assert WARNING_COLOR.lower() in name_label(editor).text()
 
     editor.set_suggestions(["messy_download", "Clean Title"])
-    assert WARNING_COLOR not in name_label(editor).styleSheet()
+    assert WARNING_COLOR.lower() not in name_label(editor).text()
+
+
+def test_an_unmatched_name_warns_as_a_link_too(qtbot: QtBot) -> None:
+    """An openable name that matches no suggestion is a warning-colored link, a plain one once it matches.
+
+    **Test steps:**
+
+    * make the editor openable and set an unmatched name
+    * verify the anchor carries the warning color
+    * add a matching suggestion and verify the anchor is back to the palette's link color
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.set_openable(True)
+    editor.set_current_name("messy_download")
+
+    editor.set_suggestions(["Clean Title"])
+    assert WARNING_COLOR.lower() in name_label(editor).text()
+
+    editor.set_suggestions(["messy_download"])
+    assert WARNING_COLOR.lower() not in name_label(editor).text()
+
+
+def test_a_matched_name_follows_the_editor_palette_after_warning_cleared(qtbot: QtBot) -> None:
+    """The name link takes a new link color from its editor's palette, even after a warning came and went (#621).
+
+    **Test steps:**
+
+    * make the editor openable, warn the name, then clear the warning with a matching suggestion
+    * give the editor a palette with a distinct link color
+    * verify the name's anchor carries that color
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.set_openable(True)
+    editor.set_current_name("messy_download")
+    editor.set_suggestions(["Clean Title"])
+    editor.set_suggestions(["messy_download"])
+    palette = editor.palette()
+    palette.setColor(QPalette.ColorRole.Link, QColor("#123456"))
+
+    editor.setPalette(palette)
+
+    assert "#123456" in name_label(editor).text()
 
 
 def test_empty_current_name_never_warns(qtbot: QtBot) -> None:
@@ -133,7 +181,7 @@ def test_empty_current_name_never_warns(qtbot: QtBot) -> None:
 
     editor.set_suggestions(["Clean Title"])
 
-    assert WARNING_COLOR not in name_label(editor).styleSheet()
+    assert WARNING_COLOR.lower() not in name_label(editor).text()
 
 
 def test_suggestions_are_transliterated_sanitized_deduplicated(qtbot: QtBot) -> None:

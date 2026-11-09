@@ -4,7 +4,7 @@ import html
 from typing import override
 
 from PySide6.QtCore import QEvent, QSize, Qt
-from PySide6.QtGui import QPalette, QResizeEvent
+from PySide6.QtGui import QColor, QPalette, QResizeEvent
 from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 
@@ -20,10 +20,14 @@ class ElidedLabel(QLabel):
     text is actually elided, the full text is shown in a tooltip (cleared once it fits again).
 
     :param parent: optional Qt parent.
+    :param rich: (keyword) draw plain text as escaped rich text too, so the label is as tall with a link as
+        without one -- a rich-text label is a little taller than a plain one, which would make a label that
+        turns into a link and back change height.
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, rich: bool = False) -> None:
         super().__init__(parent)
+        self.__rich = rich
         self.__full = ""
         self.__href = ""
         self.__hint = ""
@@ -56,6 +60,24 @@ class ElidedLabel(QLabel):
         super().resizeEvent(event)
         self.__render()
 
+    def link_color(self) -> QColor:
+        """The color a link is drawn in: the palette's ``Link`` role. A subclass drawing its link in another
+        color overrides this rather than pinning a palette or a stylesheet on the widget: either stops a theme
+        change from reaching it (a stylesheet for good -- Qt keeps ``WA_StyleSheet`` set once one was set).
+
+        :returns: the current link color.
+        """
+        return self.palette().color(QPalette.ColorRole.Link)
+
+    def text_color(self) -> QColor | None:
+        """The color a ``rich`` label's plain text is drawn in, in place of the palette's; ``None`` leaves it
+        to the palette. A subclass overrides this for the same reason as :meth:`link_color`. Ignored by a
+        label that is not ``rich``, whose plain text the palette alone colors.
+
+        :returns: the color, or ``None`` for the palette's.
+        """
+        return None
+
     @override
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802  (Qt API name)
         """Re-render on a palette change, so a link's color follows a live theme toggle rather than
@@ -82,8 +104,13 @@ class ElidedLabel(QLabel):
             self.setTextFormat(Qt.TextFormat.RichText)
             # Qt's rich-text anchor defaults to a hardcoded blue, not the palette's own Link role --
             # illegible against a dark theme's background, since nothing here ever asked for that color
-            link_color = self.palette().color(QPalette.ColorRole.Link).name()
-            self.setText(f'<a href="{html.escape(self.__href)}" style="color:{link_color};">{html.escape(elided)}</a>')
+            href, color = html.escape(self.__href), self.link_color().name()
+            self.setText(f'<a href="{href}" style="color:{color};">{html.escape(elided)}</a>')
+        elif self.__rich:
+            self.setTextFormat(Qt.TextFormat.RichText)
+            color = self.text_color()  # pylint: disable=assignment-from-none
+            text = html.escape(elided)
+            self.setText(f'<span style="color:{color.name()};">{text}</span>' if color is not None else text)
         else:
             self.setTextFormat(Qt.TextFormat.PlainText)
             self.setText(elided)

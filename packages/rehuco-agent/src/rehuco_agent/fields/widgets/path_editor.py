@@ -14,11 +14,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 from rehuco_core import sanitize_name
 
-from ..colors import WARNING_COLOR
-from .open_link_line import OpenLinkLine
-
-WARNING_STYLESHEET: Final = f"QLabel {{ color: {WARNING_COLOR}; }}"
-"""Applied to the current-name label when the name matches none of the suggestions ([[plugins#field-toolkit]])."""
+from .location_line import LocationLine
 
 UNAVAILABLE_SUFFIX: Final = " ⚿"
 """Appended to a suggestion something already occupies (#162) -- a marker, not a color, so the row
@@ -56,13 +52,13 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     decides *that* it needs something, never how the answer is obtained ([[plugins#field-toolkit]]).
     With no predicate set, nothing is unavailable, which is what keeps the widget usable on its own.
 
-    :param open_hint: tooltip of the ``(open)`` link after the current name.
+    :param open_hint: tooltip hint of the current name, which is the link revealing the resource.
     :param parent: optional Qt parent.
     """
 
     suggestion_selected = Signal(str)
     open_requested = Signal()
-    """The ``(open)`` link after the current name was clicked (#389); the owner reveals the resource."""
+    """The current name, drawn as a link, was clicked (#621); the owner reveals the resource."""
     expanded_changed = Signal(bool)
     expanded = SimpleProperty(False)
     """Whether the suggestions panel is open; ``set_expanded`` is the slot-usable setter (the owner
@@ -77,7 +73,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         """Answers whether a candidate name is already taken, supplied by the owner
         (:meth:`set_conflict_check`); ``None`` until one is, so every name reads as available."""
 
-        self.__name_line: Final = OpenLinkLine(hint=open_hint)
+        self.__name_line: Final = LocationLine(hint=open_hint)
         self.__name_line.open_requested.connect(self.open_requested)
 
         self.__suggestions_widget: Final = QWidget()
@@ -107,7 +103,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__render()
 
     def set_openable(self, openable: bool) -> None:
-        """Show the ``(open)`` link after the current name only while there is a path to reveal.
+        """Draw the current name as a link only while there is a path to reveal.
 
         :param openable: whether the resource has a path yet.
         """
@@ -187,9 +183,9 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         widget subcontrols like ``::indicator``). ``name`` stays the dict key and the value
         :attr:`suggestion_selected` would carry, so the marker never leaks into what a rename renames to.
         """
-        self.__name_line.set_text(self.__current_name)
+        self.__name_line.set_location(self.__current_name)
         unmatched = bool(self.__current_name) and self.__current_name not in self.__suggestions
-        self.__name_line.text_label.setStyleSheet(WARNING_STYLESHEET if unmatched else "")
+        self.__name_line.set_warning(unmatched)
         for name, label in self.__suggestion_labels.items():
             is_current = name == self.__current_name
             unavailable = not is_current and self.__conflicts is not None and self.__conflicts(name)
