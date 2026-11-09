@@ -1,6 +1,7 @@
 """The Add Roots dialog's file browser: folders and ``.rehuroot`` files, a ``+`` on the row under the pointer or
 current, which stages it -- or every row selected with it -- as roots to add (#578)."""
 
+import os
 from pathlib import Path
 from typing import Final, override
 
@@ -25,6 +26,9 @@ ADD_ICON: Final = ":/icons/items_add.svg"
 
 UP_ICON: Final = ":/icons/items_up.svg"
 """The arrow of the button that shows the folder above."""
+
+DRIVES_ABOVE: Final = os.name == "nt"
+"""Whether the machine's drives are a level above a drive's top, as on Windows; elsewhere ``/`` is the top."""
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a delegate method."""
@@ -124,7 +128,7 @@ class RootsBrowser(QWidget):
 
     @property
     def folder(self) -> Path:
-        """The folder the tree shows."""
+        """The folder the tree shows; ``Path(".")`` while it shows the machine's drives, which no folder holds."""
         return Path(self.__model.filePath(self.__ui.tree_view.rootIndex()))
 
     def show_folder(self, folder: Path) -> None:
@@ -137,6 +141,7 @@ class RootsBrowser(QWidget):
             return
         self.__ui.tree_view.setRootIndex(index)
         self.__ui.path_edit.setText(str(folder))
+        self.__up.setEnabled(folder.parent != folder or DRIVES_ABOVE)
 
     def index_of(self, path: Path) -> QModelIndex:
         """The tree's row for a path, for tests.
@@ -181,7 +186,12 @@ class RootsBrowser(QWidget):
         return tuple(reversed(rows))
 
     def __go_up(self) -> None:
-        """Show the folder above the one shown."""
+        """Show the folder above the one shown; above a drive's top, on Windows, the machine's drives, where Up is
+        disabled and the path field is empty."""
         folder = self.folder
         if folder.parent != folder:
             self.show_folder(folder.parent)
+        else:
+            self.__ui.tree_view.setRootIndex(QModelIndex())
+            self.__ui.path_edit.clear()
+            self.__up.setEnabled(False)
