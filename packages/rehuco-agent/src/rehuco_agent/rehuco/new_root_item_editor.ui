@@ -86,7 +86,7 @@
        <item>
         <widget class="QLineEdit" name="root_file_edit">
          <property name="toolTip">
-          <string>The .rehuroot file made for this root. Left empty, it is named after the label, beside the catalog; put it where every catalog that will list the root reaches it, such as the NAS.</string>
+          <string>The .rehuroot file made for this root. Left empty, it is named after the folder's location, beside the catalog; put it where every catalog that will list the root reaches it, such as the NAS.</string>
          </property>
         </widget>
        </item>

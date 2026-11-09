@@ -512,10 +512,10 @@ def test_an_unreadable_root_takes_no_label_or_location(tmp_path: Path) -> None:
     rehuco = RehucoFile.load(path)
 
     rehuco.relabel_root(0, "discs")
-    row = rehuco.add_root("//nas/data/more", "refs (2)")
+    row = rehuco.add_root("//refs/more", "refs (2)")
 
     assert labels(rehuco) == ["discs", "discs", "refs", "refs (2)"]
-    assert rehuco.roots[row].file == tmp_path / "refs (2).rehuroot"
+    assert rehuco.roots[row].file == tmp_path / "refs--more.rehuroot"
 
 
 # endregion

@@ -104,7 +104,7 @@ def test_a_root_two_catalogs_list_is_mapped_once_for_both(tmp_path: Path, mocker
     mocker.patch(f"{MODULE}.storage_of", return_value=RootStorage.LOCAL)
     first = saved_catalog(tmp_path, "first", "//nas/data/Tutorials")
     (tmp_path / "second.rehuco").write_text(
-        json.dumps({"format_version": 4, "id": str(uuid4()), "roots": [{"file": "Tutorials.rehuroot"}]}),
+        json.dumps({"format_version": 4, "id": str(uuid4()), "roots": [{"file": "nas--data--Tutorials.rehuroot"}]}),
         encoding="utf-8",
     )
     second = RehucoFile.load(tmp_path / "second.rehuco")
@@ -233,7 +233,7 @@ def test_an_unreadable_root_is_neither_mapped_nor_asked_about(tmp_path: Path, mo
     mappings = RootMappings.load(tmp_path / "root-mappings.json")
     for root in file.roots:
         mappings.map(root.root_id, tmp_path / root.label)
-    (tmp_path / "Tutorials.rehuroot").unlink()
+    (tmp_path / "nas--data--Tutorials.rehuroot").unlink()
 
     reloaded = RehucoFile.load(tmp_path / "home.rehuco")
 

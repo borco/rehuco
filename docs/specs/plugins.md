@@ -648,9 +648,9 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   the right, the staging list**, planned again off the GUI thread at every change (*Checking…* until it is, OK waiting
   for it): a **`.rehuroot`** shows its file, its label and location, its layouts, and the folder this machine finds it
   at -- or that it joins unmapped, to be mapped later; a **folder** shows its editors, always open: its **Label** (the
-  folder's name as the placeholder), its **Root file** (the one planned beside the `.rehuco`, unique-suffixed, as the
-  placeholder, following the label while left empty; typed or browsed to, it may go anywhere both catalogs reach, such
-  as the NAS) and its **Layout**, a combo of the default root layouts kept in the settings
+  folder's name as the placeholder), its **Root file** (the one planned beside the `.rehuco`, named after the folder's
+  location (`ryzen-5600--d--__DOWNLOADS--TUTORIALS.rehuroot`), unique-suffixed, as the placeholder, whatever the
+  label, while left empty; typed or browsed to, it may go anywhere both catalogs reach, such as the NAS) and its **Layout**, a combo of the default root layouts kept in the settings
   ([[appendices.settings-pages#category-groups]]) whose last entry, *New layout…*, asks for a preset and saves it with
   the others at once. Each row has an **×** that takes it out. A folder that a staged `.rehuroot` is the root of is
   shown only as the file, whichever came first. **A row that cannot be added says why** in the warning colour -- a

@@ -16,6 +16,7 @@ from rehuco_core import (
     RootPick,
     RootPlanner,
     location_of,
+    location_stem,
     path_key,
 )
 from rehuco_core.root_candidates import ALREADY_A_ROOT, SAME_LOCATION_ABOVE, SAME_ROOT_ABOVE
@@ -75,15 +76,13 @@ def root_file(path: Path, location: str, label: str = "shared") -> Path:
     return path
 
 
-def test_folders_become_new_roots_named_after_them_with_root_files_beside_the_catalog(
-    tmp_path: Path, home: RehucoFile
-) -> None:
-    """Sibling folders each become a root, labelled by its folder, its root file beside the ``.rehuco`` -- one taken
-    name suffixed in its own spelling, a label typed followed.
+def test_folders_become_new_roots_with_root_files_named_after_their_locations(tmp_path: Path, home: RehucoFile) -> None:
+    """Sibling folders each become a root, labelled by its folder, its root file beside the ``.rehuco`` named after its
+    location -- a label typed changes the label only, a taken name is suffixed.
 
     **Test steps:**
 
-    * pick three sibling folders, two sharing a name in another case, one with a label typed
+    * make the root file the first folder's location names, and pick three sibling folders, one with a label typed
     * verify the kinds, labels, locations, folders, root files, and that all can be added
     """
     picks = (
@@ -91,16 +90,23 @@ def test_folders_become_new_roots_named_after_them_with_root_files_beside_the_ca
         RootPick(folder(tmp_path, "u/blender")),
         RootPick(folder(tmp_path, "t/Krita"), label="Painting"),
     )
+    stems = [location_stem(location_of(pick.path)) for pick in picks]
+    (tmp_path / "catalog" / f"{stems[0]}.rehuroot").write_text("someone else's", encoding="utf-8")
 
     lines = RootPlanner.plan(home, picks, mapped(home, tmp_path))
 
     catalog = tmp_path / "catalog"
     assert [line.kind for line in lines] == [CandidateKind.FOLDER] * 3
     assert [line.label for line in lines] == ["Blender", "blender", "Painting"]
+    assert stems[0] is not None and stems[0].endswith("--t--Blender")
     assert [line.location for line in lines] == [location_of(pick.path) for pick in picks]
     assert [line.folder for line in lines] == [pick.path for pick in picks]
     assert {path_key(line.root_file.parent) for line in lines} == {path_key(catalog)}
-    assert [line.root_file.name for line in lines] == ["Blender.rehuroot", "blender (2).rehuroot", "Painting.rehuroot"]
+    assert [line.root_file.name for line in lines] == [
+        f"{stems[0]} (2).rehuroot",
+        f"{stems[1]}.rehuroot",
+        f"{stems[2]}.rehuroot",
+    ]
     assert all(line.addable for line in lines)
 
 
@@ -277,17 +283,19 @@ def test_a_root_file_typed_as_a_bare_name_goes_beside_the_catalog(tmp_path: Path
     assert line.addable
 
 
-def test_a_label_that_sanitizes_to_nothing_names_its_root_file_root(tmp_path: Path, home: RehucoFile) -> None:
-    """A label with nothing a file name keeps still gets a root file.
+def test_a_label_changes_nothing_about_the_root_file_name(tmp_path: Path, home: RehucoFile) -> None:
+    """A label with nothing a file name keeps still gets a root file, named after the location.
 
     **Test steps:**
 
     * pick a folder labelled only with characters no file name keeps
-    * verify its root file is ``root.rehuroot`` beside the catalog
+    * verify its root file is the one its location names, beside the catalog
     """
-    line = RootPlanner.plan(home, (RootPick(folder(tmp_path, "x"), label="???"),), mapped(home, tmp_path))[0]
+    picked = folder(tmp_path, "x")
 
-    assert path_key(line.root_file) == path_key(tmp_path / "catalog" / "root.rehuroot")
+    line = RootPlanner.plan(home, (RootPick(picked, label="???"),), mapped(home, tmp_path))[0]
+
+    assert path_key(line.root_file) == path_key(tmp_path / "catalog" / f"{location_stem(location_of(picked))}.rehuroot")
 
 
 def test_an_unreachable_root_is_compared_as_spelled_only(

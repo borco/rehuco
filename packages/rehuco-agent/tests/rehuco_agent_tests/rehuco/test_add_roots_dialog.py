@@ -25,7 +25,16 @@ from rehuco_agent.rehuco.root_storage import (
     ROOT_STORAGE_OFFLINE_TOOLTIPS,
 )
 from rehuco_agent.settings.root_catalog_settings import DEFAULT_ROOT_LAYOUTS, RootLayout, shared_root_catalog_settings
-from rehuco_core import CandidateKind, MappedRoot, RehucoFile, RehurootFile, RootStorage, location_of, path_key
+from rehuco_core import (
+    CandidateKind,
+    MappedRoot,
+    RehucoFile,
+    RehurootFile,
+    RootStorage,
+    location_of,
+    location_stem,
+    path_key,
+)
 
 from rehuco_agent_tests.conftest import FakeSettings
 
@@ -159,13 +168,11 @@ def test_folders_staged_become_roots_each_with_its_editors(
     planned(qtbot, dialog)
 
     assert editor_at(dialog, 0).label_edit.placeholderText() == "Blender"
-    assert editor_at(dialog, 1).root_file_edit.placeholderText() == str(tmp_path / "catalog" / "Krita.rehuroot")
+    files = [tmp_path / "catalog" / f"{location_stem(location_of(folder))}.rehuroot" for folder in (blender, krita)]
+    assert editor_at(dialog, 1).root_file_edit.placeholderText() == str(files[1])
     candidates = dialog.candidates
     assert [line.label for line in candidates] == ["Blender", "Krita"]
-    assert [path_key(line.root_file) for line in candidates] == [
-        path_key(tmp_path / "catalog" / "Blender.rehuroot"),
-        path_key(tmp_path / "catalog" / "Krita.rehuroot"),
-    ]
+    assert [path_key(line.root_file) for line in candidates] == [path_key(file) for file in files]
     assert all(line.layouts == dict(DEFAULT_ROOT_LAYOUTS[0].layouts) for line in candidates)
     assert dialog.status == "2 to add."
     assert dialog.ok_button.isEnabled()
@@ -264,8 +271,9 @@ def test_a_root_file_this_machine_cannot_resolve_is_added_unmapped(
     assert dialog.ok_button.isEnabled()
 
 
-def test_a_label_typed_names_the_root_and_its_root_file(qtbot: QtBot, dialog: AddRootsDialog, tmp_path: Path) -> None:
-    """The label left after typing is planned again: the root takes it, and the root file left empty follows it.
+def test_a_label_typed_names_the_root_not_its_root_file(qtbot: QtBot, dialog: AddRootsDialog, tmp_path: Path) -> None:
+    """The label left after typing is planned again: the root takes it, and the root file left empty stays named after
+    the location.
 
     **Test steps:**
 
@@ -283,7 +291,7 @@ def test_a_label_typed_names_the_root_and_its_root_file(qtbot: QtBot, dialog: Ad
 
     (line,) = dialog.candidates
     assert line.label == "Painting"
-    assert path_key(line.root_file) == path_key(tmp_path / "catalog" / "Painting.rehuroot")
+    assert path_key(line.root_file) == path_key(tmp_path / "catalog" / f"{location_stem(location_of(folder))}.rehuroot")
     assert editor_at(dialog, 0).root_file_edit.placeholderText() == str(line.root_file)
 
 

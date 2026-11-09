@@ -43,7 +43,7 @@ def test_add_root_makes_a_root_file_beside_the_rehuco(tmp_path: Path, home: Rehu
     assert (row, added.label, added.location) == (3, "courses", "//nas/data/courses")
     assert added.root_id.version == 4
     assert added.root_id not in {UUID(root_id) for root_id in ROOT_IDS}
-    file = tmp_path / "courses.rehuroot"
+    file = tmp_path / "nas--data--courses.rehuroot"
     assert added.file == file
     assert not file.exists()
 
@@ -57,32 +57,32 @@ def test_add_root_makes_a_root_file_beside_the_rehuco(tmp_path: Path, home: Rehu
         "layouts": {"*": "*"},
         "fallbacks": {},
     }
-    assert read_json(tmp_path / "home.rehuco")["roots"][3] == {"file": "courses.rehuroot"}
+    assert read_json(tmp_path / "home.rehuco")["roots"][3] == {"file": "nas--data--courses.rehuroot"}
 
 
-def test_add_root_takes_an_explicit_label_and_names_its_file_after_it(tmp_path: Path, home: RehucoFile) -> None:
-    """A label given is the root's, and the file is named after it, sanitized.
+def test_add_root_names_its_file_after_the_location_whatever_the_label(tmp_path: Path, home: RehucoFile) -> None:
+    """A label given is the root's, and changes nothing about its file's name.
 
     **Test steps:**
 
     * add a root labelled with characters no file name keeps
-    * verify the label as given and the file name sanitized
+    * verify the label as given and the file named after the location
     """
-    row = home.add_root("//nas/data/courses", "Courses: 2026")
+    row = home.add_root("//nas/data_14t/DATA1/Courses", "Courses: 2026")
 
     assert home.roots[row].label == "Courses: 2026"
-    assert home.roots[row].file == tmp_path / "Courses 2026.rehuroot"
+    assert home.roots[row].file == tmp_path / "nas--data_14t--DATA1--Courses.rehuroot"
 
 
-def test_a_label_that_sanitizes_to_nothing_names_its_file_root(tmp_path: Path, home: RehucoFile) -> None:
-    """A label with nothing a file name keeps still gets a file.
+def test_a_location_that_sanitizes_to_nothing_names_its_file_root(tmp_path: Path, home: RehucoFile) -> None:
+    """A location with nothing a file name keeps still gets a file.
 
     **Test steps:**
 
-    * add a root labelled only with characters no file name keeps
+    * add a root whose location holds only characters no file name keeps
     * verify its file is ``root.rehuroot``
     """
-    row = home.add_root("//nas/data/courses", "???")
+    row = home.add_root("//???/???", "courses")
 
     assert home.roots[row].file == tmp_path / "root.rehuroot"
 
@@ -92,16 +92,17 @@ def test_a_root_file_name_already_taken_gets_a_suffix(tmp_path: Path, home: Rehu
 
     **Test steps:**
 
-    * put a file named ``courses.rehuroot`` beside the ``.rehuco``, then add two roots labelled ``courses``-ish
-    * verify the files are ``courses (2)`` and, for a label taken by an unreadable root's file, ``discs (2)``
+    * put a file named for ``//nas/data/courses`` beside the ``.rehuco``, then add that root and, after an unreadable
+      root's file is deleted, a root whose location names that file
+    * verify the files are suffixed ``(2)``
     """
-    (tmp_path / "courses.rehuroot").write_text("someone else's", encoding="utf-8")
+    (tmp_path / "nas--data--courses.rehuroot").write_text("someone else's", encoding="utf-8")
     first = home.add_root("//nas/data/courses")
     (tmp_path / "discs.rehuroot").unlink()
     reloaded = RehucoFile.load(tmp_path / "home.rehuco")
-    second = reloaded.add_root("//nas/data/more", "discs")
+    second = reloaded.add_root("//discs", "more")
 
-    assert home.roots[first].file == tmp_path / "courses (2).rehuroot"
+    assert home.roots[first].file == tmp_path / "nas--data--courses (2).rehuroot"
     assert reloaded.roots[second].file == tmp_path / "discs (2).rehuroot"
 
 
