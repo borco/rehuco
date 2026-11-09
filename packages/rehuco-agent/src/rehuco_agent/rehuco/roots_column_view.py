@@ -5,9 +5,9 @@ from typing import cast, override
 from uuid import UUID
 
 from borco_pyside.widgets import ReorderDrag
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QPoint, Qt, Signal
+from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QPersistentModelIndex, QPoint, Qt, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QAbstractItemView, QColumnView, QWidget
+from PySide6.QtWidgets import QAbstractItemView, QColumnView, QListView, QWidget
 from rehuco_core import FileType
 
 from ..fields.widgets.image_export import PressDragFilter
@@ -27,6 +27,9 @@ class RootsColumnView(QColumnView):
     a file, whether it has a preview widget or not, and this view has a details pane of its own beside it that shows
     every row, a folder's and a root's too -- so that column is collapsed to nothing.
 
+    **With no roots the first column still has the model** (#570), so it is drawn like any column and its background
+    answers :meth:`column_root_at_global`, which the menu of an empty catalog needs.
+
     **An image row can be dragged out** (#395): a press on one that moves the drag distance reports it through
     :attr:`image_drag_requested`, for the owner -- which knows what record manages the row -- to export.
 
@@ -45,6 +48,56 @@ class RootsColumnView(QColumnView):
         self.__collapse_preview_column()
         # the preview column exists by the time a row with nothing under it is current, whenever it was made
         self.updatePreviewWidget.connect(self.__collapse_preview_column)
+
+    @override
+    def setModel(self, model: QAbstractItemModel | None) -> None:  # noqa: N802
+        super().setModel(model)
+        if model is not None:
+            model.modelReset.connect(self.__sync_empty_roots_column)
+            model.rowsInserted.connect(self.__sync_empty_roots_column)
+        self.__sync_empty_roots_column()
+
+    def __sync_empty_roots_column(self) -> None:
+        """Give the column of roots the model while there are no roots, and take it back with the first one (#570).
+
+        With no rows ``QColumnView`` has nothing to open a column on, so it shows its bare preview column, which has
+        no model: it is drawn grey, and :meth:`column_root_at_global` skips it, so the background of an empty catalog
+        has no menu. That column is kept, and becomes the preview column once there are rows, which is the one item
+        view here without a model (:meth:`__collapse_preview_column`).
+        """
+        model = self.model()
+        bare = self.__bare_column()
+        if model is None or bare is None:
+            return
+        if model.rowCount() == 0:
+            bare.setModel(model)
+            # a column made for rows fills its viewport with the base colour; the preview column does not
+            bare.viewport().setAutoFillBackground(True)
+        elif bare.model() is not None:
+            bare.setModel(None)
+            # the column of roots was created, and collapsed nothing, while this one still had the model
+            self.__collapse_preview_column()
+
+    def __bare_column(self) -> QAbstractItemView | None:
+        """The preview column, whether or not it stands in for the column of roots: the one item view here that
+        :meth:`createColumn` did not make. Looked up each time, never kept: it is Qt's, and Qt replaces it.
+
+        :returns: the column; ``None`` before ``QColumnView`` has made it.
+        """
+        return next(
+            (c for c in self.findChildren(QAbstractItemView) if c is not self and not isinstance(c, QListView)), None
+        )
+
+    @override
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        # a style change -- a stylesheet set on an ancestor, which the dock manager does on a palette change --
+        # unpolishes every column, and the Windows style's unpolish leaves a scroll area's viewport unfilled; the
+        # children are restyled before the view hears of it, so the fill is put back here
+        if event.type() == QEvent.Type.StyleChange:
+            bare = self.__bare_column()
+            if bare is not None and bare.model() is not None:
+                bare.viewport().setAutoFillBackground(True)
 
     @override
     def createColumn(self, index: QModelIndex | QPersistentModelIndex) -> QAbstractItemView:  # noqa: N802

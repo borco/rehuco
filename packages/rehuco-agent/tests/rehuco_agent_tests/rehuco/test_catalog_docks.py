@@ -4234,6 +4234,34 @@ def test_the_roots_context_menu_shows_the_rows_actions_and_makes_it_current(
     assert len(RecordingMenu.shown) == 1
 
 
+@mark.usefixtures("served")
+def test_a_catalog_with_no_roots_has_a_background_menu(
+    qtbot: QtBot, monkeypatch: MonkeyPatch, dock: CatalogDocks
+) -> None:
+    """The Roots panel of a catalog with no roots opens the catalog menu from its background (#570): its column held
+    no model, so the lookup of the column under the pointer found none.
+
+    **Test steps:**
+
+    * show the Roots panel with no catalog open
+    * ask for the menu at the middle of the view
+    * verify it shows Scan, Add Root and Refresh
+    """
+    monkeypatch.setattr("rehuco_agent.rehuco.roots_panel.QMenu", RecordingMenu)
+    RecordingMenu.shown = []
+    roots = dock.roots
+    qtbot.addWidget(roots)
+    roots.resize(600, 300)
+    roots.show()
+    qtbot.waitExposed(roots)
+    assert roots.roots_model.rowCount() == 0
+    view = roots.roots_view
+
+    roots._RootsPanel__on_roots_context_menu(view.rect().center())  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert RecordingMenu.shown == [[roots.scan_action, roots.add_roots_action, roots.refresh_roots_action]]
+
+
 @mark.parametrize(
     ("format_version", "add_root_enabled"),
     [param(4, True, id="editable"), param(99, False, id="newer, read-only")],
