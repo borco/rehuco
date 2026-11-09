@@ -218,7 +218,10 @@ the earlier live-inline-for-now deferral):
   install's* own UI edits are filed under (seeded from the OS login name, `admin` as the fallback), and the
   **unknown** user (default `unknown`), who **imported** per-user state is filed under — a favorite/rating
   carried in from a `.tc` was *not* set by this identity here, so its real owner is unknown. The editor's
-  per-user writes go to the current user; the `.tc` importer files under the unknown one. Both are editable on
+  per-user writes go to the current user; a `.tc` opened in-app is shown under the unknown one, while every
+  conversion — the dock's *Convert* and the Import Legacy Catalog wizard alike — files under the current user
+  (#622), leaving values at a new record's defaults out, so a `.tc` with none off its defaults writes no sidecar.
+  Both are editable on
   the settings identity page, and setting them to the same value (collapsing back to one identity) is
   supported — no uniqueness constraint. A just-imported resource opened for editing carries its foreign
   per-user data under `unknown` **verbatim**, preserved untouched on round-trip; reassigning or dropping it is
@@ -826,8 +829,8 @@ Field order, in the three groups the layout separates:
   entry) rather than a recorded field. Still open around it: whether **publishing also mints the entity
   document** ([[plugins#grouping-entities]]'s materialize-at-publication sketch) or only copies the entry —
   two acts that want one sentence; and how two users' same-titled paths reconcile when one is published.
-- **Identity collapse on import — undecided.** Imports file per-user state under `unknown` while the viewer
-  shows the *current* identity, so a freshly converted resource shows none of its imported learning paths
+- **Identity collapse on an in-app `.tc` open — undecided.** It files per-user state under `unknown` while the
+  viewer shows the *current* identity, so a freshly converted resource shows none of its imported learning paths
   (or its rating) until the two usernames are set to the same value — which is explicitly supported. If
   that is the intended migration flow it should be said here; if it is not, "subscribe to the `unknown`
   identity's entries" becomes a third remedy alongside the mass-rename job (#108).

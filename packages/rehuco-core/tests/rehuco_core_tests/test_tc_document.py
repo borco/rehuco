@@ -156,7 +156,6 @@ def test_tutorial_mapping(mocker: MockerFixture) -> None:
     # not set by this install's identity ([[field-schema#per-user-shared]], #109)
     assert block["users"] == {
         "unknown": {
-            "favorite": False,
             "keep": True,
             "learning_paths": [
                 {"title": "Some learning path 1", "index": 0, "ref": 1},
@@ -198,9 +197,7 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
     # ([[field-schema#resource-types]], #195)
     assert block["users"] == {
         "unknown": {
-            "favorite": False,
             "keep": True,
-            "learning_paths": [],
             "rating": -5,
         }
     }
@@ -213,6 +210,21 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
     assert "original_duration" not in block
     assert "level" not in block
     assert "rating" not in block  # moved under ``users``, not left inline
+
+
+def test_values_at_their_defaults_are_left_out_of_the_users_map() -> None:
+    """A ``.tc`` whose per-user values all equal a new record's maps to an empty per-user map (#622).
+
+    **Test steps:**
+
+    * map a Tutorial ``.tc`` carrying every per-user flag at its default, no learning paths and no rating
+    * verify the per-user subset is empty, so no sidecar is written for it
+    """
+    data = tc_to_rehu_data(
+        {"type": "Tutorial", "keep": False, "todo": False, "viewed": False, "learning_paths": []}, username="bob"
+    )
+
+    assert data["tutorial"]["users"] == {"bob": {}}
 
 
 def test_collection_mapping_has_no_plugin_block(mocker: MockerFixture) -> None:
@@ -534,19 +546,18 @@ def test_load_tc_files_per_user_flags_under_the_unknown_user_by_default(mocker: 
 
 
 def test_tc_to_rehu_data_files_per_user_flags_under_the_given_username() -> None:
-    """``tc_to_rehu_data`` files the imported per-user flags under the supplied username, and mints
-    ``favorite`` as ``False`` regardless of any tc4 value -- it is new to rehuco with no tc4 source key
-    ([[field-schema#per-user-shared]]).
+    """``tc_to_rehu_data`` files the imported per-user values under the supplied username, and never writes
+    ``favorite`` whatever a tc4 value says -- it is new to rehuco with no tc4 source key, so it is always the
+    default ([[field-schema#per-user-shared]]).
 
     **Test steps:**
 
     * map a Tutorial ``.tc`` dict (with a stray ``favorite``) under an explicit username
-    * verify the per-user subset landed under only that username, and ``favorite`` is minted ``False``
+    * verify the per-user subset landed under only that username, holding the rating and no ``favorite``
     """
     data = tc_to_rehu_data({"type": "Tutorial", "rating": 3, "favorite": True}, username="bob")
 
     users = data["tutorial"]["users"]
     assert set(users) == {"bob"}
-    assert users["bob"]["rating"] == 3
-    assert users["bob"]["favorite"] is False
+    assert users["bob"] == {"rating": 3}
     assert data["tutorial"]["format_version"] == current_block_version("tutorial")

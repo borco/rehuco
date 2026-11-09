@@ -1633,18 +1633,19 @@ def test_sweeping_the_same_folder_twice_does_not_queue_it_twice(mocker: MockerFi
     assert len(queue.jobs()) == 1
 
 
-def test_import_legacy_catalog_action_opens_the_wizard_over_the_unknown_identity(
+def test_import_legacy_catalog_action_opens_the_wizard_over_the_current_identity(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """``File > Import Legacy Catalog...`` opens the wizard filed under the unknown identity (#109,
-    #192), the same rule an in-app `.tc` open already follows.
+    """``File > Import Legacy Catalog...`` opens the wizard filed under the current user, not the unknown
+    one (#192, #622).
 
     **Test steps:**
 
-    * mock the wizard class and the identity settings
+    * mock the wizard class and set distinct current and unknown usernames
     * trigger ``import_legacy_catalog_action``
-    * verify the wizard was built over the app-wide queue and the unknown username, and shown modally
+    * verify the wizard was built over the app-wide queue and the current username, and shown modally
     """
+    shared_identity_settings().current_username = "converter"
     shared_identity_settings().unknown_username = "legacy"
     wizard = mocker.MagicMock()
     built = mocker.patch("rehuco_agent.main_window.ImportLegacyCatalogWizard", return_value=wizard)
@@ -1655,7 +1656,7 @@ def test_import_legacy_catalog_action_opens_the_wizard_over_the_unknown_identity
 
     built.assert_called_once_with(
         window._MainWindow__task_queue,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-        username="legacy",
+        username="converter",
         parent=window,
     )
     wizard.exec.assert_called_once()

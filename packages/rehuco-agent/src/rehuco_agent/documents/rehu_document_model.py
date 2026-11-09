@@ -65,6 +65,7 @@ from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.excluded_files_settings import shared_excluded_files_settings
+from ..settings.identity_settings import shared_identity_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from ..settings.videos_settings import shared_videos_settings
 from .progress_writer import ProgressWriter
@@ -1429,11 +1430,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         this model's document -- reseeding every field and recomputing :attr:`locked` (which drops to
         ``False``, since the result is never :attr:`~RehuDocument.legacy_tc`) -- so the same dock keeps
         showing the same resource, now unlocked, without a reload round-trip. The conversion files
-        the imported per-user flags under this document's **own** username -- the identity it was
-        opened with, which for a legacy ``.tc`` is the **unknown** user (#109) -- so the block's
-        ``users`` key and the result's :attr:`~RehuDocument.username` stay in agreement (#98's
-        invariant); an identity-setting change made after this document was opened applies to later
-        opens, not to it (#99).
+        the ``.tc``'s per-user values that differ from a new record's under the **current** user, the one
+        converting (#622) -- not the **unknown** user this legacy document was opened as (#109), whose
+        sidecar would belong to nobody -- and the result is read back as that user, so the block's
+        ``users`` key and the adopted document's :attr:`~RehuDocument.username` still agree (#98's
+        invariant).
 
         Emits :attr:`reloaded` on success -- the other half of the file seam :meth:`revert` raises, since
         this too replaces the file the model stands for (the ``.tc`` becomes a ``.rehu``, #174).
@@ -1462,7 +1463,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 key,
                 keep_backups=keep_backups,
                 overwrite=overwrite,
-                username=self.__document.username,
+                username=shared_identity_settings().current_username,
                 excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
                 screenshot_name_patterns=shared_screenshot_patterns_settings().screenshot_name_patterns,
                 deleter=deleter if deleter is not None else configured_deleter(),
