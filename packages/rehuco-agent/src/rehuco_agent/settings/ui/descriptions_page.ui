@@ -152,6 +152,50 @@
     </widget>
    </item>
    <item>
+    <widget class="QFrame" name="record_url_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="record_url_frame_layout">
+      <item>
+       <widget class="QLabel" name="record_url_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Record URL</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="url_on_main_view_check_box">
+        <property name="text">
+         <string>Show on the Main View</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="url_on_description_view_check_box">
+        <property name="text">
+         <string>Show on the Description View</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <spacer name="bottom_spacer">
      <property name="orientation">
       <enum>Qt::Orientation::Vertical</enum>
