@@ -309,3 +309,56 @@ def test_resize_event_re_elides(qtbot: QtBot, mocker: MockerFixture) -> None:
 
 
 # endregion
+
+
+def test_rich_label_escapes_plain_text_and_keeps_its_height_as_a_link(qtbot: QtBot) -> None:
+    """A ``rich`` label draws plain text as escaped rich text, and is as tall as the same label with a link.
+
+    **Test steps:**
+
+    * build a rich label with text holding markup characters and verify it shows them literally
+    * read its height hint, turn the text into a link and verify the height hint is unchanged
+    """
+    label = ElidedLabel(rich=True)
+    qtbot.addWidget(label)
+    label.setFixedWidth(4000)
+
+    label.set_text("a <b> & c")
+    plain_height = label.sizeHint().height()
+    label.set_text("a <b> & c", href="#x")
+
+    assert label.textFormat() == Qt.TextFormat.RichText
+    assert label.sizeHint().height() == plain_height
+    label.set_text("a <b> & c")
+    assert label.text() == "a &lt;b&gt; &amp; c"
+
+
+def test_a_subclass_chooses_its_link_and_text_colors(qtbot: QtBot) -> None:
+    """A subclass overriding ``link_color`` and ``text_color`` has its link and its rich plain text drawn in
+    those colors, not the palette's.
+
+    **Test steps:**
+
+    * build a rich subclass with fixed link and text colors
+    * set a link and verify the anchor carries the link color
+    * set plain text and verify it is wrapped in the text color
+    """
+
+    class FixedColorLabel(ElidedLabel):
+        """An `ElidedLabel` drawing its link and text in fixed colors."""
+
+        def link_color(self) -> QColor:
+            return QColor("#abcdef")
+
+        def text_color(self) -> QColor | None:
+            return QColor("#fedcba")
+
+    label = FixedColorLabel(rich=True)
+    qtbot.addWidget(label)
+    label.setFixedWidth(4000)
+
+    label.set_text("value", href="#x")
+    assert 'style="color:#abcdef;"' in label.text()
+
+    label.set_text("value")
+    assert label.text() == '<span style="color:#fedcba;">value</span>'
