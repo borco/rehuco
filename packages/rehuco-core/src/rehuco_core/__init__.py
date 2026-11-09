@@ -367,7 +367,7 @@ from .resource_scoping import (
 from .root_candidates import CandidateKind, RootCandidate, RootPick, RootPlanner
 from .root_destination import RecordNaming, Refusal, destination
 from .root_folders import RootFolderLister
-from .root_location import location_of, machine_name, resolve_location, storage_of
+from .root_location import LOCAL_SERVER, location_of, machine_name, resolve_location, server_of, storage_of
 from .root_mappings import (
     ROOT_MAPPINGS_FILE_NAME,
     SET_ASIDE_FILE_NAME,
@@ -695,6 +695,7 @@ __all__ = [
     "LEGACY_SUFFIX",
     "LIBRARY_PATH_VARIABLE",
     "LIBVLC_PROBE_FLAG",
+    "LOCAL_SERVER",
     "LOCK_SUFFIX",
     "LearningPathEntry",
     "LegacyDrop",
@@ -1030,6 +1031,7 @@ __all__ = [
     "seed_checksum_record",
     "seed_from_legacy_manifest",
     "seek_seconds",
+    "server_of",
     "set_progress_entry",
     "set_videos",
     "shared_tool_locator",
