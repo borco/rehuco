@@ -12,7 +12,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.path_field import REVEAL_HINT
-from rehuco_agent.fields.widgets import ExpandToggleButton, LocationLine, PathEditor
+from rehuco_agent.fields.widgets import DestinationRow, ExpandToggleButton, LocationLine, PathEditor
 
 from rehuco_agent_tests.fields.field_testers import PathFieldTester as PathField
 
@@ -427,3 +427,43 @@ def test_set_text_on_a_location_line_is_set_location(qtbot: QtBot) -> None:
     assert 'href="#open"' in line.text()
     assert "#other" not in line.text()
     assert line.toolTip() == "Show in Explorer"
+
+
+# region the root's place (#579)
+def test_the_place_is_pulled_on_build_and_refresh_and_a_click_is_forwarded(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """The root's place is pulled on build and on every ``suggestions_changed``; its click reaches the callback.
+
+    **Test steps:**
+
+    * build an editor whose place is first absent, with a change emitter and a click sink
+    * set a place and fire the emitter: the editor shows it
+    * click it: the sink is called
+    """
+    changed = Emitter()
+    rows: list[DestinationRow | None] = [None]
+    clicked: list[bool] = []
+    field = PathField(
+        "location",
+        suggestions=lambda: ["Alpha"],
+        current_name=lambda: "folder",
+        suggestions_changed=changed.changed,
+        destination=lambda: rows[-1],
+        on_destination_selected=lambda: clicked.append(True),
+    )
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, PathEditor)
+    qtbot.addWidget(editor)
+    label = editor._PathEditor__destination_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert label.isHidden()
+
+    rows.append(DestinationRow("Tutorials: Jane/Foo"))
+    changed.changed.emit()
+    label.linkActivated.emit("#")
+
+    assert not label.isHidden()
+    assert clicked == [True]
+
+
+# endregion

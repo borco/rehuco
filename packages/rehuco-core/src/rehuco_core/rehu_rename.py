@@ -7,20 +7,21 @@ this is what makes it true on disk. Core-side and GUI-free, the same split
 which files move and moves them.
 
 Both resource scopes ([[data-model#resource-scoping]]) reduce to one **plan** of ``(source,
-destination)`` pairs *within a single directory*, which is what makes every rename here same-filesystem
-by construction -- the checksum-gated cross-filesystem move ([[mounts-and-storage#safe-move-rename]]) is
-a different operation with a different destination. A directory-scoped ``info.rehu`` renames its parent
-directory (one pair, atomic); a file-scoped ``foo.rehu`` renames every file named after it -- ``foo.``
-anything, or ``foo`` followed by a digit, so ``foobar.zip`` is left to whoever it belongs to. The whole
-plan is collision-checked before the first rename runs, and a failure part-way through renames the
-completed steps back, so a sibling set is never left split between two names
-([[data-model#write-integrity]]).
+destination)`` pairs whose destinations share **one folder**: the record's own, for a rename, or another under the
+same root, for a move in place (#579), whose missing parents are made first. Either is a rename on one filesystem --
+the checksum-gated cross-filesystem move ([[mounts-and-storage#safe-move-rename]]) is a different operation. A
+directory-scoped ``info.rehu`` renames its parent directory (one pair, atomic); a file-scoped ``foo.rehu`` renames
+every file named after it -- ``foo.`` anything, or ``foo`` followed by a digit, so ``foobar.zip`` is left to whoever
+it belongs to. The whole plan is collision-checked before the first rename runs, and a failure part-way through
+renames the completed steps back and removes the folders it made, so a sibling set is never left split between two
+names ([[data-model#write-integrity]]).
 
 Nothing is attempted at all for a resource whose ``.rehu`` is not on disk: a missing file is not a
 resource to rename but a record to fix ([[data-model#write-integrity]]'s fix-retry loop), and guessing
 what its sibling set *would* have been is exactly the guess a rename must not make.
 """
 
+import logging
 import os
 import time
 from collections.abc import Sequence
@@ -34,6 +35,8 @@ from .path_keys import path_key
 from .record_file_lock import RecordFileLock, is_lock_name
 from .relocation import Relocation
 from .resource_scoping import is_directory_scoped
+
+LOG: Final = logging.getLogger(__name__)
 
 TRANSIENT_LOCK_ERRORS: Final = frozenset({5, 32})
 """The Windows errors a refused rename step is retried on (#355): ``ERROR_ACCESS_DENIED`` and
@@ -98,6 +101,60 @@ def rehu_rename_conflict(path: Path, new_name: str) -> Path | None:
     return RehuRenamer(path, new_name).conflict()
 
 
+def move_rehu_resource(path: Path, into: Path, new_name: str) -> Path:
+    """Move the resource at ``path`` into the folder ``into``, under ``new_name`` -- a move in place within its root
+    (#579), the folder's missing parents made first.
+
+    :param path: the resource's ``.rehu`` file.
+    :param into: the folder the resource's own entry -- its folder, or its file set -- lands in.
+    :param new_name: the destination folder/file name; see :func:`rename_rehu_resource`.
+    :returns: the resource's ``.rehu`` path where it now is.
+    :raises ValueError: ``new_name`` is not a plain name, or a folder would move into itself.
+    :raises FileNotFoundError: see :func:`rename_rehu_resource`.
+    :raises RecordLockedError: see :func:`rename_rehu_resource`.
+    :raises FileExistsError: see :func:`rename_rehu_resource`.
+    :raises PartialRenameError: see :func:`rename_rehu_resource`.
+    :raises OSError: see :func:`rename_rehu_resource`; also a folder that could not be made.
+    """
+    return RehuRenamer(path, new_name, into=into).rename()
+
+
+def rehu_move_conflict(path: Path, into: Path, new_name: str) -> Path | None:
+    """Whatever already occupies the destination moving ``path`` into ``into`` as ``new_name`` would take; the advisory
+    counterpart of :func:`move_rehu_resource`, as :func:`rehu_rename_conflict` is of a rename.
+
+    :param path: the resource's ``.rehu`` file.
+    :param into: the folder the resource's own entry would land in.
+    :param new_name: the candidate folder/file name.
+    :returns: the entry in the way, or ``None``; see :func:`rehu_rename_conflict`.
+    """
+    return RehuRenamer(path, new_name, into=into).conflict()
+
+
+def remove_empty_parents(start: Path, stop_at: Path) -> list[Path]:
+    """Remove ``start`` and each folder above it while it is empty, stopping beneath ``stop_at`` (#579).
+
+    What a move in place may leave behind: the folder its record left, emptied, and the ones above it emptied by that.
+    Removing stops at the first folder that is not empty or will not go, and never reaches ``stop_at`` itself or
+    anything outside it.
+
+    :param start: the deepest folder to try.
+    :param stop_at: the folder to stop beneath -- the root's.
+    :returns: the folders removed, deepest first.
+    """
+    removed: list[Path] = []
+    stop_parts = tuple(map(path_key, stop_at.parts))
+    folder = start
+    while len(folder.parts) > len(stop_parts) and tuple(map(path_key, folder.parts[: len(stop_parts)])) == stop_parts:
+        try:
+            folder.rmdir()
+        except OSError:
+            break
+        removed.append(folder)
+        folder = folder.parent
+    return removed
+
+
 class RehuRenamer:
     """Renames one ``.rehu`` resource's files to a new name ([[plugins#toolkit-surfaces]]).
 
@@ -111,12 +168,17 @@ class RehuRenamer:
     :param new_name: the destination folder/file name; see :func:`rename_rehu_resource`.
     :param trust: the checksum trust a completed rename carries to the new name (#357); the process-wide
         one unless a test says otherwise.
+    :param into: the folder the resource's own entry lands in -- a move in place (#579), its missing parents made
+        before the first step; ``None`` keeps it where it is, a rename.
     """
 
-    def __init__(self, path: Path, new_name: str, trust: ChecksumTrust = DEFAULT_CHECKSUM_TRUST) -> None:
+    def __init__(
+        self, path: Path, new_name: str, trust: ChecksumTrust = DEFAULT_CHECKSUM_TRUST, *, into: Path | None = None
+    ) -> None:
         self.__path: Final = path
         self.__new_name: Final = new_name
         self.__trust: Final = trust
+        self.__into: Final = into
         self.__relocation = Relocation()
         """The plan :meth:`rename` actually carried out, and what :meth:`relocate` answers from. Empty
         until a rename succeeds -- including after one that was rolled back, so a failure leaves every
@@ -136,18 +198,24 @@ class RehuRenamer:
         """
         self.__check_name()
         self.__check_source_exists()
-        if self.__new_name == self.__current_name:
+        if self.__new_name == self.__current_name and not self.__changes_folder:
             # a rename to the name it already has: not an error, just nothing to do. A rename that
             # differs only in *case* is a real one and falls through -- it is how a name's spelling is
             # corrected on a case-insensitive filesystem.
             return self.__path
+        self.__check_not_into_itself()
         # a save elsewhere is between its re-read and its write: moving the record now would leave that write
         # landing under the old name (#512) -- the record's, or its checksum record's
         RecordFileLock(self.__path).refuse_if_held()
         RecordFileLock(checksum_record_path(self.__path)).refuse_if_held()
         plan = self.__plan()
         self.__check_no_collisions(plan)
-        self.__execute(plan)
+        made = self.__make_folder()
+        try:
+            self.__execute(plan)
+        except OSError:
+            self.__remove_made(made)
+            raise
         renamed = self.__new_document_path()
         # a rename rewrites no bytes, so what was verified under the old name still holds under the new
         # one -- a copy or move made outside the app is never heard of here, and re-verifies (#357)
@@ -264,8 +332,70 @@ class RehuRenamer:
         :returns: the ``(source, destination)`` pair for the resource's own entry.
         """
         if self.__directory_scoped:
-            return (self.__path.parent, self.__path.parent.with_name(self.__new_name))
-        return (self.__path, self.__path.with_name(self.__new_name + self.__path.suffix))
+            return (self.__path.parent, self.__folder / self.__new_name)
+        return (self.__path, self.__folder / (self.__new_name + self.__path.suffix))
+
+    @property
+    def __source_folder(self) -> Path:
+        """The folder the resource's own entry is in now: the one holding its folder, or holding its file set."""
+        return self.__path.parent.parent if self.__directory_scoped else self.__path.parent
+
+    @property
+    def __folder(self) -> Path:
+        """The folder the resource's own entry lands in: ``into``, or where it is now."""
+        return self.__source_folder if self.__into is None else self.__into
+
+    @property
+    def __changes_folder(self) -> bool:
+        """Whether the entry lands in another folder than the one it is in -- folded, so a folder spelled in another
+        case is the same one."""
+        return path_key(self.__folder) != path_key(self.__source_folder)
+
+    def __check_not_into_itself(self) -> None:
+        """Refuse moving a resource's folder into itself or beneath it.
+
+        :raises ValueError: the destination folder is the resource's own folder or inside it.
+        """
+        if not self.__directory_scoped:
+            return
+        source = tuple(map(path_key, self.__path.parent.parts))
+        if tuple(map(path_key, self.__folder.parts[: len(source)])) == source:
+            raise ValueError(f'"{self.__current_name}" cannot be moved into itself: {self.__folder}')
+
+    def __make_folder(self) -> list[Path]:
+        """Make the destination folder's missing parents, the topmost first.
+
+        :returns: the folders made, in the order they were made; none for a rename, which stays where it is.
+        :raises OSError: one could not be made; any made before it are removed again.
+        """
+        if not self.__changes_folder:
+            return []
+        missing: list[Path] = []
+        folder = self.__folder
+        while not folder.exists() and folder != folder.parent:
+            missing.append(folder)
+            folder = folder.parent
+        made: list[Path] = []
+        try:
+            for folder in reversed(missing):
+                folder.mkdir()
+                made.append(folder)
+        except OSError:
+            self.__remove_made(made)
+            raise
+        return made
+
+    @staticmethod
+    def __remove_made(made: Sequence[Path]) -> None:
+        """Remove the folders a failed move made, the deepest first; one that will not go is logged and left.
+
+        :param made: the folders made, in the order they were made.
+        """
+        for folder in reversed(made):
+            try:
+                folder.rmdir()
+            except OSError:
+                LOG.warning("Could not remove %s, made for a move that failed.", folder, exc_info=True)
 
     def __new_document_path(self) -> Path:
         """Where this resource's ``.rehu`` ends up once the plan has run.
@@ -332,7 +462,7 @@ class RehuRenamer:
             return [self.__own_pair()]
         stem_length = len(self.__path.stem)
         return [
-            (sibling, sibling.with_name(self.__new_name + sibling.name[stem_length:]))
+            (sibling, self.__folder / (self.__new_name + sibling.name[stem_length:]))
             for sibling in self.__sibling_set()
         ]
 

@@ -1086,15 +1086,18 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   case a rollback cannot fix says so by name. Both scopes rename within a single directory and so are same-filesystem
   by construction.
   **The suggestion list is two groups** (#579). First the **current names**: the type's Locations templates rendered
-  into a name, a rename within the record's folder as above. Then, under a separator, **one entry per root of the open
-  catalog whose layouts admit this record** ([[mounts-and-storage#rehuroot]]), labelled by the root's name and the
-  rendered path. The record's **own root** is a **rename in place** — the destination's parents created, the folder or
-  the file set moved atomically, same filesystem by construction — through the same coordinator and with the same
-  collision check and rollback. **Another root** is the checksum-gated verified move
-  ([[mounts-and-storage#safe-move-rename]]: verify, copy, verify at the target, delete), greyed *until #339 (0.4.1)*
-  lands. A root is absent from the list when its layouts name neither the record's type nor `*`, and offered greyed
-  with the reason when a placeholder the layout needs is empty and the root names no fallback for it, or when the
-  rendered destination already exists — the same marker as an occupied name below.
+  into a name, a rename within the record's folder as above. Then, under a separator, **the record's root's place**
+  ([[mounts-and-storage#rehuroot]]): where the layout of the root holding the record puts it, labelled by the root's
+  name and the rendered path. Choosing it is a **move in place** — the destination's missing parents made, the folder
+  or the file set moved in one plan, same filesystem by construction — through the same coordinator and with the same
+  collision check and rollback, the folders it made removed again if it fails. **Only a place that can be built is
+  shown**: none for a record under no root, a root this machine does not map or cannot reach now, a layout naming
+  neither the record's type nor `*`, or one needing a placeholder the record leaves empty with no fallback on the root.
+  A place something already occupies shows disabled with the same marker as an occupied name below, and the place the
+  record already sits at disabled and plain, as the current name is. The folders a move leaves empty stay, unless the
+  Files page's *Remove the left-behind folders* says otherwise ([[appendices.settings-pages]]). Other roots are the
+  checksum-gated verified move ([[mounts-and-storage#safe-move-rename]]: verify, copy, verify at the target, delete,
+  #339) and join the list when it lands.
   A candidate **something already occupies** — another folder for a directory-scoped resource, another `.rehu` for a
   file-scoped one — is offered *disabled, with a trailing `⚿`* rather than as a click that could only fail. A marker
   rather than a color: the disabled palette fights a hue, a colorblind reader may not separate one, and Qt Style Sheets

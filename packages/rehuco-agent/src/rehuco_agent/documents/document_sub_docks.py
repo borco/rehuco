@@ -78,6 +78,7 @@ from ..settings.maximized_view import (
 )
 from ..settings.persistent_settings import staging_folder
 from ..settings.reference_images_settings import shared_reference_images_settings
+from .catalog_roots import CatalogRoots
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
 from .content_images import ContentDisplayFlags, ContentImagesModel, ContentImagesPanel, ContentImagesView
@@ -593,6 +594,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         leaves it following only this document's own.
     :param pending_saves: the window's save jobs, which Save hands this document's edits to (#497); ``None`` saves
         here and waits.
+    :param catalog_roots: the open catalog's roots, which the path row reads its root's place from (#579); ``None``
+        offers none.
     :param parent: optional Qt parent.
     """
 
@@ -634,6 +637,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         task_queue: TaskQueue | None = None,
         resource_events: ResourceEvents | None = None,
         pending_saves: PendingSaves | None = None,
+        catalog_roots: CatalogRoots | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -724,7 +728,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # fresh one per type switch/revert would leak a set that never disconnects (#149). Parented to this
         # object, not the model: the model may outlive this view (#375), and one left on it per view would
         # pile up there for as long as any holder kept it.
-        self.__name_suggestions: Final = NameSuggestionModel(model, parent=self)
+        self.__name_suggestions: Final = NameSuggestionModel(model, catalog_roots, parent=self)
         # the whole field composition (location + images + record fields + unknown fallbacks) is
         # authored in document_fields; this object only hosts the resulting docks. The form is retained
         # (not discarded after building) so its fields outlive the widgets they built -- a field's

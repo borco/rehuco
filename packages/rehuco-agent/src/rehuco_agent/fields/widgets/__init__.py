@@ -36,7 +36,7 @@ from .measurement_result import MeasurementResult
 from .membership_table_model import MembershipTableModel
 from .memberships_editor import CollectionsEditor, LearningPathsEditor, MembershipsEditor
 from .overlay_surface import OverlayMode, viewer_mode_for
-from .path_editor import PathEditor
+from .path_editor import DestinationRow, PathEditor
 from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
 from .single_choice_radio_buttons import SingleChoiceRadioButtons
@@ -95,6 +95,7 @@ __all__ = [
     "MarkdownView",
     "MeasuredValueEdit",
     "MeasurementResult",
+    "DestinationRow",
     "PathEditor",
     "RatingSlider",
     "SingleChoiceComboBox",

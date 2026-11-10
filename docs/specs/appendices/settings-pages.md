@@ -174,9 +174,10 @@ pages and dropped: the first pair read as every file, or the screenshots themsel
 that they are about images at all. "Sidecar" is the specs' own word, kept over a plainer one because it
 says where these images live.
 
-**"Files" is a flat top-level page, not a group, holding two settings objects that share no subject
-but "a file on disk"** (#226, #291, #298, #312): how a deleted file is deleted and whether that is asked
-about (`DeletionSettings`), and the filename globs a content scan leaves out (`ExcludedFilesSettings`).
+**"Files" is a flat top-level page, not a group, holding three settings objects that share no subject
+but "a file on disk"** (#226, #291, #298, #312, #579): how a deleted file is deleted and whether that is asked
+about (`DeletionSettings`), how a record moved within its root is moved (`MoveSettings`), and the filename globs a
+content scan leaves out (`ExcludedFilesSettings`).
 The deletion policy is three boxes -- *Move deleted files to the Recycle Bin, if possible* first, then
 *Clear backups without asking* and *Delete images without asking* under a caption saying a permanent
 delete is confirmed unless -- and nothing else gates a user-facing delete (#312). The order is the
@@ -202,6 +203,11 @@ started reading it too (#298), a name under "Images" was the wrong subject for a
 has anything to do with images. It moved to "Files" instead, its frame first on the page, above the
 excluded-file-patterns editor (formerly the standalone "Excluded Files" page, #226) it shares that page
 with now.
+
+**Moving records**, the page's second frame (`MoveSettings`, #579), holds one box: *Remove the left-behind folders up
+to the root, only while each is empty*, off by default. It is read when a record lands at the place its root's layout
+gives it ([[plugins#tutorial-plugin]]'s path row): with it on, the folder the record left and each folder above it are
+removed while empty, stopping at the first that holds anything else and never reaching the root.
 
 **The whole filter state persists** across restarts — the filter text and both toggles — via
 `SettingsDialogSettings` (`settings/settings_dialog_settings.py`). The dialog restores it in

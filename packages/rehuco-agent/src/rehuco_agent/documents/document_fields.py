@@ -7,6 +7,7 @@ nothing of *this* document's fields, tabs, or ``level`` choices; only this modul
 """
 
 from collections.abc import Mapping
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
@@ -36,6 +37,7 @@ from ..fields import (
     TypeField,
     UnknownField,
 )
+from ..fields.widgets import DestinationRow
 from ..settings.description_editor_settings import shared_description_editor_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.identity_settings import shared_identity_settings
@@ -343,6 +345,20 @@ def build_document_form(
         # click time, so a test that swaps it after construction is still seen
         model.rename_location(name)
 
+    def root_place() -> DestinationRow | None:
+        # the root's place, drawn as the names are (#579): one existence check per render, uncached
+        place = name_suggestions.root_destination()
+        if place is None:
+            return None
+        occupied = not place.here and model.move_conflicts(place.into, place.name)
+        return DestinationRow(f"{place.label}: {Path(place.relative)}", here=place.here, occupied=occupied)
+
+    def move_to_root_place() -> None:
+        # asked again at click time: the row on screen may be a render behind the fields
+        place = name_suggestions.root_destination()
+        if place is not None and not place.here:
+            model.move_in_root(place.into, place.name, place.root)
+
     location_field = PathField(
         LOCATION_FIELD_NAME,
         suggestions=name_suggestions.suggestions,
@@ -354,6 +370,8 @@ def build_document_form(
         conflicts=lambda name: model.rename_conflicts(name),  # pylint: disable=unnecessary-lambda
         viewer_tab=VIEWER_MAIN_TAB,
         editor_tab=EDITOR_MAIN_TAB,
+        destination=root_place,
+        on_destination_selected=move_to_root_place,
     )
     # model.image_scanner is a RehuDocumentImageScanner over the legacy-.tc or the .rehu screenshot lister
     # ([[acquisition-tooling#tc-to-rehu]]); a successful conversion reassigns it, and both fields'

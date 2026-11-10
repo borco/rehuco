@@ -12,6 +12,7 @@ from rehuco_core.access import KeyRelocation, LoadedRecord, Records, ResourceKey
 
 from ..resource_events import ResourceEvents
 from ..settings.identity_settings import shared_identity_settings
+from .catalog_roots import CatalogRoots
 from .held_files_watch import HeldFilesWatch
 from .record_reader import RecordReader
 from .rehu_document_model import RehuDocumentModel
@@ -45,7 +46,7 @@ class DocumentRegistry(QObject):
     root went stale -- the file's modification time and size are read off the GUI thread (:class:`HeldFilesWatch`) and
     handed to the model (:meth:`~RehuDocumentModel.note_file_signature`), which reloads when clean and is flagged when
     dirty. Its own save comes back the same way and changes nothing: the model already holds that signature. **A
-    document under no root** has its folder watched, given ``roots``.
+    document under no root** has its folder watched, given ``catalog_roots``.
 
     :param parent: optional Qt parent.
     :param rename_coordinator: handed to every model this registry builds, so a rename from the location
@@ -55,8 +56,9 @@ class DocumentRegistry(QObject):
         no window around it.
     :param records: what every model's record is read and saved through ([[nodes#access-seam]], #416); ``None``
         builds one.
-    :param roots: where the open ``.rehuco``'s roots are, asked whenever the held documents change -- their notifiers
-        watch what is under them; ``None`` watches nothing, for a registry with no window around it.
+    :param catalog_roots: the open catalog's roots: asked whenever the held documents change, since their notifiers
+        watch what is under them, and read by every view of a held document for the path row's root place (#579);
+        ``None`` watches nothing and offers none, for a registry with no window around it.
     """
 
     model_acquired: Signal = Signal(object)
@@ -69,13 +71,16 @@ class DocumentRegistry(QObject):
         rename_coordinator: RenameCoordinator | None = None,
         resource_events: ResourceEvents | None = None,
         records: Records | None = None,
-        roots: Callable[[], Collection[Path]] | None = None,
+        catalog_roots: CatalogRoots | None = None,
     ) -> None:
         super().__init__(parent)
         self.__rename_coordinator: Final = rename_coordinator
+        self.__catalog_roots: Final = catalog_roots
         self.__events: Final = resource_events if resource_events is not None else ResourceEvents(parent=self)
         self.__records: Final = records if records is not None else Records()
-        self.__disk: Final = HeldFilesWatch(self.__events.changes, self.__records, rename_coordinator, roots, self)
+        self.__disk: Final = HeldFilesWatch(
+            self.__events.changes, self.__records, rename_coordinator, self.__root_folders(catalog_roots), self
+        )
         self.__disk.statted.connect(self.__on_statted)
         self.__disk.missing.connect(self.__on_missing)
         self.__reader: Final = RecordReader(self.__records, rename_coordinator, self)
@@ -97,6 +102,22 @@ class DocumentRegistry(QObject):
         """The change announcements this registry relocates and reloads its models from -- what every view of an
         acquired model listens to as well."""
         return self.__events
+
+    @staticmethod
+    def __root_folders(catalog_roots: CatalogRoots | None) -> Callable[[], Collection[Path]] | None:
+        """Where the open catalog's roots are on this machine, asked anew each time.
+
+        :param catalog_roots: the open catalog's roots.
+        :returns: the question, or ``None`` with no catalog.
+        """
+        if catalog_roots is None:
+            return None
+        return lambda: tuple(root.path for root in catalog_roots.mapped_roots())
+
+    @property
+    def catalog_roots(self) -> CatalogRoots | None:
+        """The open catalog's roots, for the path row's root place (#579); ``None`` when there is no catalog."""
+        return self.__catalog_roots
 
     @property
     def reader(self) -> RecordReader:

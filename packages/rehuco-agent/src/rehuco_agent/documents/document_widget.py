@@ -22,6 +22,7 @@ from ..fields import FieldsTab
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..resource_events import ResourceEvents
 from ..settings.maximized_view import MaximizedView
+from .catalog_roots import CatalogRoots
 from .checksum_actions import ChecksumActions
 from .conversion_backup_actions import ConversionBackupActions
 from .document_sub_docks import DocumentSubDocks, SubDockHost
@@ -54,6 +55,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     :param resource_events: the app's file announcements (#376), which the Files sub-dock follows; ``None``
         leaves it following only this document's own.
     :param pending_saves: the window's save jobs (#497), passed straight through; ``None`` saves in place.
+    :param catalog_roots: the open catalog's roots (#579), passed straight through; ``None`` offers no root's place.
     """
 
     status_message: Signal = Signal(str)
@@ -93,6 +95,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         task_queue: TaskQueue | None = None,
         resource_events: ResourceEvents | None = None,
         pending_saves: PendingSaves | None = None,
+        *,
+        catalog_roots: CatalogRoots | None = None,
     ) -> None:
         super().__init__(parent)
         self.__pending_saves: Final = pending_saves
@@ -131,6 +135,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         )
         self.__task_queue: Final = task_queue
         self.__resource_events: Final = resource_events
+        self.__catalog_roots: Final = catalog_roots
         self.__sub_docks = self.__build_sub_docks(model)
 
         # keyboard reach for the tab button's maximize (#341), on whichever dock is current
@@ -172,6 +177,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             task_queue=self.__task_queue,
             resource_events=self.__resource_events,
             pending_saves=self.__pending_saves,
+            catalog_roots=self.__catalog_roots,
             parent=self,
         )
         sub_docks.status_message.connect(self.status_message)

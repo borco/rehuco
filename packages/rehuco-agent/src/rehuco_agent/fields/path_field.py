@@ -11,7 +11,7 @@ from borco_pyside.file_browser import reveal_in_file_browser
 from PySide6.QtCore import SignalInstance
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
-from .widgets import ExpandToggleButton, LocationLine, PathEditor
+from .widgets import DestinationRow, ExpandToggleButton, LocationLine, PathEditor
 
 REVEAL_HINT: Final = {"win32": "Show in Explorer", "darwin": "Reveal in Finder"}.get(
     sys.platform, "Show in file manager"
@@ -20,7 +20,7 @@ REVEAL_HINT: Final = {"win32": "Show in Explorer", "darwin": "Reveal in Finder"}
 main desktops have one, else the generic phrase (#314)."""
 
 
-class PathField(Field[str]):
+class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
     """The special ``path`` field ([[plugins#field-toolkit]], [[field-schema#field-mapping]]): a
     file's location, common to every ``.rehu`` and unlike the record fields in that its editor is
     driven by *other* fields' values (rename suggestions built from title/publisher/etc). It is
@@ -51,6 +51,9 @@ class PathField(Field[str]):
         (#162). Omit to leave every candidate offerable. This field still touches no filesystem
         itself -- it forwards the owner's answer, exactly as it forwards a click.
     :param expanded: the suggestions panel's starting expand state.
+    :param destination: called with no arguments for the place the record's root's layout gives it, shown under the
+        names (#579); ``None`` when there is none. Pulled whenever the suggestions are.
+    :param on_destination_selected: called when that place is clicked.
     """
 
     TYPE = "path"
@@ -68,8 +71,12 @@ class PathField(Field[str]):
         *,
         viewer_tab: FieldsTab,
         editor_tab: FieldsTab,
+        destination: Callable[[], DestinationRow | None] | None = None,
+        on_destination_selected: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
+        self.__destination = destination
+        self.__on_destination_selected = on_destination_selected
         self.__suggestions = suggestions
         self.__on_suggestion_selected = on_suggestion_selected
         self.__current_name = current_name
@@ -99,6 +106,8 @@ class PathField(Field[str]):
         editor.set_conflict_check(self.__conflicts)
         if self.__on_suggestion_selected is not None:
             editor.suggestion_selected.connect(self.__on_suggestion_selected)
+        if self.__on_destination_selected is not None:
+            editor.destination_selected.connect(self.__on_destination_selected)
 
         editor.set_openable(bool(binding.value))
         self.__refresh(editor)
@@ -157,12 +166,13 @@ class PathField(Field[str]):
         self.__refresh(editor)
 
     def __refresh(self, editor: PathEditor) -> None:
-        """Re-pull the current name and raw suggestions into the editor.
+        """Re-pull the current name, the raw suggestions and the root's place into the editor.
 
         :param editor: the editor to update.
         """
         editor.set_current_name(self.__current_name() if self.__current_name is not None else "")
         editor.set_suggestions(self.__suggestions() if self.__suggestions is not None else [])
+        editor.set_destination(self.__destination() if self.__destination is not None else None)
 
     @staticmethod
     def __render_line(line: LocationLine, value: str) -> None:

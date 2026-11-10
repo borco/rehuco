@@ -4,10 +4,11 @@ rename suggestions, unavailable candidates, and the live setters.
 
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QFrame
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.colors import WARNING_COLOR
 from rehuco_agent.fields.widgets import LocationLine
-from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX, PathEditor
+from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX, DestinationRow, PathEditor
 
 
 def name_label(editor: PathEditor) -> LocationLine:
@@ -400,3 +401,101 @@ def test_set_suggestions_updates_the_list_live(qtbot: QtBot) -> None:
 
     editor.set_suggestions(["Beta", "Gamma"])
     assert list(suggestion_labels(editor).keys()) == ["Beta", "Gamma"]
+
+
+# region the root's place (#579)
+def destination_label(editor: PathEditor) -> ElidedLabel:
+    """Return the editor's private root-place label.
+
+    :param editor: the widget to inspect.
+    :returns: the label.
+    """
+    return editor._PathEditor__destination_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def separator(editor: PathEditor) -> QFrame:
+    """Return the editor's private separator above the root's place.
+
+    :param editor: the widget to inspect.
+    :returns: the separator.
+    """
+    return editor._PathEditor__separator  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_the_place_is_shown_under_a_separator_only_when_there_is_one(qtbot: QtBot) -> None:
+    """No place hides the row and its separator; a place shows both, the place a live link.
+
+    **Test steps:**
+
+    * build an expanded editor: the row and separator are hidden
+    * set a place: both show, the text is the place's, and the label is enabled
+    * clear it: both hide again
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.expanded = True
+    editor.show()
+    assert not destination_label(editor).isVisible() and not separator(editor).isVisible()
+
+    editor.set_destination(DestinationRow("Tutorials: Jane/Foo"))
+
+    assert destination_label(editor).isVisible() and separator(editor).isVisible()
+    assert full_text(destination_label(editor)) == "Tutorials: Jane/Foo"
+    assert destination_label(editor).isEnabled()
+
+    editor.set_destination(None)
+
+    assert not destination_label(editor).isVisible() and not separator(editor).isVisible()
+
+
+def test_an_occupied_place_is_disabled_and_marked(qtbot: QtBot) -> None:
+    """A place something else already occupies is disabled, with the same marker as an occupied name.
+
+    **Test steps:**
+
+    * set an occupied place
+    * verify the label is disabled and ends in the marker
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_destination(DestinationRow("Tutorials: Jane/Foo", occupied=True))
+
+    assert not destination_label(editor).isEnabled()
+    assert full_text(destination_label(editor)) == f"Tutorials: Jane/Foo{UNAVAILABLE_SUFFIX}"
+
+
+def test_the_place_the_record_is_at_is_disabled_and_plain(qtbot: QtBot) -> None:
+    """The place the record already sits at is disabled with no marker, as the current name is.
+
+    **Test steps:**
+
+    * set a place the record is at, also reported occupied (by itself)
+    * verify the label is disabled and carries no marker
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_destination(DestinationRow("Tutorials: Jane/Foo", here=True, occupied=True))
+
+    assert not destination_label(editor).isEnabled()
+    assert full_text(destination_label(editor)) == "Tutorials: Jane/Foo"
+
+
+def test_clicking_the_place_emits_destination_selected(qtbot: QtBot) -> None:
+    """A click on the place's link is forwarded.
+
+    **Test steps:**
+
+    * set a place and activate its link
+    * verify ``destination_selected`` fired
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.set_destination(DestinationRow("Tutorials: Jane/Foo"))
+
+    with qtbot.waitSignal(editor.destination_selected, timeout=1000):
+        destination_label(editor).linkActivated.emit("#")
+
+
+# endregion
