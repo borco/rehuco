@@ -53,13 +53,14 @@ def test_the_runner_belongs_to_its_row_and_goes_with_it(qtbot: QtBot) -> None:
 
 def test_a_measurement_outliving_its_runner_reports_into_nothing(qtbot: QtBot, capfd: CaptureFixture[str]) -> None:
     """A runner deleted while its measurement runs -- the document closed -- leaves the worker an answer for nobody;
-    the emit on the deleted runner raises, and is swallowed on the pool thread rather than printed by it (#529).
+    it reaches the GUI thread through the relay, never touching the runner on the pool thread, and the emit on the
+    deleted runner raises there and is swallowed rather than printed (#529).
 
     **Test steps:**
 
     * start a measurement that waits, and delete its runner while it does
-    * let the measurement finish and the pool settle
-    * verify nothing was raised on the pool thread
+    * let the measurement finish, the pool settle and the answer be delivered
+    * verify nothing was raised
     """
     del qtbot
     release = threading.Event()
@@ -75,4 +76,5 @@ def test_a_measurement_outliving_its_runner_reports_into_nothing(qtbot: QtBot, c
     release.set()
 
     assert QThreadPool.globalInstance().waitForDone(2000)
+    QCoreApplication.sendPostedEvents()
     assert "RuntimeError" not in capfd.readouterr().err

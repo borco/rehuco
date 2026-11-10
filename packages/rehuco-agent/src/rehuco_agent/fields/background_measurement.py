@@ -5,6 +5,8 @@ from typing import Protocol
 
 from PySide6.QtCore import QObject, QThreadPool, Signal, SignalInstance, Slot
 
+from ..pool_relay import PoolRelay
+
 
 class BackgroundMeasurement(QObject):
     """Runs one measurement on a worker thread and reports the result back on the GUI thread (#223).
@@ -12,9 +14,9 @@ class BackgroundMeasurement(QObject):
     A size scan is a ``stat`` per file over a whole directory tree, on a resource that lives on an SMB
     mount ([[packaging-deployment#ts230-as-nas]]) -- seconds of round trips for a large tutorial. Running
     it inline would freeze the window for that whole time, so the measurement goes to
-    ``QThreadPool.globalInstance()`` and its answer comes back through :attr:`finished`, which is a
-    **queued** connection because the emit happens on the pool's thread and the receiver lives on the
-    GUI one. The caller's job is to disable what must not be pressed twice while it runs.
+    ``QThreadPool.globalInstance()`` and its answer comes back through :attr:`finished`, posted by the pool's thread
+    through the application's :class:`~rehuco_agent.pool_relay.PoolRelay` rather than this object, which the GUI
+    thread may be deleting meanwhile. The caller's job is to disable what must not be pressed twice while it runs.
 
     Deliberately tiny, and **an interim owner**. The task-queue engine (#201) and its dock (#202) are
     where every background measurement is headed: each scan becomes a queue job, so it can be watched
@@ -39,14 +41,9 @@ class BackgroundMeasurement(QObject):
     caller that disabled its controls always gets them back -- except for a start that :meth:`discard`
     dropped, whose answer is about a record no longer shown."""
 
-    measured = Signal(int, object)
-    """The worker's report, ``(serial, result)``: emitted on the pool thread, delivered to :meth:`__deliver`
-    on this object's own (GUI) thread, where the serial is judged. Internal; connect to :attr:`finished`."""
-
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__serial = 0
-        self.measured.connect(self.__deliver)
 
     def discard(self) -> None:
         """Drop the answer of every measurement started so far (#470).
@@ -73,10 +70,11 @@ class BackgroundMeasurement(QObject):
         :param measure: the measurement, called on a worker thread.
         """
         serial = self.__serial
-        QThreadPool.globalInstance().start(lambda: self.__run(measure, serial))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__run(relay, measure, serial))
 
-    def __run(self, measure: Callable[[], int | None], serial: int) -> None:
-        """Call ``measure`` on the worker thread and emit its result, raise or no raise.
+    def __run(self, relay: PoolRelay, measure: Callable[[], int | None], serial: int) -> None:
+        """Call ``measure`` on the worker thread and post its result through ``relay``, raise or no raise.
 
         The blanket catch is the point rather than a shortcut: this runs on a pool thread, where an
         escaping exception is printed and swallowed by the pool -- and the ``finished`` that never
@@ -84,6 +82,7 @@ class BackgroundMeasurement(QObject):
         a failed scan into a permanently dead button. A failure is reported as *nothing measured*, which
         is the same answer the enumeration already gives for an unreadable directory.
 
+        :param relay: the application's relay.
         :param measure: the measurement to run.
         :param serial: the discard count at :meth:`start`, handed on for :meth:`__deliver` to judge.
         """
@@ -91,12 +90,8 @@ class BackgroundMeasurement(QObject):
             result = measure()
         except Exception:  # pylint: disable=broad-exception-caught
             result = None
-        try:
-            self.measured.emit(serial, result)
-        except RuntimeError:  # this runner was deleted while the measurement ran
-            pass
+        relay.post(self, self.__deliver, serial, result)
 
-    @Slot(int, object)
     def __deliver(self, serial: int, result: int | None) -> None:
         """Pass a worker's report on as :attr:`finished` unless a :meth:`discard` has outdated it.
 
@@ -162,8 +157,9 @@ def measure_in_background(
     document closes. Never unparented (#529): the callable the pool holds while a measurement runs would
     then be the last reference once the row was gone, and the runner would be destroyed on the worker
     thread, where destroying a `QObject` can deadlock against the GUI thread. A row taken mid-measurement
-    deletes its runner under the worker, whose emit on the deleted runner raises and is swallowed there
-    (:meth:`BackgroundMeasurement.__run`): the answer goes to nobody, as it would to a deleted row.
+    deletes its runner under the worker, whose answer reaches the GUI thread through the relay and finds the runner
+    gone there (:class:`~rehuco_agent.pool_relay.PoolRelay`): the answer goes to nobody, as it would to a deleted
+    row.
 
     **A switch drops the answer and the reading** (#470): a document that loads another record in place
     keeps its form, so the row would otherwise show the last record's measurement, or take the answer of a

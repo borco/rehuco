@@ -21,7 +21,7 @@ from threading import Event
 from typing import Any, Final
 
 import shiboken6
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt
+from PySide6.QtCore import QAbstractTableModel, QCoreApplication, QModelIndex, QObject, Qt
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -40,6 +40,7 @@ from rehuco_agent.documents.files_rows import (
     ModelIndex,
     checksum_tooltip_for,
 )
+from rehuco_agent.pool_relay import PoolRelay
 from rehuco_core import (
     ChecksumRecordError,
     DirectoryClassifier,
@@ -1093,21 +1094,18 @@ def test_a_listing_that_answers_after_its_dock_is_gone_reports_into_nothing(
     mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The same failure `ChecksumRowsLoader` documents, for the browser's own read: the loader is
-    parented to the dock, so closing a document takes its C++ half while a listing is still out on a
-    share -- and the exception that emit would raise is printed and swallowed by the pool, which is the
-    kind of failure nobody ever sees reported.
+    parented to the dock, so closing a document takes it while a listing is still out on a share, and the
+    answer, posted through the relay, finds it gone on the GUI thread.
 
     **Test steps:**
 
-    * destroy the loader's C++ object the way closing a document does, then let a read answer
-    * verify the run returned quietly rather than raising into the pool
+    * destroy the loader's C++ object the way closing a document does, then let a read answer through the relay
+    * verify nothing was delivered and nothing raised
     """
     mocker.patch.object(FilesRowsReader, "read", return_value=FilesRows(DIRECTORY))
     dock = QObject()
     loader = delete_at_teardown(FilesRowsLoader(dock))
     delivered: list[FilesRows] = []
-    # connected, because an emit with nobody listening never reaches the deleted C++ half at all --
-    # which is exactly the case this guard is *not* about
     loader.loaded.connect(delivered.append)
     run = loader._FilesRowsLoader__run  # type: ignore[attr-defined]  # pylint: disable=protected-access
     shiboken6.delete(dock)
@@ -1115,7 +1113,8 @@ def test_a_listing_that_answers_after_its_dock_is_gone_reports_into_nothing(
 
     # generation 0 is the one a loader that has never been started is on, so this read is current
     # rather than superseded -- otherwise it returns before it ever tries to report
-    run(FilesRowsReader(INFO_PATH, (), WEEK), DIRECTORY, NOW, 0)
+    run(PoolRelay.instance(), FilesRowsReader(INFO_PATH, (), WEEK), DIRECTORY, NOW, 0)
+    QCoreApplication.sendPostedEvents()
 
     assert not delivered
 

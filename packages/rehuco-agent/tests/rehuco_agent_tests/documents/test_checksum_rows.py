@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any, Final
 
 import shiboken6
-from PySide6.QtCore import QModelIndex, QObject, Qt
+from PySide6.QtCore import QCoreApplication, QModelIndex, QObject, Qt
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -33,6 +33,7 @@ from rehuco_agent.documents.checksum_rows import (
 )
 from rehuco_agent.documents.file_row import FileChecksumState
 from rehuco_agent.documents.files_rows import CHECKSUM_STATE_TOOLTIPS, UNTRUSTED_LOCATION_TOOLTIP
+from rehuco_agent.pool_relay import PoolRelay
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 
@@ -744,23 +745,20 @@ def test_a_flat_table_has_nothing_under_a_cell() -> None:
 def test_a_walk_that_answers_after_its_dock_is_gone_reports_into_nothing(
     mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
-    """A document closed mid-walk must not raise on the pool thread (#244).
+    """A document closed mid-walk hears nothing of it (#244).
 
-    The loader is parented to the dock, so closing the document takes its C++ half while the walk is
-    still out on a mount -- and an exception on a pool thread is printed and swallowed, which is the
-    kind of failure nobody ever sees reported.
+    The loader is parented to the dock, so closing the document takes it while the walk is still out on a
+    mount, and the answer, posted through the relay, finds it gone on the GUI thread.
 
     **Test steps:**
 
-    * destroy the loader's C++ object the way closing a document does, then let a read answer
-    * check the run returned quietly rather than raising into the pool
+    * destroy the loader's C++ object the way closing a document does, then let a read answer through the relay
+    * verify nothing was delivered and nothing raised
     """
     mocker.patch("rehuco_agent.documents.checksum_rows.read_checksum_rows", return_value=ChecksumRows())
     dock = QObject()
     loader = delete_at_teardown(ChecksumRowsLoader(dock))
     delivered: list[ChecksumRows] = []
-    # connected, because an emit with nobody listening never reaches the deleted C++ half at all --
-    # which is exactly the case this guard is *not* about
     loader.loaded.connect(delivered.append)
     run = loader._ChecksumRowsLoader__run  # type: ignore[attr-defined]  # pylint: disable=protected-access
     shiboken6.delete(dock)
@@ -768,6 +766,7 @@ def test_a_walk_that_answers_after_its_dock_is_gone_reports_into_nothing(
 
     # generation 0 is the one a loader that has never been started is on, so this read is
     # current rather than superseded -- otherwise it returns before it ever tries to report
-    run(INFO_PATH, PATTERNS, STALE_AFTER, NOW, 0)
+    run(PoolRelay.instance(), INFO_PATH, PATTERNS, STALE_AFTER, NOW, 0)
+    QCoreApplication.sendPostedEvents()
 
     assert not delivered

@@ -117,13 +117,14 @@ def test_a_discarded_run_is_never_answered(delete_at_teardown: DeleteAtTeardown)
 
 def test_a_run_outliving_its_runner_reports_into_nothing(capfd: CaptureFixture[str]) -> None:
     """A runner deleted while its work runs -- the player gone with its document -- leaves the worker an answer for
-    nobody; the emit on the deleted runner raises, and is swallowed on the pool thread rather than printed by it.
+    nobody; it reaches the GUI thread through the relay, never touching the runner on the pool thread, and the emit
+    on the deleted runner raises there and is swallowed rather than printed.
 
     **Test steps:**
 
     * start work that waits, and delete its runner while it does
-    * let the work finish and the pool settle
-    * verify nothing was raised on the pool thread
+    * let the work finish, the pool settle and the answer be delivered
+    * verify nothing was raised
     """
     release = threading.Event()
     runner = LatestRunner()
@@ -135,4 +136,5 @@ def test_a_run_outliving_its_runner_reports_into_nothing(capfd: CaptureFixture[s
     release.set()
 
     assert QThreadPool.globalInstance().waitForDone(WAIT_MS)
+    QCoreApplication.sendPostedEvents()
     assert "RuntimeError" not in capfd.readouterr().err

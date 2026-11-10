@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QLabel
 from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.pool_relay import PoolRelay
 from rehuco_agent.rehuco.record_verify import RecordVerify
 from rehuco_agent.rehuco.root_folder_loader import RootFolderLoader
 from rehuco_agent.rehuco.roots_panel import FRESH_LISTING_SECONDS
@@ -240,7 +241,7 @@ def test_a_check_superseded_before_it_starts_does_nothing(dock: CatalogDocks, mo
     check = mocker.patch("rehuco_agent.rehuco.record_verify.check_records")
     seam(dock, "latest_verify")["probe"] = 2
 
-    seam(dock, "run_verify")(1, "probe", seam(dock, "catalog").cache_path, [])
+    seam(dock, "run_verify")(Mock(spec=PoolRelay), 1, "probe", seam(dock, "catalog").cache_path, [])
 
     check.assert_not_called()
 
@@ -268,23 +269,24 @@ def test_an_answer_superseded_while_it_was_out_is_dropped_on_the_gui_thread(dock
 
 
 @mark.usefixtures("served")
-def test_an_answer_for_a_catalog_that_is_gone_is_dropped_quietly(dock: CatalogDocks, mocker: MockerFixture) -> None:
-    """The pool may finish after the window is gone: the answer has nowhere to go, and that is not an error (#487).
+def test_an_answer_goes_through_the_relay_for_the_verifier(dock: CatalogDocks) -> None:
+    """The pool may finish after the window is gone, so the check never touches the verifier: it posts its answer
+    through the relay, which drops it if the verifier is gone (#487).
 
     **Test steps:**
 
-    * make the answer's emit fail as a destroyed object's does
-    * run a check: verify it does not raise
+    * run a check with a relay standing in
+    * verify the answer was posted once, for the catalog's verifier, with the check's serial
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     seam(dock, "latest_verify")["probe"] = 1
-    dead = mocker.MagicMock()
-    dead.answered.emit.side_effect = RuntimeError("Internal C++ object already deleted")
-    mocker.patch.object(dock.catalog.findChild(RecordVerify), "_RecordVerify__verifier", dead)
+    relay = Mock(spec=PoolRelay)
 
-    seam(dock, "run_verify")(1, "probe", seam(dock, "catalog").cache_path, [])
+    seam(dock, "run_verify")(relay, 1, "probe", seam(dock, "catalog").cache_path, [])
 
-    dead.answered.emit.assert_called_once()
+    relay.post.assert_called_once()
+    owner, _, serial, *_ = relay.post.call_args.args
+    assert (owner, serial) == (dock.catalog.findChild(RecordVerify), 1)
 
 
 @mark.usefixtures("served")

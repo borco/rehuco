@@ -109,6 +109,12 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   `QThread` destroyed while running aborts the process.
 - **A pool job never lets a reader's exception escape** (#480): the pool swallows it and no answer ever arrives.
   Catch broadly with a reasoned pragma, log it, and answer *unreadable*.
+- **A pool job answers through `PoolRelay`, never by emitting on its owner.** The GUI thread can delete the owner (a
+  document closed mid-listing) while the pool thread is inside the emit, which crashes the process; a
+  `try`/`except RuntimeError` around the emit catches only an owner deleted *before* it. `PoolRelay.instance()` is
+  taken on the GUI thread, handed to the job, and the job calls `relay.post(owner, self.__deliver, ...)`: the relay is
+  the application's child, so it outlives every job, and it makes the call on the GUI thread only while the owner is
+  still valid. Hand it a plain bound method, not `self.signal.emit`, which touches the owner on the pool thread.
 - **A worker holds the GIL inside every Qt call PySide does not release it for, so it never makes one that can take a
   signal-slot mutex** (#529). A `QImageReader` left to find its format asks every plugin to look at the bytes, and
   the SVG plugin's look connects a signal, so a reader on a pool thread is a `format_reader`, told its format up front

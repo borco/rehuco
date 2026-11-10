@@ -4,6 +4,7 @@ import logging
 from dataclasses import replace
 from pathlib import Path
 from typing import Final
+from unittest.mock import Mock
 
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QModelIndex, QUrl
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import QFrame
 from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.pool_relay import PoolRelay
 from rehuco_agent.rehuco.record_images import RecordImages
 from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
 from rehuco_agent.rehuco.roots_node import NodeListing
@@ -344,20 +346,25 @@ def test_a_tc_record_shows_its_url_and_description_and_other_files_show_nothing(
     assert shown.preview.record_texts is None
 
 
-def test_a_record_read_that_ends_after_the_preview_was_deleted_is_dropped(mocker: MockerFixture, shown: Shown) -> None:
-    """The worker's last step, telling the preview, does not raise once the preview is gone.
+def test_a_record_read_answers_through_the_relay_for_the_preview(shown: Shown) -> None:
+    """The worker never touches the preview, which may be deleted meanwhile: it posts its answer through the relay,
+    which drops it if the preview is gone.
 
     **Test steps:**
 
-    * make telling the preview raise, as a deleted C++ object does, and run the read of a record
-    * verify nothing is raised
+    * run the read of a record with a relay standing in
+    * verify the answer was posted once, for the preview, with the request's serial
     """
     path = shown.model.path_of(shown.row("both.rehu"))
     assert path is not None
-    mocker.patch.object(shown.preview, "record_ready").emit.side_effect = RuntimeError
+    relay = Mock(spec=PoolRelay)
     read_record = shown.preview._RootsPreview__read_record  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    read_record(1, path)
+    read_record(relay, 1, path)
+
+    relay.post.assert_called_once()
+    owner, _, serial, *_ = relay.post.call_args.args
+    assert (owner, serial) == (shown.preview, 1)
 
 
 def test_a_folder_shows_the_url_and_description_of_its_own_rehu(qtbot: QtBot, shown: Shown) -> None:

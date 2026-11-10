@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from typing import Final
 from uuid import UUID
 
-from PySide6.QtCore import QObject, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, QThreadPool, Signal
 from rehuco_core import CatalogQuery, CatalogRow, CatalogSnapshot, CatalogUnreadable
+
+from ..pool_relay import PoolRelay
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -61,8 +63,9 @@ class CatalogRowsLoader(QObject):
     since a row makes three tracked objects (#500), against several stalls of 50-180 ms unpaused.
 
     **The answer is judged on the GUI thread** ([[appendices.code-conventions#worker-threads]]): each read carries a
-    generation, and :meth:`cancel` moves it on, so a read still out when the catalog closed delivers nothing. The emit
-    from the pool is guarded, for a loader destroyed while its read was out.
+    generation, and :meth:`cancel` moves it on, so a read still out when the catalog closed delivers nothing. The answer
+    goes through the application's :class:`~rehuco_agent.pool_relay.PoolRelay`, so a loader destroyed while its read
+    was out is never touched by the pool thread, and hears nothing.
 
     :param read: what reads the rows; called on a pool thread.
     :param parent: optional Qt parent.
@@ -71,12 +74,6 @@ class CatalogRowsLoader(QObject):
     loaded: Signal = Signal(object)
     """Emitted with a :class:`CatalogRowsLoad` once a read lands; :attr:`snapshot` is its snapshot by then. A read
     that failed is logged and emits nothing: the old rows stay."""
-
-    class Carrier(QObject):
-        """Carries an answer from the pool to the GUI thread, and nothing else."""
-
-        answered = Signal(int, object)
-        """``(generation, snapshot or None)``: one read's answer, judged on the GUI thread."""
 
     __COLLECTOR_LOCK: Final = threading.Lock()
     __collector_pauses = 0
@@ -112,8 +109,6 @@ class CatalogRowsLoader(QObject):
         self.__waiting_roots: tuple[UUID, ...] | None = None
         """The roots of a read of every row waiting to start, or ``None`` while none is."""
         self.__waiting_ids: Final[set[int]] = set()
-        self.__carrier: Final = CatalogRowsLoader.Carrier(self)
-        self.__carrier.answered.connect(self.__on_answered, Qt.ConnectionType.QueuedConnection)
 
     @property
     def snapshot(self) -> CatalogSnapshot:
@@ -167,11 +162,13 @@ class CatalogRowsLoader(QObject):
         self.__out = request
         self.__generation += 1
         generation = self.__generation
-        QThreadPool.globalInstance().start(lambda: self.__run(generation, request))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__run(relay, generation, request))
 
-    def __run(self, generation: int, request: CatalogRowsRequest) -> None:
-        """Read and key the rows on the pool, and answer -- ``None`` for a read that failed.
+    def __run(self, relay: PoolRelay, generation: int, request: CatalogRowsRequest) -> None:
+        """Read and key the rows on the pool, and answer through ``relay`` -- ``None`` for a read that failed.
 
+        :param relay: the application's relay.
         :param generation: which read this is.
         :param request: what to read.
         """
@@ -183,10 +180,7 @@ class CatalogRowsLoader(QObject):
             LOG.error("Could not read the catalog's rows: %s", error)
         except Exception:  # pylint: disable=broad-exception-caught  # the pool swallows what escapes: no answer would come
             LOG.exception("Could not read the catalog's rows.")
-        try:
-            self.__carrier.answered.emit(generation, snapshot)
-        except RuntimeError:  # the loader was destroyed while the read was out
-            pass
+        relay.post(self, self.__on_answered, generation, snapshot)
 
     def __build(self, request: CatalogRowsRequest) -> CatalogSnapshot:
         """Read and key the rows a request asks for.

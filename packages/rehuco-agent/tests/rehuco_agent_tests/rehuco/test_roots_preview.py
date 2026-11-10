@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
+from unittest.mock import Mock
 from uuid import uuid4
 
 from PySide6.QtCore import QModelIndex
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.pool_relay import PoolRelay
 from rehuco_agent.rehuco.root_storage import NOT_MAPPED_ROW, ROOT_STORAGE_LABELS, UNREADABLE_ROW
 from rehuco_agent.rehuco.roots_checksum import BAD_INK, OLD_BAD_INK
 from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
@@ -623,22 +625,25 @@ def test_a_layout_item_that_is_not_a_widget_is_skipped_when_the_buttons_are_made
     assert len(shown.preview.buttons) == 1
 
 
-def test_a_thumbnail_read_that_ends_after_the_preview_was_deleted_is_dropped(
-    mocker: MockerFixture, shown: Shown
-) -> None:
-    """The worker's last step, telling the preview, does not raise once the preview is gone.
+def test_a_thumbnail_read_answers_through_the_relay_for_the_preview(shown: Shown) -> None:
+    """The worker never touches the preview, which may be deleted meanwhile: it posts its answer through the relay,
+    which drops it if the preview is gone.
 
     **Test steps:**
 
-    * make telling the preview raise, as a deleted C++ object does, and run the read of a picture
-    * verify nothing is raised
+    * run the read of a picture with a relay standing in
+    * verify the answer was posted once, for the preview, with the request's serial
     """
     path = shown.model.path_of(shown.row("small.png"))
     assert path is not None
-    mocker.patch.object(shown.preview, "image_ready").emit.side_effect = RuntimeError
+    relay = Mock(spec=PoolRelay)
     read_image = shown.preview._RootsPreview__read_image  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    read_image(1, path)
+    read_image(relay, 1, path)
+
+    relay.post.assert_called_once()
+    owner, _, serial, *_ = relay.post.call_args.args
+    assert (owner, serial) == (shown.preview, 1)
 
 
 # region The checksum of a covered file (#457)

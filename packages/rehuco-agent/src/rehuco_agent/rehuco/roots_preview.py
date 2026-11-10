@@ -22,7 +22,6 @@ from PySide6.QtCore import (
     Qt,
     QThreadPool,
     QUrl,
-    Signal,
 )
 from PySide6.QtGui import QAction, QDesktopServices, QFont, QFontMetrics, QImage, QPalette, QPixmap
 from PySide6.QtWidgets import QFrame, QLabel, QLineEdit, QSizePolicy, QToolButton, QWidget
@@ -42,6 +41,7 @@ from rehuco_core.access import Records, ResourceKey
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
 from ..fields.widgets.image_export import PressDragFilter
 from ..fields.widgets.image_source import FORMAT_HEAD_SIZE, format_reader
+from ..pool_relay import PoolRelay
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
@@ -187,16 +187,6 @@ class RootsPreview(QWidget):
         when not given.
     """
 
-    image_ready = Signal(int, QImage, QSize)
-    """``(serial, image, size)``: one thumbnail's answer -- null when the file could not be read -- and the picture's
-    own size in pixels, which the thumbnail is smaller than."""
-
-    record_ready = Signal(int, str, str)
-    """``(serial, url, description)``: what a record says, the description as Markdown -- either may be empty."""
-
-    archive_ready = Signal(int, object)
-    """``(serial, facts)``: what a zip's central directory says, or ``None`` when it could not be read."""
-
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         model: RootsFolderModel,
@@ -241,9 +231,6 @@ class RootsPreview(QWidget):
         self.__default_name_action: Final = QAction("Use Default Name", self)
         self.__setup_default_name()
         self.__setup_checksum_rows()
-        self.image_ready.connect(self.__on_image, Qt.ConnectionType.QueuedConnection)
-        self.record_ready.connect(self.__on_record, Qt.ConnectionType.QueuedConnection)
-        self.archive_ready.connect(self.__on_archive, Qt.ConnectionType.QueuedConnection)
         self.__ui.url_value.linkActivated.connect(RootsPreview.__open_link)
         self.__setup_description()
         PressDragFilter(self.__ui.image_label, self.__image_token, self.__on_image_drag)
@@ -726,7 +713,8 @@ class RootsPreview(QWidget):
         :param path: the image file.
         """
         serial = self.__serial
-        QThreadPool.globalInstance().start(lambda: self.__read_image(serial, path))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__read_image(relay, serial, path))
 
     def __holding(self) -> AbstractContextManager[None]:
         """What a read on the pool is held under, so it never blocks a rename.
@@ -735,18 +723,17 @@ class RootsPreview(QWidget):
         """
         return nullcontext() if self.__coordinator is None else self.__coordinator.holding()
 
-    def __read_image(self, serial: int, path: Path) -> None:
-        """Read and scale one image, on a pool thread, and hand it back.
+    def __read_image(self, relay: PoolRelay, serial: int, path: Path) -> None:
+        """Read and scale one image, on a pool thread, and hand it back through ``relay``: the thumbnail -- null when
+        the file could not be read -- and the picture's own size in pixels, which the thumbnail is smaller than.
 
+        :param relay: the application's relay, so a preview deleted while the read was out hears nothing.
         :param serial: the request's serial.
         :param path: the image file.
         """
         with self.__holding():
             image, size = RootsPreview.__read_thumbnail(path)
-        try:
-            self.image_ready.emit(serial, image, size if size.isValid() else image.size())
-        except RuntimeError:  # the preview was destroyed while the read was out
-            pass
+        relay.post(self, self.__on_image, serial, image, size if size.isValid() else image.size())
 
     @staticmethod
     def __read_thumbnail(path: Path) -> tuple[QImage, QSize]:
@@ -809,11 +796,14 @@ class RootsPreview(QWidget):
         """
         serial = self.__serial
         extensions = shared_reference_images_settings().content_image_extensions
-        QThreadPool.globalInstance().start(lambda: self.__read_archive(serial, path, extensions))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__read_archive(relay, serial, path, extensions))
 
-    def __read_archive(self, serial: int, path: Path, extensions: tuple[str, ...]) -> None:
-        """Read one archive's facts, on a pool thread, and hand them back.
+    def __read_archive(self, relay: PoolRelay, serial: int, path: Path, extensions: tuple[str, ...]) -> None:
+        """Read one archive's facts, on a pool thread, and hand them back through ``relay`` -- ``None`` when the
+        central directory could not be read.
 
+        :param relay: the application's relay, so a preview deleted while the read was out hears nothing.
         :param serial: the request's serial.
         :param path: the archive file.
         :param extensions: the recognized image extensions.
@@ -824,10 +814,7 @@ class RootsPreview(QWidget):
             # the pool would swallow it and the rows would stay blank: answer as an unreadable zip
             LOG.exception("Reading the facts of %s failed", path)
             facts = None
-        try:
-            self.archive_ready.emit(serial, facts)
-        except RuntimeError:  # the preview was destroyed while the read was out
-            pass
+        relay.post(self, self.__on_archive, serial, facts)
 
     def __on_archive(self, serial: int, facts: object) -> None:
         """Show what an archive is made of, unless the row it was for is no longer the one shown.
@@ -888,13 +875,16 @@ class RootsPreview(QWidget):
         """
         serial = self.__serial
         self.__record = path
-        QThreadPool.globalInstance().start(lambda: self.__read_record(serial, path))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__read_record(relay, serial, path))
 
-    def __read_record(self, serial: int, path: Path) -> None:
-        """Read one record, on a pool thread, and hand its URL and description back.
+    def __read_record(self, relay: PoolRelay, serial: int, path: Path) -> None:
+        """Read one record, on a pool thread, and hand its URL and description back through ``relay``, the
+        description as Markdown -- either may be empty.
 
         A record that cannot be read answers nothing, and ``records`` logs the reason.
 
+        :param relay: the application's relay, so a preview deleted while the read was out hears nothing.
         :param serial: the request's serial.
         :param path: the record file.
         """
@@ -907,10 +897,7 @@ class RootsPreview(QWidget):
             # the records logged why
             return
         url, description = record.document.url.strip(), record.document.description
-        try:
-            self.record_ready.emit(serial, url, description if description.strip() else "")
-        except RuntimeError:  # the preview was destroyed while the read was out
-            pass
+        relay.post(self, self.__on_record, serial, url, description if description.strip() else "")
 
     def __on_record(self, serial: int, url: str, description: str) -> None:
         """Show what a record says, unless the row it was for is no longer the one shown.

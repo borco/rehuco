@@ -2,7 +2,9 @@
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QThreadPool, Signal
+
+from ..pool_relay import PoolRelay
 
 
 class LatestRunner(QObject):
@@ -28,14 +30,9 @@ class LatestRunner(QObject):
     with, and what it returned -- or the exception it raised, which a pool job must never let escape
     ([[appendices.code-conventions#worker-threads]], #480)."""
 
-    reported = Signal(int, str, object)
-    """The worker's report, ``(serial, tag, result)``: emitted on the pool thread, delivered to :meth:`__deliver` on
-    this object's own thread. Internal; connect to :attr:`read`."""
-
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__serial = 0
-        self.reported.connect(self.__deliver)
 
     def start(self, tag: str, work: Callable[[], object]) -> None:
         """Run ``work``, outdating every run started before.
@@ -45,15 +42,18 @@ class LatestRunner(QObject):
         """
         self.__serial += 1
         serial = self.__serial
-        QThreadPool.globalInstance().start(lambda: self.__run(serial, tag, work))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__run(relay, serial, tag, work))
 
     def discard(self) -> None:
         """Drop the answer of every run started so far, as the player does when it stops."""
         self.__serial += 1
 
-    def __run(self, serial: int, tag: str, work: Callable[[], object]) -> None:
-        """Run the work on the worker thread and post what it came to.
+    def __run(self, relay: PoolRelay, serial: int, tag: str, work: Callable[[], object]) -> None:
+        """Run the work on the worker thread and post what it came to through ``relay``, never this runner, which the
+        GUI thread may be deleting meanwhile.
 
+        :param relay: the application's relay.
         :param serial: the run's serial, for :meth:`__deliver` to judge.
         :param tag: what the work is about.
         :param work: the callable.
@@ -65,14 +65,11 @@ class LatestRunner(QObject):
             # a pool job never lets an exception escape: the pool swallows it and no answer ever arrives
             # ([[appendices.code-conventions#worker-threads]], #480) -- the failure is the answer
             result = error
-        try:
-            self.reported.emit(serial, tag, result)
-        except RuntimeError:  # this runner was deleted while the work ran
-            pass
+        relay.post(self, self.__deliver, serial, tag, result)
 
-    @Slot(int, str, object)
     def __deliver(self, serial: int, tag: str, result: object) -> None:
-        """Pass a worker's report on as :attr:`read` unless a later :meth:`start` or :meth:`discard` outdated it.
+        """Pass a worker's report on as :attr:`read` unless a later :meth:`start` or :meth:`discard` outdated it (GUI
+        thread).
 
         :param serial: the run's serial.
         :param tag: what the work is about.

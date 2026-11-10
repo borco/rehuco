@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, SignalInstance
+from PySide6.QtCore import QObject, QThreadPool, SignalInstance
 from rehuco_core import RecordCheck, RecordsChecked, RenameCoordinator, check_records
 from rehuco_core.access import Catalog, Changed, ResourceKey
 
+from ..pool_relay import PoolRelay
 from ..resource_events import ResourceEvents
 
 LOG: Final = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ LOG: Final = logging.getLogger(__name__)
 
 # what RootCatalog held for this, moved whole: the cache, the feed, the owner's signal, and the lock, serials and
 # relay that keep a superseded answer out
-class RecordVerify(QObject):  # pylint: disable=too-many-instance-attributes
+class RecordVerify(QObject):
     """Checks records' rows against their files for the open :class:`~.root_catalog.RootCatalog`, which owns this.
 
     What the cache holds is read on the GUI thread, the ``stat`` and any read run on the pool, and the answer is
@@ -35,12 +36,6 @@ class RecordVerify(QObject):  # pylint: disable=too-many-instance-attributes
     :param rows_changed: the owner's signal, emitted with the cache row ids a write-back changed.
     :param parent: the owner.
     """
-
-    class Verifier(QObject):
-        """Carries a verify answer from the pool to the GUI thread, and nothing else."""
-
-        answered = Signal(int, object, object, object)
-        """``(serial, key, cache path, findings)``: one check's answer, judged on the GUI thread."""
 
     @dataclass(frozen=True, slots=True)
     class FromFeed:
@@ -67,8 +62,6 @@ class RecordVerify(QObject):  # pylint: disable=too-many-instance-attributes
         self.__events: Final = events
         self.__rows_changed: Final = rows_changed
         self.__lock: Final = threading.Lock()
-        self.__verifier: Final = RecordVerify.Verifier(self)
-        self.__verifier.answered.connect(self.__on_verified, Qt.ConnectionType.QueuedConnection)
         self.__verify_serials: Final = itertools.count(1)
         self.__latest_verify: Final[dict[Hashable, int]] = {}
         """The newest verify asked for per key, under :attr:`__lock`: an older one still queued does nothing, and an
@@ -96,7 +89,8 @@ class RecordVerify(QObject):  # pylint: disable=too-many-instance-attributes
         serial = next(self.__verify_serials)
         with self.__lock:
             self.__latest_verify[key] = serial  # pylint: disable=unsupported-assignment-operation
-        QThreadPool.globalInstance().start(lambda: self.__run_verify(serial, key, cache_path, checks))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__run_verify(relay, serial, key, cache_path, checks))
 
     def on_accessed(self, keys: tuple[ResourceKey, ...]) -> None:
         """Verify the records the app is opening (#487).
@@ -118,9 +112,12 @@ class RecordVerify(QObject):  # pylint: disable=too-many-instance-attributes
         paths.update(dict.fromkeys(self.__catalog.record_paths(keys)))
         self.verify_records(paths, key=RecordVerify.FromFeed(keys))
 
-    def __run_verify(self, serial: int, key: Hashable, cache_path: Path, checks: list[RecordCheck]) -> None:
-        """Compare the records with the disk, on a pool thread, and answer; never touches the cache.
+    def __run_verify(
+        self, relay: PoolRelay, serial: int, key: Hashable, cache_path: Path, checks: list[RecordCheck]
+    ) -> None:
+        """Compare the records with the disk, on a pool thread, and answer through ``relay``; never touches the cache.
 
+        :param relay: the application's relay, so a catalog destroyed while the check was out hears nothing.
         :param serial: the call's serial.
         :param key: what the call is about.
         :param cache_path: only handed back, to tell the answer which cache it was planned against.
@@ -134,10 +131,7 @@ class RecordVerify(QObject):  # pylint: disable=too-many-instance-attributes
         except Exception:  # pylint: disable=broad-exception-caught  # the pool swallows what escapes: no answer would come
             LOG.exception("Could not verify %d records against the disk.", len(checks))
             checked = RecordsChecked([], {})
-        try:
-            self.__verifier.answered.emit(serial, key, cache_path, checked)
-        except RuntimeError:  # the catalog was destroyed while the check was out
-            pass
+        relay.post(self, self.__on_verified, serial, key, cache_path, checked)
 
     def __on_verified(self, serial: int, key: Hashable, cache_path: Path, checked: RecordsChecked) -> None:
         """Say what the disk showed, and write what the cache did not know into it -- unless the check was superseded,

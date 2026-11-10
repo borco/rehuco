@@ -19,7 +19,7 @@ Old would skip this file* rather than an opinion formed here (#266).
 
 **Reading it touches the filesystem**, on a catalog that lives on an SMB mount
 ([[packaging-deployment#ts230-as-nas]]), so it never happens on the GUI thread: :class:`FilesRowsLoader`
-runs a :class:`FilesRowsReader` on the global pool and delivers the answer back through a queued signal --
+runs a :class:`FilesRowsReader` on the global pool and delivers the answer back on the GUI thread --
 one ``scandir`` and one small JSON read, neither of which is slow and either of which blocks for the
 share timeout when the mount is away.
 """
@@ -65,6 +65,7 @@ from rehuco_core import (
 )
 
 from ..fields.widgets import SizeMeasurementEdit
+from ..pool_relay import PoolRelay
 from .file_row import PARENT_ROW_NAME, FileChecksumState, FileRow, FilesRows
 from .files_progress import FilesProgress, RowProgress
 
@@ -529,9 +530,8 @@ class FilesRowsLoader(QObject):
     loaded = Signal(object)
     """Fires on the GUI thread with the :class:`FilesRows` of the **most recent** request.
 
-    Queued, because the emit happens on a pool thread. Fires exactly once per :meth:`start` that was
-    still current when it finished, **including when the read raised**, so a caller that showed a busy
-    state always gets it back."""
+    Fires exactly once per :meth:`start` that was still current when its answer landed, **including when the
+    read raised**, so a caller that showed a busy state always gets it back."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -549,17 +549,19 @@ class FilesRowsLoader(QObject):
         # the instant is taken here, on the GUI thread, so every row of one read is judged against one
         # moment -- and a frozen clock in a test needs no reach into the pool
         now = datetime.now(tz=UTC)
-        QThreadPool.globalInstance().start(lambda: self.__run(reader, directory, now, generation))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__run(relay, reader, directory, now, generation))
 
-    def __run(self, reader: FilesRowsReader, directory: Path, now: datetime, generation: int) -> None:
+    def __run(self, relay: PoolRelay, reader: FilesRowsReader, directory: Path, now: datetime, generation: int) -> None:
         """Do the read on the worker thread and report it, raise or no raise.
 
         The blanket catch is the point rather than a shortcut: an exception escaping here is printed and
         swallowed by the pool, and the :attr:`loaded` that never arrived would leave the dock showing a
-        busy state for the rest of the document's life. The emit is guarded too, for the reason
-        :class:`~rehuco_agent.documents.checksum_rows.ChecksumRowsLoader` documents: a document closed
-        while its read is out takes this object's C++ half with it.
+        busy state for the rest of the document's life. The answer goes through ``relay``, never this object, for the
+        reason :class:`~rehuco_agent.documents.checksum_rows.ChecksumRowsLoader` documents: a document closed while
+        its read is out takes this object with it.
 
+        :param relay: the application's relay.
         :param reader: the browser's reader.
         :param directory: the directory to list.
         :param now: the instant freshness is measured against.
@@ -569,13 +571,16 @@ class FilesRowsLoader(QObject):
             rows = reader.read(directory, now)
         except Exception as error:  # pylint: disable=broad-exception-caught
             rows = FilesRows(directory, reachable=False, record_error=str(error))
-        if generation != self.__generation:
-            return
-        try:
+        relay.post(self, self.__deliver, generation, rows)
+
+    def __deliver(self, generation: int, rows: FilesRows) -> None:
+        """Emit :attr:`loaded` with a read unless a later :meth:`start` outdated it (GUI thread).
+
+        :param generation: which request this answers.
+        :param rows: what it read.
+        """
+        if generation == self.__generation:
             self.loaded.emit(rows)
-        except RuntimeError:
-            # the dock this belongs to was destroyed while the read was out
-            pass
 
 
 class FilesTableModel(QAbstractTableModel):

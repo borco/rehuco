@@ -3,6 +3,7 @@
 import zipfile
 from pathlib import Path
 from typing import Final
+from unittest.mock import Mock
 
 from PySide6.QtCore import QThreadPool
 from PySide6.QtGui import QColor, QPalette
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QLabel
 from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.pool_relay import PoolRelay
 from rehuco_agent.rehuco.roots_checksum import BAD_INK, OLD_BAD_INK
 from rehuco_agent.rehuco.roots_management import PackInfo, PackState
 from rehuco_agent.rehuco.roots_preview import (
@@ -273,23 +275,21 @@ def test_a_stale_answer_is_dropped_and_other_rows_show_no_archive_lines(qtbot: Q
     assert shown.preview.archive_texts == {}
 
 
-def test_an_archive_read_that_ends_after_the_preview_was_deleted_is_dropped(
-    qtbot: QtBot, library: Path, mocker: MockerFixture
-) -> None:
-    """The worker's last step, telling the preview, does not raise once the preview is gone.
+def test_an_archive_read_answers_through_the_relay_for_the_preview(qtbot: QtBot, library: Path) -> None:
+    """The worker never touches the preview, which may be deleted meanwhile: it posts its answer through the relay,
+    which drops it if the preview is gone.
 
     **Test steps:**
 
-    * make telling the preview raise, as a deleted C++ object does, and run the read of a zip
-    * verify the read returned, having tried to tell the preview once, and that no archive line is shown
+    * run the read of a zip with a relay standing in
+    * verify the answer was posted once, for the preview, with the request's serial
     """
     shown = Shown(qtbot, library)
-    signal = mocker.patch.object(shown.preview, "archive_ready")
-    signal.emit.side_effect = RuntimeError
+    relay = Mock(spec=PoolRelay)
     read_archive = shown.preview._RootsPreview__read_archive  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    read_archive(1, library / "stored.zip", (".jpg",))
-    QApplication.processEvents()
+    read_archive(relay, 1, library / "stored.zip", (".jpg",))
 
-    signal.emit.assert_called_once()
-    assert shown.preview.archive_texts == {}
+    relay.post.assert_called_once()
+    owner, _, serial, *_ = relay.post.call_args.args
+    assert (owner, serial) == (shown.preview, 1)

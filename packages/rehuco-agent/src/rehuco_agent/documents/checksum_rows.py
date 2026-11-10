@@ -15,7 +15,7 @@ and the log's (#204).
 **Reading it is a directory walk**, on a catalog that lives on an SMB mount
 ([[packaging-deployment#ts230-as-nas]]), so it never happens on the GUI thread:
 :class:`ChecksumRowsLoader` runs :func:`read_checksum_rows` on the global pool and delivers the answer
-back through a queued signal.
+back on the GUI thread, through the application's :class:`~rehuco_agent.pool_relay.PoolRelay`.
 """
 
 from dataclasses import dataclass, field
@@ -44,6 +44,7 @@ from rehuco_core import (
     parse_checksum_entry,
 )
 
+from ..pool_relay import PoolRelay
 from .file_row import FileChecksumState
 from .files_rows import checksum_tooltip_for, checksum_verdict_for
 
@@ -215,9 +216,8 @@ class ChecksumRowsLoader(QObject):
     loaded = Signal(object)
     """Fires on the GUI thread with the :class:`ChecksumRows` of the **most recent** request.
 
-    Queued, because the emit happens on a pool thread. Fires exactly once per :meth:`start` that was
-    still current when it finished, **including when the read raised**, so a caller that showed a busy
-    state always gets it back."""
+    Fires exactly once per :meth:`start` that was still current when its answer landed, **including when the
+    read raised**, so a caller that showed a busy state always gets it back."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -240,12 +240,14 @@ class ChecksumRowsLoader(QObject):
         # taken here, on the GUI thread, so every row of one read is judged against one moment -- and a
         # frozen clock in a test needs no reach into the pool (the same reason FilesRowsLoader.start does)
         now = datetime.now(tz=UTC)
+        relay = PoolRelay.instance()
         QThreadPool.globalInstance().start(
-            lambda: self.__run(rehu_path, excluded_patterns, stale_after, now, generation)
+            lambda: self.__run(relay, rehu_path, excluded_patterns, stale_after, now, generation)
         )
 
-    def __run(
+    def __run(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
+        relay: PoolRelay,
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
         stale_after: timedelta,
@@ -258,11 +260,11 @@ class ChecksumRowsLoader(QObject):
         swallowed by the pool, and the :attr:`loaded` that never arrived would leave the dock showing a
         busy state for the rest of the document's life.
 
-        **The emit is guarded too, and for a different reason.** A document can be closed while its walk
-        is still out on a mount; this object is parented to the dock, so by the time the walk answers
-        its C++ half may be gone, and emitting from a deleted ``QObject`` raises on the pool thread.
-        Reporting into a document that no longer exists is exactly the nothing it should be.
+        **The answer goes through ``relay``, never this object.** A document can be closed while its walk is still
+        out on a mount, and this object goes with the dock; emitting on it from the pool thread raced that delete.
+        Posted to the GUI thread, the answer finds it gone there instead, and goes to nobody.
 
+        :param relay: the application's relay.
         :param rehu_path: the resource's ``.rehu`` file.
         :param excluded_patterns: the filename globs the content walk leaves out.
         :param stale_after: the staleness window a run would use.
@@ -273,13 +275,16 @@ class ChecksumRowsLoader(QObject):
             rows = read_checksum_rows(rehu_path, excluded_patterns, stale_after, now)
         except Exception as error:  # pylint: disable=broad-exception-caught
             rows = ChecksumRows(error=str(error))
-        if generation != self.__generation:
-            return
-        try:
+        relay.post(self, self.__deliver, generation, rows)
+
+    def __deliver(self, generation: int, rows: ChecksumRows) -> None:
+        """Emit :attr:`loaded` with a read unless a later :meth:`start` outdated it (GUI thread).
+
+        :param generation: which request this answers.
+        :param rows: what it read.
+        """
+        if generation == self.__generation:
             self.loaded.emit(rows)
-        except RuntimeError:
-            # the dock this belongs to was destroyed while the walk was out
-            pass
 
 
 class ChecksumTableModel(QAbstractTableModel):

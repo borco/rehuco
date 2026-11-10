@@ -28,6 +28,7 @@ from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
 
+from ..pool_relay import PoolRelay
 from ..settings.scrapers_settings import Browser, ScrapersSettings, persona_folder
 from . import browser_drivers
 from .protocols import FetchError
@@ -231,9 +232,8 @@ class PersonaAction(QObject):
     few seconds: it may have to wait out a still-open login window before it can delete the profile.
 
     The same shape as `rehuco_agent.fields.background_measurement.BackgroundMeasurement`: :meth:`start`
-    fires the work off, and :attr:`finished` reports back. `QThreadPool`'s automatic connection type
-    marshals the emit from the worker thread onto whatever thread a connected slot lives on -- there is
-    nothing GUI-specific here to justify an explicit queued connection.
+    fires the work off, and :attr:`finished` reports back, emitted on the GUI thread through the application's
+    `~rehuco_agent.pool_relay.PoolRelay` -- never by the worker on this object, which the page may be deleting.
 
     Runs on `QThreadPool.globalInstance()`, not `~.scraper_executor.ScraperExecutor`'s dedicated pool:
     a settings-page action, not a scrape, that should neither compete with that pool's four-scrape
@@ -249,16 +249,28 @@ class PersonaAction(QObject):
         :param action: the persona call to make -- `PersonaBrowser.open_for_login` or
             `PersonaBrowser.reset`, both already bound to their browser argument.
         """
-        QThreadPool.globalInstance().start(lambda: self.__run(action))
+        relay = PoolRelay.instance()
+        QThreadPool.globalInstance().start(lambda: self.__run(relay, action))
 
-    def __run(self, action: Callable[[], None]) -> None:
-        """Do the work -- runs on the pool thread `start` handed it to."""
+    def __run(self, relay: PoolRelay, action: Callable[[], None]) -> None:
+        """Do the work -- runs on the pool thread `start` handed it to -- and answer through ``relay``.
+
+        :param relay: the application's relay.
+        :param action: the persona call to make.
+        """
         try:
             action()
         except (FetchError, OSError) as error:
-            self.finished.emit(str(error))
+            relay.post(self, self.__deliver, str(error))
         else:
-            self.finished.emit(None)
+            relay.post(self, self.__deliver, None)
+
+    def __deliver(self, message: str | None) -> None:
+        """Emit :attr:`finished` (GUI thread).
+
+        :param message: ``None`` on success, the failure's message otherwise.
+        """
+        self.finished.emit(message)
 
 
 # one method is the design, not an omission -- see the docstring below
