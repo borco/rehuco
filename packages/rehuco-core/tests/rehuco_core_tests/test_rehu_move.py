@@ -1,6 +1,8 @@
 """Tests for moving a `.rehu` resource in place within its root (#579): another folder, its missing parents made, the
-same collision check and rollback as a rename, and the emptied folders left behind removed on request."""
+same collision check and rollback as a rename, and the emptied folders left behind removed on request; and a file
+record's checksum entries renamed with its files (#339)."""
 
+import errno
 import logging
 from pathlib import Path
 from typing import Any, Final
@@ -8,13 +10,20 @@ from typing import Any, Final
 from pytest import LogCaptureFixture, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
+    CROSS_DEVICE_WINERROR,
     RehuRenamer,
     Relocation,
     RenameCoordinator,
+    generate_checksums,
+    is_cross_device,
+    load_checksum_record,
     move_rehu_resource,
     rehu_move_conflict,
     remove_empty_parents,
+    rename_rehu_resource,
+    verify_checksums,
 )
+from rehuco_core.checksum_record import rename_checksum_entries
 
 RECORD_TEXT: Final = "{}"
 CONTENT_TEXT: Final = "content"
@@ -366,6 +375,128 @@ def test_nothing_outside_the_root_is_removed(tmp_path: Path) -> None:
     assert not remove_empty_parents(root, root)
     assert not remove_empty_parents(beside, root)
     assert root.is_dir() and beside.is_dir()
+
+
+# endregion
+
+
+# region a file record's checksum entries
+def test_a_renamed_file_record_still_verifies(tmp_path: Path) -> None:
+    """A file record's checksum entries are its files' names, so a rename renames them too (#339): the record verifies
+    under its new name, with nothing missing and nothing added.
+
+    **Test steps:**
+
+    * make ``foo.rehu`` with its checksums, rename it to ``bar``
+    * check the record names ``bar.zip`` alone -- the screenshot is no content -- and a verify matches it
+    """
+    record = make_file_record(tmp_path)
+    generate_checksums(record)
+
+    renamed = rename_rehu_resource(record, "bar")
+
+    names = sorted(entry["name"] for entry in load_checksum_record(renamed.with_suffix(".checksum"))["files"])
+    assert names == ["bar.zip"]
+    assert set(verify_checksums(renamed).statuses.values()) == {"matched"}
+
+
+def test_a_folder_record_keeps_its_checksum_record_as_it_was(tmp_path: Path) -> None:
+    """A folder record's entries are relative to its folder, which moves whole: its record is not rewritten.
+
+    **Test steps:**
+
+    * make a folder record with its checksums, and read its checksum record's bytes
+    * move it as ``Intro [2024]``
+    * check the moved record holds the same bytes
+    """
+    record = make_folder_record(tmp_path)
+    generate_checksums(record)
+    before = record.with_suffix(".checksum").read_bytes()
+
+    moved = move_rehu_resource(record, tmp_path / "Smith", NEW_NAME)
+
+    assert moved.with_suffix(".checksum").read_bytes() == before
+
+
+def test_a_record_that_cannot_be_rewritten_leaves_the_rename_standing(
+    tmp_path: Path, mocker: MockerFixture, caplog: LogCaptureFixture
+) -> None:
+    """The files moved, so a checksum record that will not take its new names is logged, never a failed rename.
+
+    **Test steps:**
+
+    * make ``foo.rehu`` with its checksums, and make writing a checksum record refuse
+    * rename it to ``bar``
+    * check the rename landed and the stale record was logged
+    """
+    record = make_file_record(tmp_path)
+    generate_checksums(record)
+    mocker.patch("rehuco_core.rehu_rename.update_checksum_record", side_effect=PermissionError(DENIED, "denied"))
+
+    with caplog.at_level(logging.WARNING):
+        renamed = rename_rehu_resource(record, "bar")
+
+    assert renamed.is_file()
+    assert "still names its files' old names" in caplog.text
+
+
+def test_entries_are_renamed_by_name_and_the_rest_carried() -> None:
+    """Only a named entry changes; an entry that is no object is carried, and a record with nothing to rename, or none
+    at all, writes nothing.
+
+    **Test steps:**
+
+    * rename ``a`` to ``b`` in a record holding ``a``, ``c`` and a stray string
+    * rename ``x`` in the same record, then in no record
+    * check the first renames ``a`` only, and the others answer ``None``
+    """
+    record = {"version": 1, "files": [{"name": "a", "xxh3": "0"}, {"name": "c"}, "stray"]}
+
+    assert rename_checksum_entries(record, {"a": "b"}) == {
+        "version": 1,
+        "files": [{"name": "b", "xxh3": "0"}, {"name": "c"}, "stray"],
+    }
+    assert rename_checksum_entries(record, {"x": "y"}) is None
+    assert rename_checksum_entries(None, {"a": "b"}) is None
+
+
+# endregion
+
+
+# region the plan and other devices
+def test_the_plan_is_checked_but_not_for_collisions(tmp_path: Path) -> None:
+    """The public plan refuses what a rename refuses before it looks -- a name that is not plain -- but leaves an
+    occupied destination to its caller (#339).
+
+    **Test steps:**
+
+    * make a folder record and occupy its destination
+    * check the plan still lists the folder's one pair, and a name with a separator is refused
+    """
+    record = make_folder_record(tmp_path)
+    (tmp_path / "Smith" / NEW_NAME).mkdir(parents=True)
+
+    assert RehuRenamer(record, NEW_NAME, into=tmp_path / "Smith").plan() == [
+        (record.parent, tmp_path / "Smith" / NEW_NAME)
+    ]
+    with raises(ValueError, match="not a plain"):
+        RehuRenamer(record, "a/b").plan()
+
+
+def test_a_rename_across_devices_is_told_apart() -> None:
+    """``EXDEV``, and Windows' *not the same device*, are what a rename to another volume answers; nothing else is.
+
+    **Test steps:**
+
+    * build the three errors
+    * check the first two are cross-device and a denial is not
+    """
+    windows = OSError(errno.EIO, "not the same device")
+    windows.winerror = CROSS_DEVICE_WINERROR  # type: ignore[attr-defined]  # set only on Windows' own errors
+
+    assert is_cross_device(OSError(errno.EXDEV, "cross-device link"))
+    assert is_cross_device(windows)
+    assert not is_cross_device(PermissionError(DENIED, "denied"))
 
 
 # endregion

@@ -401,6 +401,24 @@ class ReportingTaskJob(TaskJob, Protocol):
         """
 
 
+@runtime_checkable
+class AbandonableTaskJob(TaskJob, Protocol):
+    """A job that left something behind when it stopped part-way, and takes it back when it is given up on (#339).
+
+    A second protocol rather than a wider one, as :class:`ReportingTaskJob` is: a job with nothing to take back is
+    unchanged, and is still never troubled while it is not running. The running job needs no such call -- its
+    ``cancel`` tells it, and what it undoes on the way out is its own business.
+    """
+
+    def abandon(self) -> None:
+        """Hear that the engine cancelled or removed this job while it was not running -- queued, paused or waiting
+        -- so it will never run again unless retried.
+
+        Called on whichever thread asked, with the queue's lock held: return at once, and do the taking back
+        elsewhere.
+        """
+
+
 # Fifteen, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
 # it has got and in what, what went wrong or what it waits for, what has been asked of it, what stopping it would
 # cost, whether it will still be here tomorrow, whom it takes turns with, and what kind of job it is. The last seven

@@ -729,3 +729,60 @@ def test_a_removed_before_rename_listener_is_not_called(coordinator: RenameCoord
 
 
 # endregion
+
+
+# region any step behind the barrier
+def test_a_step_runs_behind_the_barrier_and_everyone_follows_what_it_moved(coordinator: RenameCoordinator) -> None:
+    """A step that is no rename -- a verified move removing its source (#339) -- gets the same barrier: the
+    before-listeners told, the readers away while it runs, every tracked location moved by what it answers, and the
+    listeners told after.
+
+    **Test steps:**
+
+    * track a content file, add a before-listener and a rename listener
+    * run a step that records whether readers were held off and answers a relocation of the folder
+    * check the step saw the flag up, the location followed, the flag is down, and both listeners heard
+    """
+    location = coordinator.track(CONTENT)
+    before: list[Path] = []
+    heard: list[Relocation] = []
+    coordinator.add_before_rename_listener(before.append)
+    coordinator.add_rename_listener(heard.append)
+    relocation = Relocation(((FOLDER, RENAMED),))
+    flag_during: list[bool] = []
+
+    def step() -> Relocation:
+        flag_during.append(coordinator.yield_wanted)
+        return relocation
+
+    coordinator.run(INFO_PATH, step)
+
+    assert flag_during == [True]
+    assert location.path == RENAMED / "content.zip"
+    assert coordinator.yield_wanted is False
+    assert before == [INFO_PATH]
+    assert heard == [relocation]
+
+
+def test_a_failing_step_releases_the_readers_and_announces_nothing(coordinator: RenameCoordinator) -> None:
+    """What a step raises leaves through the barrier with the readers let back in and no one told of a move.
+
+    **Test steps:**
+
+    * add a rename listener and run a step that raises
+    * check the error came out, the flag is down, and nothing was announced
+    """
+    heard: list[Relocation] = []
+    coordinator.add_rename_listener(heard.append)
+
+    def step() -> Relocation:
+        raise PermissionError("denied")
+
+    with raises(PermissionError):
+        coordinator.run(INFO_PATH, step)
+
+    assert coordinator.yield_wanted is False
+    assert not heard
+
+
+# endregion

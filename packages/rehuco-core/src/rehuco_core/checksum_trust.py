@@ -168,6 +168,17 @@ class ChecksumTrust:
             self.__locations[self.location_key(new)] = entry
             self.__changed()
 
+    def forget(self, rehu_path: Path) -> None:
+        """Drop a location's trust: the record there is gone -- a verified move took it to another volume, where its
+        copy earned a trust of its own (#339).
+
+        :param rehu_path: the resource's ``.rehu`` file as it was; it need not exist any more.
+        """
+        with self.__lock:
+            if self.__path is None or self.__locations.pop(self.location_key(rehu_path), None) is None:
+                return
+            self.__changed()
+
     # endregion
 
     # region Saving

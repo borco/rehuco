@@ -204,10 +204,15 @@ has anything to do with images. It moved to "Files" instead, its frame first on 
 excluded-file-patterns editor (formerly the standalone "Excluded Files" page, #226) it shares that page
 with now.
 
-**Moving records**, the page's second frame (`MoveSettings`, #579), holds one box: *Remove the left-behind folders up
-to the root, only while each is empty*, off by default. It is read when a record lands at the place its root's layout
+**Moving records**, the page's second frame (`MoveSettings`, #579, #339), holds *Remove the left-behind folders up
+to the root, only while each is empty*, off by default. It is read when a record lands at the place a root's layout
 gives it ([[plugins#tutorial-plugin]]'s path row): with it on, the folder the record left and each folder above it are
-removed while empty, stopping at the first that holds anything else and never reaching the root.
+removed while empty, stopping at the first that holds anything else and never reaching the root. **Verify
+checksums when moving a record**, the third frame, is `MoveSettings`' too
+([[mounts-and-storage#safe-move-rename]]): *Renamed in place* — *on a local disk* (off
+by default) and *on a network share* (on), which make such a move a task verifying before and after; *Copied to another
+disk or share* — *check the original before copying* (on), and *check the copy before removing the original*, shown
+ticked and disabled because it is the hard rule, not a choice. Each move captures the boxes when it is queued.
 
 **The whole filter state persists** across restarts — the filter text and both toggles — via
 `SettingsDialogSettings` (`settings/settings_dialog_settings.py`). The dialog restores it in

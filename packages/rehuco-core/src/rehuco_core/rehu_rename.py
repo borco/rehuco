@@ -21,6 +21,7 @@ resource to rename but a record to fix ([[data-model#write-integrity]]'s fix-ret
 what its sibling set *would* have been is exactly the guess a rename must not make.
 """
 
+import errno
 import logging
 import os
 import time
@@ -28,7 +29,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from .checksum_record import checksum_record_path
+from .checksum_record import checksum_record_path, rename_checksum_entries, update_checksum_record
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import REHU_SUFFIX
 from .path_keys import path_key
@@ -49,6 +50,20 @@ RETRY_DELAYS: Final = (0.05, 0.1, 0.2, 0.4)
 seconds -- ~0.75 s in all. Long enough for a scanner to finish with a file; short enough that a lock that
 is *not* transient (an Explorer window open on the folder) is still reported promptly, since the rename
 blocks the GUI thread that asked for it."""
+
+
+CROSS_DEVICE_WINERROR: Final = 17
+"""``ERROR_NOT_SAME_DEVICE``: what Windows answers a rename to another drive or share."""
+
+
+def is_cross_device(error: OSError) -> bool:
+    """Whether a rename failed only because its two ends are on different volumes -- the one refusal a move answers
+    with a verified copy instead (#339, [[mounts-and-storage#safe-move-rename]]).
+
+    :param error: what the rename raised.
+    :returns: ``EXDEV``, or Windows' ``ERROR_NOT_SAME_DEVICE``.
+    """
+    return error.errno == errno.EXDEV or getattr(error, "winerror", None) == CROSS_DEVICE_WINERROR
 
 
 class PartialRenameError(OSError):
@@ -217,10 +232,29 @@ class RehuRenamer:
             self.__remove_made(made)
             raise
         renamed = self.__new_document_path()
+        self.__rename_checksum_entries(plan, renamed)
         # a rename rewrites no bytes, so what was verified under the old name still holds under the new
         # one -- a copy or move made outside the app is never heard of here, and re-verifies (#357)
         self.__trust.moved(self.__path, renamed)
         return renamed
+
+    def __rename_checksum_entries(self, plan: Sequence[tuple[Path, Path]], renamed: Path) -> None:
+        """Rename a file record's checksum entries along with its files (#339).
+
+        A file record's entries are its files' own names, so ``foo.zip`` renamed to ``bar.zip`` would otherwise leave
+        an entry naming nothing and a file no entry names. A folder record's entries are relative to its folder and
+        never change. A record that cannot be rewritten is logged, and the rename stands: the files moved.
+
+        :param plan: the pairs the rename carried out.
+        :param renamed: the record's ``.rehu`` where it now is.
+        """
+        names = {source.name: destination.name for source, destination in plan if source.name != destination.name}
+        if self.__directory_scoped or not names:
+            return
+        try:
+            update_checksum_record(checksum_record_path(renamed), lambda record: rename_checksum_entries(record, names))
+        except OSError, ValueError:
+            LOG.warning("The checksum record of %s still names its files' old names.", renamed, exc_info=True)
 
     @property
     def executed(self) -> tuple[tuple[Path, Path], ...]:
@@ -308,6 +342,22 @@ class RehuRenamer:
         if self.__is_itself(source, destination):
             return None
         return destination if destination.exists() else None
+
+    def plan(self) -> list[tuple[Path, Path]]:
+        """The ``(source, destination)`` pairs this rename would carry out, read from the disk and checked as
+        :meth:`rename` checks them -- all but the collisions, which a caller placing the files by other means (a
+        verified copy to another filesystem, #339) settles its own way.
+
+        :returns: the planned pairs, the resource's own entry first: its folder, or its ``.rehu`` and the files named
+            after it.
+        :raises ValueError: see :func:`move_rehu_resource`.
+        :raises FileNotFoundError: see :func:`rename_rehu_resource`.
+        :raises OSError: the resource's directory cannot be listed.
+        """
+        self.__check_name()
+        self.__check_source_exists()
+        self.__check_not_into_itself()
+        return self.__plan()
 
     @property
     def __directory_scoped(self) -> bool:

@@ -1085,19 +1085,24 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   of them fails, so a resource is never left split between two names ([[data-model#write-integrity]]) — and the one
   case a rollback cannot fix says so by name. Both scopes rename within a single directory and so are same-filesystem
   by construction.
-  **The suggestion list is two groups** (#579). First the **current names**: the type's Locations templates rendered
-  into a name, a rename within the record's folder as above. Then, under a separator, **the record's root's place**
-  ([[mounts-and-storage#rehuroot]]): where the layout of the root holding the record puts it, labelled by the root's
-  name and the rendered path. Choosing it is a **move in place** — the destination's missing parents made, the folder
-  or the file set moved in one plan, same filesystem by construction — through the same coordinator and with the same
-  collision check and rollback, the folders it made removed again if it fails. **Only a place that can be built is
-  shown**: none for a record under no root, a root this machine does not map or cannot reach now, a layout naming
-  neither the record's type nor `*`, or one needing a placeholder the record leaves empty with no fallback on the root.
-  A place something already occupies shows disabled with the same marker as an occupied name below, and the place the
-  record already sits at disabled and plain, as the current name is. The folders a move leaves empty stay, unless the
-  Files page's *Remove the left-behind folders* says otherwise ([[appendices.settings-pages]]). Other roots are the
-  checksum-gated verified move ([[mounts-and-storage#safe-move-rename]]: verify, copy, verify at the target, delete,
-  #339) and join the list when it lands.
+  **The suggestion list is two groups** (#579, #339). First the **current names**: the type's Locations templates
+  rendered into a name, a rename within the record's folder as above. Then, under a separator, **the roots' places**
+  ([[mounts-and-storage#rehuroot]]): where each root's layout puts the record, labelled by the root's name and the
+  rendered path — the root holding the record first, then every other root this machine maps and reaches, in the
+  catalog's order. A record under no root (opened from outside every root) is offered every root's place, which is how
+  a stray record joins the catalog. Choosing a place on the record's own volume is a **move by rename** — the
+  destination's missing parents made, the folder or the file set moved in one plan — through the same coordinator and
+  with the same collision check and rollback, the folders it made removed again if it fails; it runs at once unless the
+  Files page asks for it to be verified, when it is a task that verifies before and after. A place on another volume
+  is the checksum-gated **verified move**, always a task ([[mounts-and-storage#safe-move-rename]]: verify, copy,
+  verify at the target, delete); its failure reaches the document's banner as a rename's does. **Only a place that can
+  be built is shown**: none for a root this machine does not map or cannot reach now, a layout naming neither the
+  record's type nor `*`, or one needing a placeholder the record leaves empty with no fallback on the root — and none at
+  all for a record whose own root cannot be reached. A host with no task queue offers only the record's own root's
+  place. A place something already occupies shows disabled with the same marker as an occupied name below, and the
+  place the record already sits at disabled and plain, as the current name is. The folders a move leaves empty stay,
+  unless the Files page's *Remove the left-behind folders* says otherwise ([[appendices.settings-pages]]); a record
+  under no root has no root to stop at, and its folders always stay.
   A candidate **something already occupies** — another folder for a directory-scoped resource, another `.rehu` for a
   file-scoped one — is offered *disabled, with a trailing `⚿`* rather than as a click that could only fail. A marker
   rather than a color: the disabled palette fights a hue, a colorblind reader may not separate one, and Qt Style Sheets

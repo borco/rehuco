@@ -101,6 +101,38 @@ def location_of(path: Path, mounts: Sequence[Mount] | None = None) -> str:
     return "/".join([share, *path.relative_to(best.point).parts])
 
 
+def volume_of(path: Path, mounts: Sequence[Mount] | None = None) -> str:
+    """The volume ``path`` is on, as a key two paths compare by to know whether a rename can move one to the other
+    (#339).
+
+    On Windows it is the front of the location (:func:`windows_location`): ``//nas/data`` for a share however this
+    machine reaches it -- a UNC path, or any drive letter mapped to it -- and ``//<machine>/d`` for a local drive. On
+    other platforms it is the mount point holding the path, which names one volume per share or removable disk but the
+    same ``/`` for every local disk mounted without a mount of its own: a rename between those is attempted, and the
+    one that crosses disks fails with ``EXDEV`` (:func:`~rehuco_core.is_cross_device`), which the caller copies after.
+
+    :param path: an absolute path; it need not exist.
+    :param mounts: the mount table (POSIX only); ``None`` reads it.
+    :returns: the key, case-folded.
+    """
+    if sys.platform == "win32":
+        return "/".join(windows_location(path).split("/")[:4]).casefold()
+    return str(device_of(path, mounts).root).casefold()
+
+
+def same_volume(first: Path, second: Path) -> bool:
+    """Whether ``first`` and ``second`` are on one volume (:func:`volume_of`), so moving between them is a rename.
+
+    Asks only local state -- the drive or mount table -- so a share that is away answers at once.
+
+    :param first: an absolute path.
+    :param second: an absolute path.
+    :returns: whether both name the same volume.
+    """
+    mounts = None if sys.platform == "win32" else read_mounts()
+    return volume_of(first, mounts) == volume_of(second, mounts)
+
+
 LOCAL_SERVER: Final = "local"
 """What :func:`server_of` says for a location on this machine's own disks."""
 

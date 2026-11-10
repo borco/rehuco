@@ -393,14 +393,48 @@ hash ([[data-model#checksums]]).
 
 The system chooses *how* to perform a move/rename rather than assuming:
 
-- A rename/move **within one filesystem** is a near-instant metadata operation, including over SMB, where the rename is
-  server-side ([[packaging-deployment#ts230-as-nas]]).
+- **Rename or copy is decided up front** (#339). The same local volume, or the same `\\server\share` however this
+  machine reaches it (a UNC path or a drive letter mapped to it), is a rename: a near-instant metadata operation,
+  including over SMB, where the rename is server-side ([[packaging-deployment#ts230-as-nas]]). Anything else is a copy.
+  A rename the operating system refuses as crossing devices (`EXDEV`, `ERROR_NOT_SAME_DEVICE`) becomes the copy, so
+  two roots on one share or one disk move at once and a wrong guess costs nothing.
+- **A rename is verified when the Files page asks** — *on a local disk* (off by default), *on a network share* (on):
+  verify, rename, verify, as a task. Unverified, it runs at once, as the move in place within a root always has.
+- **The source must be checkable first** (#339). A copy can only be proven against what the record claims, so the
+  record must exist and cover every content file the move carries. A missing record, or files it does not cover, is
+  refused with the remedy — unless *Create missing checksum on verify* is on, when the source verify writes them from
+  the source's own bytes. With *check the original before copying* on (the default), the source is verified in full
+  before anything is copied.
 - **Cross-filesystem moves are checksum-gated (hard rule):** verify the source against its checksum record → copy →
   verify the checksum on the *target* → delete the source **only if verification passes**. An interrupted move leaves
-  the source untouched and the partial target resumable, so it never loses data.
-- **The copy is resumable.** A verified copy that stops — the NAS switched off, the laptop closed — picks up from the
-  bytes already on the target rather than starting over; this is what rsync would have bought, and the one thing it
-  would have ([[appendices.post-mortem#architecture]]).
+  the source untouched and the partial target resumable, so it never loses data. The target check adopts nothing: a
+  file there the record does not list fails it. Files no checksum covers (the `.rehu`, screenshots) are compared byte
+  for byte before the source goes.
+- **The copy is resumable, per file.** A verified copy that stops — the NAS switched off, the laptop closed, a quit —
+  picks up where it was: a target file whose hash already matches the record is not copied again, and a partial one is
+  copied whole. The `.rehu` is written last, so the target is a record only once complete. Resuming *inside* one file
+  from the bytes already on the target, which is what rsync would have bought and the one thing it would have
+  ([[appendices.post-mortem#architecture]]), is #632's.
+- **The source stops being a record on the GUI thread, inside the rename barrier**, so a video playing from it lets go
+  first, and every holder of its paths — the open document, a queued save, the cache's rows — follows the announced
+  move to the copy. Only the quick part runs there: the source is listed once and must be exactly as the job's own
+  thread last compared it (the same files, sizes and dates), then its `.rehu` and `.checksum` go. The slow parts stay
+  on the job's thread — before it, comparing the files no checksum covers and copying again what changed; after it, a
+  kept *cleanup* phase removing the rest, so a quit in between still removes it. A source found changed is compared
+  again; a reader that does not let go in time, a save not landed, a lock held elsewhere make the move wait, not fail.
+- **The document stays editable** while its move runs, and the record may be renamed: the copy holds its record and
+  every file as tracked locations, so its reads follow the rename.
+- A **cancel** removes what the copy wrote and the folders it made, and nothing that was there before, for as long as
+  the source is whole — whether the job runs or sits paused, when the queue tells it so
+  ([[appendices.task-queue#kept]]). **So does a refusal**: a copy that did not match its record, a source that did
+  not verify or changed under the copy — nothing unverified is left at the destination. A copy stopped by anything
+  else (the share gone, a pause, a quit) is kept, to resume from. What the copy wrote is kept relative to the folder
+  the record lands in, so it is still found after the destination root is mapped elsewhere.
+- **Once the source stopped being a record, the cleanup always runs.** The copy verified, so a cancel past that
+  point takes nothing back: a job given up on in its cleanup phase finishes removing the source instead.
+- **A record holding a symbolic link or a junction is not copied.** A copy neither follows a link nor carries one,
+  so the move is refused naming the link, and anything already transferred is removed. A rename on one volume moves
+  the folder whole and is not affected.
 
 **One verified copy, three uses** (#339). The sequence is built as a reusable **verified copy**, and the moves and
 borrows are made from it:
@@ -412,5 +446,9 @@ borrows are made from it:
 | Return | verified copy back of what changed (the sidecars, possibly the record), then the copy is removed |
 
 The bytes travel over the mounts, read by the machine doing the copy; a node with local access to one end may run the
-verify there ([[nodes#node-status]]). The job records each end as a root and a root-relative path, never an absolute
-path, so it survives restarts and a machine's remapping.
+verify there ([[nodes#node-status]], #632). The job records each end as a root and a root-relative path, never an
+absolute path, so it survives restarts and a machine's remapping — except a source under no root (a record opened from
+outside every root), which has no root to be named by and is recorded by its absolute path.
+
+A file record's checksum entries are its files' own names, so renaming it — in place, by a move, or into its copy —
+renames its entries with its files (#339); a folder record's are relative to its folder and never change.

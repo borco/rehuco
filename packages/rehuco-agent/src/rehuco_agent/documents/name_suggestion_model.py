@@ -40,18 +40,29 @@ claims still gets a usable list rather than an empty one."""
 
 @dataclass(frozen=True, slots=True)
 class RootDestination:
-    """Where the record's root's layout puts it (#579): the place the path row offers under its names.
+    """Where a root's layout puts the record (#579, #339): one place the path row offers under its names.
 
     :param label: the root's name, its location when it has none.
     :param relative: the place, relative to the root's folder, one segment per level.
     :param root: the root's folder on this machine.
+    :param root_id: the root.
     :param here: whether the record already sits there.
+    :param source_root: the folder of the root the record is under now, or ``None`` for a record under no root.
+    :param source_root_id: that root, or ``None``.
     """
 
     label: str
     relative: PurePosixPath
     root: Path
+    root_id: UUID
     here: bool
+    source_root: Path | None
+    source_root_id: UUID | None
+
+    @property
+    def same_root(self) -> bool:
+        """Whether the place is in the root the record is under now."""
+        return self.root_id == self.source_root_id
 
     @property
     def into(self) -> Path:
@@ -77,21 +88,21 @@ class NameSuggestionModel(QObject):
     forwards a clicked one as a command, and ``model.rename_location`` executes it -- this class
     never touches the filesystem.
 
-    **The root's place** (#579), :meth:`root_destination`, is the second group the path row offers: where the layout
-    of the root holding the record puts it. Only a place that can be built is offered -- a root this machine does not
-    reach, one whose layout does not take the record's type or needs a field the record leaves empty with no
-    fallback, and a record under no root offer none -- and only the record's own root, since moving to another is the
-    verified move (#339).
+    **The roots' places** (#579, #339), :meth:`root_destinations`, are the second group the path row offers: where
+    each root's layout puts the record, the root holding it first, then every other this machine maps and reaches, in
+    the catalog's order. Only a place that can be built is offered -- a root this machine does not reach, and one whose
+    layout does not take the record's type or needs a field the record leaves empty with no fallback, offer none. A
+    record under no root is offered every root's place; one under a root that cannot be reached now, none.
 
     :param model: the record fields (``title`` / ``publisher`` / ``authors`` / ``released`` / ``advertised_count`` /
         ``resource_type``) to build suggestions from.
-    :param catalog_roots: the open catalog's roots, for :meth:`root_destination`; ``None`` offers no root's place.
+    :param catalog_roots: the open catalog's roots, for :meth:`root_destinations`; ``None`` offers no root's place.
     :param parent: optional Qt parent; the caller parents this to the view it serves, which the model
         may outlive (#375) -- every subscription here is severed when this object is destroyed.
     """
 
     changed = Signal()
-    """Fires when a field :meth:`suggestions` or :meth:`root_destination` is built from changes
+    """Fires when a field :meth:`suggestions` or :meth:`root_destinations` is built from changes
     (:data:`NAME_SUGGESTION_SOURCE_FIELDS`, the document's type or path, the Locations settings, or the catalog's
     roots), so a `PathField` can re-pull them live."""
 
@@ -152,44 +163,59 @@ class NameSuggestionModel(QObject):
         )
         return list(dict.fromkeys(name for name in rendered if name))
 
-    def root_destination(self) -> RootDestination | None:
-        """Where the layout of the root holding the record puts it (#579), rendered by
-        :func:`~rehuco_core.destination` from the record's fields and the Location Replacements.
+    def root_destinations(self) -> tuple[RootDestination, ...]:
+        """Where each root's layout puts the record (#579, #339), rendered by :func:`~rehuco_core.destination` from the
+        record's fields and the Location Replacements.
 
-        :returns: the place; ``None`` when there is no catalog, the record has no path or is under no root this
-            machine reaches, or the root's layout does not take the record.
+        :returns: the places, the record's own root's first; none when there is no catalog, the record has no path,
+            or the root holding it cannot be reached.
         """
         roots, path = self.__catalog_roots, self.__model.path
         if roots is None or path is None:
-            return None
+            return ()
         if self.__unreachable is None:
             self.__unreachable = roots.unreachable_roots()
-        root = self.__root_holding(path, roots.mapped_roots(), self.__unreachable)
-        if root is None:
-            return None
+        mapped = roots.mapped_roots()
+        own = self.__root_holding(path, mapped)
+        if own is not None and own.root_id in self.__unreachable:
+            return ()
+        others = [root for root in mapped if root is not own and root.root_id not in self.__unreachable]
         current_name = self.__model.current_name
         naming = RecordNaming.of(self.__model.document, current_name)
-        relative = destination(root, naming, shared_location_replacements_settings().rules)
-        if isinstance(relative, Refusal):
-            return None
+        rules = shared_location_replacements_settings().rules
         folder = path.parent.parent if is_directory_scoped(path) else path.parent
-        here = path_key(root.path.joinpath(*relative.parts)) == path_key(folder / current_name)
-        return RootDestination(root.label or root.location, relative, root.path, here)
+        places: list[RootDestination] = []
+        for root in [*([own] if own is not None else []), *others]:
+            relative = destination(root, naming, rules)
+            if isinstance(relative, Refusal):
+                continue
+            here = path_key(root.path.joinpath(*relative.parts)) == path_key(folder / current_name)
+            places.append(
+                RootDestination(
+                    root.label or root.location,
+                    relative,
+                    root.path,
+                    root.root_id,
+                    here,
+                    None if own is None else own.path,
+                    None if own is None else own.root_id,
+                )
+            )
+        return tuple(places)
 
     @staticmethod
-    def __root_holding(path: Path, roots: Sequence[MappedRoot], unreachable: frozenset[UUID]) -> MappedRoot | None:
-        """The reachable root whose folder holds ``path``; roots never overlap, so there is at most one.
+    def __root_holding(path: Path, roots: Sequence[MappedRoot]) -> MappedRoot | None:
+        """The root whose folder holds ``path``; roots never overlap, so there is at most one.
 
         :param path: the record's ``.rehu``.
         :param roots: the roots this machine maps.
-        :param unreachable: those of them that cannot be reached now.
         :returns: the root, or ``None``.
         """
         for root in roots:
             depth = len(root.path.parts)
             # a root's folder is matched folding case on every OS (#629)
             beneath = tuple(map(path_key, path.parts[:depth])) == tuple(map(path_key, root.path.parts))
-            if beneath and len(path.parts) > depth and root.root_id not in unreachable:
+            if beneath and len(path.parts) > depth:
                 return root
         return None
 

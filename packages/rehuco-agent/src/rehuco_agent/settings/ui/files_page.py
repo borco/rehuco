@@ -1,5 +1,6 @@
 """Files settings page: how a deleted file is deleted and whether that is asked about, how a record is moved within its
-root, and what a resource's size scan and checksums leave out (#226, #291, #298, #312, #579)."""
+root and verified on its way, and what a resource's size scan and checksums leave out (#226, #291, #298, #312, #579,
+#339)."""
 
 from typing import Final
 
@@ -30,7 +31,7 @@ class FilesPage(QWidget):
     """How a deleted file is deleted and whether that is asked about, and the filename globs left out
     of every directory-scoped resource's content scan (#226, #291, #298, #312).
 
-    Four frames for four settings. **Deleting files**, first, is the one deletion policy
+    Five frames. **Deleting files**, first, is the one deletion policy
     (`DeletionSettings`): *Move deleted files to the Recycle Bin, if possible* first, then -- under a
     caption saying a permanent delete is confirmed unless -- *Clear backups without asking* and
     *Delete images without asking*. That order is the dependency: the bin box decides whether a delete
@@ -39,7 +40,10 @@ class FilesPage(QWidget):
     first has made one. It covers a screenshot deleted from the images editor, a `.tc` conversion's discarded backup
     and a discarded conversion-backups set alike (#298), so it sits here rather than under "Images".
     **Moving records** (`MoveSettings`, #579) says whether a move to the place a record's root's layout gives it
-    removes the folders it leaves empty. The other two frames, unchanged since #226, are the
+    removes the folders it leaves empty. **Verify checksums when moving a record** (`MoveSettings` too, #339) says
+    which moves verify the record's checksums: a rename in place on a local disk, one on a share, and the original
+    before a copy to another disk or share. The copy's own check is shown ticked and disabled: it is the hard rule,
+    not a choice. The last two frames, unchanged since #226, are the
     two tiers of what a size scan and checksum run leave out: **Excluded file patterns** is the
     editable junk list, a `StringListEditor` (#231) wearing this app's icons. **Always excluded**,
     below it, is a read-only summary of the structural set -- every record a scan meets, with its
@@ -85,7 +89,7 @@ class FilesPage(QWidget):
             self.__ui.clear_backups_without_asking_check_box.isChecked() != deletion.clear_backups_without_asking
             or self.__ui.delete_images_without_asking_check_box.isChecked() != deletion.delete_images_without_asking
             or self.__ui.use_recycle_bin_check_box.isChecked() != deletion.use_recycle_bin
-            or self.__ui.remove_empty_folders_check_box.isChecked() != shared_move_settings().remove_empty_folders
+            or self.__moves_differ(shared_move_settings())
             or normalize_patterns(self.__ui.patterns_editor.values)
             != shared_excluded_files_settings().excluded_file_patterns
         )
@@ -106,6 +110,9 @@ class FilesPage(QWidget):
 
         moves = shared_move_settings()
         moves.remove_empty_folders = self.__ui.remove_empty_folders_check_box.isChecked()
+        moves.verify_renamed_local = self.__ui.verify_renamed_local_check_box.isChecked()
+        moves.verify_renamed_network = self.__ui.verify_renamed_network_check_box.isChecked()
+        moves.verify_original_before_copy = self.__ui.verify_original_check_box.isChecked()
         moves.save(persistent_settings())
 
         excluded = shared_excluded_files_settings()
@@ -130,10 +137,26 @@ class FilesPage(QWidget):
         :param excluded: the excluded-patterns list to show, as it resolves.
         """
         self.__ui.remove_empty_folders_check_box.setChecked(moves.remove_empty_folders)
+        self.__ui.verify_renamed_local_check_box.setChecked(moves.verify_renamed_local)
+        self.__ui.verify_renamed_network_check_box.setChecked(moves.verify_renamed_network)
+        self.__ui.verify_original_check_box.setChecked(moves.verify_original_before_copy)
         self.__ui.clear_backups_without_asking_check_box.setChecked(deletion.clear_backups_without_asking)
         self.__ui.delete_images_without_asking_check_box.setChecked(deletion.delete_images_without_asking)
         self.__ui.use_recycle_bin_check_box.setChecked(deletion.use_recycle_bin)
         self.__ui.patterns_editor.values = excluded.excluded_file_patterns
+
+    def __moves_differ(self, moves: MoveSettings) -> bool:
+        """Whether a staged move choice differs from what ``moves`` holds.
+
+        :param moves: the move choices saved.
+        :returns: whether any box differs.
+        """
+        return (
+            self.__ui.remove_empty_folders_check_box.isChecked() != moves.remove_empty_folders
+            or self.__ui.verify_renamed_local_check_box.isChecked() != moves.verify_renamed_local
+            or self.__ui.verify_renamed_network_check_box.isChecked() != moves.verify_renamed_network
+            or self.__ui.verify_original_check_box.isChecked() != moves.verify_original_before_copy
+        )
 
     def __structural_summary(self) -> str:
         """Describe the five structural exclusions, written from the constants rather than restated.

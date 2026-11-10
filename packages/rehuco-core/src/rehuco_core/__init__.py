@@ -95,6 +95,7 @@ from .constants import (
     USER_SIDECAR_SUFFIX,
     VIDEO_EXTENSIONS,
 )
+from .content_digest import digest_content
 from .content_keys import content_key, content_path, is_valid_content_key
 from .content_reading import DEFAULT_CONTENT_CHUNK_SIZE, read_content_chunks
 from .default_username import default_username
@@ -164,6 +165,16 @@ from .migrations import (
     migrate_checksum_data,
     migrate_rehu_data,
     migrate_rehuco_data,
+)
+from .move_record_job import (
+    DEFAULT_RECORD_MOVE_HOST,
+    RECORD_MOVE_KIND,
+    MoveCleanup,
+    MoveMode,
+    MovePhase,
+    MoveRecordJob,
+    RecordMoveHost,
+    RecordMoveHosting,
 )
 from .natural_sort import natural_path_sort_key, natural_sort_key
 from .path_keys import path_key
@@ -284,9 +295,11 @@ from .rehu_parse_limits import (
     oversized_file_reason,
 )
 from .rehu_rename import (
+    CROSS_DEVICE_WINERROR,
     TRANSIENT_LOCK_ERRORS,
     PartialRenameError,
     RehuRenamer,
+    is_cross_device,
     move_rehu_resource,
     rehu_move_conflict,
     rehu_rename_conflict,
@@ -370,7 +383,16 @@ from .resource_scoping import (
 from .root_candidates import CandidateKind, RootCandidate, RootPick, RootPlanner
 from .root_destination import RecordNaming, Refusal, destination
 from .root_folders import RootFolderLister
-from .root_location import LOCAL_SERVER, location_of, machine_name, resolve_location, server_of, storage_of
+from .root_location import (
+    LOCAL_SERVER,
+    location_of,
+    machine_name,
+    resolve_location,
+    same_volume,
+    server_of,
+    storage_of,
+    volume_of,
+)
 from .root_mappings import (
     ROOT_MAPPINGS_FILE_NAME,
     SET_ASIDE_FILE_NAME,
@@ -415,6 +437,7 @@ from .tasks import (
     PROGRESS_UNIT_BYTES,
     PROGRESS_UNIT_RESOURCES,
     RESTORED_UNFINISHED_STATES,
+    AbandonableTaskJob,
     ChainFamily,
     ChainRegistry,
     JobCancelled,
@@ -501,6 +524,19 @@ from .user_sidecars import (
     user_sidecar_paths,
     user_slug,
 )
+from .verified_copy import (
+    CarriedFile,
+    CarriedSet,
+    CopyJournal,
+    LinkInRecordError,
+    SourceChangedError,
+    SourceListing,
+    VerifiedCopy,
+    VerifiedCopyError,
+    check_move_source,
+    recorded_digests,
+    remove_leftovers,
+)
 from .video_format import VideoFormat, read_video_format
 from .video_note_lines import (
     VIDEO_LINK_SCHEME,
@@ -552,6 +588,7 @@ __all__ = [
     "APP_FOLDER_NAME",
     "ARCHIVE_EXTENSIONS",
     "AUDIO_EXTENSIONS",
+    "AbandonableTaskJob",
     "AppFolders",
     "ArchiveFacts",
     "AuthorEntry",
@@ -575,11 +612,14 @@ __all__ = [
     "CORE_BLOCK_KEY",
     "CORE_FIELD_NAMES",
     "CORE_PLUGIN",
+    "CROSS_DEVICE_WINERROR",
     "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
     "CURRENT_REHUCO_VERSION",
     "CURRENT_REHUSER_VERSION",
     "CandidateKind",
+    "CarriedFile",
+    "CarriedSet",
     "Catalog",
     "CatalogCache",
     "CatalogCheckpoint",
@@ -626,6 +666,7 @@ __all__ = [
     "ConversionBackupsProgress",
     "ConversionBackupsScanner",
     "ConversionBackupsTreeScan",
+    "CopyJournal",
     "CoveredFile",
     "CoveringRecord",
     "DEFAULT_CHAIN_REGISTRY",
@@ -640,6 +681,7 @@ __all__ = [
     "DEFAULT_LOCK_TIMEOUT_SECONDS",
     "DEFAULT_LOCK_TTL_SECONDS",
     "DEFAULT_PLUGIN_REGISTRY",
+    "DEFAULT_RECORD_MOVE_HOST",
     "DEFAULT_RENAME_COORDINATOR",
     "DEFAULT_RENAME_YIELD_TIMEOUT",
     "DEFAULT_SHUTDOWN_TIMEOUT",
@@ -704,6 +746,7 @@ __all__ = [
     "LegacyDrop",
     "LegacySeed",
     "LibrariesUnusableError",
+    "LinkInRecordError",
     "LoadedRecord",
     "LocationPattern",
     "LockHolder",
@@ -721,6 +764,10 @@ __all__ = [
     "MediaInfoDurationProbe",
     "MetadataDifference",
     "MissingFile",
+    "MoveCleanup",
+    "MoveMode",
+    "MovePhase",
+    "MoveRecordJob",
     "Moved",
     "NOTES_KEY",
     "NOT_SET_UP",
@@ -741,6 +788,7 @@ __all__ = [
     "PluginRegistry",
     "PluginSpec",
     "ProgressEntry",
+    "RECORD_MOVE_KIND",
     "RECORD_SUFFIXES",
     "REFERENCE_IMAGES_FIELD_NAMES",
     "REFERENCE_IMAGES_PLUGIN",
@@ -762,6 +810,8 @@ __all__ = [
     "RecordFinding",
     "RecordKind",
     "RecordLockedError",
+    "RecordMoveHost",
+    "RecordMoveHosting",
     "RecordNaming",
     "RecordSignature",
     "RecordVersion",
@@ -818,6 +868,8 @@ __all__ = [
     "ScreenshotRename",
     "ScreenshotSkipReason",
     "ScreenshotSlotMatch",
+    "SourceChangedError",
+    "SourceListing",
     "StagedImageName",
     "StopRequest",
     "StrandedManifestPlan",
@@ -870,6 +922,8 @@ __all__ = [
     "VIDEO_NOTES_KEY",
     "VIDEO_SIZES_KEY",
     "VLC_TOOL",
+    "VerifiedCopy",
+    "VerifiedCopyError",
     "VerifyChecksumsJob",
     "Version",
     "VideoFacts",
@@ -889,6 +943,7 @@ __all__ = [
     "canonical_json",
     "catalog_path_key",
     "catalog_type_fields",
+    "check_move_source",
     "check_records",
     "checksum_entry_name",
     "checksum_record_path",
@@ -911,6 +966,7 @@ __all__ = [
     "default_username",
     "delete_screenshot",
     "destination",
+    "digest_content",
     "discard_conversion_backups",
     "duplicate_source_rows",
     "enclosing_directory_record",
@@ -928,6 +984,7 @@ __all__ = [
     "insert_bookmark",
     "is_checksum_fresh",
     "is_conversion_backup",
+    "is_cross_device",
     "is_directory_scoped",
     "is_directory_scoped_name",
     "is_language",
@@ -1010,12 +1067,14 @@ __all__ = [
     "record_progress",
     "record_version",
     "record_videos",
+    "recorded_digests",
     "rehu_move_conflict",
     "rehu_rename_conflict",
     "rehudb_path",
     "remediate_legacy_manifest",
     "remembered_track",
     "remove_empty_parents",
+    "remove_leftovers",
     "rename_rehu_resource",
     "render_location_pattern",
     "renumber_screenshots",
@@ -1025,6 +1084,7 @@ __all__ = [
     "retire_legacy_manifests",
     "rewrite_description_images",
     "rule_problem",
+    "same_volume",
     "sanitize_name",
     "save_screenshot",
     "scan_conversion_backups",
@@ -1067,6 +1127,7 @@ __all__ = [
     "video_href",
     "video_link",
     "visible_learning_paths",
+    "volume_of",
     "watch_totals",
     "with_titled_index",
 ]

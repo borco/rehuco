@@ -20,9 +20,11 @@ from rehuco_core.root_location import (
     machine_name,
     mount_share,
     resolve_location,
+    same_volume,
     server_of,
     share_location,
     storage_of,
+    volume_of,
 )
 
 MODULE: Final = "rehuco_core.root_location"
@@ -460,3 +462,58 @@ def test_a_share_is_found_through_a_mapped_drive(mocker: MockerFixture) -> None:
     assert resolve_location("//NAS/data/Tutorials") == Path("W:\\Tutorials")
     assert resolve_location("//nas/other/x") is None
     assert resolve_location("//nas") is None
+
+
+# region volumes (#339)
+@mark.usefixtures("linux")
+def test_two_paths_under_one_mount_are_one_volume(mocker: MockerFixture) -> None:
+    """Off Windows a volume is the mount holding a path: one share is one volume, and the share is not the disk.
+
+    **Test steps:**
+
+    * hand the share's mount over as the whole table
+    * check two folders on the share are one volume, and the share and a local folder are two
+    """
+    mocker.patch(f"{MODULE}.read_mounts", return_value=[NAS])
+
+    assert volume_of(NAS.point / "a", [NAS]) == str(NAS.point).casefold()
+    assert same_volume(NAS.point / "a", NAS.point / "b" / "c")
+    assert not same_volume(NAS.point / "a", ROOT / "home" / "me")
+
+
+@mark.windows
+def test_a_mapped_drive_and_its_share_are_one_volume(mocker: MockerFixture) -> None:
+    """A share is one volume however this machine reaches it -- a drive letter mapped to it, or its UNC path.
+
+    **Test steps:**
+
+    * make ``W:`` a network drive mapped to the share ``data`` on ``nas``
+    * check a folder on ``W:`` and one under the share's UNC path, spelled in another case, are one volume,
+      ``//nas/data``
+    """
+    from borco_core.path_presence import Device, StorageKind  # pylint: disable=import-outside-toplevel
+
+    mocker.patch(f"{MODULE}.device_of", return_value=Device(StorageKind.NETWORK, Path("W:/"), "nas"))
+    mocker.patch("borco_core.platforms.windows.drives.mapped_share", return_value=str(Path("//nas/data/")))
+
+    assert volume_of(Path("W:/a")) == "//nas/data"
+    assert same_volume(Path("W:/a"), Path("//NAS/data/b"))
+
+
+@mark.windows
+def test_two_local_drives_are_two_volumes(mocker: MockerFixture) -> None:
+    """A local drive is its own volume: two folders on it are one, a folder on another drive is not.
+
+    **Test steps:**
+
+    * check two folders on the system drive are one volume, and one on another letter is not
+    """
+    mocker.patch(f"{MODULE}.socket.gethostname", return_value="ryzen-5600")
+    system = os.environ.get("SystemDrive", "C:")
+    other = "Q:" if system[0].upper() != "Q" else "R:"
+
+    assert same_volume(Path(f"{system}/a"), Path(f"{system}/b/c"))
+    assert not same_volume(Path(f"{system}/a"), Path(f"{other}/a"))
+
+
+# endregion

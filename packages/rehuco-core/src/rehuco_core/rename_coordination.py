@@ -318,6 +318,32 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
         :raises OSError: whatever :func:`~rehuco_core.rename_rehu_resource` raises -- a name that is not
             a plain name, a missing ``.rehu``, an occupied destination, a failure part-way through.
         """
+        renamer = RehuRenamer(path, new_name, into=into)
+        renamed: list[Path] = []
+
+        def step() -> Relocation:
+            """Rename, keeping where the record went; answer what moved."""
+            renamed.append(renamer.rename())
+            return renamer.relocation
+
+        self.run(path, step, timeout)
+        return renamed[0]
+
+    def run(self, path: Path, step: Callable[[], Relocation], timeout: float = DEFAULT_RENAME_YIELD_TIMEOUT) -> None:
+        """Run ``step``, which moves the resource at ``path`` from under its readers, inside the barrier.
+
+        What :meth:`rename` does around its own rename, for any step that moves or removes a resource's files: the
+        before-listeners are told, the process steps out of the folder, the readers let go, ``step`` runs, every tracked
+        location is rewritten by the relocation it answers, the readers come back, and the listeners hear it. A
+        verified move's last step (#339) -- deleting the source once the copy verified -- is one.
+
+        :param path: the resource's ``.rehu`` file.
+        :param step: moves the files; answers what moved, an empty relocation for nothing. Runs on the caller's thread
+            with the readers away, and what it raises leaves through here with every reader released and nothing
+            announced.
+        :param timeout: how long to wait for readers, in seconds.
+        :raises RenameYieldTimeout: the readers did not let go in time; ``step`` never ran.
+        """
         with self.__renaming:
             with self.__condition:
                 before = tuple(self.__before_listeners)
@@ -329,13 +355,11 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
             self.__step_out_of(path)
             self.__wait_for_readers(timeout)
             try:
-                renamer = RehuRenamer(path, new_name, into=into)
-                renamed = renamer.rename()
-                self.__relocate_tracked(renamer)
+                relocation = step()
+                self.__relocate_tracked(relocation)
             finally:
                 self.__release_readers()
-        self.__announce(renamer.relocation)
-        return renamed
+        self.__announce(relocation)
 
     @staticmethod
     def __step_out_of(path: Path) -> None:
@@ -398,18 +422,18 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
             self.__yield_wanted = False
             self.__condition.notify_all()
 
-    def __relocate_tracked(self, renamer: RehuRenamer) -> None:
+    def __relocate_tracked(self, relocation: Relocation) -> None:
         """Rewrite every tracked location that this rename moved.
 
-        Asks the renamer itself (:meth:`~rehuco_core.RehuRenamer.relocate`), so the answer comes from
-        the plan that just ran rather than from a second opinion about what it must have done. A
+        Asks the executed plan itself (:meth:`~rehuco_core.Relocation.relocate`), so the answer comes from
+        what just ran rather than from a second opinion about what it must have done. A
         location the rename did not touch is handed back its own path and is written unchanged -- not
         worth a comparison, since the write is a lock and an assignment either way.
 
         Dead references are dropped in the same pass: a location outlives its job by no time at all, and
         this is the one place already walking the list.
 
-        :param renamer: the rename that has just run.
+        :param relocation: what the step that has just run moved.
         """
         alive: list[ReferenceType[ResourceLocation]] = []
         with self.__condition:
@@ -418,7 +442,7 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
                 if location is None:
                     continue
                 alive.append(reference)
-                location.moved_to(renamer.relocate(location.path))
+                location.moved_to(relocation.relocate(location.path))
             self.__locations = alive
 
     def __announce(self, relocation: Relocation) -> None:

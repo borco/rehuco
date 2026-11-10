@@ -32,7 +32,7 @@ ever render as tofu, the guaranteed alternative is a separate marker label per r
 
 @dataclass(frozen=True, slots=True)
 class DestinationRow:
-    """The place the record's root's layout gives it, as the path row shows it under the names (#579).
+    """A place a root's layout gives the record, as the path row shows it under the names (#579, #339).
 
     :param text: what the row reads -- the root's name and the place under it.
     :param here: whether the record already sits there; shown disabled and plain, as the current name is.
@@ -68,16 +68,18 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     decides *that* it needs something, never how the answer is obtained ([[plugins#field-toolkit]]).
     With no predicate set, nothing is unavailable, which is what keeps the widget usable on its own.
 
-    **The root's place** (#579), :meth:`set_destination`, is one more row under a separator: where the layout of the
-    record's root puts it. Clicking it emits :attr:`destination_selected`; it is disabled the same two ways a name is.
+    **The roots' places** (#579, #339), :meth:`set_destinations`, are more rows under a separator: where each root's
+    layout puts the record. Clicking one emits :attr:`destination_selected` with its index; each is disabled the same
+    two ways a name is.
 
     :param open_hint: tooltip hint of the current name, which is the link revealing the resource.
     :param parent: optional Qt parent.
     """
 
     suggestion_selected = Signal(str)
-    destination_selected = Signal()
-    """The root's place (:meth:`set_destination`) was clicked; the owner moves the record there (#579)."""
+    destination_selected = Signal(int)
+    """A root's place (:meth:`set_destinations`) was clicked, by its index; the owner moves the record there (#579,
+    #339)."""
     open_requested = Signal()
     """The current name, drawn as a link, was clicked (#621); the owner reveals the resource."""
     expanded_changed = Signal(bool)
@@ -97,7 +99,8 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__name_line: Final = LocationLine(hint=open_hint)
         self.__name_line.open_requested.connect(self.open_requested)
 
-        self.__destination: DestinationRow | None = None
+        self.__destinations: tuple[DestinationRow, ...] = ()
+        self.__destination_labels: list[ElidedLabel] = []
 
         self.__suggestions_widget: Final = QWidget()
         panel_layout = QVBoxLayout(self.__suggestions_widget)
@@ -108,12 +111,13 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__separator: Final = QFrame()
         self.__separator.setFrameShape(QFrame.Shape.HLine)
         self.__separator.setFrameShadow(QFrame.Shadow.Sunken)
-        self.__destination_label: Final = ElidedLabel()
-        self.__destination_label.linkActivated.connect(lambda _href: self.destination_selected.emit())
+        places = QWidget()
+        self.__destinations_layout: Final = QVBoxLayout(places)
+        self.__destinations_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.addWidget(names)
         panel_layout.addWidget(self.__separator)
-        panel_layout.addWidget(self.__destination_label)
-        self.__render_destination()
+        panel_layout.addWidget(places)
+        self.__render_destinations()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -168,12 +172,15 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__rebuild()
         self.__render()
 
-    def set_destination(self, row: DestinationRow | None) -> None:
-        """Show the root's place under the names, or hide it and its separator (#579).
+    def set_destinations(self, rows: Sequence[DestinationRow]) -> None:
+        """Show the roots' places under the names, or hide them and their separator when there are none (#579, #339).
 
-        :param row: the place; ``None`` when the record's root offers none.
+        :param rows: the places, in the order to show them.
         """
-        self.__destination = row
+        rows = tuple(rows)
+        if len(rows) != len(self.__destinations):
+            self.__rebuild_destinations(len(rows))
+        self.__destinations = rows
         self.__render()
 
     def save_state(self) -> bytes:
@@ -237,20 +244,32 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
                 f"{name}{UNAVAILABLE_SUFFIX if unavailable else ''}",
                 href="" if is_current or unavailable else "#",
             )
-        self.__render_destination()
+        self.__render_destinations()
 
-    def __render_destination(self) -> None:
-        """Show the root's place, by the same three states as a name: already there, occupied, or a live link."""
-        row = self.__destination
-        self.__separator.setVisible(row is not None)
-        self.__destination_label.setVisible(row is not None)
-        if row is None:
-            return
-        unavailable = not row.here and row.occupied
-        self.__destination_label.setEnabled(not row.here and not unavailable)
-        self.__destination_label.set_text(
-            f"{row.text}{UNAVAILABLE_SUFFIX if unavailable else ''}", href="" if row.here or unavailable else "#"
-        )
+    def __rebuild_destinations(self, count: int) -> None:
+        """Recreate one clickable label per place, replacing the old set.
+
+        :param count: how many places there are.
+        """
+        for label in self.__destination_labels:
+            self.__destinations_layout.removeWidget(label)
+            label.deleteLater()
+        self.__destination_labels = []
+        for index in range(count):
+            label = ElidedLabel()
+            label.linkActivated.connect(lambda _href, index=index: self.destination_selected.emit(index))
+            self.__destinations_layout.addWidget(label)
+            self.__destination_labels.append(label)
+
+    def __render_destinations(self) -> None:
+        """Show each place by the same three states as a name: already there, occupied, or a live link."""
+        self.__separator.setVisible(bool(self.__destinations))
+        for row, label in zip(self.__destinations, self.__destination_labels, strict=True):
+            unavailable = not row.here and row.occupied
+            label.setEnabled(not row.here and not unavailable)
+            label.set_text(
+                f"{row.text}{UNAVAILABLE_SUFFIX if unavailable else ''}", href="" if row.here or unavailable else "#"
+            )
 
     @staticmethod
     def __sanitize_all(raw_suggestions: Sequence[str]) -> list[str]:

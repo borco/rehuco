@@ -6,7 +6,7 @@ nothing of *this* document's fields, tabs, or ``level`` choices; only this modul
 ``documents`` layer that owns the view-model and surfaces) does.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
@@ -46,7 +46,8 @@ from ..settings.markdown_rendering_settings import shared_markdown_rendering_set
 from ..settings.record_url_settings import shared_record_url_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
 from ..settings.videos_settings import shared_videos_settings
-from .name_suggestion_model import NameSuggestionModel
+from .name_suggestion_model import NameSuggestionModel, RootDestination
+from .record_moves import RecordMoves
 from .rehu_document_image_organizer import RehuDocumentImageOrganizer
 from .rehu_document_model import RehuDocumentModel
 
@@ -270,6 +271,53 @@ def composed_field_specs(model: RehuDocumentModel) -> tuple[FieldSpec, ...]:
     return tuple(specs)
 
 
+def root_place_callbacks(
+    model: RehuDocumentModel, name_suggestions: NameSuggestionModel, record_moves: RecordMoves | None
+) -> tuple[Callable[[], list[DestinationRow]], Callable[[int], None]]:
+    """What the path row's roots' places are drawn from, and what a click on one does (#579, #339).
+
+    :param model: the record.
+    :param name_suggestions: where the places come from.
+    :param record_moves: what a click moves through; ``None`` offers only the record's own root's place, moved by a
+        rename.
+    :returns: the rows to draw, and the click by row index.
+    """
+
+    def root_places() -> tuple[RootDestination, ...]:
+        # every root's place, or with nothing to queue a move on only the record's own root's (#579, #339)
+        places = name_suggestions.root_destinations()
+        return places if record_moves is not None else tuple(place for place in places if place.same_root)
+
+    shown: list[RootDestination] = []
+
+    def destination_rows() -> list[DestinationRow]:
+        # the roots' places, drawn as the names are: one existence check each per render, uncached
+        shown[:] = root_places()
+        return [
+            DestinationRow(
+                f"{place.label}: {Path(place.relative)}",
+                here=place.here,
+                occupied=not place.here and model.move_conflicts(place.into, place.name),
+            )
+            for place in shown
+        ]
+
+    def move_to_root_place(index: int) -> None:
+        # asked again at click time, by the root of the row clicked: the row on screen may be a render behind
+        if index >= len(shown):
+            return
+        root_id = shown[index].root_id
+        place = next((place for place in root_places() if place.root_id == root_id), None)
+        if place is None or place.here:
+            return
+        if record_moves is None:
+            model.move_in_root(place.into, place.name, place.source_root)
+        else:
+            record_moves.move(place)
+
+    return destination_rows, move_to_root_place
+
+
 # the local count is what "the whole field composition lives here, in one place" costs: each model-aware
 # field is one construction plus its runtime callbacks, and splitting them out to satisfy a threshold
 # would scatter the composition this function exists to keep together
@@ -279,6 +327,7 @@ def build_document_form(
     name_suggestions: NameSuggestionModel,
     image_organizer: RehuDocumentImageOrganizer,
     registry: FieldRegistry | None = None,
+    record_moves: RecordMoves | None = None,
 ) -> FieldsForm:
     """Build the document's complete :class:`FieldsForm` for ``model``.
 
@@ -310,6 +359,8 @@ def build_document_form(
         rather than a second, redundant one minted here (#73): both are stateless, but one instance keeps
         the two writers of the same directory in one place.
     :param registry: the field registry to resolve the record types with; a default one when omitted.
+    :param record_moves: what a click on a root's place moves the record through (#339); ``None`` offers only the
+        record's own root's place, moved by a rename, as a host with no task queue can.
     :returns: a form composing location + images + description, then the record fields, then the
         unknown fallbacks, then the inactive blocks.
     """
@@ -345,19 +396,7 @@ def build_document_form(
         # click time, so a test that swaps it after construction is still seen
         model.rename_location(name)
 
-    def root_place() -> DestinationRow | None:
-        # the root's place, drawn as the names are (#579): one existence check per render, uncached
-        place = name_suggestions.root_destination()
-        if place is None:
-            return None
-        occupied = not place.here and model.move_conflicts(place.into, place.name)
-        return DestinationRow(f"{place.label}: {Path(place.relative)}", here=place.here, occupied=occupied)
-
-    def move_to_root_place() -> None:
-        # asked again at click time: the row on screen may be a render behind the fields
-        place = name_suggestions.root_destination()
-        if place is not None and not place.here:
-            model.move_in_root(place.into, place.name, place.root)
+    destination_rows, move_to_root_place = root_place_callbacks(model, name_suggestions, record_moves)
 
     location_field = PathField(
         LOCATION_FIELD_NAME,
@@ -370,7 +409,7 @@ def build_document_form(
         conflicts=lambda name: model.rename_conflicts(name),  # pylint: disable=unnecessary-lambda
         viewer_tab=VIEWER_MAIN_TAB,
         editor_tab=EDITOR_MAIN_TAB,
-        destination=root_place,
+        destinations=destination_rows,
         on_destination_selected=move_to_root_place,
     )
     # model.image_scanner is a RehuDocumentImageScanner over the legacy-.tc or the .rehu screenshot lister

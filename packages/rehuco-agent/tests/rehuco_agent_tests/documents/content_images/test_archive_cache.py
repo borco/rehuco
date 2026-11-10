@@ -322,7 +322,7 @@ def fixture_renamer(mocker: MockerFixture) -> MagicMock:
     :returns: the renamer instance, so a test can gate or inspect its ``rename``.
     """
     renamer = mocker.patch("rehuco_core.rename_coordination.RehuRenamer").return_value
-    renamer.relocate.side_effect = lambda path: RENAMED_ARCHIVE if path == ARCHIVE else path
+    renamer.relocation.relocate.side_effect = lambda path: RENAMED_ARCHIVE if path == ARCHIVE else path
     return renamer
 
 
@@ -903,7 +903,7 @@ def test_a_loose_read_during_the_rename_waits_and_opens_at_the_new_path(
     * release the rename, and check the read returned its bytes off the moved file
     """
     moved = RENAMED_ARCHIVE.parent / "img.jpg"
-    renamer.relocate.side_effect = lambda path: moved if path == LOOSE.file else path
+    renamer.relocation.relocate.side_effect = lambda path: moved if path == LOOSE.file else path
     opener, _ = mock_loose(mocker)
     cache = ArchiveCache(coordinator)
     cache.read(LOOSE)

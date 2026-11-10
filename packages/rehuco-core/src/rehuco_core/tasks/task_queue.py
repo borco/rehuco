@@ -28,6 +28,7 @@ from .persistable_task_job import PersistableTaskJob, TaskQueueItem
 from .task_job import (
     DISK_CHAIN,
     FINISHED_JOB_STATES,
+    AbandonableTaskJob,
     JobCancelled,
     JobPaused,
     JobScope,
@@ -485,8 +486,9 @@ class TaskQueue:
     def cancel(self, serial: int) -> None:
         """Ask the job with ``serial`` to stop for good.
 
-        A queued or paused job is cancelled outright and never runs again. The running one is *told*,
-        and stops wherever its work divides; what it undoes on the way is its own business. The
+        A queued or paused job is cancelled outright and never runs again -- and is told so, when it asked to be
+        (:class:`~rehuco_core.tasks.AbandonableTaskJob`), to take back what an earlier run left. The running one is
+        *told*, and stops wherever its work divides; what it undoes on the way is its own business. The
         request replaces any pause already asked for.
 
         A job that never looks at its request cannot be interrupted and is reported
@@ -538,8 +540,9 @@ class TaskQueue:
         dropping it silently would throw away the thing worth acting on.
 
         Removing the *running* job cancels it first, and it goes on running until it notices --
-        stopping is cooperative, so a detached job may outlive its row. The engine drops its terminal
-        notification rather than announce a job the caller has already removed.
+        stopping is cooperative, so a detached job may outlive its row. An unfinished job that is not running is
+        told it was given up on, when it asked to be (:class:`~rehuco_core.tasks.AbandonableTaskJob`). The engine
+        drops its terminal notification rather than announce a job the caller has already removed.
 
         Serials belonging to nothing are ignored, so a caller never has to filter its selection.
 
@@ -554,6 +557,8 @@ class TaskQueue:
                 for entry in self.__entries:
                     if entry.serial in wanted and entry.state is JobState.RUNNING:
                         self.__ask_stop(entry, StopRequest.CANCEL)
+                    elif entry.serial in wanted and entry.unfinished():
+                        self.__abandon(entry)
                 self.__entries = [entry for entry in self.__entries if entry.serial not in wanted]
                 self.__notify(lambda listener: listener.jobs_removed(removed))
             self.__condition.notify_all()
@@ -1041,11 +1046,25 @@ class TaskQueue:
             if request is StopRequest.CANCEL:
                 entry.state = JobState.CANCELLED
                 changed = True
+                self.__abandon(entry)
             elif entry.state in (JobState.QUEUED, JobState.WAITING):
                 entry.state = JobState.PAUSED
                 changed = True
         if changed:
             self.__notify_updated(entry)
+
+    @staticmethod
+    def __abandon(entry: TaskQueue.Entry) -> None:
+        """Tell a job given up on while it was not running, if it asked to be told (#339); what it raises is logged.
+
+        :param entry: the job cancelled or removed.
+        """
+        if not isinstance(entry.job, AbandonableTaskJob):
+            return
+        try:
+            entry.job.abandon()
+        except Exception:  # pylint: disable=broad-exception-caught
+            LOG.exception("%s could not take back what it left.", entry.label)
 
     def __ask_resume(self, entry: TaskQueue.Entry) -> bool:
         """Tell one job to carry on, and find out whether its stop was taken back in time.

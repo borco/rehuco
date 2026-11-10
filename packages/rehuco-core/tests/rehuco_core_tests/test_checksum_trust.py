@@ -275,6 +275,27 @@ def test_a_rename_carries_the_trust_to_the_new_name(files: FakeFiles) -> None:
     assert files.writes == [TRUST_FILE, TRUST_FILE]
 
 
+def test_a_forgotten_location_is_no_longer_trusted(files: FakeFiles) -> None:
+    """A record moved to another volume leaves nothing to trust where it was (#339); forgetting what was never
+    trusted, or with no store attached, writes nothing.
+
+    **Test steps:**
+
+    * register a location and forget it: it is untrusted, and the store was written twice
+    * forget it again, and forget on a store attached to nothing: no further write
+    """
+    trust = ChecksumTrust(TRUST_FILE)
+    trust.register(INFO_PATH, VERIFIED_AT)
+
+    trust.forget(INFO_PATH)
+
+    assert trust.trusted_since(INFO_PATH) is None
+    assert files.writes == [TRUST_FILE, TRUST_FILE]
+    trust.forget(INFO_PATH)
+    ChecksumTrust().forget(INFO_PATH)
+    assert files.writes == [TRUST_FILE, TRUST_FILE]
+
+
 def test_renaming_an_untrusted_resource_changes_nothing(files: FakeFiles) -> None:
     """There is no trust to carry, so nothing is written.
 

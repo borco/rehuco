@@ -134,6 +134,102 @@
     </widget>
    </item>
    <item>
+    <widget class="QFrame" name="verifying_frame">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="verifying_frame_layout">
+      <item>
+       <widget class="QLabel" name="verifying_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Verify checksums when moving a record</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="renamed_label">
+        <property name="text">
+         <string>Renamed in place</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="verify_renamed_local_check_box">
+        <property name="text">
+         <string>on a local disk</string>
+        </property>
+        <property name="toolTip">
+         <string>A record moved to another folder on the same local, removable or disc volume is renamed there, which rewrites no bytes. With this on, its checksums are verified before and after, as a task.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="verify_renamed_network_check_box">
+        <property name="text">
+         <string>on a network share</string>
+        </property>
+        <property name="toolTip">
+         <string>A record moved to another folder on the same share is renamed by the server. With this on, its checksums are verified before and after, as a task.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="copied_label">
+        <property name="text">
+         <string>Copied to another disk or share</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="verify_original_check_box">
+        <property name="text">
+         <string>check the original before copying</string>
+        </property>
+        <property name="toolTip">
+         <string>The copy is checked against the record's checksums, which only proves something if the original still matches them. A record missing checksums is verified first whatever this says, when Create missing checksum on verify is on, and refused when it is off.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="verify_copy_check_box">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="text">
+         <string>check the copy before removing the original</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+        <property name="toolTip">
+         <string>Always: the original is removed only once its copy matched every checksum.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QFrame" name="patterns_frame">
      <property name="frameShape">
       <enum>QFrame::Shape::StyledPanel</enum>

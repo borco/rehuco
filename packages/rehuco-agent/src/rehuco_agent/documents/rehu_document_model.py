@@ -1225,9 +1225,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         return self.__relocate(new_name, None)
 
-    def move_in_root(self, into: Path, new_name: str, root: Path) -> bool:
-        """Move this resource into the folder ``into`` under ``new_name``, within the root at ``root`` -- the path row's
-        root place, clicked (#579).
+    def move_in_root(self, into: Path, new_name: str, root: Path | None) -> bool:
+        """Move this resource into the folder ``into`` under ``new_name`` by a rename -- the path row's root place,
+        clicked (#579), or another root's on the same volume with no verify asked for (#339).
 
         Everything :meth:`rename_location` says holds: the intent logged first, a dirty document saved first, a
         failure leaving the document as it was and reported through :attr:`rename_error`, :attr:`renamed` once it
@@ -1238,10 +1238,35 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param into: the folder the resource's own entry lands in.
         :param new_name: its name there.
-        :param root: the root's folder, which the move stays within.
+        :param root: the folder of the root the resource is under now, which the left-behind folders are removed up
+            to; ``None`` for a resource under no root, whose folders are left.
         :returns: whether the move succeeded.
         """
         return self.__relocate(new_name, (into, root))
+
+    def prepare_move(self, target: str) -> bool:
+        """Get this resource ready for a move a task runs (#339): refused with no location or with a save not landed,
+        saved first when dirty -- what :meth:`move_in_root` does before its rename, each refusal on the banner.
+
+        :param target: how the destination is named to the user.
+        :returns: whether the move may be queued.
+        """
+        with LogScope.open(self.path):
+            LOG.info("Attempting to move %r to %r", self.current_name, target)
+            return self.__ready_to_move("move", target)
+
+    def move_failed(self, message: str) -> None:
+        """Report a move a task ran that failed, or left part of the original behind, on the banner (#339).
+
+        :param message: the user-facing sentence.
+        """
+        with LogScope.open(self.path):
+            self.__rename_failed(message)
+
+    def move_landed(self) -> None:
+        """Say a move a task ran has landed (#339): the document already followed it, through its holder, and the
+        record is now read at its new key, as after a rename (:attr:`renamed`)."""
+        self.renamed.emit()
 
     def move_conflicts(self, into: Path, new_name: str) -> bool:
         """Whether moving into ``into`` as ``new_name`` would land on something already there -- the advisory check
@@ -1256,49 +1281,74 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             return False
         return rehu_move_conflict(path, into, new_name) is not None
 
-    def __relocate(self, new_name: str, move: tuple[Path, Path] | None) -> bool:
-        """Rename this resource where it is, or move it within its root -- what :meth:`rename_location` and
+    def __relocate(self, new_name: str, move: tuple[Path, Path | None] | None) -> bool:
+        """Rename this resource where it is, or move it by a rename -- what :meth:`rename_location` and
         :meth:`move_in_root` share.
 
         :param new_name: the destination file/folder name.
-        :param move: the folder it lands in and the root's folder, for a move; ``None`` for a rename.
+        :param move: the folder it lands in and the folder of the root it is under now (``None`` under no root), for a
+            move; ``None`` for a rename.
         :returns: whether it landed.
         """
         verb = "rename" if move is None else "move"
-        target = new_name if move is None else (move[0] / new_name).relative_to(move[1]).as_posix()
+        target = new_name if move is None else self.__place_name(move[0] / new_name, move[1])
         # scoped to the path being renamed *from*: every record here is about the resource as it stands
         # now, including the failure ones, and the sink for the new path only exists once the move landed
         with LogScope.open(self.path):
             LOG.info("Attempting to %s %r to %r", verb, self.current_name, target)
-            self.__clear_rename_failure()
-            path = self.path
-            if path is None:
-                return self.__rename_failed(f'Cannot {verb} to "{target}": this document has no location yet.')
-            if self.__pending_save_for(cast(ResourceKey, self.key)) is not None:
-                # the save is the record here until it lands ([[sync#unlanded-save]]); a second write of the record
-                # made now, to move it, would run ahead of it and the two would conflict
-                return self.__rename_failed(
-                    f'Cannot {verb} to "{target}": a save of this record has not landed yet. Wait for it, or discard '
-                    "it from the Tasks panel."
-                )
-            if self.dirty:
-                try:
-                    self.save()
-                except (OSError, ValueError, RecordConflict) as error:
-                    return self.__rename_failed(
-                        f'Could not save "{self.current_name}" before {verb.removesuffix("e")}ing it: '
-                        f"{self.__failure_reason(error)}"
-                    )
+            if not self.__ready_to_move(verb, target):
+                return False
+            path = cast(Path, self.path)
             left = path.parent.parent if is_directory_scoped(path) else path.parent
             if not self.__move(new_name, target, None if move is None else move[0]):
                 return False
-            if move is not None and shared_move_settings().remove_empty_folders:
+            if move is not None and move[1] is not None and shared_move_settings().remove_empty_folders:
                 for folder in remove_empty_parents(left, move[1]):
                     LOG.info("Removed %s, left empty by the move", folder)
         # after the move was announced and every holder followed it: a check planned before the cache rebased its row
         # would be dropped as overtaken
         self.renamed.emit()
         return True
+
+    def __ready_to_move(self, verb: str, target: str) -> bool:
+        """Clear the last failure, and refuse a move or rename that cannot start -- no location, a save not landed --
+        saving a dirty document first, so the files moved are never stale.
+
+        :param verb: ``"rename"`` or ``"move"``, for the messages.
+        :param target: how the destination is named to the user.
+        :returns: whether it may go ahead; a refusal is left in :attr:`rename_error`.
+        """
+        self.__clear_rename_failure()
+        if self.path is None:
+            return self.__rename_failed(f'Cannot {verb} to "{target}": this document has no location yet.')
+        if self.__pending_save_for(cast(ResourceKey, self.key)) is not None:
+            # the save is the record here until it lands ([[sync#unlanded-save]]); a second write of the record
+            # made now, to move it, would run ahead of it and the two would conflict
+            return self.__rename_failed(
+                f'Cannot {verb} to "{target}": a save of this record has not landed yet. Wait for it, or discard '
+                "it from the Tasks panel."
+            )
+        if self.dirty:
+            try:
+                self.save()
+            except (OSError, ValueError, RecordConflict) as error:
+                return self.__rename_failed(
+                    f'Could not save "{self.current_name}" before {verb.removesuffix("e")}ing it: '
+                    f"{self.__failure_reason(error)}"
+                )
+        return True
+
+    @staticmethod
+    def __place_name(place: Path, root: Path | None) -> str:
+        """How a move's destination is named to the user: under its root when the record is under one.
+
+        :param place: where the record's own entry lands.
+        :param root: the folder of the root the record is under now, or ``None``.
+        :returns: the place relative to that root, POSIX-spelled, when it is beneath it; else the full path.
+        """
+        if root is not None and place.is_relative_to(root):
+            return place.relative_to(root).as_posix()
+        return str(place)
 
     def revert(self) -> None:
         """Discard in-memory edits and go back to the record's saved state: its save that has not landed, if it has
