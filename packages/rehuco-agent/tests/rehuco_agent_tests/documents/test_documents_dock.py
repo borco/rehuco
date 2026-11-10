@@ -504,7 +504,8 @@ def test_closing_a_dock_stops_it_listening_to_the_task_queue(mocker: MockerFixtu
     widget = dock.open_document(FAKE_KEY)
     cdock = dock_for(dock, widget)
     try:
-        assert len(listeners_of(queue)) == 1
+        # its checksum actions and its moves (#339)
+        assert len(listeners_of(queue)) == 2
 
         cdock.requestCloseDockWidget()
 

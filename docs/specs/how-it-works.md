@@ -10,7 +10,7 @@ useful once you want depth on one topic, misleading as an answer to "what is thi
 ## The one idea
 
 A **resource** is something you collected to learn from or work with: a video tutorial, an online
-course, an archive of reference images. rehuco does not store your resources and does not move them. It
+course, an archive of reference images. rehuco does not store your resources, and moves them only when asked. It
 stores **what you know about them**, in a small JSON file that lives in the same folder as the resource
 itself:
 
@@ -108,7 +108,7 @@ or from the app — and it appears as a set of dockable panels you can rearrange
 | --- | --- |
 | **Main View** | The resource's fields, read-only, under its location. Shown when a resource opens, alongside the description view; the editors below start hidden behind their toolbar buttons. The type badge leads the document toolbar, not this panel. |
 | **Description View** | The rest of the resource read-only: its screenshots as a thumbnail strip, the record's URL (a Descriptions setting puts it here, on the Main View, or both), then the rendered Markdown description. Double-clicking a thumbnail fills the window with it; arrow keys or the wheel move through the set. |
-| **Main Editor** | The same fields, editable, plus the type selector that decides which block is active. Its path row offers names built from the record — title, publisher, authors, year — and picking one renames the resource on disk: the folder for a directory-scoped resource, and for a standalone one every file named after it, archives and screenshots alike. Under the names it offers the place the layout of the resource's root gives it, and picking that moves the resource there, within the root. |
+| **Main Editor** | The same fields, editable, plus the type selector that decides which block is active. Its path row offers names built from the record — title, publisher, authors, year — and picking one renames the resource on disk: the folder for a directory-scoped resource, and for a standalone one every file named after it, archives and screenshots alike. Under the names it offers the place each root's layout gives it, and picking one moves the resource there: by a rename on the same disk or share, or as a task that copies it, checks the copy against its checksums and only then removes the original. |
 | **Description** | The Markdown description in its own panel, so prose can be written with room. |
 | **Images** | Which screenshots the strip shows: every sibling image, checkable, beside a preview; screenshots can be moved, deleted (to the Recycle Bin) or converted to the numbered naming from here. |
 | **Files** | The resource's own folder as a file browser, with Reveal in the system's file manager. On a tutorial each video's row ends with how much of it you have watched and each folder's with the share of the videos beneath it; a video is ticked *viewed*, or a gone video's progress forgotten, from the row's context menu or the toolbar. |

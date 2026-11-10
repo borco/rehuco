@@ -429,41 +429,43 @@ def test_set_text_on_a_location_line_is_set_location(qtbot: QtBot) -> None:
     assert line.toolTip() == "Show in Explorer"
 
 
-# region the root's place (#579)
-def test_the_place_is_pulled_on_build_and_refresh_and_a_click_is_forwarded(
+# region the roots' places (#579, #339)
+def test_the_places_are_pulled_on_build_and_refresh_and_a_click_is_forwarded(
     qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
-    """The root's place is pulled on build and on every ``suggestions_changed``; its click reaches the callback.
+    """The roots' places are pulled on build and on every ``suggestions_changed``; a click reaches the callback with
+    the place's index.
 
     **Test steps:**
 
-    * build an editor whose place is first absent, with a change emitter and a click sink
-    * set a place and fire the emitter: the editor shows it
-    * click it: the sink is called
+    * build an editor with no places at first, with a change emitter and a click sink
+    * add a place and fire the emitter: the editor shows it
+    * click it: the sink is called with 0
     """
     changed = Emitter()
-    rows: list[DestinationRow | None] = [None]
-    clicked: list[bool] = []
+    rows: list[list[DestinationRow]] = [[]]
+    clicked: list[int] = []
     field = PathField(
         "location",
         suggestions=lambda: ["Alpha"],
         current_name=lambda: "folder",
         suggestions_changed=changed.changed,
-        destination=lambda: rows[-1],
-        on_destination_selected=lambda: clicked.append(True),
+        destinations=lambda: rows[-1],
+        on_destination_selected=clicked.append,
     )
     editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, PathEditor)
     qtbot.addWidget(editor)
-    label = editor._PathEditor__destination_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert label.isHidden()
+    labels = editor._PathEditor__destination_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert not labels
 
-    rows.append(DestinationRow("Tutorials: Jane/Foo"))
+    rows.append([DestinationRow("Tutorials: Jane/Foo")])
     changed.changed.emit()
-    label.linkActivated.emit("#")
+    labels = editor._PathEditor__destination_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    labels[0].linkActivated.emit("#")
 
-    assert not label.isHidden()
-    assert clicked == [True]
+    assert len(labels) == 1
+    assert clicked == [0]
 
 
 # endregion

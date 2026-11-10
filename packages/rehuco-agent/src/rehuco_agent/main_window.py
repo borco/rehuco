@@ -45,6 +45,7 @@ from rehuco_core import (
     DEFAULT_CHECKSUM_TRUST,
     DEFAULT_DELETER_PROVIDER,
     DEFAULT_PLUGIN_REGISTRY,
+    DEFAULT_RECORD_MOVE_HOST,
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
     REHUCO_SUFFIX,
@@ -86,6 +87,7 @@ from .documents.document_registry import DocumentRegistry
 from .documents.document_sub_docks import LOG_DOCK_MIN_HEIGHT
 from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
+from .documents.main_thread_move_host import MainThreadMoveHost
 from .documents.pending_saves import PendingSaves
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import RehuDocumentModel, key_label
@@ -393,6 +395,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # Recycle Bin setting exactly as one enqueued from the dialog does -- a job the registry rebuilt
         # has no window to be handed a deleter through, and coming back to a plain unlink is no restore
         DEFAULT_DELETER_PROVIDER.install(configured_deleter)
+        # a record's move finds its roots, its saves and the GUI thread for its renames through this process-wide host
+        # (#339), installed before the queue is restored for the same reason: a move rebuilt from the saved queue has no
+        # window to be handed one
+        self.__move_host: Final = MainThreadMoveHost(parent=self)
+        DEFAULT_RECORD_MOVE_HOST.install(self.__move_host)
         self.__restore_task_queue()
         self.__task_queue_widget: Final = TaskQueueWidget(self.__task_queue, stylesheet_host=self.__dock_manager)
         self.__task_queue_widget.attach()
@@ -447,6 +454,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__rename_coordinator,
             self,
         )
+        self.__move_host.follow_pending_saves(self.__pending_saves.pending_payload)
         self.__task_queue_widget.inspect_save_requested.connect(self.__on_inspect_save)
         self.__task_queue_widget.discard_saves_requested.connect(
             lambda serials: self.__pending_saves.discard(self, serials)
@@ -1883,6 +1891,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__pending_saves.detach()
         self.__task_queue_widget.detach()
         self.__task_queue.shutdown()
+        # the host is this window's, and the process-wide hosting outlives it
+        DEFAULT_RECORD_MOVE_HOST.install(None)
 
     def __on_app_log_limit_changed(self, limit: int) -> None:
         """Re-cap the app-wide log surface as the setting changes.

@@ -793,17 +793,25 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         source at or above a root's own folder moves the root rather than anything in it: its rows' relative
         paths stay right, and where the root now is is the ``.rehuco``'s to say.
 
+        **A move to another root** (#339) carries the rows into that root, and one to a folder under no root drops
+        them: the record is no longer anything this catalog lists. A source under no root has no rows to carry; the
+        record joins its new root when it is next read there.
+
         :param pairs: ``(source, destination)`` absolute paths, as the rename ran them.
-        :returns: how many rows were rebased.
+        :returns: how many rows were rebased or dropped.
         """
         roots = self.roots()
         moved = 0
         with self.__transaction() as connection:
             for source, destination in pairs:
-                for root in roots:
-                    relative = self.__relative_pair(root, source, destination)
-                    if relative is not None:
-                        moved += self.__rebase(connection, str(root.root_id), *relative)
+                source_place = self.__place_in(roots, source, report_root_move=True)
+                if source_place is None:
+                    continue
+                destination_place = self.__place_in(roots, destination, report_root_move=False)
+                if destination_place is None:
+                    moved += self.__drop(connection, *source_place)
+                else:
+                    moved += self.__rebase(connection, source_place, destination_place)
             if moved:
                 self.__prune_values(connection)
         return moved
@@ -1179,22 +1187,36 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         return tuple(os.path.normcase(part) for part in path.parts)
 
     @staticmethod
-    def __relative_pair(root: CatalogRoot, source: Path, destination: Path) -> tuple[str, str] | None:
-        """One renamed pair, made relative to ``root`` -- or ``None`` when the rename did not move anything inside
-        it.
+    def __place_in(roots: Sequence[CatalogRoot], path: Path, *, report_root_move: bool) -> tuple[str, str] | None:
+        """The root ``path`` is beneath, and where beneath it -- or ``None`` when it is beneath none.
 
-        :returns: the source's and the destination's root-relative paths, each spelled as the pair spells it.
+        :param roots: the cache's roots; they do not overlap, so at most one holds ``path``.
+        :param path: one end of a renamed pair, absolute.
+        :param report_root_move: log a ``path`` at or above a root's own folder -- a rename of the root itself, whose
+            rows are left as they are.
+        :returns: the root's id and ``path`` relative to it, spelled as ``path`` spells it.
         """
-        root_parts = CatalogCache.__normalized_parts(root.path)
-        source_parts = CatalogCache.__normalized_parts(source)
-        depth = len(root_parts)
-        if source_parts[:depth] != root_parts or len(source_parts) == depth:
-            if root_parts[: len(source_parts)] == source_parts:
+        parts = CatalogCache.__normalized_parts(path)
+        for root in roots:
+            root_parts = CatalogCache.__normalized_parts(root.path)
+            depth = len(root_parts)
+            if parts[:depth] == root_parts and len(parts) > depth:
+                return str(root.root_id), "/".join(path.parts[depth:])
+            if report_root_move and root_parts[: len(parts)] == parts:
                 LOG.info("A rename moved the root %s itself; its rows are kept as they are.", root.path)
-            return None
-        # a rename's pairs stay inside one root -- one folder, or another under the same root for a move in place
-        # (#579) -- so a source beneath the root has its destination there too
-        return "/".join(source.parts[depth:]), "/".join(destination.parts[depth:])
+        return None
+
+    @staticmethod
+    def __drop(connection: sqlite3.Connection, root_id: str, path: str) -> int:
+        """Remove every row at or beneath ``path`` -- what a move out of every root leaves this cache (#339).
+
+        :param connection: the cache, inside a write transaction.
+        :param root_id: the root.
+        :param path: root-relative.
+        :returns: how many rows went.
+        """
+        statement = f"DELETE FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}"  # nosec  # B608: fixed
+        return connection.execute(statement, (root_id, *CatalogCache.__subtree_keys(path))).rowcount
 
     @staticmethod
     def __subtree_keys(path: str) -> tuple[str, str, str]:
@@ -1204,31 +1226,34 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         return catalog_path_key(path), prefix, prefix + KEY_RANGE_END
 
     @staticmethod
-    def __rebase(connection: sqlite3.Connection, root_id: str, source: str, destination: str) -> int:
-        """Rewrite every row at or beneath ``source`` to the same offset beneath ``destination``.
+    def __rebase(connection: sqlite3.Connection, source: tuple[str, str], destination: tuple[str, str]) -> int:
+        """Rewrite every row at or beneath ``source`` to the same offset beneath ``destination``, in its root.
 
         :param connection: the cache, inside a write transaction.
-        :param root_id: the root.
-        :param source: root-relative, as the rename spelled it.
-        :param destination: root-relative, as the rename spelled it.
+        :param source: the root's id and the root-relative path, as the rename spelled it.
+        :param destination: the same for where it went -- the source's root for a rename or a move in place, another
+            for a move across roots (#339).
         :returns: how many rows moved.
         """
+        (source_root, source_path), (destination_root, destination_path) = source, destination
         subtree = f"SELECT id, path FROM resources WHERE root_id = ? AND {SUBTREE_CLAUSE}"  # nosec  # B608: fixed
-        moving = connection.execute(subtree, (root_id, *CatalogCache.__subtree_keys(source))).fetchall()
+        moving = connection.execute(subtree, (source_root, *CatalogCache.__subtree_keys(source_path))).fetchall()
         if not moving:
             return 0
         moving_ids = {resource_id for resource_id, _ in moving}
         # a case-only rename on a case-insensitive filesystem has the same keys at both ends: those rows are moving
-        stale = connection.execute(subtree, (root_id, *CatalogCache.__subtree_keys(destination))).fetchall()
+        stale = connection.execute(
+            subtree, (destination_root, *CatalogCache.__subtree_keys(destination_path))
+        ).fetchall()
         connection.executemany(
             "DELETE FROM resources WHERE id = ?", [(gone,) for gone, _ in stale if gone not in moving_ids]
         )
-        depth = len(source.split("/"))
+        depth = len(source_path.split("/"))
         for resource_id, path in moving:
-            rebased = "/".join((destination, *path.split("/")[depth:]))
+            rebased = "/".join((destination_path, *path.split("/")[depth:]))
             connection.execute(
-                "UPDATE resources SET path = ?, path_key = ?, folded_path = ? WHERE id = ?",
-                (rebased, catalog_path_key(rebased), fold(rebased), resource_id),
+                "UPDATE resources SET root_id = ?, path = ?, path_key = ?, folded_path = ? WHERE id = ?",
+                (destination_root, rebased, catalog_path_key(rebased), fold(rebased), resource_id),
             )
         return len(moving)
 

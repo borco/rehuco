@@ -403,18 +403,18 @@ def test_set_suggestions_updates_the_list_live(qtbot: QtBot) -> None:
     assert list(suggestion_labels(editor).keys()) == ["Beta", "Gamma"]
 
 
-# region the root's place (#579)
-def destination_label(editor: PathEditor) -> ElidedLabel:
-    """Return the editor's private root-place label.
+# region the roots' places (#579, #339)
+def destination_labels(editor: PathEditor) -> list[ElidedLabel]:
+    """Return the editor's private root-place labels.
 
     :param editor: the widget to inspect.
-    :returns: the label.
+    :returns: the labels, in order.
     """
-    return editor._PathEditor__destination_label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return editor._PathEditor__destination_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def separator(editor: PathEditor) -> QFrame:
-    """Return the editor's private separator above the root's place.
+    """Return the editor's private separator above the roots' places.
 
     :param editor: the widget to inspect.
     :returns: the separator.
@@ -422,30 +422,33 @@ def separator(editor: PathEditor) -> QFrame:
     return editor._PathEditor__separator  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
-def test_the_place_is_shown_under_a_separator_only_when_there_is_one(qtbot: QtBot) -> None:
-    """No place hides the row and its separator; a place shows both, the place a live link.
+def test_the_places_are_shown_under_a_separator_only_when_there_are_some(qtbot: QtBot) -> None:
+    """No place hides the separator; places show it, each a live link reading its place, rebuilt when their number
+    changes.
 
     **Test steps:**
 
-    * build an expanded editor: the row and separator are hidden
-    * set a place: both show, the text is the place's, and the label is enabled
-    * clear it: both hide again
+    * build an expanded editor: the separator is hidden and there is no row
+    * set two places: the separator shows, with one enabled row each reading its text
+    * set one place, then none: one row, then no row and the separator hidden
     """
     editor = PathEditor()
     qtbot.addWidget(editor)
     editor.expanded = True
     editor.show()
-    assert not destination_label(editor).isVisible() and not separator(editor).isVisible()
+    assert not separator(editor).isVisible() and not destination_labels(editor)
 
-    editor.set_destination(DestinationRow("Tutorials: Jane/Foo"))
+    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo"), DestinationRow("Archive: Foo")])
 
-    assert destination_label(editor).isVisible() and separator(editor).isVisible()
-    assert full_text(destination_label(editor)) == "Tutorials: Jane/Foo"
-    assert destination_label(editor).isEnabled()
+    assert separator(editor).isVisible()
+    assert [full_text(label) for label in destination_labels(editor)] == ["Tutorials: Jane/Foo", "Archive: Foo"]
+    assert all(label.isEnabled() for label in destination_labels(editor))
 
-    editor.set_destination(None)
+    editor.set_destinations([DestinationRow("Archive: Foo")])
+    assert [full_text(label) for label in destination_labels(editor)] == ["Archive: Foo"]
 
-    assert not destination_label(editor).isVisible() and not separator(editor).isVisible()
+    editor.set_destinations([])
+    assert not separator(editor).isVisible() and not destination_labels(editor)
 
 
 def test_an_occupied_place_is_disabled_and_marked(qtbot: QtBot) -> None:
@@ -459,10 +462,11 @@ def test_an_occupied_place_is_disabled_and_marked(qtbot: QtBot) -> None:
     editor = PathEditor()
     qtbot.addWidget(editor)
 
-    editor.set_destination(DestinationRow("Tutorials: Jane/Foo", occupied=True))
+    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", occupied=True)])
 
-    assert not destination_label(editor).isEnabled()
-    assert full_text(destination_label(editor)) == f"Tutorials: Jane/Foo{UNAVAILABLE_SUFFIX}"
+    (label,) = destination_labels(editor)
+    assert not label.isEnabled()
+    assert full_text(label) == f"Tutorials: Jane/Foo{UNAVAILABLE_SUFFIX}"
 
 
 def test_the_place_the_record_is_at_is_disabled_and_plain(qtbot: QtBot) -> None:
@@ -476,26 +480,29 @@ def test_the_place_the_record_is_at_is_disabled_and_plain(qtbot: QtBot) -> None:
     editor = PathEditor()
     qtbot.addWidget(editor)
 
-    editor.set_destination(DestinationRow("Tutorials: Jane/Foo", here=True, occupied=True))
+    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", here=True, occupied=True)])
 
-    assert not destination_label(editor).isEnabled()
-    assert full_text(destination_label(editor)) == "Tutorials: Jane/Foo"
+    (label,) = destination_labels(editor)
+    assert not label.isEnabled()
+    assert full_text(label) == "Tutorials: Jane/Foo"
 
 
-def test_clicking_the_place_emits_destination_selected(qtbot: QtBot) -> None:
-    """A click on the place's link is forwarded.
+def test_clicking_a_place_emits_its_index(qtbot: QtBot) -> None:
+    """A click on a place's link is forwarded with which place it was.
 
     **Test steps:**
 
-    * set a place and activate its link
-    * verify ``destination_selected`` fired
+    * set two places and activate the second's link
+    * verify ``destination_selected`` fired with 1
     """
     editor = PathEditor()
     qtbot.addWidget(editor)
-    editor.set_destination(DestinationRow("Tutorials: Jane/Foo"))
+    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo"), DestinationRow("Archive: Foo")])
 
-    with qtbot.waitSignal(editor.destination_selected, timeout=1000):
-        destination_label(editor).linkActivated.emit("#")
+    with qtbot.waitSignal(editor.destination_selected, timeout=1000) as blocker:
+        destination_labels(editor)[1].linkActivated.emit("#")
+
+    assert blocker.args == [1]
 
 
 # endregion

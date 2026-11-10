@@ -92,6 +92,7 @@ from .name_suggestion_model import NameSuggestionModel
 from .notes_panel import NotesPanel
 from .pending_saves import PendingSaves
 from .player_view import PlayerView
+from .record_moves import RecordMoves
 from .rehu_document_image_organizer import RehuDocumentImageOrganizer
 from .rehu_document_model import USER_STATE_FIELD_NAMES, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
@@ -738,8 +739,14 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # directory, so one instance covers the curation editor's reorders/removals and an acquisition's
         # writes alike, rather than the form minting a second, redundant one of its own
         self.__image_organizer: Final = RehuDocumentImageOrganizer(model)
+        # a move to a root's place that verifies or copies runs on the queue (#339): with none, only the record's own
+        # root's place is offered, and moved by a rename
+        self.__record_moves: Final = RecordMoves(model, task_queue, self) if task_queue is not None else None
         self.__form = build_document_form(
-            model, name_suggestions=self.__name_suggestions, image_organizer=self.__image_organizer
+            model,
+            name_suggestions=self.__name_suggestions,
+            image_organizer=self.__image_organizer,
+            record_moves=self.__record_moves,
         )
         # a field that reports a transient status message (the authors viewer's hovered-link URL, a
         # StatusReporter) emits it rather than reaching for the status bar itself; collect those and
@@ -1105,6 +1112,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.stop_playback()
         if self.__checksums is not None:
             self.__checksums.detach()
+        if self.__record_moves is not None:
+            self.__record_moves.detach()
         self.__scrapes.detach()
         self.__image_downloads.detach()
         files_view = self.__files_dock.widget()
@@ -1810,7 +1819,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         outgoing = self.__form
         outgoing.clear_external()
         self.__form = build_document_form(
-            self.__model, name_suggestions=self.__name_suggestions, image_organizer=self.__image_organizer
+            self.__model,
+            name_suggestions=self.__name_suggestions,
+            image_organizer=self.__image_organizer,
+            record_moves=self.__record_moves,
         )
         # re-route the rebuilt form's fresh fields' status messages; the outgoing form's fields drop
         # their connection as they are collected (Qt severs a dead QObject sender's connections).

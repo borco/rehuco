@@ -1,4 +1,4 @@
-"""Tests for FilesPage: the Files settings category page (#226, #291, #298, #312, #313)."""
+"""Tests for FilesPage: the Files settings category page (#226, #291, #298, #312, #313, #579, #339)."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -17,7 +17,14 @@ from rehuco_agent.settings.deletion_settings import (
     shared_deletion_settings,
 )
 from rehuco_agent.settings.excluded_files_settings import ExcludedFilesSettings, shared_excluded_files_settings
-from rehuco_agent.settings.move_settings import DEFAULT_REMOVE_EMPTY_FOLDERS, MoveSettings, shared_move_settings
+from rehuco_agent.settings.move_settings import (
+    DEFAULT_REMOVE_EMPTY_FOLDERS,
+    DEFAULT_VERIFY_ORIGINAL_BEFORE_COPY,
+    DEFAULT_VERIFY_RENAMED_LOCAL,
+    DEFAULT_VERIFY_RENAMED_NETWORK,
+    MoveSettings,
+    shared_move_settings,
+)
 from rehuco_agent.settings.ui import files_page
 from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
@@ -144,7 +151,7 @@ def without_asking_check_box(page: FilesPage, name: str) -> QCheckBox:
 # endregion
 
 
-# region moving records (#579)
+# region moving records (#579, #339)
 def remove_empty_folders_check_box(page: FilesPage) -> QCheckBox:
     """The page's *Remove the left-behind folders* toggle.
 
@@ -224,6 +231,74 @@ def test_seed_defaults_stages_keeping_the_left_behind_folders(qtbot: QtBot) -> N
     page.seed_defaults()
 
     assert remove_empty_folders_check_box(page).isChecked() is False
+    assert page.is_dirty()
+
+
+VERIFY_BOXES = [
+    ("verify_renamed_local_check_box", "verify_renamed_local", DEFAULT_VERIFY_RENAMED_LOCAL),
+    ("verify_renamed_network_check_box", "verify_renamed_network", DEFAULT_VERIFY_RENAMED_NETWORK),
+    ("verify_original_check_box", "verify_original_before_copy", DEFAULT_VERIFY_ORIGINAL_BEFORE_COPY),
+]
+"""Each verify box, the `MoveSettings` field it stages, and what a fresh install holds (#339)."""
+
+
+def check_box(page: FilesPage, name: str) -> QCheckBox:
+    """One of the page's check boxes, by object name.
+
+    :param page: the page under test.
+    :param name: the box's object name.
+    :returns: the check box.
+    """
+    box = page.findChild(QCheckBox, name)
+    assert isinstance(box, QCheckBox)
+    return box
+
+
+def test_the_verify_boxes_start_as_shipped(page: FilesPage) -> None:
+    """A local rename is not verified, a share's is, the original is checked before a copy; the copy's check is shown
+    ticked and cannot be turned off.
+
+    **Test steps:**
+
+    * build the page over no saved settings
+    * verify each box holds its shipped default, and the copy's box is ticked and disabled
+    """
+    assert [check_box(page, name).isChecked() for name, _, _ in VERIFY_BOXES] == [False, True, True]
+    assert [default for _, _, default in VERIFY_BOXES] == [False, True, True]
+    assert check_box(page, "verify_copy_check_box").isChecked()
+    assert not check_box(page, "verify_copy_check_box").isEnabled()
+
+
+@mark.parametrize(("name", "field", "default"), VERIFY_BOXES)
+def test_a_verify_choice_is_staged_saved_and_dropped(
+    page: FilesPage, fake_persistent_settings: FakeSettings, name: str, field: str, default: bool
+) -> None:
+    """Flipping a verify box makes the page dirty; Reset drops it, Apply saves and persists it, Defaults stages the
+    shipped value back.
+
+    **Test steps:**
+
+    * flip the box, check the page is dirty, reset, and check it is back and clean
+    * flip it again, apply, and check the shared settings and a reload hold it
+    * seed the defaults and check the box is back on the shipped value, the page dirty
+    """
+    box = check_box(page, name)
+    box.setChecked(not default)
+    assert page.is_dirty()
+    page.drop_changes()
+    assert box.isChecked() is default
+    assert not page.is_dirty()
+
+    box.setChecked(not default)
+    page.save_changes()
+
+    assert getattr(shared_move_settings(), field) is (not default)
+    reloaded = MoveSettings()
+    reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert getattr(reloaded, field) is (not default)
+
+    page.seed_defaults()
+    assert box.isChecked() is default
     assert page.is_dirty()
 
 
@@ -748,8 +823,8 @@ def test_the_wrapping_notes_are_never_clipped_at_any_width(page: FilesPage) -> N
         assert first_seen.setdefault(width, heights) == heights, f"heights ratcheted at page width {width}"
 
 
-def test_frame_filter_discovers_all_four_frames_independently(page: FilesPage) -> None:
-    """The four blocks are separate top-level frames, so each filters on its own text (#67, #579).
+def test_frame_filter_discovers_all_five_frames_independently(page: FilesPage) -> None:
+    """The five blocks are separate top-level frames, so each filters on its own text (#67, #579, #339).
 
     Guards the page's ``.ui`` frame structure: searching for one block must not drag the others
     along with it.
@@ -761,7 +836,8 @@ def test_frame_filter_discovers_all_four_frames_independently(page: FilesPage) -
     * filter by the patterns header and verify only that frame stays shown
     * filter by the structural header and verify only that frame stays shown
     * filter by the moving header and verify only that frame stays shown
-    * filter by a non-matching term and verify all four hide
+    * filter by the verifying header and verify only that frame and its boxes stay shown
+    * filter by a non-matching term and verify all five hide
     """
     frame_filter = SettingsFrameFilter(page, "Files")
     ui = page_ui(page)
@@ -786,12 +862,19 @@ def test_frame_filter_discovers_all_four_frames_independently(page: FilesPage) -
     assert ui.deletion_frame.isVisibleTo(page) is False
     assert ui.patterns_frame.isVisibleTo(page) is False
     assert ui.structural_frame.isVisibleTo(page) is False
+    assert ui.verifying_frame.isVisibleTo(page) is False
+
+    frame_filter.apply("verify checksums when moving", show_full_on_title_match=False)
+    assert ui.verifying_frame.isVisibleTo(page) is True
+    assert ui.moving_frame.isVisibleTo(page) is False
+    assert ui.deletion_frame.isVisibleTo(page) is False
 
     frame_filter.apply("no-such-term", show_full_on_title_match=False)
     assert ui.deletion_frame.isVisibleTo(page) is False
     assert ui.patterns_frame.isVisibleTo(page) is False
     assert ui.structural_frame.isVisibleTo(page) is False
     assert ui.moving_frame.isVisibleTo(page) is False
+    assert ui.verifying_frame.isVisibleTo(page) is False
 
 
 # endregion

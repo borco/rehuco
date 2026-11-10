@@ -42,7 +42,7 @@ generate or a verify does with the entries is :mod:`rehuco_core.rehu_checksums`'
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -217,6 +217,29 @@ def update_checksum_record(
         if record is not None:
             write_held_checksum_record(path, record)
         return record
+
+
+def rename_checksum_entries(record: dict[str, Any] | None, names: Mapping[str, str]) -> dict[str, Any] | None:
+    """``record`` with each entry ``names`` renames under its new name -- what a file record's rename owes its record,
+    whose entries are its files' own names (#339).
+
+    Everything else is carried as found: an entry ``names`` does not list, and one that is no object at all.
+
+    :param record: the record as :func:`load_checksum_record` shaped it, or ``None`` for none.
+    :param names: each file's old name and its new one, record-relative.
+    :returns: the record to write, or ``None`` when no entry changed -- nothing to write.
+    """
+    if record is None:
+        return None
+    changed = False
+    entries: list[Any] = []
+    for raw in record.get(CHECKSUM_FILES_KEY, []):
+        name = raw.get(CHECKSUM_NAME_KEY) if isinstance(raw, dict) else None
+        if isinstance(name, str) and name in names:
+            raw = {**raw, CHECKSUM_NAME_KEY: names[name]}
+            changed = True
+        entries.append(raw)
+    return {**record, CHECKSUM_FILES_KEY: entries} if changed else None
 
 
 def write_held_checksum_record(path: Path, record: dict[str, Any]) -> None:

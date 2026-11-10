@@ -348,6 +348,13 @@ Re-entering a job blindly is safe because a job that changes anything guards its
 conversion refuses to start over a leftover backup ([[acquisition-tooling#convert-mechanics]]) rather
 than trust the caller not to ask twice.
 
+**A job given up on while it is not running is told so, when it asked to be** (#339). A queued, paused or
+waiting job that is cancelled or removed never runs again, so it has no run left to tidy up in. A job
+satisfying `AbandonableTaskJob` — a second protocol, like `ReportingTaskJob` — gets one call, `abandon()`,
+with the queue's lock held, and does its taking back elsewhere: a paused verified move removes the partial
+copy it left ([[mounts-and-storage#safe-move-rename]]). Every other job is untroubled, as before; the
+running job still hears through `cancel`.
+
 Removing the *running* job is the sharp edge. Cancellation is cooperative, so a detached job may still
 be inside `run()` for a checkpoint or two; the engine **drops its terminal notification**, because
 telling a listener that a row it deleted has just been cancelled would announce a job that, as far as

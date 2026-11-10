@@ -68,7 +68,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
-from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM, ChecksumDigest
+from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM
 from .checksum_claim_moves import hand_over_claims
 from .checksum_entry_merge import merge_checksum_entries
 from .checksum_record import (
@@ -91,7 +91,7 @@ from .checksum_record import (
 from .checksum_seeding import LegacySeed, retire_legacy_manifests, seed_from_legacy_manifest
 from .checksum_trust import ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
-from .content_reading import read_content_chunks
+from .content_digest import digest_content
 from .rehu_content_files import (
     ContentExclusionTier,
     CoveringRecord,
@@ -812,22 +812,18 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         :returns: the hex digests, in ``algorithms``' order.
         :raises OSError: the file could not be opened or read.
         """
-        digests: list[ChecksumDigest] = [CHECKSUM_ALGORITHMS[name].new_digest() for name in algorithms]
-        if self.__checkpoint is not None:
-            self.__checkpoint()
-        chunks = read_content_chunks(location, self.__coordinator)
-        try:
-            for chunk in chunks:
-                for digest in digests:
-                    digest.update(chunk)
-                self.__done += len(chunk)
-                if self.__progress is not None:
-                    self.__progress(self.__done, self.__total)
-                if self.__checkpoint is not None:
-                    self.__checkpoint()
-        finally:
-            chunks.close()
-        return [digest.hexdigest() for digest in digests]
+        return digest_content(
+            location, algorithms, self.__coordinator, on_chunk=self.__count, checkpoint=self.__checkpoint
+        )
+
+    def __count(self, size: int) -> None:
+        """Count one chunk read, and say how far the run has got.
+
+        :param size: the chunk's bytes.
+        """
+        self.__done += size
+        if self.__progress is not None:
+            self.__progress(self.__done, self.__total)
 
     def __fresh_entry(self, name: str, digest: str) -> dict[str, Any]:
         """A brand-new ``matched`` entry under the configured algorithm, dated now."""

@@ -340,7 +340,7 @@ def test_changed_fires_when_the_location_replacements_settings_apply(name_sugges
 # endregion
 
 
-# region the root's place (#579)
+# region the roots' places (#579, #339)
 class RootsSignals(QObject):
     """The two signals a `RootCatalog` announces its roots changing by, for a mocked catalog to carry."""
 
@@ -407,24 +407,30 @@ def fixture_authored(model: RehuDocumentModel) -> RehuDocumentModel:
     return model
 
 
-def test_the_root_holding_the_record_gives_its_place(
+def test_the_root_holding_the_record_gives_its_place_first_and_every_other_root_its_own(
     tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
 ) -> None:
-    """The layout of the root holding the record renders where it goes, named by the root.
+    """Each root's layout renders where it puts the record, named by the root: the root holding the record first,
+    then the others in the catalog's order (#339).
 
     **Test steps:**
 
-    * open a record at ``Old/Foo/info.rehu`` under a root laid out by author, beside a root it is not under
-    * check the place is ``Jane/Foo`` in that root, and not where the record is
+    * open a record at ``Old/Foo/info.rehu`` under a root laid out by author, listed after another root
+    * check the first place is ``Jane/Foo`` in the record's root, the second ``Jane/Foo`` in the other, each naming
+      where the record is now
     """
     root = root_at(tmp_path / "tutorials")
+    other = root_at(tmp_path / "other")
     place(authored, root.path / "Old" / "Foo" / "info.rehu")
-    catalog = catalog_of(signals, root_at(tmp_path / "other"), root)
+    catalog = catalog_of(signals, other, root)
 
-    destination = NameSuggestionModel(authored, catalog).root_destination()
+    own, elsewhere = NameSuggestionModel(authored, catalog).root_destinations()
 
-    assert destination == RootDestination("Tutorials", PurePosixPath("Jane/Foo"), root.path, here=False)
-    assert destination is not None and destination.into == root.path / "Jane" and destination.name == "Foo"
+    jane = PurePosixPath("Jane/Foo")
+    assert own == RootDestination("Tutorials", jane, root.path, root.root_id, False, root.path, root.root_id)
+    assert own.same_root and own.into == root.path / "Jane" and own.name == "Foo"
+    assert elsewhere == RootDestination("Tutorials", jane, other.path, other.root_id, False, root.path, root.root_id)
+    assert not elsewhere.same_root
 
 
 def test_a_record_already_there_is_marked_so(
@@ -440,41 +446,77 @@ def test_a_record_already_there_is_marked_so(
     root = root_at(tmp_path)
     place(authored, tmp_path / "jane" / "foo.rehu")
 
-    destination = NameSuggestionModel(authored, catalog_of(signals, root)).root_destination()
+    (destination,) = NameSuggestionModel(authored, catalog_of(signals, root)).root_destinations()
 
-    assert destination is not None and destination.here
+    assert destination.here
 
 
-@mark.parametrize(
-    ("layouts", "unreachable", "beneath"),
-    [
-        param({"reference_images": "*"}, False, True, id="a layout not taking the type"),
-        param(BY_AUTHOR, False, True, id="a field left empty with no fallback"),
-        param({"*": "*"}, True, True, id="a root that cannot be reached"),
-        param({"*": "*"}, False, False, id="a record under no root"),
-    ],
-)
-def test_no_place_is_offered(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    tmp_path: Path,
-    model: RehuDocumentModel,
-    signals: RootsSignals,
-    layouts: dict[str, str],
-    unreachable: bool,
-    beneath: bool,
+def test_a_record_under_no_root_is_offered_every_root(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
 ) -> None:
-    """Only a place that can be built is offered: none for a root that does not take the record, one needing a field
-    the record leaves empty, one not reached now, or a record under no root.
+    """A stray record -- opened from outside every root -- is offered each root's place, with no root of its own.
 
     **Test steps:**
 
-    * open a record with no authors under, or beside, a root with the given layout
+    * open a record outside two roots
+    * check both roots offer their place, neither the record's own
+    """
+    first, second = root_at(tmp_path / "a"), root_at(tmp_path / "b")
+    place(authored, tmp_path / "elsewhere" / "Foo" / "info.rehu")
+
+    places = NameSuggestionModel(authored, catalog_of(signals, first, second)).root_destinations()
+
+    assert [(place.root_id, place.source_root, place.same_root) for place in places] == [
+        (first.root_id, None, False),
+        (second.root_id, None, False),
+    ]
+
+
+def test_another_root_that_cannot_take_the_record_is_left_out(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """Another root offers no place when it cannot be reached now, or its layout does not take the record.
+
+    **Test steps:**
+
+    * open a record under a root, beside one that cannot be reached and one taking only another type
+    * check only the record's own root offers a place
+    """
+    root = root_at(tmp_path / "tutorials")
+    away = root_at(tmp_path / "away")
+    pictures = root_at(tmp_path / "pictures", {"reference_images": "*"})
+    place(authored, root.path / "Foo" / "info.rehu")
+    catalog = catalog_of(signals, away, root, pictures, unreachable=frozenset({away.root_id}))
+
+    places = NameSuggestionModel(authored, catalog).root_destinations()
+
+    assert [place.root_id for place in places] == [root.root_id]
+
+
+@mark.parametrize(
+    ("layouts", "unreachable"),
+    [
+        param({"reference_images": "*"}, False, id="a layout not taking the type"),
+        param(BY_AUTHOR, False, id="a field left empty with no fallback"),
+        param({"*": "*"}, True, id="a root that cannot be reached"),
+    ],
+)
+def test_no_place_is_offered(
+    tmp_path: Path, model: RehuDocumentModel, signals: RootsSignals, layouts: dict[str, str], unreachable: bool
+) -> None:
+    """Only a place that can be built is offered: none for a root that does not take the record, or one needing a
+    field the record leaves empty -- and nothing at all for a record whose own root is not reached now.
+
+    **Test steps:**
+
+    * open a record with no authors under a root with the given layout
     * check there is no place
     """
     root = root_at(tmp_path / "tutorials", layouts)
-    place(model, (root.path if beneath else tmp_path / "elsewhere") / "Foo" / "info.rehu")
+    place(model, root.path / "Foo" / "info.rehu")
     catalog = catalog_of(signals, root, unreachable=frozenset({root.root_id} if unreachable else ()))
 
-    assert NameSuggestionModel(model, catalog).root_destination() is None
+    assert not NameSuggestionModel(model, catalog).root_destinations()
 
 
 def test_a_fallback_fills_an_empty_field(tmp_path: Path, model: RehuDocumentModel, signals: RootsSignals) -> None:
@@ -488,9 +530,9 @@ def test_a_fallback_fills_an_empty_field(tmp_path: Path, model: RehuDocumentMode
     root = root_at(tmp_path, fallbacks={"authors": "Unknown"})
     place(model, tmp_path / "Foo" / "info.rehu")
 
-    destination = NameSuggestionModel(model, catalog_of(signals, root)).root_destination()
+    (destination,) = NameSuggestionModel(model, catalog_of(signals, root)).root_destinations()
 
-    assert destination is not None and destination.relative == PurePosixPath("Unknown/Foo")
+    assert destination.relative == PurePosixPath("Unknown/Foo")
 
 
 def test_no_catalog_or_no_path_offers_no_place(
@@ -503,8 +545,8 @@ def test_no_catalog_or_no_path_offers_no_place(
     * ask a model with no catalog, then one with a catalog over a record with no path
     * check neither offers a place
     """
-    assert NameSuggestionModel(authored).root_destination() is None
-    assert NameSuggestionModel(authored, catalog_of(signals, root_at(tmp_path))).root_destination() is None
+    assert not NameSuggestionModel(authored).root_destinations()
+    assert not NameSuggestionModel(authored, catalog_of(signals, root_at(tmp_path))).root_destinations()
 
 
 @mark.parametrize("signal", ["roots_changed", "root_reachable", "path"])
@@ -550,10 +592,10 @@ def test_which_roots_are_reachable_is_asked_once_until_the_catalog_says_it_chang
     catalog = catalog_of(signals, root)
     suggestions = NameSuggestionModel(authored, catalog)
 
-    assert suggestions.root_destination() is not None
+    assert suggestions.root_destinations()
     authored.title = "Bar"
-    assert suggestions.root_destination() is not None
-    assert suggestions.root_destination() is not None
+    assert suggestions.root_destinations()
+    assert suggestions.root_destinations()
     assert catalog.unreachable_roots.call_count == 1
 
     catalog.unreachable_roots.return_value = frozenset({root.root_id})
@@ -562,8 +604,8 @@ def test_which_roots_are_reachable_is_asked_once_until_the_catalog_says_it_chang
     else:
         signals.root_reachable.emit(root.root_id, False)
 
-    assert suggestions.root_destination() is None
-    assert suggestions.root_destination() is None
+    assert not suggestions.root_destinations()
+    assert not suggestions.root_destinations()
     assert catalog.unreachable_roots.call_count == 2
 
 

@@ -1,5 +1,6 @@
-"""Tests for RehuDocumentModel's move within its root (#579): the path row's root place, clicked -- the same
-orchestration as a rename, into another folder, and the left-behind folders removed when the setting says so."""
+"""Tests for RehuDocumentModel's moves (#579, #339): the path row's root place, clicked -- the same orchestration as a
+rename, into another folder, and the left-behind folders removed when the setting says so -- and the hooks a move a task
+runs reports through."""
 
 from pathlib import Path
 from typing import Final
@@ -185,3 +186,66 @@ def test_the_conflict_check_answers_for_the_place(tmp_path: Path) -> None:
     assert model.move_conflicts(tmp_path / "Jane", "Foo") is True
     assert model.move_conflicts(tmp_path / "Jane", "Bar") is False
     assert RehuDocumentModel(RehuDocument({"type": "Tutorial"})).move_conflicts(tmp_path, "Foo") is False
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_record_under_no_root_moves_and_leaves_its_folders(tmp_path: Path) -> None:
+    """A record under no root is moved by a rename all the same; with no root to stop at, its folders stay, and the
+    place is named by its full path (#339).
+
+    **Test steps:**
+
+    * set removing the left-behind folders on, and move a record under no root into a root's folder
+    * verify it moved, ``Old`` is still there, and a refused second move names the full path
+    """
+    shared_move_settings().remove_empty_folders = True
+    model = make_record(tmp_path / "stray")
+    into = tmp_path / "root" / "Jane"
+
+    assert model.move_in_root(into, "Foo", None) is True
+
+    assert (into / "Foo" / "info.rehu").is_file()
+    assert (tmp_path / "stray" / "Old").is_dir()
+    (tmp_path / "elsewhere" / "Foo").mkdir(parents=True)
+    assert model.move_in_root(tmp_path / "elsewhere", "Foo", None) is False
+    assert str(tmp_path / "elsewhere" / "Foo") in model.rename_error
+
+
+def test_a_move_a_task_runs_is_prepared_as_a_move_is(mocker: MockerFixture) -> None:
+    """Before a move is queued the record is saved and checked as before a move in place; a refusal is on the banner.
+
+    **Test steps:**
+
+    * prepare a clean record's move: allowed
+    * give it a save not landed and prepare again: refused, naming the place
+    * prepare a record with no path: refused
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, RECORD))
+
+    assert model.prepare_move("Archive: Foo") is True
+    assert model.rename_error == ""
+
+    mocker.patch.object(model, "_RehuDocumentModel__pending_save_for", return_value=MagicMock())
+    assert model.prepare_move("Archive: Foo") is False
+    assert model.rename_error.startswith('Cannot move to "Archive: Foo": a save of this record has not landed yet.')
+
+    assert RehuDocumentModel(RehuDocument({"type": "Tutorial"})).prepare_move("Archive: Foo") is False
+
+
+def test_a_move_a_task_ran_reports_its_end() -> None:
+    """A failed move is told on the banner; a landed one as a rename's landing.
+
+    **Test steps:**
+
+    * report a failure, then a landing, listening to ``renamed``
+    * verify the banner holds the failure, and ``renamed`` fired once
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, RECORD))
+    heard: list[bool] = []
+    model.renamed.connect(lambda: heard.append(True))
+
+    model.move_failed("Could not move: the copy did not match.")
+    model.move_landed()
+
+    assert model.rename_error == "Could not move: the copy did not match."
+    assert heard == [True]

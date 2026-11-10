@@ -214,7 +214,7 @@ def test_a_job_follows_the_resource_it_moved(mocker: MockerFixture) -> None:
     job = VerifyChecksumsJob(INFO_PATH, coordinator=coordinator)
     renamer = mocker.MagicMock()
     renamer.execute.return_value = DIRECTORY.parent / "sculpting-2"
-    renamer.relocate.side_effect = lambda path: Path(str(path).replace("sculpting", "sculpting-2"))
+    renamer.relocation.relocate.side_effect = lambda path: Path(str(path).replace("sculpting", "sculpting-2"))
     mocker.patch("rehuco_core.rename_coordination.RehuRenamer", return_value=renamer)
 
     coordinator.rename(INFO_PATH, "sculpting-2")
