@@ -293,7 +293,9 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
                 self.__holders -= 1
                 self.__condition.notify_all()
 
-    def rename(self, path: Path, new_name: str, timeout: float = DEFAULT_RENAME_YIELD_TIMEOUT) -> Path:
+    def rename(
+        self, path: Path, new_name: str, timeout: float = DEFAULT_RENAME_YIELD_TIMEOUT, *, into: Path | None = None
+    ) -> Path:
         """Rename the resource at ``path``, asking any readers beneath it to let go first.
 
         Blocks its caller for as long as the readers take -- ~7 ms in practice, one chunk read -- which
@@ -309,6 +311,8 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
         :param path: the resource's ``.rehu`` file.
         :param new_name: the destination folder/file name.
         :param timeout: how long to wait for readers, in seconds.
+        :param into: the folder the resource lands in -- a move in place within its root (#579,
+            :func:`~rehuco_core.move_rehu_resource`); ``None`` renames it where it is.
         :returns: the resource's ``.rehu`` path under its new name.
         :raises RenameYieldTimeout: the readers did not let go in time; nothing on disk was touched.
         :raises OSError: whatever :func:`~rehuco_core.rename_rehu_resource` raises -- a name that is not
@@ -325,7 +329,7 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
             self.__step_out_of(path)
             self.__wait_for_readers(timeout)
             try:
-                renamer = RehuRenamer(path, new_name)
+                renamer = RehuRenamer(path, new_name, into=into)
                 renamed = renamer.rename()
                 self.__relocate_tracked(renamer)
             finally:

@@ -7,7 +7,7 @@ where a model must reload or be flagged.
 
 from pathlib import Path
 from typing import Final
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
 from pytest import fixture, mark
@@ -16,6 +16,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_registry import DocumentRegistry
 from rehuco_agent.documents.held_files_watch import HeldFilesWatch
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.rehuco import RootCatalog
+from rehuco_core import MappedRoot
 from rehuco_core.access import Changed, ChangeEvent, FolderChanged, ResourceKey, RootStale
 from rehuco_core.notify import WatchedFolder
 
@@ -320,20 +322,31 @@ def test_a_key_change_that_tracks_nothing_still_lets_the_old_folder_go(
     assert follows.call_args == mocker.call((OTHER_KEY,) if onto_other else ())
 
 
+def catalog_of(*folders: Path) -> Mock:
+    """A mocked `RootCatalog` mapping one root at each of ``folders``.
+
+    :param folders: the roots' folders.
+    :returns: the catalog.
+    """
+    catalog = Mock(spec=RootCatalog)
+    catalog.mapped_roots.return_value = tuple(MappedRoot(uuid4(), folder.name, "", folder) for folder in folders)
+    return catalog
+
+
 def test_a_document_under_no_root_has_its_folder_watched(
     notifiers: MagicMock, mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """The registry hands its watch the roots it was given: a document under one is left to the root's notifier, one
-    under none gets a notifier of its own folder.
+    """The registry hands its watch the folders of the catalog's roots: a document under one is left to the root's
+    notifier, one under none gets a notifier of its own folder.
 
     **Test steps:**
 
-    * build a registry whose roots hold the fake key's folder, and acquire it and the other key
+    * build a registry over a catalog whose root holds the fake key's folder, and acquire it and the other key
     * verify one notifier was built and started, for the other key's folder
     """
     del qtbot
     load_document(mocker)
-    registry = DocumentRegistry(roots=lambda: (FAKE_PATH.parent,))
+    registry = DocumentRegistry(catalog_roots=catalog_of(FAKE_PATH.parent))
 
     registry.acquire(FAKE_KEY)
     registry.acquire(OTHER_KEY)
@@ -354,7 +367,7 @@ def test_stop_watching_lets_the_loose_folders_go(notifiers: MagicMock, mocker: M
     """
     del qtbot
     load_document(mocker)
-    registry = DocumentRegistry(roots=tuple)
+    registry = DocumentRegistry(catalog_roots=catalog_of())
     registry.acquire(FAKE_KEY)
 
     registry.stop_watching()

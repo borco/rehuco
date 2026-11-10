@@ -156,8 +156,8 @@ references** to such files and nothing more about a root: its role is to aggrega
   authors **and admits no other type** — a type with no entry and no `*` cannot be moved here.
 - **`fallbacks`** names what a placeholder renders as when the record leaves it empty — **outside an optional group
   only**: a group whose placeholder is empty drops out, a fallback for it notwithstanding. An empty placeholder
-  outside an optional group with no fallback **forbids** the root for that record, and the renderer says why — the
-  path row shows the root greyed with the reason ([[plugins#tutorial-plugin]]). A field's own `/` opens no level.
+  outside an optional group with no fallback **forbids** the root for that record, and the renderer says why; the
+  path row offers no place in that root ([[plugins#tutorial-plugin]]). A field's own `/` opens no level.
 - **A reference whose `.rehuroot` is missing or unreadable** — a file on a share that is offline, one deleted by
   hand — does not refuse the catalog: the root is listed greyed under its file's name, with one row saying its file
   cannot be read and the reason as the tooltip, offering neither *Map…* nor a name to edit; the reference survives a

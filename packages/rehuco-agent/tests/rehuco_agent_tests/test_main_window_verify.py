@@ -13,6 +13,7 @@ from rehuco_agent.documents.document_registry import DocumentRegistry
 from rehuco_agent.documents.held_files_watch import HeldFilesWatch
 from rehuco_agent.main_window import MainWindow
 from rehuco_agent.rehuco import RootCatalog
+from rehuco_core import MappedRoot
 from rehuco_core.access import Changed, ResourceKey
 from rehuco_core.notify import WatchedFolder
 
@@ -104,8 +105,8 @@ def test_the_open_documents_under_no_root_follow_the_roots(
     serve_tutorials(mocker)
     window = MainWindow()
     qtbot.addWidget(window)
-    roots = {uuid4(): RECORD.parent.parent}
-    mocker.patch.object(catalog_of(window), "root_paths", side_effect=lambda: dict(roots))
+    roots = [MappedRoot(uuid4(), "Tutorials", "", RECORD.parent.parent)]
+    mocker.patch.object(catalog_of(window), "mapped_roots", side_effect=lambda: tuple(roots))
     window.open_path(RECORD)
 
     notifiers.assert_not_called()

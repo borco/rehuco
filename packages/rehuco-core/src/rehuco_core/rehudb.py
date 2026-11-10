@@ -1192,7 +1192,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             if root_parts[: len(source_parts)] == source_parts:
                 LOG.info("A rename moved the root %s itself; its rows are kept as they are.", root.path)
             return None
-        # a rename's pairs stay inside one directory, so a source beneath the root has its destination there too
+        # a rename's pairs stay inside one root -- one folder, or another under the same root for a move in place
+        # (#579) -- so a source beneath the root has its destination there too
         return "/".join(source.parts[depth:]), "/".join(destination.parts[depth:])
 
     @staticmethod

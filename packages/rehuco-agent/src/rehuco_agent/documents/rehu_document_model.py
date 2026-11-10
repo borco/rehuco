@@ -38,9 +38,11 @@ from rehuco_core import (
     SavePayload,
     SaveRecordJob,
     VideoFacts,
+    is_directory_scoped,
     is_directory_scoped_name,
     merge_users,
     metadata_of,
+    move_rehu_resource,
     paths_overlap,
     payload_changes,
     put_paths,
@@ -51,7 +53,9 @@ from rehuco_core import (
     read_video_favorites,
     read_video_notes,
     read_videos,
+    rehu_move_conflict,
     rehu_rename_conflict,
+    remove_empty_parents,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
@@ -66,6 +70,7 @@ from ..fields.unknown_field import UnknownField
 from ..recycle_bin_deleter import configured_deleter
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.identity_settings import shared_identity_settings
+from ..settings.move_settings import shared_move_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from ..settings.videos_settings import shared_videos_settings
 from .progress_writer import ProgressWriter
@@ -1218,18 +1223,62 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             clicked `PathField` suggestion).
         :returns: whether the rename succeeded.
         """
+        return self.__relocate(new_name, None)
+
+    def move_in_root(self, into: Path, new_name: str, root: Path) -> bool:
+        """Move this resource into the folder ``into`` under ``new_name``, within the root at ``root`` -- the path row's
+        root place, clicked (#579).
+
+        Everything :meth:`rename_location` says holds: the intent logged first, a dirty document saved first, a
+        failure leaving the document as it was and reported through :attr:`rename_error`, :attr:`renamed` once it
+        landed. Only the destination differs -- another folder under the same root, its missing parents made, the
+        record's folder or file set moved in one plan with the same collision check and rollback
+        (:func:`~rehuco_core.move_rehu_resource`). Once it landed, the folders it left are removed up to the root
+        while each is empty, when *Remove the left-behind folders* is set (`MoveSettings`).
+
+        :param into: the folder the resource's own entry lands in.
+        :param new_name: its name there.
+        :param root: the root's folder, which the move stays within.
+        :returns: whether the move succeeded.
+        """
+        return self.__relocate(new_name, (into, root))
+
+    def move_conflicts(self, into: Path, new_name: str) -> bool:
+        """Whether moving into ``into`` as ``new_name`` would land on something already there -- the advisory check
+        :meth:`rename_conflicts` is for a rename (:func:`~rehuco_core.rehu_move_conflict`).
+
+        :param into: the folder the resource's own entry would land in.
+        :param new_name: its name there.
+        :returns: whether something already occupies the destination; ``False`` for a document with no location.
+        """
+        path = self.path
+        if path is None:
+            return False
+        return rehu_move_conflict(path, into, new_name) is not None
+
+    def __relocate(self, new_name: str, move: tuple[Path, Path] | None) -> bool:
+        """Rename this resource where it is, or move it within its root -- what :meth:`rename_location` and
+        :meth:`move_in_root` share.
+
+        :param new_name: the destination file/folder name.
+        :param move: the folder it lands in and the root's folder, for a move; ``None`` for a rename.
+        :returns: whether it landed.
+        """
+        verb = "rename" if move is None else "move"
+        target = new_name if move is None else (move[0] / new_name).relative_to(move[1]).as_posix()
         # scoped to the path being renamed *from*: every record here is about the resource as it stands
         # now, including the failure ones, and the sink for the new path only exists once the move landed
         with LogScope.open(self.path):
-            LOG.info("Attempting to rename %r to %r", self.current_name, new_name)
+            LOG.info("Attempting to %s %r to %r", verb, self.current_name, target)
             self.__clear_rename_failure()
-            if self.path is None:
-                return self.__rename_failed(f'Cannot rename to "{new_name}": this document has no location yet.')
+            path = self.path
+            if path is None:
+                return self.__rename_failed(f'Cannot {verb} to "{target}": this document has no location yet.')
             if self.__pending_save_for(cast(ResourceKey, self.key)) is not None:
                 # the save is the record here until it lands ([[sync#unlanded-save]]); a second write of the record
                 # made now, to move it, would run ahead of it and the two would conflict
                 return self.__rename_failed(
-                    f'Cannot rename to "{new_name}": a save of this record has not landed yet. Wait for it, or discard '
+                    f'Cannot {verb} to "{target}": a save of this record has not landed yet. Wait for it, or discard '
                     "it from the Tasks panel."
                 )
             if self.dirty:
@@ -1237,10 +1286,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                     self.save()
                 except (OSError, ValueError, RecordConflict) as error:
                     return self.__rename_failed(
-                        f'Could not save "{self.current_name}" before renaming it: {self.__failure_reason(error)}'
+                        f'Could not save "{self.current_name}" before {verb.removesuffix("e")}ing it: '
+                        f"{self.__failure_reason(error)}"
                     )
-            if not self.__move(new_name):
+            left = path.parent.parent if is_directory_scoped(path) else path.parent
+            if not self.__move(new_name, target, None if move is None else move[0]):
                 return False
+            if move is not None and shared_move_settings().remove_empty_folders:
+                for folder in remove_empty_parents(left, move[1]):
+                    LOG.info("Removed %s, left empty by the move", folder)
         # after the move was announced and every holder followed it: a check planned before the cache rebased its row
         # would be dropped as overtaken
         self.renamed.emit()
@@ -2492,8 +2546,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             return self.__document.active_user_field(name, default)
         return self.__document.active_field(name, default)
 
-    def __move(self, new_name: str) -> bool:
-        """Rename this document's file(s) to ``new_name`` on disk and adopt the result.
+    def __move(self, new_name: str, target: str, into: Path | None) -> bool:
+        """Rename this document's file(s) to ``new_name`` on disk -- in ``into``, for a move in place (#579) -- and
+        adopt the result.
 
         The filesystem work -- which files each resource scope owns, the collision check, the rollback
         ([[data-model#resource-scoping]], [[data-model#write-integrity]]) -- belongs to
@@ -2516,24 +2571,27 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         operating system starts drawing as hung.
 
         :param new_name: the destination file/folder name.
+        :param target: how the destination is named to the user: the name, or the place under the root.
+        :param into: the folder the resource lands in, for a move; ``None`` renames it where it is.
         :returns: whether the rename succeeded; a failure's reason is left in :attr:`rename_error`.
         """
         path = self.path
         if path is None:  # pragma: no cover -- rename_location refuses a document with no local path before this
             return False
         current_name = self.current_name
+        verb = "rename" if into is None else "move"
         try:
-            new_path = self.__renamed(path, new_name)
+            new_path = self.__renamed(path, new_name, into)
         except (OSError, ValueError) as error:
             # a refusal over an open handle offers to find whose handle it is (#355, #505)
             if RenameHolderReport.is_lock_refusal(error):
                 self.rename_held = path
             return self.__rename_failed(
-                f'Could not rename "{current_name}" to "{new_name}": {self.__failure_reason(error)}'
+                f'Could not {verb} "{current_name}" to "{target}": {self.__failure_reason(error)}'
             )
         # already adopted when the coordinator's announcement reached this model through its holder (#376)
         self.__adopt_path(new_path)
-        LOG.info("Renamed %r to %r", current_name, new_name)
+        LOG.info("%s %r to %r", "Renamed" if into is None else "Moved", current_name, target)
         return True
 
     def __adopt_path(self, new_path: Path) -> bool:
@@ -2558,7 +2616,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.image_scanner = self.__make_image_scanner()
         return True
 
-    def __renamed(self, path: Path, new_name: str) -> Path:
+    def __renamed(self, path: Path, new_name: str, into: Path | None) -> Path:
         """Perform the rename, through the coordinator when there is one (#241).
 
         The two paths differ only in whether anybody is asked to stand aside first: with no coordinator
@@ -2567,13 +2625,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :param path: the resource's current ``.rehu``.
         :param new_name: the destination file/folder name.
+        :param into: the folder it lands in, for a move in place (#579); ``None`` renames it where it is.
         :returns: the resource's ``.rehu`` under its new name.
         :raises OSError: the rename failed, or readers did not stand aside in time.
-        :raises ValueError: ``new_name`` is not a plain file/folder name.
+        :raises ValueError: ``new_name`` is not a plain file/folder name, or a folder would move into itself.
         """
-        if self.__rename_coordinator is None:
-            return rename_rehu_resource(path, new_name)
-        return self.__rename_coordinator.rename(path, new_name)
+        coordinator = self.__rename_coordinator
+        if into is None:
+            return rename_rehu_resource(path, new_name) if coordinator is None else coordinator.rename(path, new_name)
+        if coordinator is None:
+            return move_rehu_resource(path, into, new_name)
+        return coordinator.rename(path, new_name, into=into)
 
     def __clear_rename_failure(self) -> None:
         """Forget the last rename's failure: its banner row, and the record it offered to find the holders of."""

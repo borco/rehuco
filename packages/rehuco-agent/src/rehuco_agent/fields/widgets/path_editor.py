@@ -6,12 +6,13 @@ own "misc" grid column (see `FieldsForm`/`PathField`); this widget only exposes 
 """
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Final
 
 from borco_pyside.core import SimpleProperty
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 from rehuco_core import sanitize_name
 
 from .location_line import LocationLine
@@ -27,6 +28,21 @@ A plain Unicode codepoint (U+26BF SQUARED KEY), not one of the app's Phosphor gl
 label already rendering the resource name in the UI font. The same trade `MessageBanner` makes for its
 own fallback glyph. It therefore leans on the platform's font fallback covering U+26BF; should that
 ever render as tofu, the guaranteed alternative is a separate marker label per row drawn in Phosphor."""
+
+
+@dataclass(frozen=True, slots=True)
+class DestinationRow:
+    """The place the record's root's layout gives it, as the path row shows it under the names (#579).
+
+    :param text: what the row reads -- the root's name and the place under it.
+    :param here: whether the record already sits there; shown disabled and plain, as the current name is.
+    :param occupied: whether something else already sits there; shown disabled with :data:`UNAVAILABLE_SUFFIX`, as
+        an occupied name is.
+    """
+
+    text: str
+    here: bool = False
+    occupied: bool = False
 
 
 class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -52,11 +68,16 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     decides *that* it needs something, never how the answer is obtained ([[plugins#field-toolkit]]).
     With no predicate set, nothing is unavailable, which is what keeps the widget usable on its own.
 
+    **The root's place** (#579), :meth:`set_destination`, is one more row under a separator: where the layout of the
+    record's root puts it. Clicking it emits :attr:`destination_selected`; it is disabled the same two ways a name is.
+
     :param open_hint: tooltip hint of the current name, which is the link revealing the resource.
     :param parent: optional Qt parent.
     """
 
     suggestion_selected = Signal(str)
+    destination_selected = Signal()
+    """The root's place (:meth:`set_destination`) was clicked; the owner moves the record there (#579)."""
     open_requested = Signal()
     """The current name, drawn as a link, was clicked (#621); the owner reveals the resource."""
     expanded_changed = Signal(bool)
@@ -76,9 +97,23 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__name_line: Final = LocationLine(hint=open_hint)
         self.__name_line.open_requested.connect(self.open_requested)
 
+        self.__destination: DestinationRow | None = None
+
         self.__suggestions_widget: Final = QWidget()
-        self.__suggestions_layout: Final = QVBoxLayout(self.__suggestions_widget)
+        panel_layout = QVBoxLayout(self.__suggestions_widget)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        names = QWidget()
+        self.__suggestions_layout: Final = QVBoxLayout(names)
         self.__suggestions_layout.setContentsMargins(0, 0, 0, 0)
+        self.__separator: Final = QFrame()
+        self.__separator.setFrameShape(QFrame.Shape.HLine)
+        self.__separator.setFrameShadow(QFrame.Shadow.Sunken)
+        self.__destination_label: Final = ElidedLabel()
+        self.__destination_label.linkActivated.connect(lambda _href: self.destination_selected.emit())
+        panel_layout.addWidget(names)
+        panel_layout.addWidget(self.__separator)
+        panel_layout.addWidget(self.__destination_label)
+        self.__render_destination()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -131,6 +166,14 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         if sanitized != self.__suggestions:
             self.__suggestions = sanitized
             self.__rebuild()
+        self.__render()
+
+    def set_destination(self, row: DestinationRow | None) -> None:
+        """Show the root's place under the names, or hide it and its separator (#579).
+
+        :param row: the place; ``None`` when the record's root offers none.
+        """
+        self.__destination = row
         self.__render()
 
     def save_state(self) -> bytes:
@@ -194,6 +237,20 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
                 f"{name}{UNAVAILABLE_SUFFIX if unavailable else ''}",
                 href="" if is_current or unavailable else "#",
             )
+        self.__render_destination()
+
+    def __render_destination(self) -> None:
+        """Show the root's place, by the same three states as a name: already there, occupied, or a live link."""
+        row = self.__destination
+        self.__separator.setVisible(row is not None)
+        self.__destination_label.setVisible(row is not None)
+        if row is None:
+            return
+        unavailable = not row.here and row.occupied
+        self.__destination_label.setEnabled(not row.here and not unavailable)
+        self.__destination_label.set_text(
+            f"{row.text}{UNAVAILABLE_SUFFIX if unavailable else ''}", href="" if row.here or unavailable else "#"
+        )
 
     @staticmethod
     def __sanitize_all(raw_suggestions: Sequence[str]) -> list[str]:

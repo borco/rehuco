@@ -3,14 +3,30 @@
 `rename_location` ultimately executes.
 """
 
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 from typing import Final
+from uuid import UUID
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import apply_location_replacements, known_placeholders_for, location_values, render_location_pattern
+from rehuco_core import (
+    MappedRoot,
+    RecordNaming,
+    Refusal,
+    apply_location_replacements,
+    destination,
+    is_directory_scoped,
+    known_placeholders_for,
+    location_values,
+    path_key,
+    render_location_pattern,
+)
 
 from ..settings.location_replacements_settings import shared_location_replacements_settings
 from ..settings.location_templates_settings import shared_location_templates_settings
+from .catalog_roots import CatalogRoots
 from .rehu_document_model import RehuDocumentModel
 
 NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released", "advertised_count")
@@ -20,6 +36,32 @@ NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "releas
 FALLBACK_RESOURCE_TYPE: Final = "tutorial"
 """What a foreign or typeless document's suggestions fall back to (#322): a type no installed plugin here
 claims still gets a usable list rather than an empty one."""
+
+
+@dataclass(frozen=True, slots=True)
+class RootDestination:
+    """Where the record's root's layout puts it (#579): the place the path row offers under its names.
+
+    :param label: the root's name, its location when it has none.
+    :param relative: the place, relative to the root's folder, one segment per level.
+    :param root: the root's folder on this machine.
+    :param here: whether the record already sits there.
+    """
+
+    label: str
+    relative: PurePosixPath
+    root: Path
+    here: bool
+
+    @property
+    def into(self) -> Path:
+        """The folder the record's own entry -- its folder, or its file set -- lands in."""
+        return self.root.joinpath(*self.relative.parts[:-1])
+
+    @property
+    def name(self) -> str:
+        """The name the record's own entry takes there."""
+        return self.relative.name
 
 
 class NameSuggestionModel(QObject):
@@ -35,25 +77,44 @@ class NameSuggestionModel(QObject):
     forwards a clicked one as a command, and ``model.rename_location`` executes it -- this class
     never touches the filesystem.
 
+    **The root's place** (#579), :meth:`root_destination`, is the second group the path row offers: where the layout
+    of the root holding the record puts it. Only a place that can be built is offered -- a root this machine does not
+    reach, one whose layout does not take the record's type or needs a field the record leaves empty with no
+    fallback, and a record under no root offer none -- and only the record's own root, since moving to another is the
+    verified move (#339).
+
     :param model: the record fields (``title`` / ``publisher`` / ``authors`` / ``released`` / ``advertised_count`` /
         ``resource_type``) to build suggestions from.
+    :param catalog_roots: the open catalog's roots, for :meth:`root_destination`; ``None`` offers no root's place.
     :param parent: optional Qt parent; the caller parents this to the view it serves, which the model
         may outlive (#375) -- every subscription here is severed when this object is destroyed.
     """
 
     changed = Signal()
-    """Fires when a field :meth:`suggestions` is built from (:data:`NAME_SUGGESTION_SOURCE_FIELDS`, the
-    document's type, or the Locations settings) changes, so a `PathField` can re-pull it live."""
+    """Fires when a field :meth:`suggestions` or :meth:`root_destination` is built from changes
+    (:data:`NAME_SUGGESTION_SOURCE_FIELDS`, the document's type or path, the Locations settings, or the catalog's
+    roots), so a `PathField` can re-pull them live."""
 
-    def __init__(self, model: RehuDocumentModel, parent: QObject | None = None) -> None:
+    def __init__(
+        self, model: RehuDocumentModel, catalog_roots: CatalogRoots | None = None, parent: QObject | None = None
+    ) -> None:
         super().__init__(parent)
         self.__model: Final = model
+        self.__catalog_roots: Final = catalog_roots
+        self.__unreachable: frozenset[UUID] | None = None
+        """The roots that cannot be reached, as last asked; ``None`` until asked, and again once the catalog says its
+        roots or their reach changed. Kept because asking reads the cache (~2 ms), and the place is asked for on every
+        keystroke in a field it is built from."""
         for name in NAME_SUGGESTION_SOURCE_FIELDS:
             signal_name = SimpleProperty.notify_signal_name(type(model), name)
             getattr(model, signal_name).connect(self.__on_source_field_changed)
         model.resource_type_changed.connect(self.changed)  # type: ignore[attr-defined]
+        model.path_changed.connect(self.__on_source_field_changed)  # type: ignore[attr-defined]
         shared_location_templates_settings().patterns_changed.connect(self.changed)
         shared_location_replacements_settings().rules_changed.connect(self.changed)
+        if catalog_roots is not None:
+            catalog_roots.roots_changed.connect(self.__on_roots_changed)
+            catalog_roots.root_reachable.connect(self.__on_roots_changed)
 
     def suggestions(self) -> list[str]:
         """Build the rename-candidate names via this document type's `LocationTemplatesSettings` list.
@@ -90,6 +151,54 @@ class NameSuggestionModel(QObject):
             for pattern in patterns
         )
         return list(dict.fromkeys(name for name in rendered if name))
+
+    def root_destination(self) -> RootDestination | None:
+        """Where the layout of the root holding the record puts it (#579), rendered by
+        :func:`~rehuco_core.destination` from the record's fields and the Location Replacements.
+
+        :returns: the place; ``None`` when there is no catalog, the record has no path or is under no root this
+            machine reaches, or the root's layout does not take the record.
+        """
+        roots, path = self.__catalog_roots, self.__model.path
+        if roots is None or path is None:
+            return None
+        if self.__unreachable is None:
+            self.__unreachable = roots.unreachable_roots()
+        root = self.__root_holding(path, roots.mapped_roots(), self.__unreachable)
+        if root is None:
+            return None
+        current_name = self.__model.current_name
+        naming = RecordNaming.of(self.__model.document, current_name)
+        relative = destination(root, naming, shared_location_replacements_settings().rules)
+        if isinstance(relative, Refusal):
+            return None
+        folder = path.parent.parent if is_directory_scoped(path) else path.parent
+        here = path_key(root.path.joinpath(*relative.parts)) == path_key(folder / current_name)
+        return RootDestination(root.label or root.location, relative, root.path, here)
+
+    @staticmethod
+    def __root_holding(path: Path, roots: Sequence[MappedRoot], unreachable: frozenset[UUID]) -> MappedRoot | None:
+        """The reachable root whose folder holds ``path``; roots never overlap, so there is at most one.
+
+        :param path: the record's ``.rehu``.
+        :param roots: the roots this machine maps.
+        :param unreachable: those of them that cannot be reached now.
+        :returns: the root, or ``None``.
+        """
+        for root in roots:
+            depth = len(root.path.parts)
+            # a root's folder is matched folding case on every OS (#629)
+            beneath = tuple(map(path_key, path.parts[:depth])) == tuple(map(path_key, root.path.parts))
+            if beneath and len(path.parts) > depth and root.root_id not in unreachable:
+                return root
+        return None
+
+    def __on_roots_changed(self) -> None:
+        """Forget which roots cannot be reached, and announce that the root's place may have changed: the catalog's
+        roots changed, or one's reach did. Takes no arguments, as :meth:`__on_source_field_changed`.
+        """
+        self.__unreachable = None
+        self.changed.emit()
 
     def __on_source_field_changed(self) -> None:
         """Announce that a field the suggestions are built from changed.

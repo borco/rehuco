@@ -414,6 +414,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__resource_events: Final = ResourceEvents(changes, self)
         self.__resource_events.moved.connect(self.__on_resources_moved)
         self.__rename_coordinator.add_rename_listener(self.__resource_events.announce_moved)
+        # the open .rehuco and its cache, which the Root Catalog dock's roots and the Browsers dock's browsers both
+        # read (#461) -- and every open document, for its path row's root place (#579)
+        self.__root_catalog: Final = RootCatalog(
+            self.__task_queue,
+            self,
+            rename_coordinator=self.__rename_coordinator,
+            resource_events=self.__resource_events,
+            catalog=self.__catalog,
+            notifiers=RootNotifiers(changes, self.__rename_coordinator),
+        )
 
         # one view-model per open document whoever shows it (#375): every holder acquires through this,
         # so a resource open in two places is one model, edited live in both
@@ -422,9 +432,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             rename_coordinator=self.__rename_coordinator,
             resource_events=self.__resource_events,
             records=self.__records,
-            # a document under no root has its folder watched; asked only once documents are held, after the
-            # catalog exists
-            roots=lambda: tuple(self.__root_catalog.root_paths().values()),
+            # a document under no root has its folder watched; a class-level Signal reads as `Signal`, not the
+            # protocol's `SignalInstance`, to the type checker
+            catalog_roots=self.__root_catalog,  # type: ignore[arg-type]
         )
         # every Save is a job on the queue (#497): this owns them, and hands each landed or failed one back to its
         # document
@@ -462,16 +472,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # a document command set app-wide fires on the focused document from anywhere (#345); nothing
         # holds onto the router -- it parents itself to this window, which its actions are added to
         DocumentCommandRouter(self.__documents_dock, self.__command_registry, self)
-        # the open .rehuco and its cache, which the Root Catalog dock's roots and the Browsers dock's browsers both
-        # read (#461)
-        self.__root_catalog: Final = RootCatalog(
-            self.__task_queue,
-            self,
-            rename_coordinator=self.__rename_coordinator,
-            resource_events=self.__resource_events,
-            catalog=self.__catalog,
-            notifiers=RootNotifiers(changes, self.__rename_coordinator),
-        )
         # a root added or removed changes which documents are under no root
         self.__root_catalog.roots_changed.connect(self.__document_registry.watch_loose_folders)
         self.__root_catalog.overlaps.changed.connect(self.__show_root_overlaps)

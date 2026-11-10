@@ -12,6 +12,7 @@ from rehuco_core import TaskQueue
 from rehuco_core.access import ResourceKey
 
 from ..resource_events import ResourceEvents
+from .catalog_roots import CatalogRoots
 from .document_widget import DocumentWidget
 from .pending_saves import PendingSaves
 from .rehu_document_model import RehuDocumentModel
@@ -60,6 +61,7 @@ class DocumentDock(QtAds.CDockWidget):
     :param preview_name: the object name of a preview dock (#39), kept until it is promoted -- unique per
         preview the area makes, since the manager's registry stays keyed by the name a dock was added under and
         a promoted preview keeps its entry. ``None`` builds an ordinary dock, named by its key.
+    :param catalog_roots: the open catalog's roots (#579), passed straight through.
     """
 
     key_moved: Signal = Signal(object, object)
@@ -83,6 +85,7 @@ class DocumentDock(QtAds.CDockWidget):
         *,
         pending_saves: PendingSaves | None = None,
         preview_name: str | None = None,
+        catalog_roots: CatalogRoots | None = None,
     ) -> None:
         super().__init__(dock_manager, "")
         self.__model = model
@@ -97,6 +100,7 @@ class DocumentDock(QtAds.CDockWidget):
             task_queue=task_queue,
             resource_events=resource_events,
             pending_saves=pending_saves,
+            catalog_roots=catalog_roots,
         )
 
         self.setObjectName(preview_name if preview_name is not None else self.__object_name(model.key))

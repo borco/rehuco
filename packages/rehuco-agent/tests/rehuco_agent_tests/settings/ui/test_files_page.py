@@ -17,6 +17,7 @@ from rehuco_agent.settings.deletion_settings import (
     shared_deletion_settings,
 )
 from rehuco_agent.settings.excluded_files_settings import ExcludedFilesSettings, shared_excluded_files_settings
+from rehuco_agent.settings.move_settings import DEFAULT_REMOVE_EMPTY_FOLDERS, MoveSettings, shared_move_settings
 from rehuco_agent.settings.ui import files_page
 from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
@@ -138,6 +139,92 @@ def without_asking_check_box(page: FilesPage, name: str) -> QCheckBox:
     box = page.findChild(QCheckBox, f"{name}_check_box")
     assert isinstance(box, QCheckBox)
     return box
+
+
+# endregion
+
+
+# region moving records (#579)
+def remove_empty_folders_check_box(page: FilesPage) -> QCheckBox:
+    """The page's *Remove the left-behind folders* toggle.
+
+    :param page: the page under test.
+    :returns: the check box.
+    """
+    box = page.findChild(QCheckBox, "remove_empty_folders_check_box")
+    assert isinstance(box, QCheckBox)
+    return box
+
+
+def test_left_behind_folders_are_kept_on_a_fresh_install(page: FilesPage) -> None:
+    """A move removes nothing it was not asked to: the box starts unchecked, as `MoveSettings` ships.
+
+    **Test steps:**
+
+    * build the page over no saved settings
+    * verify the box is unchecked and agrees with the shipped default
+    """
+    assert remove_empty_folders_check_box(page).isChecked() is DEFAULT_REMOVE_EMPTY_FOLDERS is False
+
+
+def test_the_saved_left_behind_folders_choice_is_shown(qtbot: QtBot) -> None:
+    """The page starts on the saved choice.
+
+    **Test steps:**
+
+    * save the choice on, and build the page
+    * verify the box is checked and the page clean
+    """
+    shared_move_settings().remove_empty_folders = True
+    page = FilesPage()
+    qtbot.addWidget(page)
+
+    assert remove_empty_folders_check_box(page).isChecked() is True
+    assert not page.is_dirty()
+
+
+def test_the_left_behind_folders_choice_is_staged_saved_and_dropped(
+    page: FilesPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """Ticking the box makes the page dirty; Reset drops it, Apply saves it into the shared settings and persists it.
+
+    **Test steps:**
+
+    * tick the box, check the page is dirty, reset, and check it is unticked and clean
+    * tick it again, apply, and check the shared settings and a reload hold it
+    """
+    remove_empty_folders_check_box(page).setChecked(True)
+    assert page.is_dirty()
+    page.drop_changes()
+    assert remove_empty_folders_check_box(page).isChecked() is False
+    assert not page.is_dirty()
+
+    remove_empty_folders_check_box(page).setChecked(True)
+    page.save_changes()
+
+    assert shared_move_settings().remove_empty_folders is True
+    assert not page.is_dirty()
+    reloaded = MoveSettings()
+    reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert reloaded.remove_empty_folders is True
+
+
+def test_seed_defaults_stages_keeping_the_left_behind_folders(qtbot: QtBot) -> None:
+    """Defaults untick a saved choice, as a staged edit.
+
+    **Test steps:**
+
+    * save the choice on, build the page and seed the defaults
+    * verify the box is unticked and the page dirty
+    """
+    shared_move_settings().remove_empty_folders = True
+    page = FilesPage()
+    qtbot.addWidget(page)
+
+    page.seed_defaults()
+
+    assert remove_empty_folders_check_box(page).isChecked() is False
+    assert page.is_dirty()
 
 
 # endregion
@@ -661,10 +748,10 @@ def test_the_wrapping_notes_are_never_clipped_at_any_width(page: FilesPage) -> N
         assert first_seen.setdefault(width, heights) == heights, f"heights ratcheted at page width {width}"
 
 
-def test_frame_filter_discovers_all_three_frames_independently(page: FilesPage) -> None:
-    """The three blocks are separate top-level frames, so each filters on its own text (#67).
+def test_frame_filter_discovers_all_four_frames_independently(page: FilesPage) -> None:
+    """The four blocks are separate top-level frames, so each filters on its own text (#67, #579).
 
-    Guards the page's ``.ui`` frame structure: searching for one block must not drag the other two
+    Guards the page's ``.ui`` frame structure: searching for one block must not drag the others
     along with it.
 
     **Test steps:**
@@ -673,7 +760,8 @@ def test_frame_filter_discovers_all_three_frames_independently(page: FilesPage) 
     * filter by the deletion header and verify only that frame stays shown
     * filter by the patterns header and verify only that frame stays shown
     * filter by the structural header and verify only that frame stays shown
-    * filter by a non-matching term and verify all three hide
+    * filter by the moving header and verify only that frame stays shown
+    * filter by a non-matching term and verify all four hide
     """
     frame_filter = SettingsFrameFilter(page, "Files")
     ui = page_ui(page)
@@ -693,10 +781,17 @@ def test_frame_filter_discovers_all_three_frames_independently(page: FilesPage) 
     assert ui.deletion_frame.isVisibleTo(page) is False
     assert ui.patterns_frame.isVisibleTo(page) is False
 
+    frame_filter.apply("moving records", show_full_on_title_match=False)
+    assert ui.moving_frame.isVisibleTo(page) is True
+    assert ui.deletion_frame.isVisibleTo(page) is False
+    assert ui.patterns_frame.isVisibleTo(page) is False
+    assert ui.structural_frame.isVisibleTo(page) is False
+
     frame_filter.apply("no-such-term", show_full_on_title_match=False)
     assert ui.deletion_frame.isVisibleTo(page) is False
     assert ui.patterns_frame.isVisibleTo(page) is False
     assert ui.structural_frame.isVisibleTo(page) is False
+    assert ui.moving_frame.isVisibleTo(page) is False
 
 
 # endregion

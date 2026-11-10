@@ -17,11 +17,10 @@ Pure: no disk, no Qt. The path row and the Roots view ask it (#579).
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
-from typing import Final
+from typing import Final, Protocol
 
 from .location_pattern import LocationPattern, known_placeholders_for, location_values
 from .rehu_document import RehuDocument
-from .rehuco_file import RehucoRoot
 from .rehuroot_file import ANY_TYPE, KEEP_NAME
 from .replacement_rule import ReplacementRule, apply_location_replacements
 from .sanitized_names import sanitize_name
@@ -32,6 +31,27 @@ LEVEL_SEPARATOR: Final = "/"
 SEPARATOR_STAND_IN: Final = chr(0xE000)
 """What a field's or a fallback's own ``/`` is held as while the rendered template is cut into levels: a private-use
 character no field holds, put back before the replacements and the sanitize step see the segment."""
+
+
+class LaidOutRoot(Protocol):
+    """What a layout is read off: a root's name, its layouts and its fallbacks -- a root of the ``.rehuco`` as every
+    machine reads it, or one this machine maps (#579)."""
+
+    @property
+    def label(self) -> str:  # pyright: ignore[reportReturnType]
+        """The root's name; empty when it has none."""
+
+    @property
+    def location(self) -> str:  # pyright: ignore[reportReturnType]
+        """Where the root is, the name when it has no label."""
+
+    @property
+    def layouts(self) -> Mapping[str, str]:  # pyright: ignore[reportReturnType]
+        """The path template of each type's main key, ``*`` for any type not named."""
+
+    @property
+    def fallbacks(self) -> Mapping[str, str]:  # pyright: ignore[reportReturnType]
+        """What each placeholder renders as when a record leaves it empty."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,7 +96,7 @@ class Refusal:
     reason: str
 
 
-def destination(root: RehucoRoot, record: RecordNaming, rules: Sequence[ReplacementRule]) -> PurePosixPath | Refusal:
+def destination(root: LaidOutRoot, record: RecordNaming, rules: Sequence[ReplacementRule]) -> PurePosixPath | Refusal:
     """Where a record would live under a root, relative to the root's folder.
 
     :param root: the root, its layouts and fallbacks.
