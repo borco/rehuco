@@ -80,7 +80,7 @@ class UrlField(TextField):
             )
         return rows
 
-    def __make_row(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __make_row(
         self,
         binding: FieldBinding[str],
         tab: FieldsTab,
