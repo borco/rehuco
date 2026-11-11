@@ -18,9 +18,9 @@ from borco_pyside.qtads import (
 )
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import QInputDialog, QMainWindow, QMenu, QWidget
-from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile, server_of
+from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile, resource_path, server_of
 
 from ..dock_maximize import attach_maximize_handler
 from ..filter_urls import filter_url_token
@@ -29,6 +29,7 @@ from ..settings.catalog_state_store import BrowserState, CatalogStateStore
 from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from .catalog_rows_loader import CatalogRowsLoad, CatalogRowsLoader
 from .catalog_table_model import RowKey
+from .copied_paths import PathsWriter
 from .root_catalog import RootCatalog
 from .root_storage import ROOT_STORAGE_OFFLINE_TOOLTIPS
 from .table_browser import TableBrowser
@@ -452,6 +453,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__browsers[dock] = browser  # pylint: disable=unsupported-assignment-operation
         self.__place(dock, beside)
         browser.row_activated.connect(self.__on_row_activated)
+        browser.copy_paths_requested.connect(self.__copy_paths)
 
         browser.query_changed.connect(lambda: self.__fill(browser))
         browser.current_changed.connect(lambda key: self.__on_current_changed(browser, key))
@@ -480,6 +482,24 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         key = self.__catalog.resource_key(root_id, relative)
         if key is not None:
             self.open_requested.emit(key)
+
+    def __copy_paths(self, rows: object, write: object) -> None:
+        """Put the paths of a browser's selected resources on the clipboard as plain text (#646), never as a file list:
+        a directory-scoped record's folder, a standalone record's file. A row the catalog no longer resolves -- its
+        root gone from the file -- is left out; an offline root's is not, since nothing is read.
+
+        :param rows: the rows' ``(root_id, relative)`` keys, in the table's order, as the object-typed relay carried
+            them.
+        :param write: the :data:`~.copied_paths.PathsWriter` turning the paths into the text.
+        """
+        keys = (self.__catalog.resource_key(root_id, relative) for root_id, relative in cast(tuple[RowKey, ...], rows))
+        paths = [resource_path(key.path) for key in keys if key is not None]
+        if not paths:
+            return
+        clipboard = QGuiApplication.clipboard()
+        # optional in the binding, never absent in a running GUI application
+        if clipboard is not None:  # pragma: no branch
+            clipboard.setText(cast(PathsWriter, write)(paths))
 
     def __place(self, dock: QtAds.CDockWidget, beside: QtAds.CDockWidget | None = None) -> None:
         """Add a browser's sub-dock to the manager: into the tab strip of ``beside``, else of the first browser that

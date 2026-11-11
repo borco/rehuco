@@ -379,6 +379,7 @@ from .resource_scoping import (
     is_record_name,
     other_record_stems,
     resource_name,
+    resource_path,
 )
 from .root_candidates import CandidateKind, RootCandidate, RootPick, RootPlanner
 from .root_destination import RecordNaming, Refusal, destination
@@ -1080,6 +1081,7 @@ __all__ = [
     "renumber_screenshots",
     "resolve_location",
     "resource_name",
+    "resource_path",
     "restore_backup",
     "retire_legacy_manifests",
     "rewrite_description_images",

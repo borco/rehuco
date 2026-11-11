@@ -10,7 +10,7 @@ from typing import Final
 
 from pytest import mark, param
 from pytest_mock import MockerFixture
-from rehuco_core import is_directory_scoped, is_record_name, other_record_stems, resource_name
+from rehuco_core import is_directory_scoped, is_record_name, other_record_stems, resource_name, resource_path
 
 DIRECTORY: Final = Path("/fake/sculpting")
 
@@ -106,6 +106,26 @@ def test_a_label_names_the_directory_for_a_directory_scoped_record(filename: str
     * verify it is the directory's name, or the record's own filename
     """
     assert resource_name(DIRECTORY / filename) == expected
+
+
+@mark.parametrize(
+    ("filename", "expected"),
+    [
+        param("info.rehu", DIRECTORY, id="info-rehu"),
+        param("info.tc", DIRECTORY, id="info-tc"),
+        param("foo.rehu", DIRECTORY / "foo.rehu", id="named-rehu"),
+        param("foo.tc", DIRECTORY / "foo.tc", id="named-tc"),
+    ],
+)
+def test_a_resource_is_the_directory_of_a_directory_scoped_record(filename: str, expected: Path) -> None:
+    """A resource's path is the folder for a directory-scoped record and the record for a file-scoped one (#646).
+
+    **Test steps:**
+
+    * ask for a record's resource path
+    * verify it is the record's directory, or the record itself
+    """
+    assert resource_path(DIRECTORY / filename) == expected
 
 
 # endregion

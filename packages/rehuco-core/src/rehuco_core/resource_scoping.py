@@ -131,3 +131,15 @@ def resource_name(record_path: Path) -> str:
     :returns: the display name.
     """
     return record_path.parent.name if is_directory_scoped(record_path) else record_path.name
+
+
+def resource_path(record_path: Path) -> Path:
+    """Where a resource is -- the directory for a directory-scoped record, else the record itself.
+
+    The scoping rule applied to a path a reader is handed: a browser's *Copy paths* (#646) names the
+    folder ``tutorials/foo`` for ``tutorials/foo/info.rehu``, and ``refs/pack.rehu`` for itself.
+
+    :param record_path: the resource's record, ``.rehu`` or ``.tc``.
+    :returns: the resource's path, spelled as ``record_path`` spells it.
+    """
+    return record_path.parent if is_directory_scoped(record_path) else record_path
