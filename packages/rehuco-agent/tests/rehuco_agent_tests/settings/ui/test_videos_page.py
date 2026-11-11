@@ -412,12 +412,12 @@ def test_a_row_saving_would_drop_is_not_yet_a_change(qtbot: QtBot) -> None:
 # shared import, matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
-    """The widget ships none, so a page that forgot to dress it would show eight blank buttons (#231).
+    """The widget ships none, so a page that forgot to dress it would show seven blank buttons (#231).
 
     **Test steps:**
 
     * build the page
-    * verify all eight of the editor's actions carry an icon
+    * verify all seven of the editor's actions carry an icon
     """
     page = VideosPage()
     qtbot.addWidget(page)
@@ -425,7 +425,6 @@ def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
 
     actions = (
         editor.item_actions.insert_action,
-        editor.item_actions.edit_action,
         editor.item_actions.delete_action,
         editor.item_actions.reset_action,
         editor.ordering_actions.move_to_top_action,
@@ -433,7 +432,7 @@ def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
         editor.ordering_actions.move_down_action,
         editor.ordering_actions.move_to_bottom_action,
     )
-    assert [action.icon().isNull() for action in actions] == [False] * 8
+    assert [action.icon().isNull() for action in actions] == [False] * 7
 
 
 # pylint: enable=duplicate-code

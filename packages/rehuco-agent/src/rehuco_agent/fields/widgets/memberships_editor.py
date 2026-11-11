@@ -32,7 +32,7 @@ ALL_SCOPES_TOOLTIP: Final = "Show every identity's learning paths in this file, 
 
 
 class MembershipsEditor(ItemListEditor):
-    """What both memberships tables are made of: rows with an insert/edit/delete column, no ordering, and
+    """What both memberships tables are made of: rows with an insert/delete column, no ordering, and
     a spin box on the position cell (#235).
 
     **No ordering column.** ``index`` is the position and the row's own place is nothing a reader can see,

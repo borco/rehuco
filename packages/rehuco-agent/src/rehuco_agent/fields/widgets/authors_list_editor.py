@@ -82,7 +82,7 @@ class AuthorsListEditor(ItemListEditor):
     """The record-list half of the ``authors`` editor: `ItemListEditor`'s machinery over an
     :class:`AuthorsTableModel` ([[field-schema#authors]]).
 
-    Everything about *how* the list is edited -- the insert/edit/delete buttons, the four move buttons,
+    Everything about *how* the list is edited -- the insert/delete buttons, the four move buttons,
     the keys, one model call per edit, the abandoned-insert rule -- comes from the base, which is the
     whole reason the record editor and the settings pages' `StringListEditor` behave the same way
     without either knowing about the other. What is here is what a list of **authors** is: two columns,

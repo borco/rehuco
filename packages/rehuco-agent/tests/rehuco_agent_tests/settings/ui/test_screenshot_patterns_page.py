@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from borco_pyside.widgets import EditItemAction
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -164,10 +165,10 @@ def test_every_action_wears_an_icon(page: ScreenshotPatternsPage) -> None:
 
     **Test steps:**
 
-    * verify each action armed on either view carries a non-null icon
+    * verify each action armed on either view carries a non-null icon, the Edit key's apart: it has no button
     """
     for editor in (editor_of(page), try_it_editor_of(page)):
-        actions = editor.view.actions()
+        actions = [action for action in editor.view.actions() if not isinstance(action, EditItemAction)]
 
         assert actions
         assert all(not action.icon().isNull() for action in actions)

@@ -190,7 +190,7 @@ class ItemListEditor(QWidget):
 
     @property
     def item_actions(self) -> ItemEditActionsColumn:
-        """The insert/edit/delete/reset column -- where a consuming app sets those icons."""
+        """The insert/duplicate/delete/reset column -- where a consuming app sets those icons."""
         return self.__item_actions
 
     @property
