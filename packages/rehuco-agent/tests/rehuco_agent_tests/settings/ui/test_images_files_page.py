@@ -155,18 +155,17 @@ def test_the_extension_editors_reset_fills_the_list_with_the_shipped_formats(pag
 # shared import, matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 def test_every_extension_editor_action_wears_one_of_this_apps_icons(page: ImagesFilesPage) -> None:
-    """The widget ships none, so a page that forgot to dress it would show eight blank buttons (#231).
+    """The widget ships none, so a page that forgot to dress it would show seven blank buttons (#231).
 
     **Test steps:**
 
     * build the page
-    * verify all eight of the editor's actions carry an icon
+    * verify all seven of the editor's actions carry an icon
     """
     editor = extensions_editor(page)
 
     actions = (
         editor.item_actions.insert_action,
-        editor.item_actions.edit_action,
         editor.item_actions.delete_action,
         editor.item_actions.reset_action,
         editor.ordering_actions.move_to_top_action,
@@ -174,7 +173,7 @@ def test_every_extension_editor_action_wears_one_of_this_apps_icons(page: Images
         editor.ordering_actions.move_down_action,
         editor.ordering_actions.move_to_bottom_action,
     )
-    assert [action.icon().isNull() for action in actions] == [False] * 8
+    assert [action.icon().isNull() for action in actions] == [False] * 7
 
 
 def test_editing_the_extension_list_makes_the_page_dirty(page: ImagesFilesPage) -> None:

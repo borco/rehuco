@@ -203,6 +203,22 @@ def test_edit_calls_the_viewer_directly(qtbot: QtBot) -> None:
     assert not editor.calls
 
 
+def test_the_column_shows_no_edit_button(qtbot: QtBot) -> None:
+    """A double-click, a click on the selected cell or a key press starts an edit, so Edit has no button.
+
+    **Test steps:**
+
+    * build the column
+    * verify its buttons show insert, duplicate, delete and reset, in that order, and not Edit
+    """
+    column = build_edit_column(FakeEditor(), FakeViewer())
+    qtbot.addWidget(column)
+
+    shown = [button.defaultAction() for button in column.findChildren(QToolButton)]
+
+    assert shown == [column.insert_action, column.duplicate_action, column.delete_action, column.reset_action]
+
+
 def test_delete_asks_the_editor_for_the_current_row(qtbot: QtBot) -> None:
     """Delete reads the row to drop from the viewer.
 

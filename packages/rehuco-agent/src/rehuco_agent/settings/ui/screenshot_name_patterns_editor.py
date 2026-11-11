@@ -24,7 +24,7 @@ class ScreenshotNamePatternsEditor(ItemListEditor):
 
     The one-column sibling of the settings pages' `StringListEditor`, built the way
     :class:`~rehuco_agent.fields.widgets.authors_list_editor.AuthorsListEditor` is: everything about
-    *how* the list is edited -- the insert/edit/delete buttons, the four move buttons, the keys, one
+    *how* the list is edited -- the insert/delete buttons, the four move buttons, the keys, one
     model call per edit, which inserted row is still blank enough to abandon -- comes from the base.
     What is here is what a list of **screenshot name patterns** is: one column, a Reset that restores
     the shipped set, and an ordering column that stays visible because the order decides which pattern

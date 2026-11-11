@@ -188,12 +188,12 @@ URL:       [url edit]
 ```
 
 The **record-list machinery** ships as `ItemListEditor` (`borco_pyside.widgets`): a view over a model
-plus the insert/edit/delete/reset and top/up/down/bottom action columns, with the keys armed on the
-view alone. Its two clients are the settings pages' `StringListEditor` and the `authors` record rows
-(#97). Declarative group/subtype *config* — a composite an admin describes rather than one a field
-builds — is still unbuilt, as is nesting past one level. Drag-to-reorder ships in the card list
-(`CardListEditor`, #390), which the `sources` editor uses (#391). A composite field
-returns **one** editor widget from
+plus the insert/duplicate/delete/reset and top/up/down/bottom action columns, with the keys armed on the
+view alone (an edit has a key, `F2`, and no button). Its two clients are the settings pages'
+`StringListEditor` and the `authors` record rows (#97). Declarative group/subtype *config* — a composite
+an admin describes rather than one a field builds — is still unbuilt, as is nesting past one level.
+Drag-to-reorder ships in the card list (`CardListEditor`, #390), which the `sources` editor uses (#391). A
+composite field returns **one** editor widget from
 `make_editor()` — a container holding its stacked subtypes — so owning child fields needs no base
 change, and never a list of editors.
 

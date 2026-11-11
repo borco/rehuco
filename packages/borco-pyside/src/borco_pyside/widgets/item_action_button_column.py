@@ -25,20 +25,23 @@ from .item_protocols import ItemEditor, ItemOrderingEditor, ItemViewer
 
 
 class ItemEditActionsColumn(ActionButtonColumn):
-    """Insert / Duplicate / Edit / Delete / Reset, wired straight to an
+    """Insert / Duplicate / Delete / Reset buttons, wired straight to an
     :class:`~borco_pyside.widgets.item_protocols.ItemEditor` and an
-    :class:`~borco_pyside.widgets.item_protocols.ItemViewer`.
+    :class:`~borco_pyside.widgets.item_protocols.ItemViewer`, and an Edit action with no button.
+
+    Edit has no button because a double-click, a click on the selected cell or a key press starts an edit
+    already; the action stays for its own key, and calls
+    :meth:`~borco_pyside.widgets.item_protocols.ItemViewer.edit_current`.
 
     Insert and Duplicate both touch editor and viewer: each asks the editor for a new row after the
-    viewer's current one and makes the result current. Insert then opens it for typing -- "insert
-    always opens the new entry" and "click Edit" both end up calling
-    :meth:`~borco_pyside.widgets.item_protocols.ItemViewer.edit_current`, so neither path can drift from
-    the other -- while Duplicate does not: a copy is already typed, and opening it would only invite the
-    Escape that undoes a blank insert. Duplicate, Edit and Delete answer to the viewer's current row;
-    Reset is list-wide, so it neither reads nor needs one -- and is, unlike the others, not something
-    every editor wants: hide its button with ``reset_action.setVisible(False)`` when there is no reset
-    concept at all (`ActionButtonColumn.add_action_button` is what makes that actually hide it), and
-    likewise ``duplicate_action`` where an entry is not the editor's to copy.
+    viewer's current one and makes the result current. Insert then opens it for typing -- through the same
+    :meth:`~borco_pyside.widgets.item_protocols.ItemViewer.edit_current` the Edit key calls, so neither
+    path can drift from the other -- while Duplicate does not: a copy is already typed, and opening it
+    would only invite the Escape that undoes a blank insert. Duplicate, Edit and Delete answer to the
+    viewer's current row; Reset is list-wide, so it neither reads nor needs one -- and is, unlike the
+    others, not something every editor wants: hide its button with ``reset_action.setVisible(False)``
+    when there is no reset concept at all (`ActionButtonColumn.add_action_button` is what makes that
+    actually hide it), and likewise ``duplicate_action`` where an entry is not the editor's to copy.
 
     :param editor: performs the insert/duplicate/delete/reset.
     :param viewer: says which row is current, and opens it for typing.
@@ -58,7 +61,6 @@ class ItemEditActionsColumn(ActionButtonColumn):
         for action in (
             self.__insert_action,
             self.__duplicate_action,
-            self.__edit_action,
             self.__delete_action,
             self.__reset_action,
         ):
@@ -84,7 +86,7 @@ class ItemEditActionsColumn(ActionButtonColumn):
 
     @property
     def edit_action(self) -> EditItemAction:
-        """Reopen the current entry for typing."""
+        """Reopen the current entry for typing -- by its key alone, the column shows no button for it."""
         return self.__edit_action
 
     @property

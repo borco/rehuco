@@ -619,11 +619,12 @@ now folded into a group (`"Images"`) finds the group row it became.
 - Use `StringListEditor` (`borco_pyside.widgets`) to edit a list of strings, rather than building a list
   and a column of buttons by hand — or, worse, a comma-separated `QLineEdit`, which cannot hold a value
   containing the separator and makes changing one entry mean retyping the lot (#231). It is the list plus
-  two action columns: insert/edit/delete/reset and top/up/down/bottom, each with a key (`Ins`, `F2`,
-  `Del`, `Ctrl+Home`/`Up`/`Down`/`End`), armed on the view alone so an open in-place editor keeps its own
-  `Del`. `with_ordering=False` (or `set_ordering_visible`) hides the ordering half for a list whose order
-  carries nothing. It ships **no icons**: call `apply_item_action_icons`
-  (`rehuco_agent/item_action_icons.py`) to dress it in this app's set, and set its `defaults` to
+  two action columns: insert/duplicate/delete/reset and top/up/down/bottom buttons, each with a key (`Ins`,
+  `Del`, `Ctrl+Home`/`Up`/`Down`/`End`), and `F2` to edit, which has no button, armed on the view alone so
+  an open in-place editor keeps its own `Del`. `with_ordering=False` (or `set_ordering_visible`) hides the
+  ordering half for a list whose order carries nothing. It ships **no icons**: call
+  `apply_item_action_icons` (`rehuco_agent/item_action_icons.py`) to dress it in this app's set, and set its
+  `defaults` to
   whatever Reset should restore. It holds what was typed and normalizes nothing — that stays on the
   settings object, where two pages can (and do) normalize differently (§3). It is a `QStringListModel`
   under `ItemListEditor`, the shared machinery the `authors` record rows are built on too (#97), which is

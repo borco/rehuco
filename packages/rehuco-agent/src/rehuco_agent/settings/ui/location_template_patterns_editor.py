@@ -20,7 +20,7 @@ class LocationTemplatePatternsEditor(ItemListEditor):
     """`ItemListEditor`'s machinery over a :class:`LocationTemplatePatternsModel` (#322).
 
     Built the way :class:`~rehuco_agent.settings.ui.screenshot_name_patterns_editor.ScreenshotNamePatternsEditor`
-    is: everything about *how* the list is edited -- the insert/edit/delete buttons, the four move
+    is: everything about *how* the list is edited -- the insert/delete buttons, the four move
     buttons, the keys, one model call per edit, which inserted row is still blank enough to abandon --
     comes from the base. What is here is what a list of **location name patterns** is: one column, a
     Reset that restores the shipped set, and an ordering column that stays visible because the order
