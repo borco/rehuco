@@ -299,6 +299,9 @@ def root_place_callbacks(
                 f"{place.label}: {Path(place.relative)}" if place.relative.parts else place.label,
                 here=place.here,
                 occupied=not place.here and model.move_conflicts(place.into, place.name),
+                rendered=str(Path(place.relative)) if place.relative.parts else "",
+                full_path=str(place.root.joinpath(*place.relative.parts)),
+                template=place.template,
             )
             for place in shown
         ]

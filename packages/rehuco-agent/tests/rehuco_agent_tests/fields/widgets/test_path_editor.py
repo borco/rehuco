@@ -3,8 +3,11 @@ rename suggestions, unavailable candidates, and the live setters.
 """
 
 from borco_pyside.widgets import ElidedLabel
+from PySide6.QtCore import QEvent
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QFrame
+from PySide6.QtWidgets import QApplication, QFrame, QToolTip
+from pytest import mark
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.colors import WARNING_COLOR
 from rehuco_agent.fields.widgets import LocationLine
@@ -506,3 +509,74 @@ def test_clicking_a_place_emits_its_index(qtbot: QtBot) -> None:
 
 
 # endregion
+
+
+@mark.parametrize("state", [{}, {"here": True}, {"occupied": True}])
+def test_a_place_tooltip_names_the_path_the_full_path_and_the_template(qtbot: QtBot, state: dict[str, bool]) -> None:
+    """Every place -- a live one, the one the record is at, an occupied one -- has a tooltip: the rendered path, then
+    the full path and the template used (#639).
+
+    **Test steps:**
+
+    * set a place of each state, carrying a rendered path, a full path and a template
+    * verify the tooltip lists the three in that order, the last two in a greyed span
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_destinations(
+        [
+            DestinationRow(
+                "Tutorials: Jane/Foo", rendered="Jane/Foo", full_path="T:/Jane/Foo", template="{authors}/*", **state
+            )
+        ]
+    )
+
+    (label,) = destination_labels(editor)
+    tip = label.toolTip()
+    assert tip.startswith('<div style="white-space:pre">Jane/Foo</div>')
+    assert tip.index("T:/Jane/Foo") < tip.index("{authors}/*")
+    assert tip.count("color:") == 2
+
+
+def test_a_place_with_no_path_has_no_rendered_line_and_no_template_line(qtbot: QtBot) -> None:
+    """The root itself (#641) has neither a rendered path nor a template: its tooltip is the full path alone.
+
+    **Test steps:**
+
+    * set a place with only a full path
+    * verify the tooltip holds that path and no line break
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_destinations([DestinationRow("Tutorials", here=True, full_path="T:/")])
+
+    (label,) = destination_labels(editor)
+    assert "T:/" in label.toolTip()
+    assert label.toolTip().count("<div") == 1
+
+
+def test_a_theme_switch_remixes_the_tooltip_grey(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The tooltip's grey follows a live theme switch, rather than staying what it was drawn in (#639).
+
+    **Test steps:**
+
+    * set a place and keep its tooltip
+    * give tooltips another palette and send the editor a palette change
+    * verify the tooltip was redrawn in another grey
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", rendered="Jane/Foo", full_path="T:/Jane/Foo")])
+    (label,) = destination_labels(editor)
+    before = label.toolTip()
+
+    dark = QPalette()
+    dark.setColor(QPalette.ColorRole.ToolTipText, QColor("#d4d4d4"))
+    dark.setColor(QPalette.ColorRole.ToolTipBase, QColor("#3c3c3c"))
+    mocker.patch.object(QToolTip, "palette", return_value=dark)
+    QApplication.sendEvent(editor, QEvent(QEvent.Type.PaletteChange))
+
+    assert "color:#888888" in label.toolTip()
+    assert label.toolTip() != before

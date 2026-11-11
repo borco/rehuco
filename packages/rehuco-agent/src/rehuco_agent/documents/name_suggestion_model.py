@@ -19,6 +19,7 @@ from rehuco_core import (
     destination,
     is_directory_scoped,
     known_placeholders_for,
+    layout_template,
     location_values,
     path_key,
     render_location_pattern,
@@ -39,7 +40,7 @@ claims still gets a usable list rather than an empty one."""
 
 
 @dataclass(frozen=True, slots=True)
-class RootDestination:
+class RootDestination:  # pylint: disable=too-many-instance-attributes
     """Where a root's layout puts the record (#579, #339): one place the path row offers under its names.
 
     :param label: the root's name, its location when it has none.
@@ -49,6 +50,7 @@ class RootDestination:
     :param here: whether the record already sits there.
     :param source_root: the folder of the root the record is under now, or ``None`` for a record under no root.
     :param source_root_id: that root, or ``None``.
+    :param template: the path template that rendered the place, ``*`` included; empty for the root itself (#639).
     """
 
     label: str
@@ -58,6 +60,7 @@ class RootDestination:
     here: bool
     source_root: Path | None
     source_root_id: UUID | None
+    template: str = ""
 
     @property
     def same_root(self) -> bool:
@@ -227,6 +230,7 @@ class NameSuggestionModel(QObject):
                     here,
                     None if own is None else own.path,
                     None if own is None else own.root_id,
+                    (layout_template(root, naming.main_key) or "").strip(),
                 )
             )
         return tuple(places)

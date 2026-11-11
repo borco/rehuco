@@ -97,6 +97,16 @@ class Refusal:
     reason: str
 
 
+def layout_template(root: LaidOutRoot, main_key: str) -> str | None:
+    """The path template a root gives a type: the type's own, else the ``*`` one (#639).
+
+    :param root: the root, its layouts.
+    :param main_key: the record's type, as its plugin's main key.
+    :returns: the template as written, or ``None`` when the root takes no such type.
+    """
+    return root.layouts.get(main_key, root.layouts.get(ANY_TYPE))
+
+
 def destination(
     root: LaidOutRoot,
     record: RecordNaming,
@@ -113,7 +123,7 @@ def destination(
     :returns: the path, one segment per level; or why the root does not take the record.
     """
     name = root.label or root.location
-    template = root.layouts.get(record.main_key, root.layouts.get(ANY_TYPE))
+    template = layout_template(root, record.main_key)
     if template is None:
         return Refusal(f"{name} does not take a {record.main_key}: its layouts name no such type, and no '*'.")
     if template.strip() == KEEP_NAME:

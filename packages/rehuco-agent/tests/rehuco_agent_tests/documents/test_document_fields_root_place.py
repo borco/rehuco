@@ -284,3 +284,26 @@ def test_a_record_that_is_its_roots_folder_shows_no_name_to_click(
     suggestions.changed.emit()
     assert not names["Bar"].isHidden()
     warned.assert_called_with(True)
+
+
+def test_a_place_row_carries_what_its_tooltip_shows(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A place's row hands the editor the rendered path, the full path on this machine and the template (#639).
+
+    **Test steps:**
+
+    * give the suggestions a place with a template
+    * verify the row's tooltip holds the rendered path, the root's folder joined with it, and the template
+    """
+    suggestions = NameSuggestionModel(model)
+    place = RootDestination("Tutorials", PurePosixPath("Jane/Foo"), ROOT, ROOT_ID, False, ROOT, ROOT_ID, "{authors}/*")
+    mocker.patch.object(suggestions, "root_destinations", return_value=(place,))
+    mocker.patch.object(model, "move_conflicts", return_value=False)
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    (label,) = labels_of(editor)
+    tip = label.toolTip()
+    assert tip.startswith(f'<div style="white-space:pre">{Path("Jane", "Foo")}</div>')
+    assert str(ROOT / "Jane" / "Foo") in tip
+    assert "{authors}/*" in tip

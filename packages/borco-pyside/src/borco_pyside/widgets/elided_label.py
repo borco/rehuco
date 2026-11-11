@@ -31,11 +31,12 @@ class ElidedLabel(QLabel):
         self.__full = ""
         self.__href = ""
         self.__hint = ""
+        self.__tooltip = ""
         policy = self.sizePolicy()
         policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         self.setSizePolicy(policy)
 
-    def set_text(self, text: str, href: str = "", hint: str = "") -> None:
+    def set_text(self, text: str, href: str = "", hint: str = "", tooltip: str = "") -> None:
         """Set the full text (and optional hyperlink target), then render it elided to the current width.
 
         :param text: the full, un-elided text.
@@ -43,7 +44,9 @@ class ElidedLabel(QLabel):
         :param hint: what the link does, shown in the tooltip alongside (or instead of) the full text --
             e.g. an action a click performs that "open this link" wouldn't otherwise suggest. Ignored
             without a ``href``.
+        :param tooltip: rich text shown as the tooltip in place of the full text and the hint.
         """
+        self.__tooltip = tooltip
         self.__full = text
         self.__href = href
         self.__hint = hint
@@ -117,4 +120,4 @@ class ElidedLabel(QLabel):
         tooltip = self.__full if elided != self.__full else ""
         if self.__href and self.__hint:
             tooltip = f"{tooltip}\n{self.__hint}" if tooltip else self.__hint
-        self.setToolTip(tooltip)
+        self.setToolTip(self.__tooltip or tooltip)

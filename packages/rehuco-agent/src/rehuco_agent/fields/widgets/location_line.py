@@ -43,12 +43,13 @@ class LocationLine(ElidedLabel):
         self.__render()
 
     @override
-    def set_text(self, text: str, href: str = "", hint: str = "") -> None:
+    def set_text(self, text: str, href: str = "", hint: str = "", tooltip: str = "") -> None:
         """:meth:`set_location`; the link target and the hint are this line's own, so a caller's are ignored.
 
         :param text: the full, un-elided text; empty for none.
         :param href: ignored.
         :param hint: ignored.
+        :param tooltip: ignored.
         """
         self.set_location(text)
 

@@ -1110,7 +1110,9 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   all for a record whose own root cannot be reached. A host with no task queue offers only the record's own root's
   place. A place something already occupies shows disabled with the same marker as an occupied name below, and the
   place the record already sits at disabled and plain, as the current name is (a `*` layout under the record's own
-  root is that place, read as its real path under the root, #636). The folders a move leaves empty stay,
+  root is that place, read as its real path under the root, #636). Hovering a place shows the path rendered for the
+  record, then greyed the full path it would land at (the root's folder on this machine, joined with it) and the path
+  template that produced it, `*` included (#639). The folders a move leaves empty stay,
   unless the Files page's *Remove the left-behind folders* says otherwise ([[appendices.settings-pages]]); a record
   under no root has no root to stop at, and its folders always stay. **A record that is its root's folder**
   (`<root>/info.rehu`, #641) is neither moved nor renamed from here, under every layout: its own root is the one place

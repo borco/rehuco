@@ -427,9 +427,13 @@ def test_the_root_holding_the_record_gives_its_place_first_and_every_other_root_
     own, elsewhere = NameSuggestionModel(authored, catalog).root_destinations()
 
     jane = PurePosixPath("Jane/Foo")
-    assert own == RootDestination("Tutorials", jane, root.path, root.root_id, False, root.path, root.root_id)
+    assert own == RootDestination(
+        "Tutorials", jane, root.path, root.root_id, False, root.path, root.root_id, BY_AUTHOR["*"]
+    )
     assert own.same_root and own.into == root.path / "Jane" and own.name == "Foo"
-    assert elsewhere == RootDestination("Tutorials", jane, other.path, other.root_id, False, root.path, root.root_id)
+    assert elsewhere == RootDestination(
+        "Tutorials", jane, other.path, other.root_id, False, root.path, root.root_id, BY_AUTHOR["*"]
+    )
     assert not elsewhere.same_root
 
 
