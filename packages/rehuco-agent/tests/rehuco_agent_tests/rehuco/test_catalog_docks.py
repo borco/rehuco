@@ -854,6 +854,28 @@ def test_a_scan_enqueues_one_job_per_root(
     wait_for_jobs(qtbot, queue)
 
 
+def test_scan_root_enqueues_one_job_for_the_selected_root_alone(
+    mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, served: Any
+) -> None:
+    """**Scan root** scans the root of the row it is asked on, and no other (#644).
+
+    **Test steps:**
+
+    * open a two-root catalog, select the second root and trigger Scan root
+    * verify one job, over the second root's folder
+    """
+    del served
+    scan_finding(mocker, {})
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    select_root(dock, 1)
+    assert dock.roots.scan_root_action.isEnabled()
+
+    dock.roots.scan_root_action.trigger()
+
+    assert [status.source for status in queue.jobs()] == [PACKS]
+    wait_for_jobs(qtbot, queue)
+
+
 @mark.usefixtures("served")
 def test_a_scan_that_is_already_queued_is_not_queued_again(
     mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, queue: TaskQueue, held: GateJob
@@ -1871,18 +1893,26 @@ def test_a_root_row_menu_leads_with_the_folder_actions_then_the_moves_then_remov
 
     * open a catalog and read the view's context menu policy
     * ask for the actions of the first root's row
-    * verify the policy is custom, and the actions are in that order, in three groups
+    * verify the policy is custom, and the actions are in that order, in three groups,
+      Refresh under Open in file explorer (#644)
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
 
     actions = dock.roots.roots_context_actions(dock.roots.roots_model.index(0, 0))
 
     assert dock.roots.roots_view.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
-    assert [action.isSeparator() for action in actions] == [False, False, True, False, False, False, False, True, False]
+    assert [action.isSeparator() for action in actions] == [
+        *[False] * 4,
+        True,
+        *[False] * 4,
+        True,
+        False,
+    ]
     assert actions[0] is dock.roots.filter_folder_action
     assert actions[1] is dock.roots.open_explorer_action
-    assert actions[3:7] == list(dock.roots.move_root_actions)
-    assert actions[8] is dock.roots.remove_root_action
+    assert actions[2:4] == [dock.roots.scan_root_action, dock.roots.refresh_roots_action]
+    assert actions[5:9] == list(dock.roots.move_root_actions)
+    assert actions[10] is dock.roots.remove_root_action
 
 
 @mark.usefixtures("served")
@@ -3570,6 +3600,7 @@ def test_the_context_menu_of_each_kind_of_row(qtbot: QtBot, dock: CatalogDocks, 
         dock.roots.open_companion_action,
         dock.roots.filter_folder_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
         dock.roots.generate_record_action,
     ]
     assert bold() == [False, False, True, False, False, False]
@@ -3577,12 +3608,14 @@ def test_the_context_menu_of_each_kind_of_row(qtbot: QtBot, dock: CatalogDocks, 
         dock.roots.create_companion_action,
         dock.roots.filter_folder_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
     ]
     assert dock.roots.create_companion_action.text() == "Create a rehu for this folder"
     assert not any(bold())
     assert without_separators(dock.roots.roots_context_actions(record)) == [
         dock.roots.open_record_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
         dock.roots.generate_record_action,
     ]
     assert dock.roots.generate_record_action.text() == "Generate checksums for all x.* files"
@@ -3591,6 +3624,7 @@ def test_the_context_menu_of_each_kind_of_row(qtbot: QtBot, dock: CatalogDocks, 
         dock.roots.open_file_action,
         dock.roots.create_companion_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
     ]
     assert dock.roots.create_companion_action.text() == "Create a rehu for this file"
     assert bold() == [False, True, False, False, False, False]
@@ -3598,6 +3632,7 @@ def test_the_context_menu_of_each_kind_of_row(qtbot: QtBot, dock: CatalogDocks, 
         dock.roots.open_file_action,
         dock.roots.open_companion_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
         dock.roots.generate_record_action,
     ]
     assert bold() == [False, True, False, False, False, False]
@@ -4079,10 +4114,11 @@ def test_a_checksum_file_offers_verify_and_it_needs_its_rehu(qtbot: QtBot, dock:
     assert without_separators(with_rehu) == [
         dock.roots.open_companion_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
         dock.roots.verify_old_checksums_action,
         dock.roots.verify_checksums_action,
     ]
-    assert with_rehu[2].isSeparator()
+    assert with_rehu[3].isSeparator()
     assert dock.roots.verify_old_checksums_action.isEnabled()
     assert dock.roots.verify_checksums_action.isEnabled()
     enabled_tip = dock.roots.verify_checksums_action.toolTip()
@@ -4091,6 +4127,7 @@ def test_a_checksum_file_offers_verify_and_it_needs_its_rehu(qtbot: QtBot, dock:
     assert without_separators(without) == [
         dock.roots.create_companion_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
         dock.roots.verify_old_checksums_action,
         dock.roots.verify_checksums_action,
     ]
@@ -4266,21 +4303,23 @@ def test_a_catalog_with_no_roots_has_a_background_menu(
     ("format_version", "add_root_enabled"),
     [param(4, True, id="editable"), param(99, False, id="newer, read-only")],
 )
-def test_a_root_rows_menu_ends_with_scan_add_root_and_refresh_under_a_separator(
+def test_a_root_rows_menu_ends_with_scan_all_roots_and_add_roots_under_a_separator(
     mocker: MockerFixture,
     dock: CatalogDocks,
     served: Any,
     format_version: int,
     add_root_enabled: bool,
 ) -> None:
-    """A root row's menu ends with a separator and Scan, Add Root and Refresh (#543), so they are at hand when the roots
-    fill the column and leave no background to click; they are enabled as the background menu enables them.
+    """A root row's menu ends with a separator, Scan all roots and Add Roots (#543), so they are at hand when the roots
+    fill the column and leave no background to click; its Refresh is up under Open in file explorer (#644). They are
+    enabled as the background menu enables them.
 
     **Test steps:**
 
     * open an editable catalog, or one newer than this build, and ask for the menu over the first root
-    * verify the row's own actions come first, then a separator, then the three in order
-    * ask for the menu below the roots and verify the three are enabled as there: Add Root only when editable
+    * verify the row's own actions come first, then a separator, then the two in order
+    * ask for the menu below the roots and verify the same two, then Refresh, enabled as there: Add Roots only when
+      editable
     """
     served["format_version"] = format_version
     roots = dock.roots
@@ -4295,24 +4334,25 @@ def test_a_root_rows_menu_ends_with_scan_add_root_and_refresh_under_a_separator(
     shown = RecordingMenu.shown[-1]
     assert shown[: len(own)] == own
     tail = shown[len(own) :]
-    assert [action.isSeparator() for action in tail] == [True, False, False, False]
-    assert tail[1:] == [roots.scan_action, roots.add_roots_action, roots.refresh_roots_action]
+    assert [action.isSeparator() for action in tail] == [True, False, False]
+    assert tail[1:] == [roots.scan_action, roots.add_roots_action]
     on_the_row = [action.isEnabled() for action in tail[1:]]
 
     answers.return_value = QModelIndex()
     mocker.patch.object(roots.roots_view, "column_root_at_global", return_value=QModelIndex())
     roots._RootsPanel__on_roots_context_menu(QPoint(1, 1))  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert RecordingMenu.shown[-1] == tail[1:]
+    assert RecordingMenu.shown[-1] == [*tail[1:], roots.refresh_roots_action]
     on_the_background = [action.isEnabled() for action in RecordingMenu.shown[-1]]
 
-    assert on_the_row == on_the_background == [True, add_root_enabled, True]
+    assert on_the_row == on_the_background[:2] == [True, add_root_enabled]
+    assert on_the_background[2]
 
 
 @mark.usefixtures("served")
 def test_a_folder_rows_and_a_file_rows_menu_do_not_end_with_the_catalog_actions(
     qtbot: QtBot, mocker: MockerFixture, monkeypatch: MonkeyPatch, dock: CatalogDocks, folders: Path
 ) -> None:
-    """Folder and file rows get their own actions only: Scan, Add Root and Refresh are for root rows (#543).
+    """Folder and file rows get their own actions only: Scan all roots and Add Roots are for root rows (#543).
 
     **Test steps:**
 
@@ -4704,6 +4744,7 @@ def test_a_screenshot_never_offers_to_create_a_rehu_and_opens_the_record_it_belo
         dock.roots.open_file_action,
         dock.roots.open_companion_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
         dock.roots.generate_record_action,
     ]
     assert dock.roots.roots_context_actions(stranger) == [
@@ -4711,6 +4752,7 @@ def test_a_screenshot_never_offers_to_create_a_rehu_and_opens_the_record_it_belo
         dock.roots.open_file_action,
         dock.roots.create_companion_action,
         dock.roots.open_explorer_action,
+        dock.roots.refresh_roots_action,
     ]
     assert dock.roots.create_companion_action.text() == "Create a rehu for this file"
 
@@ -5110,6 +5152,7 @@ def test_the_empty_part_of_a_column_opens_its_folders_menu_and_leaves_the_select
         "Open associated rehu",
         "Show only rehu in this folder",
         "Open in file explorer",
+        "Refresh",
         "Verify all files in the folder",
     ]
     reveal.assert_called_once_with(records / "res")
@@ -5119,7 +5162,7 @@ def test_the_empty_part_of_a_column_opens_its_folders_menu_and_leaves_the_select
 
     ChoosingMenu.chosen = ""
     roots._RootsPanel__on_roots_context_menu(below_the_rows(columns[QModelIndex()]))  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert ChoosingMenu.shown[-1] == ["Scan", "Add Roots...", "Refresh"]
+    assert ChoosingMenu.shown[-1] == ["Scan all roots", "Add Roots...", "Refresh"]
     assert view.currentIndex() == current
 
     ChoosingMenu.shown = []

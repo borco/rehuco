@@ -31,7 +31,8 @@ class RootsRowActions:
     :param verbs: the checksum verbs a row's menu or buttons end with.
     :param parent: owns the separators, which are made once: a root's menu has two groups to divide, and one action
         cannot sit twice in a menu, while the menu and the details pane ask for a row's actions on every selection.
-        A third, :attr:`catalog_separator`, divides the catalog's Scan, Add Roots and Refresh from a root's menu (#543).
+        A third, :attr:`catalog_separator`, divides the catalog's Scan all roots and Add Roots from a root's menu
+        (#543).
     """
 
     def __init__(
@@ -58,12 +59,14 @@ class RootsRowActions:
     def context_actions(self, index: QModelIndex) -> list[QAction]:
         """What the Roots view's context menu holds for a row (#469).
 
-        A root: the folder filter and Open in file explorer, then the four moves, then Map for a root this machine does
-        not map, and Remove. A folder: **Open associated rehu** if it has one, **Create a rehu** if nothing manages it,
-        the folder filter and Open in file explorer. A rehu record: Open and Open in file explorer. A checksum file: its
-        associated rehu and Open in file explorer. Any other file: Open with its application, then its associated rehu
-        or Create likewise, then Open in file explorer. A placeholder: nothing. **The checksum group comes last, under
-        a separator**, from what manages the row (:meth:`__checksum_group`) -- a checksum file's own two verbs instead.
+        A root: the folder filter, Open in file explorer, Scan root and Refresh, then the four moves, then Map for a
+        root this machine does not map, and Remove. A folder: **Open associated rehu** if it has one, **Create a rehu**
+        if nothing manages it, the folder filter and Open in file explorer. A rehu record: Open and Open in file
+        explorer. A checksum file: its associated rehu and Open in file explorer. Any other file: Open with its
+        application, then its associated rehu or Create likewise, then Open in file explorer. **Refresh sits right
+        under Open in file explorer on every row** (#644). A placeholder: nothing. **The checksum group comes last,
+        under a separator**, from what manages the row (:meth:`__checksum_group`) -- a checksum file's own two verbs
+        instead.
         The row's default action, which a double-click runs, is drawn bold.
 
         :param index: the row the menu is for.
@@ -75,6 +78,8 @@ class RootsRowActions:
                 actions = [
                     ui.filter_folder_action,
                     ui.open_explorer_action,
+                    ui.scan_root_action,
+                    ui.refresh_roots_action,
                     self.__separators[0],
                     ui.move_to_top_action,
                     ui.move_up_action,
@@ -93,16 +98,23 @@ class RootsRowActions:
                     *self.__companion_actions(index),
                     ui.filter_folder_action,
                     ui.open_explorer_action,
+                    ui.refresh_roots_action,
                     *self.__checksum_group(index),
                 ]
             case RootsNodeKind.FILE:
                 file_type = self.__model.file_type_of(index)
                 if file_type is FileType.RECORD:
-                    actions = [ui.open_record_action, ui.open_explorer_action, *self.__checksum_group(index)]
+                    actions = [
+                        ui.open_record_action,
+                        ui.open_explorer_action,
+                        ui.refresh_roots_action,
+                        *self.__checksum_group(index),
+                    ]
                 elif file_type is FileType.MANIFEST:
                     actions = [
                         *self.__companion_actions(index),
                         ui.open_explorer_action,
+                        ui.refresh_roots_action,
                         self.__separators[0],
                         *self.__verbs.verify_actions(index),
                     ]
@@ -111,6 +123,7 @@ class RootsRowActions:
                         *self.__opening.actions(index),
                         *self.__companion_actions(index),
                         ui.open_explorer_action,
+                        ui.refresh_roots_action,
                         *self.__checksum_group(index, file_verbs=True),
                     ]
             case _:

@@ -44,10 +44,18 @@
   </layout>
   <action name="scan_action">
    <property name="text">
-    <string>Scan</string>
+    <string>Scan all roots</string>
    </property>
    <property name="toolTip">
     <string>Scan every root into the cache, on the task queue.</string>
+   </property>
+  </action>
+  <action name="scan_root_action">
+   <property name="text">
+    <string>Scan root</string>
+   </property>
+   <property name="toolTip">
+    <string>Scan the selected root alone into the cache, on the task queue.</string>
    </property>
   </action>
   <action name="add_roots_action">

@@ -162,8 +162,8 @@ chosen. A catalog written before roots were files of their own is not opened; it
 `Root Catalog` >
 `New…` or `Open…` opens one, one at a time, in two app-wide panels — **Root Catalog**, which lists its roots, and
 **Browsers**, which lists what its cache holds — and it is
-reopened on start with the documents, under the same Session setting; a file written by a newer build opens read-only. `Root Catalog` > **Scan** puts one job per root on the
-task queue. Each job walks its root and records every `.rehu` it finds, and every legacy `.tc` that no `.rehu`
+reopened on start with the documents, under the same Session setting; a file written by a newer build opens read-only. `Root Catalog` > **Scan all roots** puts one job per root on the
+task queue; a root row's **Scan root** puts one for that root alone. Each job walks its root and records every `.rehu` it finds, and every legacy `.tc` that no `.rehu`
 covers, in a **`.rehudb`** cache. The cache sits in the machine's local cache folder and is named by the
 `.rehuco`'s own id, so moving the `.rehuco` keeps its cache; it is only ever a copy, rebuilt by scanning again.
 A table in the Browsers panel lists what the cache holds — authors, title, type, path, publisher, tags, release date, size, last update

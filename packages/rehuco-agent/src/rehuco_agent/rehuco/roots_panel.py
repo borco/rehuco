@@ -274,6 +274,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         return self.__roots_ui.scan_action
 
     @property
+    def scan_root_action(self) -> QAction:
+        """Scans the selected root alone into the cache, on the queue (#644)."""
+        return self.__roots_ui.scan_root_action
+
+    @property
     def add_roots_action(self) -> QAction:
         """Adds a folder as a root."""
         return self.__roots_ui.add_roots_action
@@ -432,6 +437,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui = self.__roots_ui
         for action, icon in (
             (ui.scan_action, SCAN_ICON),
+            (ui.scan_root_action, SCAN_ICON),
             (ui.add_roots_action, ADD_ROOT_ICON),
             (ui.remove_root_action, REMOVE_ROOT_ICON),
             (ui.refresh_roots_action, REFRESH_ROOTS_ICON),
@@ -443,6 +449,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ):
             ActionIconThemeHandler(action, icon)
         ui.scan_action.triggered.connect(self.__catalog.scan)
+        ui.scan_root_action.triggered.connect(self.__on_scan_root)
         ui.add_roots_action.triggered.connect(self.__adding.start)
         ui.edit_root_action.toggled.connect(self.__preview.set_editing)
         self.__preview.set_edit_action(ui.edit_root_action)
@@ -469,7 +476,8 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Enable Scan while a file is open, and the root edits only while it can also be saved -- Remove and the moves
         needing a selected **root row** besides, the moves not at the end they move towards. Refresh and the folder
         filter need a catalog, the filter a root or folder to name. Map needs a root this machine does not map, and
-        no save: it writes this machine's mappings, not the file."""
+        no save: it writes this machine's mappings, not the file. Scan root needs a root this machine does map
+        (#644)."""
         is_open = self.__catalog.file is not None
         editable = self.__catalog.editable
         ui = self.__roots_ui
@@ -482,6 +490,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui.add_roots_action.setEnabled(editable)
         ui.remove_root_action.setEnabled(editable and row >= 0)
         shown = self.__roots_model.root_at(current)
+        ui.scan_root_action.setEnabled(isinstance(shown, MappedRoot))
         # checked or not, the mode stays as it is when it cannot be used: it is sticky (#578)
         readable = shown is not None and (not isinstance(shown, RehucoRoot) or shown.readable)
         ui.edit_root_action.setEnabled(editable and readable)
@@ -581,6 +590,12 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             return
         self.__roots_ui.roots_view.setCurrentIndex(self.__roots_model.index(row, 0))
         self.__move_root(lambda moved, at: moved.move(at, to))
+
+    def __on_scan_root(self) -> None:
+        """Scan the current root alone (#644); a root this machine does not map has nothing to scan."""
+        root = self.__roots_model.root_at(self.__acting_index())
+        if isinstance(root, MappedRoot):
+            self.__catalog.scan_root(root.root_id)
 
     def __on_refresh_roots(self) -> None:
         """List the columns on screen again (F5): the current row's chain, or every root while none is current."""
@@ -789,8 +804,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Open the Roots view's context menu on the row under the pointer, making it the current row first so the
         actions act on it. **On the empty part of a column** it opens the menu of the folder that column lists, as a
         file manager does for a folder's background, and the selection stays where it was (#469); on the column of
-        roots that is Scan, Add Roots and Refresh. **A root row's menu ends with the same three** under a separator
-        (#543), for when the roots fill the column and leave no background; folder and file rows do not get them.
+        roots that is Scan all roots, Add Roots and Refresh. **A root row's menu ends with Scan all roots and Add
+        Roots** under a separator (#543), for when the roots fill the column and leave no background; its Refresh sits
+        under Open in file explorer (#644). Folder and file rows do not get them.
 
         :param position: where it was asked for, in the view's coordinates.
         """
@@ -801,7 +817,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             actions = self.roots_context_actions(index)
             if actions:
                 if self.__roots_model.root_at(index) is not None:
-                    actions = [*actions, self.__rows.catalog_separator, *self.__catalog_actions()]
+                    actions = [*actions, self.__rows.catalog_separator, *self.__catalog_actions(refresh=False)]
                 view.setCurrentIndex(index)
                 self.__exec_menu(actions, global_position, None)
             return
@@ -813,13 +829,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         else:
             self.__exec_menu(self.__catalog_actions(), global_position, None)
 
-    def __catalog_actions(self) -> list[QAction]:
-        """The catalog-wide actions the Roots view's menus offer (#543): Scan, Add Roots and Refresh.
+    def __catalog_actions(self, *, refresh: bool = True) -> list[QAction]:
+        """The catalog-wide actions the Roots view's menus offer (#543): Scan all roots, Add Roots and Refresh.
 
+        :param refresh: whether to end with Refresh, which a root row's menu has higher up (#644).
         :returns: the actions in menu order.
         """
         ui = self.__roots_ui
-        return [ui.scan_action, ui.add_roots_action, ui.refresh_roots_action]
+        return [ui.scan_action, ui.add_roots_action, *([ui.refresh_roots_action] if refresh else [])]
 
     def __exec_menu(self, actions: list[QAction], position: QPoint, target: QPersistentModelIndex | None) -> None:
         """Show a menu of actions at a point and run what is chosen.

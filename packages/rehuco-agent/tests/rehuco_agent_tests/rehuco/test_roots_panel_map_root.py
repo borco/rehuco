@@ -92,6 +92,29 @@ def test_an_unmapped_root_is_listed_greyed_and_offers_map_where_a_mapped_one_doe
     assert not roots.map_root_action.isEnabled()
 
 
+def test_scan_root_is_enabled_for_a_mapped_root_only(mocker: MockerFixture, away_dock: CatalogDocks) -> None:
+    """An unmapped root has no folder here to scan (#644).
+
+    **Test steps:**
+
+    * open a file with an unmapped third root, and select each kind of root
+    * verify Scan root is enabled for the mapped root only, and is in the menu of both
+    * run the action's slot on the unmapped root all the same, and verify nothing is scanned
+    """
+    roots = away_dock.roots
+    model = roots.roots_model
+    scan_root = mocker.patch.object(away_dock.catalog, "scan_root")
+
+    select_root(away_dock, 0)
+    assert roots.scan_root_action.isEnabled()
+    select_root(away_dock, 2)
+    assert not roots.scan_root_action.isEnabled()
+    assert roots.scan_root_action in roots.roots_context_actions(model.index(2, 0))
+
+    roots._RootsPanel__on_scan_root()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    scan_root.assert_not_called()
+
+
 def test_map_asks_for_the_folder_and_maps_the_root(mocker: MockerFixture, away_dock: CatalogDocks) -> None:
     """The folder asked for becomes the root's folder here: the row is no longer greyed, and the file is not written.
 
