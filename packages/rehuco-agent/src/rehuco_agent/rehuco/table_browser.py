@@ -26,6 +26,7 @@ from .catalog_table_model import (
     CatalogTotals,
     RowKey,
 )
+from .copied_paths import PathsWriter, json_paths, quoted_paths
 from .filter_line import parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 from .status_line_label import StatusLineLabel
@@ -42,6 +43,12 @@ FILTER_HELP: Final = (
     f'Then field:value or field:"quoted value" tokens: {", ".join(field.value for field in CatalogField)}.'
 )
 """The filter line's tooltip: its grammar, under whatever it could not apply."""
+
+COPY_PATHS_ENTRIES: Final[tuple[tuple[str, PathsWriter], ...]] = (
+    ("Copy paths", quoted_paths),
+    ("Copy paths as JSON", json_paths),
+)
+"""The menu's entries for a selection (#646), in menu order: each one's text and the format it copies in."""
 
 
 class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -86,6 +93,12 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     current_changed: Signal = Signal(object)
     """Emitted with the new :attr:`current_resource` -- a ``(root_id, relative)`` pair, or ``None`` -- whenever it
     changes: by a selection, or by the selected row itself being renamed or removed."""
+
+    copy_paths_requested: Signal = Signal(object, object)
+    """Emitted when *Copy paths* or *Copy paths as JSON* is chosen (#646), with the selected rows'
+    :data:`~rehuco_agent.rehuco.catalog_table_model.RowKey` tuple in the table's order and the
+    :data:`~.copied_paths.PathsWriter` that writes their paths: the browser cannot resolve a key to a path, the catalog
+    can. Typed as plain ``object`` for the reason ``BrowsersDock.open_requested`` is."""
 
     DEFAULT_NAME: Final = DEFAULT_BROWSER_NAME
     """What a browser made without a name is called."""
@@ -316,10 +329,10 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     def __selected_keys(self) -> tuple[RowKey, ...]:
         """Which resources the selected rows are.
 
-        :returns: their keys.
+        :returns: their keys, in the table's order -- not the order they were selected in.
         """
-        rows = self.__ui.catalog_view.selectionModel().selectedRows()
-        keys = (self.__model.row_key(index.row()) for index in rows)
+        rows = sorted(index.row() for index in self.__ui.catalog_view.selectionModel().selectedRows())
+        keys = (self.__model.row_key(row) for row in rows)
         return tuple(key for key in keys if key is not None)
 
     def __restore_selection(self) -> None:
@@ -393,34 +406,50 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
                 self.current_changed.emit(current)
 
     def __on_context_menu(self, position: QPoint) -> None:
-        """Open the menu of the cell under the pointer, if it has one: an Authors cell offers to filter by each of its
-        authors (#460). Any other cell, and a row with no authors, opens nothing.
+        """Open the table's menu, if it has anything to offer: an Authors cell offers to filter by each of its authors
+        (#460), and a selection to copy its rows' paths (#646), after a separator when both do. A cell with no authors
+        and nothing selected opens nothing.
 
         :param position: where it was asked for, in the table's viewport coordinates.
         """
         view = self.__ui.catalog_view
         index = view.indexAt(position)
-        if not index.isValid() or index.column() != CatalogColumn.AUTHORS:
+        authors = self.__model.authors_of(index.row()) if index.column() == CatalogColumn.AUTHORS else ()
+        selected = self.__selected_keys()
+        if not authors and not selected:
             return
-        authors = self.__model.authors_of(index.row())
-        if not authors:
-            return
-        applied = {
-            fold(token.value) for token in parse_filter(self.__ui.filter_edit.text()).tokens if token.name == "authors"
-        }
         # a child of this widget, so a failed ``exec`` must not leave it behind for the browser's life (#459)
         menu = QMenu(self)
         try:
-            for author in authors:
-                clearing = fold(author) in applied
-                text = f"Clear the filter by {author}" if clearing else f"Filter by {author}"
-                action = menu.addAction(text)
-                action.triggered.connect(
-                    lambda _checked=False, name=author, clear=clearing: self.__toggle_author(name, clear)
-                )
+            self.__add_author_entries(menu, authors)
+            if authors and selected:
+                menu.addSeparator()
+            if selected:
+                for text, write in COPY_PATHS_ENTRIES:
+                    action = menu.addAction(text)
+                    action.triggered.connect(
+                        lambda _checked=False, writer=write: self.copy_paths_requested.emit(selected, writer)
+                    )
             menu.exec(view.viewport().mapToGlobal(position))
         finally:
             menu.deleteLater()
+
+    def __add_author_entries(self, menu: QMenu, authors: Sequence[str]) -> None:
+        """Add an entry per author to ``menu``: filter by that author, or clear the filter by one the line names.
+
+        :param menu: the menu being built.
+        :param authors: the clicked row's authors, in the record's order; none adds nothing.
+        """
+        applied = {
+            fold(token.value) for token in parse_filter(self.__ui.filter_edit.text()).tokens if token.name == "authors"
+        }
+        for author in authors:
+            clearing = fold(author) in applied
+            text = f"Clear the filter by {author}" if clearing else f"Filter by {author}"
+            action = menu.addAction(text)
+            action.triggered.connect(
+                lambda _checked=False, name=author, clear=clearing: self.__toggle_author(name, clear)
+            )
 
     def __toggle_author(self, name: str, clear: bool) -> None:
         """Filter by ``name`` alone, or drop the authors filter it already is.

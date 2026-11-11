@@ -870,11 +870,11 @@ def test_an_author_already_on_the_line_is_offered_to_be_cleared(
 def test_no_menu_opens_on_a_row_without_authors_or_on_another_column(
     browser: TableBrowser, monkeypatch: MonkeyPatch
 ) -> None:
-    """Only an Authors cell with something to offer has a menu.
+    """With nothing selected, only an Authors cell with something to offer has a menu.
 
     **Test steps:**
 
-    * show one row with authors and one without
+    * show one row with authors and one without, neither selected
     * right-click the authorless Authors cell, the authored row's Title cell and empty space
     * verify no menu opened, and the line stays empty
     """

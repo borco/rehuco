@@ -710,6 +710,15 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     the missing value.
   - **The current resource** (#379) is the one selected row's, named by its root's id and root-relative path;
     none or several selected name none. Every browser is multi-select.
+  - **Copy paths** (#646). With rows selected, the table's context menu offers *Copy paths* and *Copy paths as
+    JSON* — after the author entries and a separator on an Authors cell; with none selected, only an Authors cell has
+    a menu. Each puts the full path of every selected row's resource on the clipboard, in the table's order: a
+    directory-scoped record's folder, a standalone record's `.rehu` (`resource_path`), resolved through the catalog's
+    `resource_key`, so a row whose root is gone from the file is left out. *Copy paths* is for people — one path per
+    line, every path in double quotes as Explorer's *Copy as path* writes them, with a newline, a carriage return and
+    a quote written `\n`, `\r` and `\"` and nothing else escaped, so it reads, not reverses (`C:\Users\new` already
+    holds `\n`). *Copy paths as JSON* is for scripts — a list of strings, one per line, that reads back exactly. Both
+    copy plain text only, never a file list, so a paste into Explorer copies no folders.
   - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
     (`folder`, `authors`, `tags`, `publishers`, `type`), all ANDed. Free text is **one term per word**, each found in a
     title or a path (either one), so `foo bar` finds "bar then foo"; a `"quoted run"` is one term, the phrase (#475).
