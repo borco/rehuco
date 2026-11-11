@@ -86,6 +86,36 @@ neither key restores exactly the run it described. Seeding (#256) is captured th
 to on, which is what every job written before that key existed meant."""
 
 
+def log_report_findings(report: ChecksumReport, prefix: str = "") -> None:
+    """Name every file a run has something to say about, at the level that says how bad it is (#642).
+
+    One line per file, on the resource's own log ([[appendices.logging#scopes]]): INFO for a new file given
+    its first checksum, WARNING for a file that is missing, a file that could not be read (new or
+    listed), a malformed entry and a record entry with no name (one line for all of them), ERROR for a file
+    whose checksum failed. The verifier does not log; the summary, prune and move lines are the callers'.
+
+    :param report: what the run established.
+    :param prefix: what each line starts with, ``"<resource>: "`` for a run that is one of many, or nothing.
+    """
+    for name, status in report.statuses.items():
+        match status:
+            case "added":
+                LOG.info("%sChecksum added for new file %s", prefix, name)
+            case "missing":
+                LOG.warning("%sFile %s is missing.", prefix, name)
+            case "malformed":
+                LOG.warning("%sThe entry for %s is malformed.", prefix, name)
+            case "mismatched":
+                LOG.error("%sChecksum failed for %s.", prefix, name)
+    for name in report.unreadable:
+        if name in report.unadopted:
+            LOG.warning("%sNew file %s could not be read, so no checksum was added.", prefix, name)
+        else:
+            LOG.warning("%sListed file %s could not be read.", prefix, name)
+    if report.unnamed_malformed:
+        LOG.warning("%sMalformed entries with no name: %d.", prefix, report.unnamed_malformed)
+
+
 # a job's members *are* its run's parameters, and #203's callables take that many; collapsing them into
 # a settings object would put a second shape between the enqueuer and the call
 # pylint: disable-next=too-many-instance-attributes
@@ -273,21 +303,8 @@ class ChecksumJob(TaskJobBase):
             log_legacy_seed(report.seed)
         self.__log_pruned(report)
         self.__log_moved(report)
-        self.__log_added(report)
+        log_report_findings(report)
         LOG.info("%s: %s", self.label, checksum_report_summary(report))
-
-    @staticmethod
-    def __log_added(report: ChecksumReport) -> None:
-        """Name every file the run gave its first checksum (#467).
-
-        Beside the dropped and moved lines, which already name their files: the summary counts how many were
-        added, and this is where a reader finds out which.
-
-        :param report: what the run established.
-        """
-        for name, status in report.statuses.items():
-            if status == "added":
-                LOG.info("Checksum added for new file %s", name)
 
     @staticmethod
     def __log_pruned(report: ChecksumReport) -> None:
@@ -793,7 +810,7 @@ class SweepChecksumsJob(TaskJobBase):
             )
         except FileNotFoundError:
             tally.without_record += 1
-            LOG.info("%s has no checksum record yet; it was not verified.", rehu_path)
+            LOG.warning("%s has no checksum record yet; it was not verified.", rehu_path)
             return
         except (OSError, ChecksumRecordError) as error:
             tally.failed += 1
@@ -806,10 +823,9 @@ class SweepChecksumsJob(TaskJobBase):
         tally.moved += len(report.moved)
         for name, covering in report.moved.items():
             LOG.info("%s: moved %r into %s as %r.", rehu_path, name, covering.record, covering.name)
-        for name, status in report.statuses.items():
+        for status in report.statuses.values():
             tally.statuses[status] = tally.statuses.get(status, 0) + 1
-            if status == "added":
-                LOG.info("%s: checksum added for new file %s", rehu_path, name)
+        log_report_findings(report, f"{rehu_path}: ")
 
     def root_path(self) -> Path:
         """The folder this sweep works over, refusing a job that has none.

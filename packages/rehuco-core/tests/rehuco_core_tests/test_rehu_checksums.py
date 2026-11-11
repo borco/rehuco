@@ -845,13 +845,14 @@ def test_a_first_baseline_carries_on_past_a_file_it_cannot_read(disk: FakeDisk) 
     **Test steps:**
 
     * generate from nothing, with the first file in the walk refusing to open
-    * check it is reported unreadable, gained no entry, and the other file was still recorded
+    * check it is reported unreadable and unadopted, gained no entry, and the other file was still recorded
     """
     disk.open_errors[DIRECTORY / ARCHIVE] = PermissionError(ARCHIVE)
 
     report = generate_checksums(INFO_PATH)
 
     assert report.unreadable == (ARCHIVE,)
+    assert report.unadopted == (ARCHIVE,)
     assert set(disk.entries) == {VIDEO}
 
 
@@ -1004,7 +1005,8 @@ def test_a_file_that_cannot_be_read_is_not_a_verdict(disk: FakeDisk) -> None:
     **Test steps:**
 
     * generate, then make the video refuse to open, and verify
-    * check it is reported unreadable rather than given a status, and its entry still says matched
+    * check it is reported unreadable, but not unadopted, rather than given a status, and its entry still
+      says matched
     """
     generate_checksums(INFO_PATH)
     disk.open_errors[DIRECTORY / VIDEO] = PermissionError(VIDEO)
@@ -1012,6 +1014,7 @@ def test_a_file_that_cannot_be_read_is_not_a_verdict(disk: FakeDisk) -> None:
     report = verify_checksums(INFO_PATH)
 
     assert report.unreadable == (VIDEO,)
+    assert not report.unadopted
     assert report.statuses == {ARCHIVE: "matched"}
     assert disk.entries[VIDEO]["verified"] == NOW
 
@@ -1022,7 +1025,7 @@ def test_a_file_that_cannot_be_read_keeps_its_entry_through_a_generate(disk: Fak
     **Test steps:**
 
     * generate, then make the video refuse to open, and generate again
-    * check it is reported unreadable and its original entry survived
+    * check it is reported unreadable, but not unadopted, and its original entry survived
     """
     generate_checksums(INFO_PATH)
     disk.open_errors[DIRECTORY / VIDEO] = PermissionError(VIDEO)
@@ -1030,6 +1033,7 @@ def test_a_file_that_cannot_be_read_keeps_its_entry_through_a_generate(disk: Fak
     report = generate_checksums(INFO_PATH)
 
     assert report.unreadable == (VIDEO,)
+    assert not report.unadopted
     assert disk.entries[VIDEO][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(VIDEO_BYTES)
 
 
@@ -1097,13 +1101,14 @@ def test_a_new_file_that_cannot_be_read_is_unreadable_and_unlisted(disk: FakeDis
     **Test steps:**
 
     * verify from nothing, with the video refusing to open
-    * check it is reported unreadable, not added, and the record does not list it
+    * check it is reported unreadable and unadopted, not added, and the record does not list it
     """
     disk.open_errors[DIRECTORY / VIDEO] = PermissionError(VIDEO)
 
     report = verify_checksums(INFO_PATH, create_if_missing=True)
 
     assert report.unreadable == (VIDEO,)
+    assert report.unadopted == (VIDEO,)
     assert report.statuses == {ARCHIVE: "added"}
     assert set(disk.entries) == {ARCHIVE}
 

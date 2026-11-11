@@ -44,6 +44,7 @@ from .checksum_jobs import (
     SweepChecksumsJob,
     SweepTally,
     VerifyChecksumsJob,
+    log_report_findings,
     sweep_summary,
 )
 from .checksum_record import (
@@ -1015,6 +1016,7 @@ __all__ = [
     "lock_path_for",
     "locked_record",
     "log_legacy_seed",
+    "log_report_findings",
     "machine_name",
     "merge_checksum_entries",
     "merge_users",

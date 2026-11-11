@@ -328,6 +328,22 @@ shows an image its checksum does not cover:
   `added`, naming each one in the resource's log. A file goes from *no checksum* to *verified* in one step, so there
   is no state in between to show; one the run cannot read gets no entry and is counted unreadable (#467).
 
+- **A run's log names each file, at a level that says how bad it is** (#642); the summary, prune and move lines stay
+  INFO. The verifier itself does not log: one function in `checksum_jobs` reads its report, for a single verify and
+  for each resource of a sweep alike.
+
+  | Level | Case |
+  | --- | --- |
+  | INFO | a new file whose checksum was added |
+  | WARNING | a listed file that is missing |
+  | WARNING | a new file that could not be read, so no checksum was added (`ChecksumReport.unadopted`) |
+  | WARNING | a listed file that could not be read |
+  | WARNING | a malformed entry; one line for those with no name |
+  | WARNING | a resource with no checksum record, so nothing was verified |
+  | ERROR | a file whose checksum failed |
+
+  A single verify with no record is refused before it starts, and the queue logs that refusal at WARNING too.
+
 - **A resource checksummed before this app existed is verified, not baselined** (#243). The catalog carries `.sfv`
   files written by tutcatalog4 and by external checkers, with `.md5`/`.sha*` here and there. Those suffixes were
   already recognized as bookkeeping so they never count as content, and nothing writes one — but nothing *read* one
