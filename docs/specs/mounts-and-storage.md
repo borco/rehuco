@@ -151,8 +151,8 @@ references** to such files and nothing more about a root: its role is to aggrega
   `*` for any type not named, to a **path template** — the Locations grammar ([[plugins#tutorial-plugin]]'s
   placeholders, `{{ … }}` optional groups, `{count}` where the type declares it, the Location Replacements applied
   after) **plus `/` as a level separator**, each segment sanitized as a name is today and the separators kept. The
-  value `*` means *keep the record's current folder name*, at the root's top — except under the root the record is
-  already in, where it means *stay where it is*, nested folders and all (#636). The default `{"*": "*"}` admits
+  value `*` means *keep the record's current folder name*, at the root's top, under the record's own root too (#643);
+  the place the record sits at is a row of its own in the path row. The default `{"*": "*"}` admits
   anything under its current name; `{"tutorial": "{authors}/{title}{{ [{year}]}}"}` groups tutorials under their
   authors **and admits no other type** — a type with no entry and no `*` cannot be moved here.
 - **`fallbacks`** names what a placeholder renders as when the record leaves it empty — **outside an optional group

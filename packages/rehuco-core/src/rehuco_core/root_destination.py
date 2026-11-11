@@ -3,8 +3,8 @@
 
 A root's ``layouts`` map a type's main key, or ``*`` for any type not named, to a **path template**: the Locations
 grammar (:class:`~rehuco_core.location_pattern.LocationPattern`) plus ``/`` as a level separator. The value ``*`` keeps
-the record's current folder name, at the root's top -- or, under the root the record is already in, where it is
-(#636). A type with no entry and no ``*`` is not admitted.
+the record's current folder name, at the root's top, under the record's own root too (#643). A type with no
+entry and no ``*`` is not admitted.
 
 Rendering follows the order a name is made in today -- fields into the pattern, the Location Replacements, then the
 sanitize step -- per level: the rendered template is cut at its own ``/``, and each segment is replaced and sanitized
@@ -111,15 +111,12 @@ def destination(
     root: LaidOutRoot,
     record: RecordNaming,
     rules: Sequence[ReplacementRule],
-    current: PurePosixPath | None = None,
 ) -> PurePosixPath | Refusal:
     """Where a record would live under a root, relative to the root's folder.
 
     :param root: the root, its layouts and fallbacks.
     :param record: what the layouts read of the record.
     :param rules: the Location Replacements, applied to each level before it is sanitized.
-    :param current: where the record is now, relative to this root's folder, when this is the root it is under: ``*``
-        keeps it there rather than moving it to the root's top (#636).
     :returns: the path, one segment per level; or why the root does not take the record.
     """
     name = root.label or root.location
@@ -127,7 +124,7 @@ def destination(
     if template is None:
         return Refusal(f"{name} does not take a {record.main_key}: its layouts name no such type, and no '*'.")
     if template.strip() == KEEP_NAME:
-        return PurePosixPath(record.folder_name) if current is None else current
+        return PurePosixPath(record.folder_name)
     pattern = LocationPattern(template, record.placeholders)
     if pattern.problem:
         return Refusal(f"{name}'s layout for a {record.main_key} cannot be used: {pattern.problem}")

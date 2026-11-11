@@ -76,22 +76,6 @@ def test_keep_name_keeps_the_records_current_name_at_the_top(layouts: dict[str, 
     assert destination(root(layouts), naming(folder_name="My Course", title="x"), ()) == PurePosixPath("My Course")
 
 
-def test_keep_name_under_the_records_own_root_keeps_it_where_it_is() -> None:
-    """Given where the record is now, ``*`` keeps that, nested folders and all; a template still renders (#636).
-
-    **Test steps:**
-
-    * ask for the destination under a ``*`` root, giving the record's current nested place
-    * verify the nested place comes back, not the folder name at the top
-    * ask under a root laid out by title, giving the same place
-    * verify the template's rendering, not the place
-    """
-    nested = PurePosixPath("ArtStation/Blender Bros/My Course")
-
-    assert destination(root({"*": "*"}), naming(folder_name="My Course"), (), nested) == nested
-    assert destination(root({"*": "{title}"}), naming(title="Intro"), (), nested) == PurePosixPath("Intro")
-
-
 def test_a_type_with_no_entry_and_no_star_is_not_admitted() -> None:
     """A root laid out for tutorials only refuses a reference pack, saying so.
 

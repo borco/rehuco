@@ -148,6 +148,57 @@ def test_an_occupied_place_is_marked(qtbot: QtBot, model: RehuDocumentModel, moc
     assert full_text(label) == f"{ROW_TEXT}{UNAVAILABLE_SUFFIX}"
 
 
+def test_a_root_with_two_rows_moves_by_the_row_clicked(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The place the record sits at and the place the layout gives are two rows of one root; a click finds its own by
+    root and path, not by root alone (#643).
+
+    **Test steps:**
+
+    * give the suggestions the record's current place, then the layout's place, both in the record's root
+    * click the second row and check the moves were handed the layout's place
+    * click the first and check nothing more moved
+    """
+    suggestions = NameSuggestionModel(model)
+    here = RootDestination("Tutorials", PurePosixPath("Old/Foo"), ROOT, ROOT_ID, True, ROOT, ROOT_ID)
+    top = RootDestination("Tutorials", PurePosixPath("Foo"), ROOT, ROOT_ID, False, ROOT, ROOT_ID, "*")
+    mocker.patch.object(suggestions, "root_destinations", return_value=(here, top))
+    mocker.patch.object(model, "move_conflicts", return_value=False)
+    record_moves = Mock(spec=RecordMoves)
+    editor, _kept = path_editor(qtbot, model, suggestions, record_moves)
+
+    labels_of(editor)[1].linkActivated.emit("#")
+    labels_of(editor)[0].linkActivated.emit("#")
+
+    record_moves.move.assert_called_once_with(top)
+
+
+def test_an_occupied_layout_place_is_marked_beside_the_current_place(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A layout's place something already occupies is disabled and marked, and the current place stays plain (#643).
+
+    **Test steps:**
+
+    * give the suggestions the current place and the layout's place, the model reporting the latter occupied
+    * check the current row is disabled and plain, the other disabled and marked, and the check asked only of it
+    """
+    suggestions = NameSuggestionModel(model)
+    here = RootDestination("Tutorials", PurePosixPath("Old/Foo"), ROOT, ROOT_ID, True, ROOT, ROOT_ID)
+    top = RootDestination("Tutorials", PurePosixPath("Foo"), ROOT, ROOT_ID, False, ROOT, ROOT_ID, "*")
+    mocker.patch.object(suggestions, "root_destinations", return_value=(here, top))
+    conflicts = mocker.patch.object(model, "move_conflicts", return_value=True)
+
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    current, occupied = labels_of(editor)
+    assert full_text(current) == f"Tutorials: {Path('Old', 'Foo')}"
+    assert full_text(occupied) == f"Tutorials: Foo{UNAVAILABLE_SUFFIX}"
+    assert not current.isEnabled() and not occupied.isEnabled()
+    conflicts.assert_called_with(ROOT, "Foo")
+
+
 def test_the_place_the_record_is_at_moves_nothing(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:

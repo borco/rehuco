@@ -256,7 +256,7 @@
      <item row="15" column="1">
       <widget class="QLabel" name="root_layouts_value">
        <property name="toolTip">
-        <string>Where a record of each type lives under this root; * keeps a record's current name. Edit (F2) to change them.</string>
+        <string>Where a record of each type lives under this root; * keeps a record's current name, at the root's top. Edit (F2) to change them.</string>
        </property>
        <property name="wordWrap">
         <bool>true</bool>

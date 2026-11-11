@@ -416,16 +416,17 @@ def test_the_root_holding_the_record_gives_its_place_first_and_every_other_root_
     **Test steps:**
 
     * open a record at ``Old/Foo/info.rehu`` under a root laid out by author, listed after another root
-    * check the first place is ``Jane/Foo`` in the record's root, the second ``Jane/Foo`` in the other, each naming
-      where the record is now
+    * check the first place is where the record is, the second ``Jane/Foo`` in the record's root, the third
+      ``Jane/Foo`` in the other, each naming where the record is now
     """
     root = root_at(tmp_path / "tutorials")
     other = root_at(tmp_path / "other")
     place(authored, root.path / "Old" / "Foo" / "info.rehu")
     catalog = catalog_of(signals, other, root)
 
-    own, elsewhere = NameSuggestionModel(authored, catalog).root_destinations()
+    current, own, elsewhere = NameSuggestionModel(authored, catalog).root_destinations()
 
+    assert (current.relative, current.here, current.same_root) == (PurePosixPath("Old/Foo"), True, True)
     jane = PurePosixPath("Jane/Foo")
     assert own == RootDestination(
         "Tutorials", jane, root.path, root.root_id, False, root.path, root.root_id, BY_AUTHOR["*"]
@@ -455,26 +456,69 @@ def test_a_record_already_there_is_marked_so(
     assert destination.here
 
 
-def test_a_keep_name_layout_keeps_a_nested_record_where_it_is_under_its_own_root_only(
+def test_a_keep_name_layout_puts_a_nested_record_at_the_top_and_shows_where_it_is_first(
     tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
 ) -> None:
-    """``*`` is the record's real nested place under its own root, already there; under another root it is the folder
-    name at the top (#636).
+    """``*`` is the folder name at the root's top under every root, its own included; where the record sits is a row of
+    its own, first and already there (#643).
 
     **Test steps:**
 
     * open a record at ``ArtStation/Bros/Foo/info.rehu`` under a ``*`` root, beside another ``*`` root
-    * check the own root's place is ``ArtStation/Bros/Foo`` and the record is there
-    * check the other root's place is ``Foo``, not there
+    * check the first place is ``ArtStation/Bros/Foo`` in the own root, the record is there, no layout rendered it
+    * check the second is ``Foo`` in the own root, not there, rendered by ``*``
+    * check the third is ``Foo`` in the other root, not there
     """
     root = root_at(tmp_path / "tutorials", {"*": "*"})
     other = root_at(tmp_path / "other", {"*": "*"})
     place(authored, root.path / "ArtStation" / "Bros" / "Foo" / "info.rehu")
 
-    own, elsewhere = NameSuggestionModel(authored, catalog_of(signals, root, other)).root_destinations()
+    current, top, elsewhere = NameSuggestionModel(authored, catalog_of(signals, root, other)).root_destinations()
 
-    assert (own.relative, own.here) == (PurePosixPath("ArtStation/Bros/Foo"), True)
-    assert (elsewhere.relative, elsewhere.here) == (PurePosixPath("Foo"), False)
+    assert (current.relative, current.here, current.root_id, current.template) == (
+        PurePosixPath("ArtStation/Bros/Foo"),
+        True,
+        root.root_id,
+        "",
+    )
+    assert (top.relative, top.here, top.root_id, top.template) == (PurePosixPath("Foo"), False, root.root_id, "*")
+    assert (elsewhere.relative, elsewhere.here, elsewhere.root_id) == (PurePosixPath("Foo"), False, other.root_id)
+
+
+def test_a_record_at_the_place_its_layout_gives_has_one_row(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """When the layout's place is where the record sits, the own root offers that one row, already there (#643).
+
+    **Test steps:**
+
+    * open a record at ``Foo/info.rehu`` directly under a ``*`` root
+    * check there is one place, ``Foo``, and the record is there
+    """
+    root = root_at(tmp_path, {"*": "*"})
+    place(authored, root.path / "Foo" / "info.rehu")
+
+    (only,) = NameSuggestionModel(authored, catalog_of(signals, root)).root_destinations()
+
+    assert (only.relative, only.here) == (PurePosixPath("Foo"), True)
+
+
+def test_a_record_under_a_root_that_does_not_take_its_type_still_shows_where_it_is(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """A type the own root's layouts refuse leaves the current place alone to show (#643).
+
+    **Test steps:**
+
+    * open a tutorial at ``Old/Foo/info.rehu`` under a root laid out for another type only
+    * check the one place is ``Old/Foo``, already there
+    """
+    root = root_at(tmp_path, {"reference_images": "*"})
+    place(authored, root.path / "Old" / "Foo" / "info.rehu")
+
+    (only,) = NameSuggestionModel(authored, catalog_of(signals, root)).root_destinations()
+
+    assert (only.relative, only.here) == (PurePosixPath("Old/Foo"), True)
 
 
 def test_a_record_that_is_its_roots_folder_has_that_root_alone_already_there(
@@ -582,7 +626,7 @@ def test_another_root_that_cannot_take_the_record_is_left_out(
     **Test steps:**
 
     * open a record under a root, beside one that cannot be reached and one taking only another type
-    * check only the record's own root offers a place
+    * check only the record's own root offers places
     """
     root = root_at(tmp_path / "tutorials")
     away = root_at(tmp_path / "away")
@@ -592,7 +636,7 @@ def test_another_root_that_cannot_take_the_record_is_left_out(
 
     places = NameSuggestionModel(authored, catalog).root_destinations()
 
-    assert [place.root_id for place in places] == [root.root_id]
+    assert {place.root_id for place in places} == {root.root_id}
 
 
 @mark.parametrize(
@@ -606,19 +650,22 @@ def test_another_root_that_cannot_take_the_record_is_left_out(
 def test_no_place_is_offered(
     tmp_path: Path, model: RehuDocumentModel, signals: RootsSignals, layouts: dict[str, str], unreachable: bool
 ) -> None:
-    """Only a place that can be built is offered: none for a root that does not take the record, or one needing a
-    field the record leaves empty -- and nothing at all for a record whose own root is not reached now.
+    """Only a place that can be built is offered: for a root that does not take the record, or one needing a field the
+    record leaves empty, only where the record is now (#643) -- and nothing at all for a record whose own root is not
+    reached now.
 
     **Test steps:**
 
     * open a record with no authors under a root with the given layout
-    * check there is no place
+    * check the places are only the one the record sits at, or none when its root cannot be reached
     """
     root = root_at(tmp_path / "tutorials", layouts)
     place(model, root.path / "Foo" / "info.rehu")
     catalog = catalog_of(signals, root, unreachable=frozenset({root.root_id} if unreachable else ()))
 
-    assert not NameSuggestionModel(model, catalog).root_destinations()
+    places = NameSuggestionModel(model, catalog).root_destinations()
+
+    assert [(place.relative, place.here) for place in places] == ([] if unreachable else [(PurePosixPath("Foo"), True)])
 
 
 def test_a_fallback_fills_an_empty_field(tmp_path: Path, model: RehuDocumentModel, signals: RootsSignals) -> None:
@@ -627,14 +674,14 @@ def test_a_fallback_fills_an_empty_field(tmp_path: Path, model: RehuDocumentMode
     **Test steps:**
 
     * open a record with no authors under a root laid out by author, with a fallback for authors
-    * check the place is under the fallback
+    * check the places are where the record is, then under the fallback
     """
     root = root_at(tmp_path, fallbacks={"authors": "Unknown"})
     place(model, tmp_path / "Foo" / "info.rehu")
 
-    (destination,) = NameSuggestionModel(model, catalog_of(signals, root)).root_destinations()
+    places = NameSuggestionModel(model, catalog_of(signals, root)).root_destinations()
 
-    assert destination.relative == PurePosixPath("Unknown/Foo")
+    assert [place.relative for place in places] == [PurePosixPath("Foo"), PurePosixPath("Unknown/Foo")]
 
 
 def test_no_catalog_or_no_path_offers_no_place(
