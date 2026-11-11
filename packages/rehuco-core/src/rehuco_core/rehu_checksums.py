@@ -136,6 +136,10 @@ class ChecksumReport:  # pylint: disable=too-many-instance-attributes
         entry is carried untouched and reported here instead.
     :param unnamed_malformed: how many entries could not even be named -- reportable only as a count,
         since a name is exactly what they lack.
+    :param unadopted: the new files, unlisted in the record, that a verify or a generate could not read and
+        so gave no checksum (#642). They are in :attr:`unreadable` too, so the counts a summary gives do not
+        change; this is what tells them from a listed file that could not be read. A file that vanished
+        between the walk and the read is in neither.
     :param seed: what a legacy ``.sfv``/``.md5``/``.sha*`` manifest contributed, when this run was the
         one that found it (#243) -- ``None`` for every run before and after, since a seed happens once
         in a resource's life and the ``.checksum`` it writes is what the next verify reads.
@@ -156,6 +160,7 @@ class ChecksumReport:  # pylint: disable=too-many-instance-attributes
     skipped: tuple[str, ...] = ()
     unreadable: tuple[str, ...] = ()
     unnamed_malformed: int = 0
+    unadopted: tuple[str, ...] = ()
     seed: LegacySeed | None = None
     pruned: dict[str, ContentExclusionTier] = field(default_factory=dict)
     moved: dict[str, CoveringRecord] = field(default_factory=dict)
@@ -246,6 +251,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         self.__skipped: Final[list[str]] = []
         self.__unreadable: Final[list[str]] = []
         self.__unnamed_malformed = 0
+        self.__unadopted: Final[list[str]] = []
         self.__pruned: Final[dict[str, ContentExclusionTier]] = {}
         self.__moved: Final[dict[str, CoveringRecord]] = {}
 
@@ -606,6 +612,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             return None
         except OSError:
             self.__unreadable.append(name)
+            self.__unadopted.append(name)
             return None
         self.__statuses[name] = "added"
         return self.__fresh_entry(name, digest)
@@ -718,7 +725,8 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         :param location: where it is.
         :param existing: its old entry, carried when the file exists but cannot be read, or ``None``.
         :returns: the fresh ``matched`` entry; ``existing`` (which may be ``None``) when the file is
-            unreadable or gone -- a missing file is reported, never given an entry it cannot honor.
+            unreadable or gone -- a missing file is reported, never given an entry it cannot honor, and an
+            unreadable one with no entry to keep is reported unadopted too (#642).
         """
         try:
             digest = self.__digest(location, (self.__algorithm,))[0]
@@ -727,6 +735,8 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             return existing
         except OSError:
             self.__unreadable.append(name)
+            if existing is None:
+                self.__unadopted.append(name)
             return existing
         self.__statuses[name] = "matched"
         return self.__fresh_entry(name, digest)
@@ -909,6 +919,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             skipped=tuple(self.__skipped),
             unreadable=tuple(self.__unreadable),
             unnamed_malformed=self.__unnamed_malformed,
+            unadopted=tuple(self.__unadopted),
             seed=self.__seed,
             pruned=dict(self.__pruned),
             moved=dict(self.__moved),

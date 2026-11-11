@@ -478,21 +478,23 @@ def test_a_resource_that_cannot_be_read_is_counted_and_the_sweep_carries_on(
 
 
 def test_a_resource_with_no_record_is_counted_rather_than_failed(
-    catalog: FakeCatalog, freezer: FrozenDateTimeFactory
+    catalog: FakeCatalog, freezer: FrozenDateTimeFactory, caplog: Any
 ) -> None:
     """*No record yet* is an expected state, and the count is what makes the setting discoverable.
 
     **Test steps:**
 
     * delete one resource's record and sweep
-    * check it was counted as having none, and the others were verified
+    * check it was counted as having none, said so at WARNING, and the others were verified
     """
     freezer.move_to(MUCH_LATER)
     del catalog.files[PAINTING.with_suffix(".checksum")]
 
     job = sweep(stale_after=WEEK)
-    run(job)
+    with caplog.at_level("INFO", logger="rehuco_core.checksum_jobs"):
+        run(job)
 
+    assert [record.levelname for record in caplog.records if "no checksum record" in record.getMessage()] == ["WARNING"]
     assert job.tally is not None
     assert job.tally.without_record == 1
     assert job.tally.failed == 0
@@ -597,7 +599,8 @@ def test_a_sweep_counts_and_names_the_files_it_added(
 
     assert job.tally is not None
     assert job.tally.statuses["added"] == 1
-    assert f"{PAINTING}: checksum added for new file lesson2.mp4" in caplog.text
+    assert f"{PAINTING}: Checksum added for new file lesson2.mp4" in caplog.text
+    assert [record.levelname for record in caplog.records if "lesson2.mp4" in record.getMessage()] == ["INFO"]
 
 
 def test_a_root_that_will_not_list_fails_the_sweep(catalog: FakeCatalog) -> None:

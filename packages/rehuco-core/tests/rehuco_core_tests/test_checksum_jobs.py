@@ -418,7 +418,7 @@ def test_a_summary_is_logged_under_the_scope_the_job_was_enqueued_in(
     **Test steps:**
 
     * run a verify reporting a mixture of verdicts
-    * check the summary counts them
+    * check the failed file is named at ERROR, then the summary counts them at INFO (#642)
     """
     del present
     mocker.patch(
@@ -429,7 +429,10 @@ def test_a_summary_is_logged_under_the_scope_the_job_was_enqueued_in(
     with caplog.at_level("INFO", logger="rehuco_core.checksum_jobs"):
         VerifyChecksumsJob(INFO_PATH).run(control)  # pyright: ignore[reportArgumentType]
 
-    assert "1 matched, 1 mismatched" in caplog.text
+    failed, summary = caplog.records
+    assert (failed.levelname, failed.getMessage()) == ("ERROR", f"Checksum failed for {ARCHIVE}.")
+    assert summary.levelname == "INFO"
+    assert "1 matched, 1 mismatched" in summary.getMessage()
 
 
 def test_every_pruned_entry_is_named_in_the_log_with_its_reason(
@@ -509,6 +512,7 @@ def test_every_added_file_is_named_in_the_log(
     assert f"Checksum added for new file {ARCHIVE}" in caplog.text
     assert f"Checksum added for new file {VIDEO}" not in caplog.text
     assert "1 matched, 1 added" in caplog.text
+    assert [record.levelname for record in caplog.records] == ["INFO", "INFO"]
 
 
 @mark.parametrize("request_stop", ["pause", "cancel"])
