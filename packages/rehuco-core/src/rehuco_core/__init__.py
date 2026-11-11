@@ -382,7 +382,7 @@ from .resource_scoping import (
     resource_path,
 )
 from .root_candidates import CandidateKind, RootCandidate, RootPick, RootPlanner
-from .root_destination import RecordNaming, Refusal, destination
+from .root_destination import RecordNaming, Refusal, destination, layout_template
 from .root_folders import RootFolderLister
 from .root_location import (
     LOCAL_SERVER,
@@ -996,6 +996,7 @@ __all__ = [
     "is_user_sidecar_name",
     "is_valid_content_key",
     "known_placeholders_for",
+    "layout_template",
     "learning_path_records_by_scope",
     "learning_path_ref",
     "legacy_manifest_candidates",

@@ -5,14 +5,16 @@ The expand/collapse control is deliberately *not* part of this widget -- the for
 own "misc" grid column (see `FieldsForm`/`PathField`); this widget only exposes :attr:`expanded`.
 """
 
+import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, override
 
 from borco_pyside.core import SimpleProperty
 from borco_pyside.widgets import ElidedLabel
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, Signal
+from PySide6.QtGui import QColor, QPalette
+from PySide6.QtWidgets import QFrame, QToolTip, QVBoxLayout, QWidget
 from rehuco_core import sanitize_name
 
 from .location_line import LocationLine
@@ -38,11 +40,17 @@ class DestinationRow:
     :param here: whether the record already sits there; shown disabled and plain, as the current name is.
     :param occupied: whether something else already sits there; shown disabled with :data:`UNAVAILABLE_SUFFIX`, as
         an occupied name is.
+    :param rendered: the path the layout renders, relative to the root; empty for the root itself (#639).
+    :param full_path: the place on disk: the root's folder on this machine joined with ``rendered``.
+    :param template: the path template that rendered it; empty when none did. With the two above, the row's tooltip.
     """
 
     text: str
     here: bool = False
     occupied: bool = False
+    rendered: str = ""
+    full_path: str = ""
+    template: str = ""
 
 
 class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -210,6 +218,17 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         self.expanded = state[:1] == b"\x01"
 
+    @override
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802  (Qt API name)
+        """Redraw the places on a palette change: their tooltips' grey is mixed from the tooltip palette, which a
+        theme switch has already replaced by the time this arrives (#639).
+
+        :param event: the Qt change event; only a palette change redraws.
+        """
+        if event.type() == QEvent.Type.PaletteChange:
+            self.__render_destinations()
+        super().changeEvent(event)
+
     def __on_expanded_changed(self, value: bool) -> None:
         """Show or hide the suggestions panel to match :attr:`expanded`.
 
@@ -281,8 +300,33 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
             unavailable = not row.here and row.occupied
             label.setEnabled(not row.here and not unavailable)
             label.set_text(
-                f"{row.text}{UNAVAILABLE_SUFFIX if unavailable else ''}", href="" if row.here or unavailable else "#"
+                f"{row.text}{UNAVAILABLE_SUFFIX if unavailable else ''}",
+                href="" if row.here or unavailable else "#",
+                tooltip=self.__destination_tooltip(row),
             )
+
+    @staticmethod
+    def __destination_tooltip(row: DestinationRow) -> str:
+        """The tooltip of a place (#639): the rendered path, then greyed the full path and the template used.
+
+        :param row: the place.
+        :returns: rich text; empty when the row carries nothing to say.
+        """
+        palette = QToolTip.palette()
+        text, base = palette.color(QPalette.ColorRole.ToolTipText), palette.color(QPalette.ColorRole.ToolTipBase)
+        # the tooltip's own text halfway to its background: the palette's placeholder role reads as plain text here
+        grey = QColor(
+            (text.red() + base.red()) // 2, (text.green() + base.green()) // 2, (text.blue() + base.blue()) // 2
+        ).name()
+        lines = [html.escape(row.rendered)] if row.rendered else []
+        lines += [
+            f'<span style="color:{grey}; font-size:small;">{html.escape(text)}</span>'
+            for text in (row.full_path, row.template)
+            if text
+        ]
+        # no wrapping: a path is read whole, and the tooltip grows to the widest line. A block's white-space does it;
+        # <nobr> still lets Qt break after a drive's colon
+        return "".join(f'<div style="white-space:pre">{line}</div>' for line in lines)
 
     @staticmethod
     def __sanitize_all(raw_suggestions: Sequence[str]) -> list[str]:

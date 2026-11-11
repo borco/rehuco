@@ -16,6 +16,7 @@ from rehuco_core import (
     RehuDocument,
     ReplacementRule,
     destination,
+    layout_template,
 )
 
 AUTHORS_THEN_TITLE: Final = "{authors}/{title}{{ [{year}]}}"
@@ -276,3 +277,18 @@ def test_a_slash_in_a_fallback_opens_no_level() -> None:
     answer = destination(root({"*": "{authors}/{title}"}, {"authors": "Unknown/Misc"}), naming(title="Intro"), ())
 
     assert answer == PurePosixPath("UnknownMisc", "Intro")
+
+
+def test_a_type_takes_its_own_template_else_the_star_one_else_none() -> None:
+    """The template a root gives a type is its own, then ``*``'s, then none (#639).
+
+    **Test steps:**
+
+    * ask a root naming a type and ``*`` for each, and a root naming neither
+    * verify the own template, the ``*`` one, and ``None``
+    """
+    layouts = {"tutorial": "{title}", "*": "{authors}/*"}
+
+    assert layout_template(root(layouts), "tutorial") == "{title}"
+    assert layout_template(root(layouts), "reference_images") == "{authors}/*"
+    assert layout_template(root({"tutorial": "{title}"}), "reference_images") is None

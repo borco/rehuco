@@ -362,3 +362,22 @@ def test_a_subclass_chooses_its_link_and_text_colors(qtbot: QtBot) -> None:
 
     label.set_text("value")
     assert label.text() == '<span style="color:#fedcba;">value</span>'
+
+
+def test_tooltip_replaces_the_full_text_and_the_hint_even_when_elided(qtbot: QtBot) -> None:
+    """A ``tooltip`` is the whole tooltip, whether or not the text is elided, and survives a resize (#639).
+
+    **Test steps:**
+
+    * set a long text with a tooltip, a href and a hint on a narrow label
+    * verify the tooltip is the given one, and still is after a resize
+    """
+    label = ElidedLabel()
+    qtbot.addWidget(label)
+    label.setFixedWidth(60)
+
+    label.set_text(LONG_TEXT, href="#", hint="Reveal in Finder", tooltip="<b>given</b>")
+    assert label.toolTip() == "<b>given</b>"
+
+    label.setFixedWidth(4000)
+    assert label.toolTip() == "<b>given</b>"
