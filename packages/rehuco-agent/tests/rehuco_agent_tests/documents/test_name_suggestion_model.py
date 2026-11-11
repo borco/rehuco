@@ -473,6 +473,82 @@ def test_a_keep_name_layout_keeps_a_nested_record_where_it_is_under_its_own_root
     assert (elsewhere.relative, elsewhere.here) == (PurePosixPath("Foo"), False)
 
 
+def test_a_record_that_is_its_roots_folder_has_that_root_alone_already_there(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """A record at its root's top is not placed by any layout: its root is the one place, already there, and no other
+    root offers one (#641).
+
+    **Test steps:**
+
+    * open ``info.rehu`` directly in a root laid out by author, beside another root
+    * check the only place is the own root's, with no path, already there
+    * check no other root offers a place, and that the root's folder is the record's
+    """
+    root = root_at(tmp_path / "tutorials")
+    other = root_at(tmp_path / "other")
+    place(authored, root.path / "info.rehu")
+    suggestions = NameSuggestionModel(authored, catalog_of(signals, other, root))
+
+    (only,) = suggestions.root_destinations()
+
+    assert only == RootDestination("Tutorials", PurePosixPath(), root.path, root.root_id, True, root.path, root.root_id)
+    assert suggestions.is_root_folder()
+
+
+def test_a_record_that_is_its_roots_folder_is_offered_no_rename(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """No name is suggested for a record at its root's top, so nothing renames the root's folder (#641).
+
+    **Test steps:**
+
+    * open ``info.rehu`` directly in a root
+    * check there is no suggestion
+    """
+    root = root_at(tmp_path / "tutorials")
+    place(authored, root.path / "info.rehu")
+
+    assert not NameSuggestionModel(authored, catalog_of(signals, root)).suggestions()
+
+
+@mark.parametrize("record", ["Foo/info.rehu", "foo.rehu"])
+def test_a_record_below_its_roots_top_is_not_its_roots_folder(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals, record: str
+) -> None:
+    """A directory-scoped record one level down, and a file-scoped record at the top, are placed as any other (#641).
+
+    **Test steps:**
+
+    * open each record under a root
+    * check it is not taken for the root's folder, and its own root's place has a path
+    """
+    root = root_at(tmp_path / "tutorials")
+    place(authored, root.path / record)
+    suggestions = NameSuggestionModel(authored, catalog_of(signals, root))
+
+    assert not suggestions.is_root_folder()
+    assert suggestions.root_destinations()[0].relative.parts
+
+
+def test_a_record_under_no_root_is_not_a_roots_folder(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """A record with no root, or no catalog, or no path, is not a root's folder (#641).
+
+    **Test steps:**
+
+    * ask a record outside every root, one with no catalog, and one with no path
+    * check none is
+    """
+    place(authored, tmp_path / "elsewhere" / "info.rehu")
+
+    assert not NameSuggestionModel(authored, catalog_of(signals, root_at(tmp_path / "tutorials"))).is_root_folder()
+    assert not NameSuggestionModel(authored).is_root_folder()
+    authored.path = None
+    assert not NameSuggestionModel(authored, catalog_of(signals)).is_root_folder()
+
+
 def test_a_record_under_no_root_is_offered_every_root(
     tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
 ) -> None:

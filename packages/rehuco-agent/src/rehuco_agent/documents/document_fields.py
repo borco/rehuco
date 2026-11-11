@@ -295,7 +295,8 @@ def root_place_callbacks(
         shown[:] = root_places()
         return [
             DestinationRow(
-                f"{place.label}: {Path(place.relative)}",
+                # a place with no path is the root itself (#641): its label alone
+                f"{place.label}: {Path(place.relative)}" if place.relative.parts else place.label,
                 here=place.here,
                 occupied=not place.here and model.move_conflicts(place.into, place.name),
             )
@@ -393,8 +394,10 @@ def build_document_form(
     def rename_to(name: str) -> None:
         # a wrapper, not the bound method directly: it discards ``rename_location``'s bool result (the
         # callback is a command, ``(str) -> None``) and defers the ``model.rename_location`` lookup to
-        # click time, so a test that swaps it after construction is still seen
-        model.rename_location(name)
+        # click time, so a test that swaps it after construction is still seen. A record that is its root's folder
+        # is never renamed (#641): that would rename the root's folder
+        if not name_suggestions.is_root_folder():
+            model.rename_location(name)
 
     destination_rows, move_to_root_place = root_place_callbacks(model, name_suggestions, record_moves)
 
@@ -411,6 +414,7 @@ def build_document_form(
         editor_tab=EDITOR_MAIN_TAB,
         destinations=destination_rows,
         on_destination_selected=move_to_root_place,
+        renamable=lambda: not name_suggestions.is_root_folder(),
     )
     # model.image_scanner is a RehuDocumentImageScanner over the legacy-.tc or the .rehu screenshot lister
     # ([[acquisition-tooling#tc-to-rehu]]); a successful conversion reassigns it, and both fields'

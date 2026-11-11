@@ -56,7 +56,9 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     suggestions). Each suggestion is transliterated to ASCII and sanitized into a valid
     filesystem name (``pathvalidate``); one that reduces to nothing is dropped, one equal to the
     current name renders disabled (a rename to it is a no-op). When the current name matches **none**
-    of the suggestions it is drawn in the warning color, since it isn't one of the canonical names.
+    of the suggestions it is drawn in the warning color, since it isn't one of the canonical names --
+    unless the resource may not be renamed at all (:meth:`set_renamable`, #641), when no suggestion is
+    shown and no name is the wrong one.
     Clicking a live suggestion emits :attr:`suggestion_selected` with its sanitized name -- this
     widget never touches the filesystem itself.
 
@@ -91,6 +93,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         super().__init__(parent)
         self.__current_name = ""
         self.__suggestions: list[str] = []
+        self.__renamable = True
         self.__suggestion_labels: dict[str, ElidedLabel] = {}
         self.__conflicts: Callable[[str], bool] | None = None
         """Answers whether a candidate name is already taken, supplied by the owner
@@ -139,6 +142,15 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         :param name: the current file/folder name.
         """
         self.__current_name = name
+        self.__render()
+
+    def set_renamable(self, renamable: bool) -> None:
+        """Say whether the resource may be renamed at all (#641): one that may not shows no suggestion, whatever
+        :meth:`set_suggestions` is handed, and its current name is never drawn as the wrong one.
+
+        :param renamable: whether a suggestion may be offered.
+        """
+        self.__renamable = renamable
         self.__render()
 
     def set_openable(self, openable: bool) -> None:
@@ -235,8 +247,9 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         self.__name_line.set_location(self.__current_name)
         unmatched = bool(self.__current_name) and self.__current_name not in self.__suggestions
-        self.__name_line.set_warning(unmatched)
+        self.__name_line.set_warning(self.__renamable and unmatched)
         for name, label in self.__suggestion_labels.items():
+            label.setVisible(self.__renamable)
             is_current = name == self.__current_name
             unavailable = not is_current and self.__conflicts is not None and self.__conflicts(name)
             label.setEnabled(not is_current and not unavailable)

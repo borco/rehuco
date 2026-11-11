@@ -1103,7 +1103,11 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   place the record already sits at disabled and plain, as the current name is (a `*` layout under the record's own
   root is that place, read as its real path under the root, #636). The folders a move leaves empty stay,
   unless the Files page's *Remove the left-behind folders* says otherwise ([[appendices.settings-pages]]); a record
-  under no root has no root to stop at, and its folders always stay.
+  under no root has no root to stop at, and its folders always stay. **A record that is its root's folder**
+  (`<root>/info.rehu`, #641) is neither moved nor renamed from here, under every layout: its own root is the one place
+  shown, by the root's label alone, disabled and plain; no other root offers a place, since a move would put a whole
+  root inside another; and no name is suggested or marked as the wrong one, since a rename would rename the root's
+  folder.
   A candidate **something already occupies** — another folder for a directory-scoped resource, another `.rehu` for a
   file-scoped one — is offered *disabled, with a trailing `⚿`* rather than as a click that could only fail. A marker
   rather than a color: the disabled palette fights a hue, a colorblind reader may not separate one, and Qt Style Sheets
