@@ -592,7 +592,7 @@ catalog* ([[data-model#local-file-trio]], #377, #461): the **Root Catalog** dock
 **Browsers** dock its browsers, each named as its menu is, each with its own `View` toggle, and both revealed when a
 catalog is opened. The word *collection* is not used for it: that is a resource type ([[plugins#grouping-entities]]).
 **Neither dock has a toolbar.** The Root Catalog dock's title bar holds *Refresh* and the Browsers dock's *New Table
-Browser*; *Scan*, *Add Roots* and *Remove Root* are entries of `Root Catalog` and *Rename Browser* of `Browsers`, the
+Browser*; *Scan all roots*, *Add Roots* and *Remove Root* are entries of `Root Catalog` and *Rename Browser* of `Browsers`, the
 rare actions being the menu's ([[appendices.code-conventions#command-surfaces]]). **One object owns the open file
 and its cache** — the catalog — and both docks read it and hear from it when it changed; neither holds the file. A
 third, the **Tag Browser**, lists the values its records share ([[plugins#tag-browser]]).
@@ -601,11 +601,13 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   ([[mounts-and-storage#rehuco-scope]]), each further column one folder's listing, drawn like the files sub-dock
   ([[plugins#files-subdock]]) but with no `..` row, which a column view has no use for. It is **navigation, not
   membership**: what the catalog holds is still decided by records, never by the tree ([[plugins#grouping-entities]]).
-  The `Root Catalog` menu holds **Scan**, **Add Roots** and **Remove Root**; a root's context menu holds, in four
-  groups, the folder filter and Open in file explorer; the four moves — top, up, down, bottom, with the ordering
+  The `Root Catalog` menu holds **Scan all roots**, **Add Roots** and **Remove Root**; a root's context menu holds, in
+  four groups, the folder filter, Open in file explorer, **Scan root** (that root alone; disabled on a root this
+  machine does not map) and Refresh (#644); the four moves — top, up, down, bottom, with the ordering
   icons the settings lists use but not their list editor, whose inline insert, rename, duplicate and reset have no
-  meaning for a root; Remove Root, apart; and, last, the catalog's own **Scan**, **Add Roots** and **Refresh**, as the
-  empty part of the roots column offers them, enabled alike — the roots can fill the column and leave none (#543).
+  meaning for a root; Remove Root, apart; and, last, the catalog's own **Scan all roots** and **Add Roots**, which
+  the empty part of the roots column offers too, with Refresh, enabled alike — the roots can fill the column and leave
+  none (#543). **Refresh sits under Open in file explorer on every row's menu**, F5 working in every column (#644).
   A root row is two lines, its name and under it its folder,
   smaller and fainter and elided to fit, with its storage glyph centred beside both. Its details pane has no move buttons, the grip being the way to move one.
   A folder's menu holds the folder filter and the folder's rehu: **Open associated rehu** when its `info.rehu` (or `info.tc`) is there, **Create rehu**
@@ -818,7 +820,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
 **The menu bar is the complete index** (#402, #465): `File`, `Root Catalog`, `Browsers`, `View` and `Tools`.
 `File` and `Browsers` are twins — the verbs that open or create, the verbs on the open set, then the open list,
 A–Z, with the focused one checked; `File` ends with Settings and Quit. `Root Catalog` is the same shape without a list,
-there being one catalog: New, Open, Open Recent, then Scan, Add Roots and Remove Root, which are the dock's own
+there being one catalog: New, Open, Open Recent, then Scan all roots, Add Roots and Remove Root, which are the dock's own
 actions and so are enabled as the dock enables them. `Browsers` leads with *New Table Browser* and *Save Search…* ([[plugins#saved-searches]]); the image
 browser (#403) adds its own entry and kind icon when it lands. `View` is what is visible — themes and the dock
 toggles — and `Tools` holds the catalog-wide maintenance operations.
