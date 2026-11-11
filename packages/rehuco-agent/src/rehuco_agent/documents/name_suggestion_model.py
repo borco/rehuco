@@ -95,6 +95,10 @@ class NameSuggestionModel(QObject):
     record under no root is offered every root's place; one under a root that cannot be reached now, none. A ``*``
     layout keeps the record where it is under its own root (#636), at that root's top under any other.
 
+    **A record that is its root's folder** (``<root>/info.rehu``, #641) is not moved or renamed from here: its own
+    root is the one place offered, by the root's label alone and already there, no other root offers one, and no name
+    is suggested -- a rename would rename the root's folder, a move put a whole root inside another.
+
     :param model: the record fields (``title`` / ``publisher`` / ``authors`` / ``released`` / ``advertised_count`` /
         ``resource_type``) to build suggestions from.
     :param catalog_roots: the open catalog's roots, for :meth:`root_destinations`; ``None`` offers no root's place.
@@ -147,9 +151,13 @@ class NameSuggestionModel(QObject):
         :func:`~rehuco_core.known_placeholders_for`, so a pattern
         naming ``{count}`` never reaches here for any other type.
 
+        A record that is its root's folder (:meth:`is_root_folder`, #641) is suggested no name.
+
         :returns: the distinct candidate strings, in the order their patterns first produced them.
         """
         model = self.__model
+        if self.is_root_folder():
+            return []
         values = location_values(model.title, model.publisher, model.authors, model.released, model.advertised_count)
         plugins = self.__model.document.plugins
         main_key = plugins.main_key(self.__model.resource_type)
@@ -163,6 +171,18 @@ class NameSuggestionModel(QObject):
             for pattern in patterns
         )
         return list(dict.fromkeys(name for name in rendered if name))
+
+    def is_root_folder(self) -> bool:
+        """Whether the record describes a root's own folder (``<root>/info.rehu``, #641), which no rename or move
+        may touch: it would rename the root's folder, leaving the catalog and this machine's mapping on a folder that
+        is gone.
+
+        :returns: whether the record's folder is a root's folder on this machine.
+        """
+        path, roots = self.__model.path, self.__catalog_roots
+        if path is None or roots is None:
+            return False
+        return self.__at_top_of(self.__root_holding(path, roots.mapped_roots()), path)
 
     def root_destinations(self) -> tuple[RootDestination, ...]:
         """Where each root's layout puts the record (#579, #339), rendered by :func:`~rehuco_core.destination` from the
@@ -180,6 +200,12 @@ class NameSuggestionModel(QObject):
         own = self.__root_holding(path, mapped)
         if own is not None and own.root_id in self.__unreachable:
             return ()
+        if own is not None and self.__at_top_of(own, path):
+            return (
+                RootDestination(
+                    own.label or own.location, PurePosixPath(), own.path, own.root_id, True, own.path, own.root_id
+                ),
+            )
         others = [root for root in mapped if root is not own and root.root_id not in self.__unreachable]
         current_name = self.__model.current_name
         naming = RecordNaming.of(self.__model.document, current_name)
@@ -204,6 +230,16 @@ class NameSuggestionModel(QObject):
                 )
             )
         return tuple(places)
+
+    @staticmethod
+    def __at_top_of(root: MappedRoot | None, path: Path) -> bool:
+        """Whether the record's own folder is ``root``'s folder.
+
+        :param root: the root holding the record, or ``None``.
+        :param path: the record's ``.rehu``.
+        :returns: whether the record is directory-scoped and sits directly in the root's folder.
+        """
+        return root is not None and is_directory_scoped(path) and path_key(path.parent) == path_key(root.path)
 
     @staticmethod
     def __root_holding(path: Path, roots: Sequence[MappedRoot]) -> MappedRoot | None:

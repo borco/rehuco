@@ -206,3 +206,81 @@ def test_no_place_shows_no_row(qtbot: QtBot, model: RehuDocumentModel) -> None:
     editor, _kept = path_editor(qtbot, model, NameSuggestionModel(model))
 
     assert not labels_of(editor)
+
+
+def test_a_place_with_no_path_shows_the_label_alone(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The root itself, a record at its top, is its label with nothing after it, disabled and plain (#641).
+
+    **Test steps:**
+
+    * give the suggestions a place with no path, the record already there
+    * check the row reads the root's label alone, disabled, and a click moves nothing
+    """
+    suggestions = NameSuggestionModel(model)
+    top = RootDestination("Tutorials", PurePosixPath(), ROOT, ROOT_ID, True, ROOT, ROOT_ID)
+    mocker.patch.object(suggestions, "root_destinations", return_value=(top,))
+    move = mocker.patch.object(model, "move_in_root")
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    (label,) = labels_of(editor)
+    label.linkActivated.emit("#")
+
+    assert full_text(label) == "Tutorials"
+    assert not label.isEnabled()
+    move.assert_not_called()
+
+
+def test_a_name_is_not_applied_to_a_record_that_is_its_roots_folder(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A rename asked for a record at its root's top is dropped, and one asked for any other is applied (#641).
+
+    **Test steps:**
+
+    * build the editor over suggestions saying the record is its root's folder, and emit a name
+    * check the model renamed nothing
+    * say it is not, emit the name, and check the model renamed to it
+    """
+    suggestions = NameSuggestionModel(model)
+    is_root = mocker.patch.object(suggestions, "is_root_folder", return_value=True)
+    rename = mocker.patch.object(model, "rename_location")
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    editor.suggestion_selected.emit("Bar")
+    rename.assert_not_called()
+
+    is_root.return_value = False
+    editor.suggestion_selected.emit("Bar")
+    rename.assert_called_once_with("Bar")
+
+
+def test_a_record_that_is_its_roots_folder_shows_no_name_to_click(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The path row of a record at its root's top shows no suggestion, even for names it is handed, and does not draw
+    the current name as the wrong one; any other record's shows them (#641).
+
+    **Test steps:**
+
+    * build the editor over suggestions saying the record is its root's folder yet offering a name
+    * check the name's label is hidden and the current name is not warned about
+    * say it is not the root's folder, announce the change, and check the label shows and the name is warned about
+    """
+    suggestions = NameSuggestionModel(model)
+    is_root = mocker.patch.object(suggestions, "is_root_folder", return_value=True)
+    mocker.patch.object(suggestions, "suggestions", return_value=["Bar"])
+    editor, _kept = path_editor(qtbot, model, suggestions)
+    names = editor._PathEditor__suggestion_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    name_line = editor._PathEditor__name_line  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    warned = mocker.spy(name_line, "set_warning")
+
+    suggestions.changed.emit()
+    assert names["Bar"].isHidden()
+    warned.assert_called_with(False)
+
+    is_root.return_value = False
+    suggestions.changed.emit()
+    assert not names["Bar"].isHidden()
+    warned.assert_called_with(True)
