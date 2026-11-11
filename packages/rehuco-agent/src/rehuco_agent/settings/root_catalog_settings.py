@@ -40,7 +40,8 @@ class RootLayout:
 
 
 DEFAULT_ROOT_LAYOUTS: Final = (RootLayout("Keep folder names"),)
-"""The shipped seed: any record, under its current name, at the root's top -- what every root had before #578."""
+"""The shipped seed: any record, under its current name, at the root's top (one already under the root stays where it
+is, #636) -- what every root had before #578."""
 
 DEFAULT_AUTO_PREVIEW: Final = True
 """Whether the Roots view previews the record of the row it stands on, on a fresh install with nothing persisted. On:

@@ -16,8 +16,8 @@ is a fact about the root rather than about one catalog or one machine. The shape
 (:class:`~rehuco_core.root_mappings.RootMappings`). **``label``** and **``location``** are what a ``.rehuco`` root used
 to hold inline. **``layouts``** says where a record of each type lives under the root, by the type's main key or ``*``
 for any type not named: a path template (:func:`~rehuco_core.root_destination.destination`), or ``*`` for *keep the
-record's current name at the root's top*. **``fallbacks``** names what a placeholder renders as when a record leaves it
-empty.
+record's current name at the root's top*, or *where it is* for a record already under the root (#636).
+**``fallbacks``** names what a placeholder renders as when a record leaves it empty.
 
 What this build does not understand is carried: an unknown top-level key comes back out of a save unchanged. A file
 stamped newer than this build loads, but read-only, with the reason stated. A save takes the file's lock and writes only
@@ -63,7 +63,8 @@ ANY_TYPE: Final = "*"
 """The ``layouts`` key a type with no entry of its own falls back to."""
 
 KEEP_NAME: Final = "*"
-"""The ``layouts`` value that keeps a record's current folder name, at the root's top."""
+"""The ``layouts`` value that keeps a record's current folder name, at the root's top; a record already under the root
+stays where it is (#636)."""
 
 DEFAULT_LAYOUTS: Final[Mapping[str, str]] = MappingProxyType({ANY_TYPE: KEEP_NAME})
 """What a root made from a folder starts with: any record, under its current name."""

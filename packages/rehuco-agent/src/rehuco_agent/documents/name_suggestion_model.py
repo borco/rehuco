@@ -92,7 +92,8 @@ class NameSuggestionModel(QObject):
     each root's layout puts the record, the root holding it first, then every other this machine maps and reaches, in
     the catalog's order. Only a place that can be built is offered -- a root this machine does not reach, and one whose
     layout does not take the record's type or needs a field the record leaves empty with no fallback, offer none. A
-    record under no root is offered every root's place; one under a root that cannot be reached now, none.
+    record under no root is offered every root's place; one under a root that cannot be reached now, none. A ``*``
+    layout keeps the record where it is under its own root (#636), at that root's top under any other.
 
     :param model: the record fields (``title`` / ``publisher`` / ``authors`` / ``released`` / ``advertised_count`` /
         ``resource_type``) to build suggestions from.
@@ -186,7 +187,8 @@ class NameSuggestionModel(QObject):
         folder = path.parent.parent if is_directory_scoped(path) else path.parent
         places: list[RootDestination] = []
         for root in [*([own] if own is not None else []), *others]:
-            relative = destination(root, naming, rules)
+            current = None if root is not own else PurePosixPath(*folder.parts[len(root.path.parts) :], current_name)
+            relative = destination(root, naming, rules, current)
             if isinstance(relative, Refusal):
                 continue
             here = path_key(root.path.joinpath(*relative.parts)) == path_key(folder / current_name)
