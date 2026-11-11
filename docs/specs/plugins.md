@@ -1100,7 +1100,8 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   record's type nor `*`, or one needing a placeholder the record leaves empty with no fallback on the root — and none at
   all for a record whose own root cannot be reached. A host with no task queue offers only the record's own root's
   place. A place something already occupies shows disabled with the same marker as an occupied name below, and the
-  place the record already sits at disabled and plain, as the current name is. The folders a move leaves empty stay,
+  place the record already sits at disabled and plain, as the current name is (a `*` layout under the record's own
+  root is that place, read as its real path under the root, #636). The folders a move leaves empty stay,
   unless the Files page's *Remove the left-behind folders* says otherwise ([[appendices.settings-pages]]); a record
   under no root has no root to stop at, and its folders always stay.
   A candidate **something already occupies** — another folder for a directory-scoped resource, another `.rehu` for a

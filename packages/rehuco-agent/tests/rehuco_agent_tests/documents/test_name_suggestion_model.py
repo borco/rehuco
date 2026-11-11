@@ -451,6 +451,28 @@ def test_a_record_already_there_is_marked_so(
     assert destination.here
 
 
+def test_a_keep_name_layout_keeps_a_nested_record_where_it_is_under_its_own_root_only(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """``*`` is the record's real nested place under its own root, already there; under another root it is the folder
+    name at the top (#636).
+
+    **Test steps:**
+
+    * open a record at ``ArtStation/Bros/Foo/info.rehu`` under a ``*`` root, beside another ``*`` root
+    * check the own root's place is ``ArtStation/Bros/Foo`` and the record is there
+    * check the other root's place is ``Foo``, not there
+    """
+    root = root_at(tmp_path / "tutorials", {"*": "*"})
+    other = root_at(tmp_path / "other", {"*": "*"})
+    place(authored, root.path / "ArtStation" / "Bros" / "Foo" / "info.rehu")
+
+    own, elsewhere = NameSuggestionModel(authored, catalog_of(signals, root, other)).root_destinations()
+
+    assert (own.relative, own.here) == (PurePosixPath("ArtStation/Bros/Foo"), True)
+    assert (elsewhere.relative, elsewhere.here) == (PurePosixPath("Foo"), False)
+
+
 def test_a_record_under_no_root_is_offered_every_root(
     tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
 ) -> None:
