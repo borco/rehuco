@@ -307,11 +307,19 @@ def root_place_callbacks(
         ]
 
     def move_to_root_place(index: int) -> None:
-        # asked again at click time, by the root of the row clicked: the row on screen may be a render behind
+        # asked again at click time, by the root and path of the row clicked: the row on screen may be a render
+        # behind, and a root has two rows when the record is not where its layout puts it (#643)
         if index >= len(shown):
             return
-        root_id = shown[index].root_id
-        place = next((place for place in root_places() if place.root_id == root_id), None)
+        clicked = shown[index]
+        place = next(
+            (
+                place
+                for place in root_places()
+                if place.root_id == clicked.root_id and place.relative == clicked.relative
+            ),
+            None,
+        )
         if place is None or place.here:
             return
         if record_moves is None:

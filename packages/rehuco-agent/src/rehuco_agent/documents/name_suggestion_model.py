@@ -96,7 +96,9 @@ class NameSuggestionModel(QObject):
     the catalog's order. Only a place that can be built is offered -- a root this machine does not reach, and one whose
     layout does not take the record's type or needs a field the record leaves empty with no fallback, offer none. A
     record under no root is offered every root's place; one under a root that cannot be reached now, none. A ``*``
-    layout keeps the record where it is under its own root (#636), at that root's top under any other.
+    layout keeps the record's folder name, at the root's top, under its own root too (#643). **The place the record
+    sits at** is a row of its own, first and ``here``, whenever its own root's layout puts it somewhere else or
+    refuses it.
 
     **A record that is its root's folder** (``<root>/info.rehu``, #641) is not moved or renamed from here: its own
     root is the one place offered, by the root's label alone and already there, no other root offers one, and no name
@@ -216,11 +218,14 @@ class NameSuggestionModel(QObject):
         folder = path.parent.parent if is_directory_scoped(path) else path.parent
         places: list[RootDestination] = []
         for root in [*([own] if own is not None else []), *others]:
-            current = None if root is not own else PurePosixPath(*folder.parts[len(root.path.parts) :], current_name)
-            relative = destination(root, naming, rules, current)
+            relative = destination(root, naming, rules)
+            here = not isinstance(relative, Refusal) and (
+                path_key(root.path.joinpath(*relative.parts)) == path_key(folder / current_name)
+            )
+            if root is own and not here:
+                places.append(self.__current_place(root, folder, current_name))
             if isinstance(relative, Refusal):
                 continue
-            here = path_key(root.path.joinpath(*relative.parts)) == path_key(folder / current_name)
             places.append(
                 RootDestination(
                     root.label or root.location,
@@ -234,6 +239,18 @@ class NameSuggestionModel(QObject):
                 )
             )
         return tuple(places)
+
+    @staticmethod
+    def __current_place(own: MappedRoot, folder: Path, current_name: str) -> RootDestination:
+        """The place the record sits at now, under its own root (#643).
+
+        :param own: the root holding the record.
+        :param folder: the folder the record's own entry is in.
+        :param current_name: the record's current file or folder name.
+        :returns: that place, ``here``, its template empty: no layout rendered it.
+        """
+        relative = PurePosixPath(*folder.parts[len(own.path.parts) :], current_name)
+        return RootDestination(own.label or own.location, relative, own.path, own.root_id, True, own.path, own.root_id)
 
     @staticmethod
     def __at_top_of(root: MappedRoot | None, path: Path) -> bool:

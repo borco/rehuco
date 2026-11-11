@@ -36,7 +36,7 @@
    <item>
     <widget class="StringMapEditor" name="layouts_editor">
      <property name="toolTip">
-      <string>Where a record of each type lives under the root: a path template, with / between levels, or * to keep the record's current name at the root's top (a record already under the root stays where it is). The type * stands for every type not named. A type with no row, and no * row, cannot be moved here.</string>
+      <string>Where a record of each type lives under the root: a path template, with / between levels, or * to keep the record's current name at the root's top. The type * stands for every type not named. A type with no row, and no * row, cannot be moved here.</string>
      </property>
     </widget>
    </item>
