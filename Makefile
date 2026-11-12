@@ -331,12 +331,17 @@ AGENT_APPIMAGE_BASE_TAG := python3.14
 AGENT_APPIMAGE_BASE_ABI := cp314-cp314-manylinux2014_x86_64
 AGENT_APPIMAGE        := $(AGENT_APPIMAGE_OUT)/rehuco-agent-x86_64.AppImage
 
-PYTHON_APPIMAGE := uv run --group appimage --directory $(AGENT_APPIMAGE_OUT) python-appimage
+# appimagetool pinned to a release: python-appimage's default, the rolling `continuous` build, began on 2026-11-06
+# to refuse an AppDir of mode 0700 -- which python-appimage's own mkdtemp gives it -- and failed rehuco-agent-0.4.0.
+AGENT_APPIMAGETOOL_VERSION := 1.9.1
+
+PYTHON_APPIMAGE := uv run --group appimage --directory $(AGENT_APPIMAGE_OUT) python-appimage \
+	--appimagetool-version $(AGENT_APPIMAGETOOL_VERSION)
 
 # requirements.txt is generated, not committed (gitignored: machine-specific absolute paths). Each line is
-# pip-installed *separately* by python-appimage, in order -- borco-core/rehuco-core/borco-pyside first (each
-# from its own source tree, built on the fly by pip via hatchling) so that rehuco-agent's own install last
-# finds all three already satisfied locally instead of reaching PyPI, where the same four names already exist
+# pip-installed *separately* by python-appimage, in order -- the four libraries first (each from its own
+# source tree, built on the fly by pip via hatchling) so that rehuco-agent's own install last finds them
+# all already satisfied locally instead of reaching PyPI, where the same names already exist
 # as unrelated 0.0.x stub releases ([[packaging-deployment#linux-format]] point 5). Absolute paths are
 # required: python-appimage pip-installs from a temporary build directory, so a relative path would resolve
 # against the wrong cwd.
@@ -346,6 +351,7 @@ agent-appimage-build: uis $(ICON_FILES)
 		"$(CURDIR)/packages/borco-core" \
 		"$(CURDIR)/packages/rehuco-core" \
 		"$(CURDIR)/packages/borco-pyside" \
+		"$(CURDIR)/packages/rehuco-node" \
 		"$(CURDIR)/packages/rehuco-agent" \
 		> $(AGENT_APPIMAGE_DIR)/requirements.txt
 	mkdir -p $(AGENT_APPIMAGE_OUT)
