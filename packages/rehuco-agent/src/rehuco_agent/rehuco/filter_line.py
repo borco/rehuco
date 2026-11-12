@@ -6,6 +6,10 @@ unclosed quote runs to the end of the line -- :func:`borco_core.read_value`, the
 word that starts with a name and a colon is a token -- ``name:value`` or ``name:"quoted value"`` -- and every other
 word is a free-text term: ``foo bar`` finds what holds both, in any order, and ``"foo bar"`` the phrase. Every term and
 every token must match.
+
+A term is looked for in a title, a path, and part of any author, publisher or tag name, unless ``in:`` says where
+(#647): ``in:title`` keeps every term to titles, ``in:authors,publishers`` to those names, and several ``in:`` words add
+their places up. A field token still matches one value whole.
 """
 
 import re
@@ -14,7 +18,13 @@ from dataclasses import dataclass
 from typing import Final
 
 from borco_core import read_value
-from rehuco_core import CatalogField, CatalogQuery
+from rehuco_core import CatalogField, CatalogQuery, CatalogTextField
+
+SCOPE_TOKEN: Final = "in"
+"""The token naming where free text is looked for, as a comma list of :class:`~rehuco_core.CatalogTextField` values."""
+
+SCOPE_SEPARATOR: Final = ","
+"""What separates the places an ``in:`` token names."""
 
 RETIRED_TOKENS: Final = ("columns",)
 """Tokens an older build wrote into a browser's remembered line and this one no longer reads: ``columns:`` named the
@@ -44,9 +54,9 @@ class FilterToken:
 class ParsedFilter:
     """What a filter line says.
 
-    :param query: the free-text terms and every field token, in the line's order.
-    :param problems: one sentence per word that was not applied -- an unknown field. The rest of the line still
-        applies.
+    :param query: the free-text terms and every field token, in the line's order, and where the terms are looked for.
+    :param problems: one sentence per word or place that was not applied -- an unknown field, or a place ``in:`` does
+        not know. The rest of the line still applies.
     :param tokens: every ``name:value`` word, applied or not, so the line can be rewritten around them.
     """
 
@@ -58,7 +68,8 @@ class ParsedFilter:
 def parse_filter(text: str) -> ParsedFilter:
     """Read a filter line.
 
-    A token with an empty value is ignored without a word: it is what a token looks like while it is typed.
+    A token with an empty value is ignored without a word: it is what a token looks like while it is typed, and so is
+    an empty place in an ``in:`` list (``in:title,``). An ``in:`` naming no known place leaves every place searched.
 
     :param text: the line.
     :returns: the query and what could not be applied.
@@ -66,6 +77,7 @@ def parse_filter(text: str) -> ParsedFilter:
     terms: list[str] = []
     tokens: list[FilterToken] = []
     fields: list[tuple[CatalogField, str]] = []
+    scope: set[CatalogTextField] = set()
     problems: list[str] = []
     for name, value, start, end in split_words(text):
         if name is None:
@@ -75,11 +87,33 @@ def parse_filter(text: str) -> ParsedFilter:
         tokens.append(FilterToken(name, value, start, end))
         if not value:
             continue
+        if name == SCOPE_TOKEN:
+            problems += read_scope(value, scope)
+            continue
         try:
             fields.append((CatalogField(name), value))
         except ValueError:
             problems.append(f'Unknown field "{name}"')
-    return ParsedFilter(CatalogQuery(tuple(terms), tuple(fields)), tuple(problems), tuple(tokens))
+    query = CatalogQuery(tuple(terms), tuple(fields), frozenset(scope or CatalogTextField))
+    return ParsedFilter(query, tuple(problems), tuple(tokens))
+
+
+def read_scope(value: str, scope: set[CatalogTextField]) -> list[str]:
+    """Add the places an ``in:`` token names to ``scope``.
+
+    :param value: the token's value, a comma list of places, matched case-insensitively.
+    :param scope: the places named so far, added to.
+    :returns: one sentence per place it does not know.
+    """
+    problems: list[str] = []
+    for place in (piece.strip().lower() for piece in value.split(SCOPE_SEPARATOR)):
+        if not place:
+            continue
+        try:
+            scope.add(CatalogTextField(place))
+        except ValueError:
+            problems.append(f'Unknown place "{place}" for {SCOPE_TOKEN}:')
+    return problems
 
 
 def format_token(name: str, value: str) -> str:

@@ -731,14 +731,19 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     copy plain text only, never a file list, so a paste into Explorer copies no folders.
   - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
     (`folder`, `authors`, `tags`, `publishers`, `type`), all ANDed. Free text is **one term per word**, each found in a
-    title or a path (either one), so `foo bar` finds "bar then foo"; a `"quoted run"` is one term, the phrase (#475).
+    title, a path, or part of any author, publisher or tag name (any one of them), so `foo bar` finds "bar then foo"; a
+    `"quoted run"` is one term, the phrase (#475). **`in:` says where free text looks** (#647), as GitHub's search
+    does: a comma list of `title`, `path`, `authors`, `publishers`, `tags` (`ann in:authors,publishers`), several
+    `in:` words adding up, an unknown place reported like an unknown field. There is no `title:` token: `in:title` is
+    how a search is kept to titles. Field tokens stay exact — `authors:ann` finds an author named Ann, never Annette.
     A repeated field must match both values. It picks the rows **by query, not by proxy**: as the text
     settles (or on Enter) it is compiled to a `CatalogQuery` and the browser is handed the rows that match, so the
     table and its status line only ever hold what matches. **The rows are read off the GUI thread and filtered in
     memory** (#455): a read costs about 21 µs per row it returns (#407), so every row is read once per change — an
     open, a scan's end, a rename or a write (just the rows it touched) — on a worker, one read at a time, and keyed
     there into a `CatalogSnapshot`; each browser then filters that snapshot, at once, per keystroke (6–17 ms at 100k
-    rows). The in-memory matcher is the cache's `WHERE` implemented twice, and a contract test runs both. The cyclic
+    rows; a three-word search over every place, about 30 ms, since each row's title, path and names are joined into
+    one text to search once). The in-memory matcher is the cache's `WHERE` implemented twice, and a contract test runs both. The cyclic
     collector is paused while a read builds its rows, since it otherwise walks them all holding the GIL; what a refresh
     does with the rows — a status total, a sort, whose keys a model works out once per row — must not call back into
     Qt once per row. **Case and diacritics:** free

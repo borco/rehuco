@@ -22,6 +22,7 @@ from rehuco_core import (
     CatalogRow,
     CatalogSearchKey,
     CatalogSnapshot,
+    CatalogTextField,
     MappedRoot,
     RecordKind,
 )
@@ -48,9 +49,26 @@ WORDS: Final = (
     "ABC",
     "abc_def",
     "a%b",
+    "two\nlines",
 )
 """Spellings that fold, escape or compare differently: accents, ligatures, letters folding to two, wildcards, a
-backslash, a fullwidth sign, a letter fold cannot decompose, and text with no case."""
+backslash, a fullwidth sign, a letter fold cannot decompose, text with no case, and a line break -- what the matcher
+joins a row's names with (#647)."""
+
+ONLY_IN: Final = {
+    CatalogTextField.AUTHORS: "Ann Quillfeather",
+    CatalogTextField.PUBLISHERS: "Brightmoor Press",
+    CatalogTextField.TAGS: "zinnwaldite",
+}
+"""A name per place no title, path or other name holds: the rows carrying them are found by that name alone (#647)."""
+
+SCOPES: Final = (
+    *(frozenset({place}) for place in CatalogTextField),
+    frozenset({CatalogTextField.TITLE, CatalogTextField.PATH}),
+    frozenset({CatalogTextField.AUTHORS, CatalogTextField.TAGS}),
+    frozenset(),
+)
+"""Narrower places than the default every place: each alone, two pairs, and none."""
 
 FOLDERS: Final = ("Art", "art/Sub", "Ärt", "Courses/Python", "courses/python 2", "x%y", "a_b", "Ünï", "ß/ss")
 """Folders a record sits under: case and accents apart, wildcards, segment edges (``python`` and ``python 2``)."""
@@ -119,11 +137,20 @@ def fixture_catalog(tmp_path_factory: TempPathFactory) -> Generator[Catalog]:
         for number, label in enumerate(LABELS)
     ]
     rng = random.Random(4)
+    named = [
+        CatalogRecord(
+            "Art/named 0/r.rehu", RecordKind.REHU, title="named", authors=(ONLY_IN[CatalogTextField.AUTHORS],)
+        ),
+        CatalogRecord(
+            "Art/named 1/r.rehu", RecordKind.REHU, title="named", publishers=(ONLY_IN[CatalogTextField.PUBLISHERS],)
+        ),
+        CatalogRecord("Art/named 2/r.rehu", RecordKind.REHU, title="named", tags=(ONLY_IN[CatalogTextField.TAGS],)),
+    ]
     with CatalogCache.open(path) as cache:
         cache.reconcile_roots(roots)
         for number, root in enumerate(roots):
             records = [record(number * RECORDS_PER_ROOT + index, rng) for index in range(RECORDS_PER_ROOT)]
-            cache.apply_root_scan(root.root_id, records)
+            cache.apply_root_scan(root.root_id, records + (named if number == 0 else []))
         rows = cache.rows()
     root_ids = tuple(root.root_id for root in roots)
     yield Catalog(path, root_ids, CatalogSnapshot.build(rows, root_ids))
@@ -135,7 +162,12 @@ def battery() -> list[CatalogQuery]:
     :returns: the queries.
     """
     terms = [*WORDS, "%", "_", "\\", "ss", "SS", "fi", "e", "/", "sub/", "ART/", "a_", "r.rehu", "σοφος", "Sigma"]
+    # a term holding the line break the matcher joins names with: inside one name, and across two
+    terms += ["o\nl", "ABC\nplain", "plain\nabc"]
     queries = [CatalogQuery(), *(CatalogQuery(terms=(term,)) for term in terms)]
+    for scope in SCOPES:
+        queries += [CatalogQuery(terms=(term,), scope=scope) for term in ("e", "café", "/", "%", "o\nl", "plain\nabc")]
+        queries.append(CatalogQuery(terms=("a", "e"), scope=scope))
     for word in WORDS:
         for field in (CatalogField.AUTHORS, CatalogField.TAGS, CatalogField.PUBLISHERS):
             queries += [CatalogQuery(tokens=((field, word),)), CatalogQuery(tokens=((field, word.upper()),))]
@@ -169,7 +201,17 @@ def battery() -> list[CatalogQuery]:
     return queries
 
 
-@mark.parametrize("query", battery(), ids=str)
+def query_id(query: CatalogQuery) -> str:
+    """A query's test id, the same in every process -- a set's own order follows the string hash seed, which differs
+    between test workers.
+
+    :param query: the query.
+    :returns: its terms, tokens and places, the places sorted.
+    """
+    return f"{query.terms}-{query.tokens}-{sorted(query.scope)}"
+
+
+@mark.parametrize("query", battery(), ids=query_id)
 def test_the_matcher_picks_what_the_cache_reads(catalog: Catalog, query: CatalogQuery) -> None:
     """The snapshot selects exactly the rows the cache's ``WHERE`` reads, in the cache's order.
 
@@ -193,6 +235,30 @@ def test_the_battery_finds_something_and_misses_something(catalog: Catalog) -> N
     picked = [len(catalog.sql(query)) for query in battery()]
 
     assert sum(1 for count in picked if 0 < count < total) > len(picked) // 2
+
+
+@mark.parametrize(("place", "name"), ONLY_IN.items(), ids=str)
+def test_free_text_finds_a_row_by_part_of_one_name_alone(catalog: Catalog, place: CatalogTextField, name: str) -> None:
+    """A word found only in one author, publisher or tag finds that row, by default and kept to that place, and not
+    kept to titles and paths (#647).
+
+    **Test steps:**
+
+    * look for the name's last word, in every case, through the cache and the snapshot: by default, in its place only,
+      and in titles and paths only
+    * verify the first two find the one row naming it and the last finds none
+    """
+    word = name.split()[-1].upper()
+    (named,) = (row for row in catalog.snapshot.rows if name in getattr(row.record, place.value))
+    queries = (
+        CatalogQuery(terms=(word,)),
+        CatalogQuery(terms=(word,), scope=frozenset({place})),
+        CatalogQuery(terms=(word,), scope=frozenset({CatalogTextField.TITLE, CatalogTextField.PATH})),
+    )
+
+    found = [(catalog.sql(query), [row.resource_id for row in catalog.snapshot.select(query)]) for query in queries]
+
+    assert found == [([named.resource_id],) * 2, ([named.resource_id],) * 2, ([],) * 2]
 
 
 def test_matches_tests_one_key(catalog: Catalog) -> None:
@@ -276,7 +342,7 @@ def test_a_snapshot_tells_its_rows_their_count_and_its_roots(catalog: Catalog) -
     snapshot = catalog.snapshot
 
     assert [row.resource_id for row in snapshot.rows] == catalog.sql(CatalogQuery())
-    assert len(snapshot) == 2 * RECORDS_PER_ROOT
+    assert len(snapshot) == 2 * RECORDS_PER_ROOT + len(ONLY_IN)
     assert snapshot.root_ids == catalog.root_ids
     assert set(snapshot.ids) == {row.resource_id for row in snapshot.rows}
 

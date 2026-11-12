@@ -18,7 +18,7 @@ the GIL, so every tracked object a row makes is a stall on the GUI thread.
 """
 
 import string
-from collections.abc import Collection, Iterable, KeysView
+from collections.abc import Callable, Collection, Iterable, KeysView
 from dataclasses import dataclass
 from operator import attrgetter
 from typing import Final
@@ -26,10 +26,36 @@ from uuid import UUID
 
 from borco_core import fold
 
-from .rehudb import KEY_RANGE_END, CatalogField, CatalogQuery, CatalogRow, catalog_path_key
+from .rehudb import KEY_RANGE_END, CatalogField, CatalogQuery, CatalogRow, CatalogTextField, catalog_path_key
 
 ASCII_LOWER: Final = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 """Lowers ASCII letters and nothing else -- what SQLite's ``LIKE`` and ``NOCASE`` fold, without ICU."""
+
+TEXT_SEPARATOR: Final = "\n"
+"""What a key's joined text puts between its parts. A term holding none is found in the joined text exactly where it is
+found in one of the parts; one that does hold it -- which a filter line never types -- is looked for part by part."""
+
+PLACE_TEXTS: Final = {
+    CatalogTextField.TITLE: attrgetter("title"),
+    CatalogTextField.PATH: attrgetter("path"),
+    CatalogTextField.AUTHORS: attrgetter("author_text"),
+    CatalogTextField.PUBLISHERS: attrgetter("publisher_text"),
+    CatalogTextField.TAGS: attrgetter("tag_text"),
+}
+"""Each place a free-text term is found in, and the key's text for it -- names joined by :data:`TEXT_SEPARATOR`."""
+
+PLACE_PARTS: Final[dict[CatalogTextField, Callable[[CatalogSearchKey], tuple[str, ...]]]] = {
+    CatalogTextField.TITLE: lambda key: (key.title,),
+    CatalogTextField.PATH: lambda key: (key.path,),
+    CatalogTextField.AUTHORS: attrgetter("authors"),
+    CatalogTextField.PUBLISHERS: attrgetter("publishers"),
+    CatalogTextField.TAGS: attrgetter("tags"),
+}
+"""Each place, and the key's texts for it apart -- for a term holding :data:`TEXT_SEPARATOR`. A name is folded but not
+yet ASCII-lowered, which the slow path does as it looks."""
+
+WHOLE_TEXT: Final = attrgetter("text")
+"""The key's text for a query looking in every place at once."""
 
 
 # one field per thing a query compares, so a match reads each without a lookup
@@ -43,10 +69,16 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
     :param type: the type, ASCII-lowered, as ``NOCASE`` compares it.
     :param label: the root's label, the same way.
     :param path_key: the path as the filesystem compares it (:func:`~rehuco_core.catalog_path_key`).
-    :param authors: every author, folded -- a tuple, not a set: the collector tracks every set, never a tuple of
-        strings, and a record names a few.
-    :param tags: every tag, folded.
-    :param publishers: every publisher, folded.
+    :param authors: every author, folded, as a token compares it whole -- a tuple, not a set: the collector tracks
+        every set, never a tuple of strings, and a record names a few.
+    :param tags: every tag, the same way.
+    :param publishers: every publisher, the same way.
+    :param author_text: every author, folded and then ASCII-lowered, as ``LIKE`` looks for a free-text term in one,
+        joined by :data:`TEXT_SEPARATOR` so a term is looked for in all of them at once (#647).
+    :param tag_text: every tag, the same way.
+    :param publisher_text: every publisher, the same way.
+    :param text: the title, the path and every name, the same way -- what a term is looked for in by default: one test
+        per row, where one per name measured 4-6x slower at 100k rows.
     """
 
     row: CatalogRow
@@ -58,6 +90,10 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
     authors: tuple[str, ...]
     tags: tuple[str, ...]
     publishers: tuple[str, ...]
+    author_text: str
+    tag_text: str
+    publisher_text: str
+    text: str
 
     @classmethod
     def of(cls, row: CatalogRow) -> CatalogSearchKey:
@@ -67,16 +103,28 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
         :returns: its key.
         """
         record = row.record
+        authors = tuple(fold(name) for name in record.authors)
+        tags = tuple(fold(name) for name in record.tags)
+        publishers = tuple(fold(name) for name in record.publishers)
+        title = fold(record.title).translate(ASCII_LOWER)
+        path = fold(record.path).translate(ASCII_LOWER)
+        author_text = TEXT_SEPARATOR.join(authors).translate(ASCII_LOWER)
+        tag_text = TEXT_SEPARATOR.join(tags).translate(ASCII_LOWER)
+        publisher_text = TEXT_SEPARATOR.join(publishers).translate(ASCII_LOWER)
         return cls(
             row,
-            fold(record.title).translate(ASCII_LOWER),
-            fold(record.path).translate(ASCII_LOWER),
+            title,
+            path,
             record.type.translate(ASCII_LOWER),
             row.root_label.translate(ASCII_LOWER),
             catalog_path_key(record.path),
-            tuple(fold(name) for name in record.authors),
-            tuple(fold(name) for name in record.tags),
-            tuple(fold(name) for name in record.publishers),
+            authors,
+            tags,
+            publishers,
+            author_text,
+            tag_text,
+            publisher_text,
+            TEXT_SEPARATOR.join((title, path, author_text, publisher_text, tag_text)),
         )
 
 
@@ -84,9 +132,10 @@ class CatalogMatcher:
     """A :class:`~rehuco_core.CatalogQuery` compiled to test :class:`CatalogSearchKey` objects -- the cache's ``WHERE``
     (:meth:`~rehuco_core.CatalogCache.rows`) in Python.
 
-    Every term must be found in the title or the path, and every token must match. A whole list is narrowed one
-    condition at a time (:meth:`pick`): a comprehension per condition measured 6-17 ms per query at 100k rows, against
-    50-120 ms testing each row against every condition.
+    Every term must be found in one of the query's places -- part of the title or the path, or of one author,
+    publisher or tag -- and every token must match. A whole list is narrowed one condition at a time (:meth:`pick`): a
+    comprehension per condition measured 6-17 ms per query at 100k rows, against 50-120 ms testing each row against
+    every condition.
 
     :param query: what to match.
     """
@@ -95,6 +144,13 @@ class CatalogMatcher:
         # a LIKE pattern is the folded term with its wildcards escaped, so it is found as a plain substring; LIKE then
         # ignores ASCII case on both sides
         self.__terms: Final = tuple(fold(term).translate(ASCII_LOWER) for term in query.terms)
+        scope = query.scope
+        self.__texts: Final = (
+            (WHOLE_TEXT,)
+            if scope.issuperset(CatalogTextField)
+            else tuple(text for place, text in PLACE_TEXTS.items() if place in scope)
+        )
+        self.__parts: Final = tuple(parts for place, parts in PLACE_PARTS.items() if place in scope)
         self.__types: Final = tuple(
             value.translate(ASCII_LOWER) for field, value in query.tokens if field is CatalogField.TYPE
         )
@@ -123,7 +179,7 @@ class CatalogMatcher:
         """
         picked = list(keys)
         for term in self.__terms:
-            picked = [key for key in picked if term in key.title or term in key.path]
+            picked = self.__with_term(term, picked)
         for value in self.__types:
             picked = [key for key in picked if key.type == value]
         for names, value in self.__values:
@@ -131,6 +187,26 @@ class CatalogMatcher:
         for ranges in self.__folders:
             picked = [key for key in picked if self.__in_folder(key, ranges)]
         return [key.row for key in picked]
+
+    def __with_term(self, term: str, keys: list[CatalogSearchKey]) -> list[CatalogSearchKey]:
+        """The keys a free-text term is found in, in one of the query's places.
+
+        :param term: the term, folded and ASCII-lowered.
+        :param keys: the keys still picked.
+        :returns: those it is found in, in their order.
+        """
+        if TEXT_SEPARATOR in term:
+            parts = self.__parts
+            return [
+                key
+                for key in keys
+                if any(term in text.translate(ASCII_LOWER) for place in parts for text in place(key))
+            ]
+        if len(self.__texts) == 1:
+            (text,) = self.__texts
+            return [key for key in keys if term in text(key)]
+        texts = self.__texts
+        return [key for key in keys if any(term in text(key) for text in texts)]
 
     @staticmethod
     def __folder_ranges(value: str) -> tuple[tuple[str, str | None], ...]:
