@@ -1,9 +1,9 @@
 """Tests for the filter line's grammar: free text and ``field:"value"`` tokens, read into a query (#398); the
-``columns:`` token it once had is retired (#379)."""
+``columns:`` token it once had is retired (#379); ``in:`` says where free text looks (#647)."""
 
 import pytest
 from rehuco_agent.rehuco.filter_line import format_token, parse_filter, with_token, without_retired_tokens
-from rehuco_core import CatalogField, CatalogQuery
+from rehuco_core import CatalogField, CatalogQuery, CatalogTextField
 
 
 def test_free_text_only_is_one_term_per_word() -> None:
@@ -235,3 +235,85 @@ def test_a_token_set_to_none_is_removed() -> None:
     * verify the rest of the line is left
     """
     assert with_token("intro authors:Ann type:x", "authors", None) == "intro type:x"
+
+
+# region Where free text looks (#647)
+
+
+def test_free_text_looks_everywhere_by_default() -> None:
+    """With no ``in:``, a term is looked for in every place.
+
+    **Test steps:**
+
+    * parse a word alone
+    * verify the query's scope is every place
+    """
+    assert parse_filter("owl").query.scope == frozenset(CatalogTextField)
+
+
+@pytest.mark.parametrize(
+    ("line", "scope"),
+    [
+        ("owl in:title", {CatalogTextField.TITLE}),
+        ("in:authors,publishers owl", {CatalogTextField.AUTHORS, CatalogTextField.PUBLISHERS}),
+        ("in:title owl in:tags", {CatalogTextField.TITLE, CatalogTextField.TAGS}),
+        ("owl In:TITLE", {CatalogTextField.TITLE}),
+        ('owl in:" path , tags "', {CatalogTextField.PATH, CatalogTextField.TAGS}),
+    ],
+    ids=["one", "a list", "two add up", "any case", "spaced"],
+)
+def test_in_keeps_free_text_to_the_places_it_names(line: str, scope: set[CatalogTextField]) -> None:
+    """``in:`` names places as a comma list, in any case, and several ``in:`` words add up; the terms are unchanged.
+
+    **Test steps:**
+
+    * parse a word with each spelling of ``in:``
+    * verify the term, no field token, no problem, and the places named
+    """
+    parsed = parse_filter(line)
+
+    assert parsed.query == CatalogQuery(("owl",), (), frozenset(scope))
+    assert not parsed.problems
+
+
+def test_an_unknown_place_is_reported_and_the_rest_still_applies() -> None:
+    """A place ``in:`` does not know is reported like an unknown field; the places it does know still apply.
+
+    **Test steps:**
+
+    * parse a word, an ``in:`` naming an unknown place and a known one, and a field token
+    * verify the problem names the place, and the term, the known place and the token still apply
+    """
+    parsed = parse_filter("owl in:bogus,title type:tutorial")
+
+    assert parsed.problems == ('Unknown place "bogus" for in:',)
+    assert parsed.query == CatalogQuery(
+        ("owl",), ((CatalogField.TYPE, "tutorial"),), frozenset({CatalogTextField.TITLE})
+    )
+
+
+@pytest.mark.parametrize("line", ["owl in:", "owl in:,", "owl in:bogus"])
+def test_an_in_naming_no_known_place_leaves_every_place(line: str) -> None:
+    """An ``in:`` still being typed, or naming no place there is, does not hide every row.
+
+    **Test steps:**
+
+    * parse a word beside an empty ``in:``, an empty list, and an unknown place
+    * verify the scope is every place
+    """
+    assert parse_filter(line).query.scope == frozenset(CatalogTextField)
+
+
+def test_an_in_word_is_a_token_the_line_can_be_rewritten_around() -> None:
+    """``in:`` is a token like any other word with a name, so setting another field keeps it, and it can be set.
+
+    **Test steps:**
+
+    * set an authors token on a line holding ``in:``, then set ``in:`` itself
+    * verify the first keeps the ``in:`` word, and the second replaces it
+    """
+    assert with_token("owl in:title", "authors", "Ann") == "owl in:title authors:Ann"
+    assert with_token("owl in:title", "in", "tags") == "owl in:tags"
+
+
+# endregion

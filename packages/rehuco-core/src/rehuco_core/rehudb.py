@@ -89,6 +89,16 @@ class CatalogField(StrEnum):
     TYPE = "type"
 
 
+class CatalogTextField(StrEnum):
+    """Where a free-text term can be looked for ([[plugins#rehuco-dock]], #647); its value is the ``in:`` spelling."""
+
+    TITLE = "title"
+    PATH = "path"
+    AUTHORS = "authors"
+    PUBLISHERS = "publishers"
+    TAGS = "tags"
+
+
 @dataclass(frozen=True, slots=True)
 class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     """What a scan read from one record: the common core a browser shows, its type's own fields, and how to tell
@@ -271,19 +281,22 @@ class CatalogRow:
 
 @dataclass(frozen=True, slots=True)
 class CatalogQuery:
-    """Which rows to read: free-text terms over title and path, and field tokens, all of which must match.
+    """Which rows to read: free-text terms over the places ``scope`` names, and field tokens, all of which must match.
 
     The structure a filter line parses into (#398); parsing ``field:"value"`` and splitting the free text into terms
     is the line's business, so this takes them already split.
 
-    :param terms: each matched anywhere in a title or a root-relative path, either one, ignoring case and diacritics
-        (:func:`borco_core.fold`, #475); none matches all.
+    :param terms: each matched anywhere in any place of ``scope`` -- part of a title, a root-relative path, or one
+        author, publisher or tag name -- ignoring case and diacritics (:func:`borco_core.fold`, #475); none matches all.
     :param tokens: ``(field, value)`` pairs. ``folder`` is a ``<label>/<relative path>`` prefix; ``authors``,
         ``tags`` and ``publishers`` match one value whole, ignoring case and diacritics; ``type`` matches the type.
+    :param scope: where a term is looked for (#647); every place by default, and none when empty, which matches no row
+        once there is a term.
     """
 
     terms: tuple[str, ...] = ()
     tokens: tuple[tuple[CatalogField, str], ...] = ()
+    scope: frozenset[CatalogTextField] = frozenset(CatalogTextField)
 
 
 JOINS: Final = (
@@ -315,10 +328,23 @@ keeps (``cache_meta``): a rule that changes shows in at least one of them."""
 FOLD_STAMP_KEY: Final = "fold"
 """The ``cache_meta`` key the fingerprint lives under."""
 
-TERM_CLAUSE: Final = "(r.folded_title LIKE ? ESCAPE '\\' OR r.folded_path LIKE ? ESCAPE '\\')"
-"""What one free-text term adds: found in the folded title or the folded path (schema v5, #475), both parameters the
-same pattern -- a stored column each, since folding every row through a Python SQL function per read measured 10-30x
-slower."""
+TERM_CLAUSES: Final = {
+    CatalogTextField.TITLE: "r.folded_title LIKE ? ESCAPE '\\'",
+    CatalogTextField.PATH: "r.folded_path LIKE ? ESCAPE '\\'",
+    **{
+        # not correlated with r, so SQLite lists the matching names once per statement, not once per resource, and
+        # reaches their resources through the join's value index rather than walking every join row
+        CatalogTextField(table): (
+            f"r.id IN (SELECT j.resource_id FROM {join} j WHERE j.value_id IN "  # nosec  # B608: fixed names
+            f"(SELECT v.id FROM {table} v WHERE v.folded LIKE ? ESCAPE '\\'))"
+        )
+        for table, join in JOINS
+    },
+}
+"""Where one free-text term may be found, per place (#647), each with exactly one parameter, the term's pattern: the
+folded title, the folded path (schema v5, #475), or part of one folded author, publisher or tag name. A term ORs those
+of its query's scope. Folded columns are stored, since folding every row through a Python SQL function per read
+measured 10-30x slower."""
 
 FOLDER_ROOT_CLAUSE: Final = "r.root_id IN (SELECT id FROM roots WHERE label = ? COLLATE NOCASE)"
 """A root by its label, folded as ASCII only, as the label's uniqueness is.
@@ -1315,11 +1341,12 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         if ids is not None:
             clauses.append(f"r.id IN ({', '.join('?' * len(ids))})")
             parameters += ids
+        places = [TERM_CLAUSES[place] for place in CatalogTextField if place in query.scope]
         for term in query.terms:
             # escaped after folding, since a compatibility form can fold into a wildcard (``％`` to ``%``)
             pattern = f"%{CatalogCache.__escaped(fold(term))}%"
-            clauses.append(TERM_CLAUSE)
-            parameters += [pattern, pattern]
+            clauses.append(f"({' OR '.join(places)})" if places else "0")
+            parameters += [pattern] * len(places)
         for field, value in query.tokens:
             if field is CatalogField.FOLDER:
                 clause, folder_parameters = CatalogCache.__folder_clause(value)

@@ -12,7 +12,7 @@ from borco_pyside.widgets import HeaderSectionsMenu, RowBandDelegate
 from PySide6.QtCore import QByteArray, QItemSelection, QItemSelectionModel, QModelIndex, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QStandardItemModel
 from PySide6.QtWidgets import QLineEdit, QMenu, QTableView, QWidget
-from rehuco_core import CatalogField, CatalogQuery, CatalogRow
+from rehuco_core import CatalogField, CatalogQuery, CatalogRow, CatalogTextField
 
 from ..glyphs import FILTER_PROBLEM_GLYPH
 from ..settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
@@ -27,7 +27,7 @@ from .catalog_table_model import (
     RowKey,
 )
 from .copied_paths import PathsWriter, json_paths, quoted_paths
-from .filter_line import parse_filter, with_token, without_retired_tokens
+from .filter_line import SCOPE_SEPARATOR, SCOPE_TOKEN, parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 from .status_line_label import StatusLineLabel
 
@@ -39,8 +39,11 @@ PROBLEMS_ACTION_NAME: Final = "filter_problems_action"
 kept, because the wrapper of a C++-owned action has been seen invalidated while the action lived on (#459)."""
 
 FILTER_HELP: Final = (
-    'Words, each found in a title or path; "quoted words" as one phrase; case and accents ignored. '
-    f'Then field:value or field:"quoted value" tokens: {", ".join(field.value for field in CatalogField)}.'
+    'Words, each found in a title, path, author, publisher or tag; "quoted words" as one phrase; case and accents '
+    f"ignored. {SCOPE_TOKEN}: keeps the words to some of those places: "
+    f"{SCOPE_TOKEN}:{SCOPE_SEPARATOR.join(place.value for place in CatalogTextField)}. "
+    'Then field:value or field:"quoted value" tokens, each matching a whole value: '
+    f"{', '.join(field.value for field in CatalogField)}."
 )
 """The filter line's tooltip: its grammar, under whatever it could not apply."""
 
