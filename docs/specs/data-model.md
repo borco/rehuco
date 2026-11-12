@@ -190,11 +190,10 @@ shows an image its checksum does not cover:
 - **Not** a curated list of member archives — a reference-images resource is one file or one directory; the manifest
   block contemplated above is not needed here.
 - **Which files count as images is the user's to set** — inside an archive and out of one alike; the enumeration
-  takes the recognized extension set
-  as a parameter, and the `Images / Files` settings page (#222, #294) supplies it — one editable list, one
-  format per entry, starting from `jpg, jpeg, png, webp, avif` and resolving back to that shipped set whenever it names
-  nothing ([[appendices.settings-pages#category-groups]]). A pack in a format the shipped set
-  omits (`.bmp`, `.tif`, `.tga`, `.psd`) is a preference change, not a rebuild.
+  takes the recognized extension set as a parameter, and the `Images / Content Extensions` settings page (#222, #294,
+  #650) supplies it — one editable list, one format per entry, starting from `jpg, jpeg, png, webp, avif, heic, heif`
+  and resolving back to that shipped set whenever it names nothing ([[appendices.settings-pages#category-groups]]). A
+  pack in a format the shipped set omits (`.bmp`, `.tif`, `.tga`, `.psd`) is a preference change, not a rebuild.
 - **Counting them fills `current_count`, and only when asked** (#198) — the editor shows the measured count beside
   the stored one and stores it on an explicit apply, never on open. The two disagreeing is *information*: the pack
   was refreshed behind the app's back ([[data-model#image-meanings]]), which an automatic fill would erase before

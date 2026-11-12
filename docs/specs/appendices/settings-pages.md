@@ -92,7 +92,7 @@ and Tasks docks get.
 #291, #298), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
 "Roots" (a group, below), "Session" (`SessionPage`, #65), "Shortcuts" (`ShortcutsPage`, #344),
 "System Integration", "Tasks" (`TasksPage`, #202), "Tools" (`ToolsPage`, #521) and "Videos" (`VideosPage`, #225).
-"Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar Extensions" (`ImagesFilesPage`) and
+"Images" nests three children: "Display" (`ImagesDisplayPage`), "Content Extensions" (`ImagesFilesPage`) and
 "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287). "Locations" nests a page per resource type
 (`LocationTemplatesPage`, #322) and "Root Layout Templates" (`RootLayoutTemplatesPage`, #637), in alphabetical order.
 "Roots" nests "New Root Presets" (`NewRootPresetsPage`, #637) and "Root Catalog" (`RootCatalogPage`, #457); the saved
@@ -176,11 +176,12 @@ had two questions worth asking separately (#294). "Images/Display" answers how a
 the viewer surface and thumbnail strips, the Content Images dock's row-height clamp, its *Show banners* box and
 the box hiding a top folder named like its zip (#392)
 and whether a maximized image shows its info overlay, on what backdrop, whether a double-click closes it and whether its close selects the image back in the dock (#221) — all `ImageViewerSettings` — and the
-width cap on an image embedded in a description (`MarkdownRenderingSettings`). The other two pages describe one bucket, a resource's
-**sidecar images** — the image files kept beside it, which its thumbnail strip curates from and its
-description references with `![]()`. "Images/Sidecar Extensions" says which files count as one
-(`ReferenceImagesSettings`, #222; today read by the reference-images count), and "Images/Sidecar
-Names" (`ScreenshotPatternsPage`, #53, #287) how their names are recognized. The width cap and the
+width cap on an image embedded in a description (`MarkdownRenderingSettings`). "Images/Content Extensions" says which files
+count as a resource's content images, inside its archives and loose in its folder (`ReferenceImagesSettings`, #222; it was
+"Sidecar Extensions" until #650, though the list never governed the sidecars). "Images/Sidecar Names"
+(`ScreenshotPatternsPage`, #53, #287) describes a resource's **sidecar images** — the image files kept beside it,
+which its thumbnail strip curates from and its description references with `![]()` — by how their names are
+recognized. The width cap and the
 extension list both arrived from elsewhere — the cap was a block on Descriptions, the extension list a
 "Reference Images" page holding nothing but that list — filed where the *code* owned them, so finding
 either meant knowing which plugin or settings object to look under, when what the reader had was the
@@ -213,7 +214,7 @@ question through the same box. The bulk backups dialog is the one surface whose 
 window to ask from: on Windows, where a drive's bin is exact and cheap to query, it asks the no-bin
 question once per batch *before* enqueueing, naming a mixed selection's split; elsewhere the refused
 row's message names the box instead. The Recycle Bin choice used to be a block on
-Images/Sidecar Extensions, back when `RehuDocumentImageOrganizer`'s screenshot delete was its only
+Images/Content Extensions, back when `RehuDocumentImageOrganizer`'s screenshot delete was its only
 consumer (#291) -- but once a `.tc` conversion's discarded backup and a discarded conversion-backups set
 started reading it too (#298), a name under "Images" was the wrong subject for a choice that no longer
 has anything to do with images. It moved to "Files" instead, its frame first on the page, above the
@@ -253,7 +254,7 @@ would read and overwrite the developer's real settings file, and leak toggle sta
 ### The group tier (#277, #294)
 
 Kept dormant since #277 until "Images" needed a tier of its own (#294). The tree is **two levels deep
-at most**: `add_page("Images", "Sidecar Extensions", page)` nests the page's row under that group's row, creating
+at most**: `add_page("Images", "Content Extensions", page)` nests the page's row under that group's row, creating
 the group's row on first use; the two-argument `add_page("Videos", page)` — what every other caller
 uses — leaves it a top-level row of its own. Group names are plural: a group holds pages.
 
@@ -318,7 +319,7 @@ The dialog shell dispatches, it never interprets:
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
 - **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesDisplayPage`, "Images/Display";
-  `ImagesFilesPage`, "Images/Sidecar Extensions"; `FilesPage`, "Files"; `VideosPage`, "Videos") —
+  `ImagesFilesPage`, "Images/Content Extensions"; `FilesPage`, "Files"; `VideosPage`, "Videos") —
   edits live in local widget/draft state until `save_changes()` pushes them somewhere permanent;
   `drop_changes()` discards the draft and reloads the fields from whatever is currently saved (a
   revert, not a no-op). `ImagesDisplayPage` writes the **two** settings objects the single "Images"

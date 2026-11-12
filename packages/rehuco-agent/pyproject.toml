@@ -53,6 +53,9 @@ dependencies = [
     "mistletoe>=1.4.0",
     "pillow",
     "fastjsonschema>=2.21",
+    # HEIC decode for content images (#650); BSD-3-Clause, bundles libheif + libde265 (both LGPL). Never
+    # `pillow-heif`: its wheels bundle x265 (GPL-2), which [[packaging-deployment#licensing-policy]] forbids.
+    "pi-heif>=1.0",
 ]
 
 [project.urls]

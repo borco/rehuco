@@ -40,7 +40,7 @@
          </font>
         </property>
         <property name="text">
-         <string>Sidecar image extensions</string>
+         <string>Content image extensions</string>
         </property>
        </widget>
       </item>
@@ -54,7 +54,7 @@
       <item>
        <widget class="WrappingLabel" name="extensions_note_label">
         <property name="text">
-         <string>Which files count as a sidecar image — the images kept beside a resource for its thumbnail strip and its description. Today this is what a reference-images resource counts as its images. An empty list falls back to the shipped formats. Counts already computed are not recalculated by a change here.</string>
+         <string>Which files count as one of a resource's content images, inside its archives or loose in its folder. Sidecar images, such as screenshots, do not follow this list. An empty list falls back to the shipped formats. Counts already computed are not recalculated by a change here.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
