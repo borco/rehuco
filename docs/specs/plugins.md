@@ -1125,12 +1125,18 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   be built is shown**: none for a root this machine does not map or cannot reach now, a layout naming neither the
   record's type nor `*`, or one needing a placeholder the record leaves empty with no fallback on the root — and none at
   all for a record whose own root cannot be reached. A host with no task queue offers only the record's own root's
-  place. A place something already occupies shows disabled with the same marker as an occupied name below, and the
+  place. A place something already occupies shows disabled with the same blocked icon as an occupied name below, and the
   place the record already sits at disabled and plain, as the current name is: under its own root it is a row of its
   own, first, whenever the layout puts the record somewhere else or cannot place it (a `*` layout puts it at the
   root's top, #643); when the layout's place is where it sits there is one row. Hovering a place shows the path
   rendered for the record, then greyed the full path it would land at (the root's folder on this machine, joined with
-  it) and the path template that produced it, `*` included (#639). The folders a move leaves empty stay,
+  it) and the path template that produced it, `*` included (#639). **A place that can be chosen carries icons after its
+  text** (#649), each saying what choosing it involves, in this order, and the tooltip adds a line for each: *network*
+  when the record's folder or the place is on a share, so the move is slow, a move from a share to a local disk and
+  one inside a share alike; *copy* when the place is on another volume, so the record is copied rather than renamed;
+  *verified* when the move verifies the record's checksums — a copy always, a rename when the Files page's box for the
+  storage it lands on is ticked, so the icon follows an Apply at once. The place the record is at and an occupied one
+  show none of these. The folders a move leaves empty stay,
   unless the Files page's *Remove the left-behind folders* says otherwise ([[appendices.settings-pages]]); a record
   under no root has no root to stop at, and its folders always stay. **A record that is its root's folder**
   (`<root>/info.rehu`, #641) is neither moved nor renamed from here, under every layout: its own root is the one place
@@ -1138,10 +1144,9 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   root inside another; and no name is suggested or marked as the wrong one, since a rename would rename the root's
   folder.
   A candidate **something already occupies** — another folder for a directory-scoped resource, another `.rehu` for a
-  file-scoped one — is offered *disabled, with a trailing `⚿`* rather than as a click that could only fail. A marker
-  rather than a color: the disabled palette fights a hue, a colorblind reader may not separate one, and Qt Style Sheets
-  cannot inject content anyway (no `content`, no `::before`/`::after` — Qt's pseudo-elements are widget subcontrols),
-  so the displayed text is where it has to live. The editor
+  file-scoped one — is offered *disabled, with a trailing blocked icon* rather than as a click that could only fail. An
+  icon rather than a color: the disabled palette fights a hue, and a colorblind reader may not separate one. It is an
+  icon, never a Unicode character, whose glyph depends on the platform's font fallback. The editor
   holds no path and reads no directory: it asks its owner through a predicate, the same
   field-decides-*that*-never-*what* rule the rest of the toolkit follows. The check is one existence test on the
   resource's own destination, not the whole plan — it is re-asked per keystroke behind a live suggestion list, and

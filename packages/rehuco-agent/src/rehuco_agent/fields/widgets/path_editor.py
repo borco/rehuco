@@ -11,25 +11,14 @@ from dataclasses import dataclass
 from typing import Final, override
 
 from borco_pyside.core import SimpleProperty
-from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QEvent, Signal
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QFrame, QToolTip, QVBoxLayout, QWidget
 from rehuco_core import sanitize_name
 
 from .location_line import LocationLine
-
-UNAVAILABLE_SUFFIX: Final = " ⚿"
-"""Appended to a suggestion something already occupies (#162) -- a marker, not a color, so the row
-carries its own meaning instead of relying on a hue the disabled palette fights and a colorblind reader
-may not separate at all. `ElidedLabel` middle-elides, keeping both ends, so the marker survives however
-narrow the column gets.
-
-A plain Unicode codepoint (U+26BF SQUARED KEY), not one of the app's Phosphor glyphs
-(:mod:`rehuco_agent.glyphs`): those resolve only in their own font family, and this rides inline in a
-label already rendering the resource name in the UI font. The same trade `MessageBanner` makes for its
-own fallback glyph. It therefore leans on the platform's font fallback covering U+26BF; should that
-ever render as tofu, the guaranteed alternative is a separate marker label per row drawn in Phosphor."""
+from .marked_label import MarkedLabel
+from .place_marker import NO_MARKERS, PLACE_MARKER_ICONS, PLACE_MARKER_TOOLTIPS, PlaceMarker
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,11 +27,13 @@ class DestinationRow:
 
     :param text: what the row reads -- the root's name and the place under it.
     :param here: whether the record already sits there; shown disabled and plain, as the current name is.
-    :param occupied: whether something else already sits there; shown disabled with :data:`UNAVAILABLE_SUFFIX`, as
-        an occupied name is.
+    :param occupied: whether something else already sits there; shown disabled with the blocked marker, as an
+        occupied name is.
     :param rendered: the path the layout renders, relative to the root; empty for the root itself (#639).
     :param full_path: the place on disk: the root's folder on this machine joined with ``rendered``.
     :param template: the path template that rendered it; empty when none did. With the two above, the row's tooltip.
+    :param markers: what moving the record there involves (#649), drawn as icons after the text; a row that is here or
+        occupied shows none of them.
     """
 
     text: str
@@ -51,6 +42,7 @@ class DestinationRow:
     rendered: str = ""
     full_path: str = ""
     template: str = ""
+    markers: PlaceMarker = NO_MARKERS
 
 
 class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -70,8 +62,8 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     Clicking a live suggestion emits :attr:`suggestion_selected` with its sanitized name -- this
     widget never touches the filesystem itself.
 
-    A suggestion something already occupies renders **disabled, with a trailing**
-    :data:`UNAVAILABLE_SUFFIX` marker (#162), so a rename that could only fail is never offered as a
+    A suggestion something already occupies renders **disabled, with a trailing blocked icon**
+    (:attr:`PlaceMarker.BLOCKED`, #162, #649), so a rename that could only fail is never offered as a
     click. Which names those are is not this widget's to
     know -- it holds no path and reads no directory -- so it *asks*, through the
     :meth:`set_conflict_check` predicate its owner supplies: the toolkit's standing rule that a field
@@ -102,7 +94,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__current_name = ""
         self.__suggestions: list[str] = []
         self.__renamable = True
-        self.__suggestion_labels: dict[str, ElidedLabel] = {}
+        self.__suggestion_labels: dict[str, MarkedLabel] = {}
         self.__conflicts: Callable[[str], bool] | None = None
         """Answers whether a candidate name is already taken, supplied by the owner
         (:meth:`set_conflict_check`); ``None`` until one is, so every name reads as available."""
@@ -111,7 +103,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__name_line.open_requested.connect(self.open_requested)
 
         self.__destinations: tuple[DestinationRow, ...] = ()
-        self.__destination_labels: list[ElidedLabel] = []
+        self.__destination_labels: list[MarkedLabel] = []
 
         self.__suggestions_widget: Final = QWidget()
         panel_layout = QVBoxLayout(self.__suggestions_widget)
@@ -243,7 +235,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
             label.deleteLater()
         self.__suggestion_labels.clear()
         for name in self.__suggestions:
-            label = ElidedLabel()
+            label = MarkedLabel()
             label.linkActivated.connect(lambda _href, name=name: self.suggestion_selected.emit(name))
             self.__suggestions_layout.addWidget(label)
             self.__suggestion_labels[name] = label  # pylint: disable=unsupported-assignment-operation
@@ -253,16 +245,14 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
 
         Three states per suggestion, in precedence order: the **current name** (disabled, plain -- a
         rename to it is a no-op, not a problem), a name something already **occupies** (disabled, and
-        marked with :data:`UNAVAILABLE_SUFFIX`, #162), and otherwise a live link. The current name wins
+        marked blocked, #162), and otherwise a live link. The current name wins
         over the disabled state, since a resource always "occupies" its own name and saying so would
         flag every document as a conflict with itself -- which is also why the conflict check is skipped
         entirely for it rather than merely overridden: no reason to ask about a name whose answer cannot
         matter.
 
-        The marker rides in the label's own **text**, because Qt Style Sheets cannot inject content:
-        they implement no ``content`` property and no ``::before``/``::after`` (Qt's pseudo-elements are
-        widget subcontrols like ``::indicator``). ``name`` stays the dict key and the value
-        :attr:`suggestion_selected` would carry, so the marker never leaks into what a rename renames to.
+        The marker is an icon after the text (:class:`MarkedLabel`), so ``name`` stays the dict key and the value
+        :attr:`suggestion_selected` would carry, and the marker never leaks into what a rename renames to.
         """
         self.__name_line.set_location(self.__current_name)
         unmatched = bool(self.__current_name) and self.__current_name not in self.__suggestions
@@ -273,8 +263,9 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
             unavailable = not is_current and self.__conflicts is not None and self.__conflicts(name)
             label.setEnabled(not is_current and not unavailable)
             label.set_text(
-                f"{name}{UNAVAILABLE_SUFFIX if unavailable else ''}",
+                name,
                 href="" if is_current or unavailable else "#",
+                icons=self.__icons_of(PlaceMarker.BLOCKED if unavailable else NO_MARKERS),
             )
         self.__render_destinations()
 
@@ -288,7 +279,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
             label.deleteLater()
         self.__destination_labels = []
         for index in range(count):
-            label = ElidedLabel()
+            label = MarkedLabel()
             label.linkActivated.connect(lambda _href, index=index: self.destination_selected.emit(index))
             self.__destinations_layout.addWidget(label)
             self.__destination_labels.append(label)
@@ -299,17 +290,30 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         for row, label in zip(self.__destinations, self.__destination_labels, strict=True):
             unavailable = not row.here and row.occupied
             label.setEnabled(not row.here and not unavailable)
+            markers = NO_MARKERS if row.here else PlaceMarker.BLOCKED if unavailable else row.markers
             label.set_text(
-                f"{row.text}{UNAVAILABLE_SUFFIX if unavailable else ''}",
+                row.text,
                 href="" if row.here or unavailable else "#",
-                tooltip=self.__destination_tooltip(row),
+                tooltip=self.__destination_tooltip(row, markers),
+                icons=self.__icons_of(markers),
             )
 
     @staticmethod
-    def __destination_tooltip(row: DestinationRow) -> str:
-        """The tooltip of a place (#639): the rendered path, then greyed the full path and the template used.
+    def __icons_of(markers: PlaceMarker) -> list[str]:
+        """The icons that draw ``markers``, in the order the enum defines them.
+
+        :param markers: the markers to draw.
+        :returns: their resource paths.
+        """
+        return [PLACE_MARKER_ICONS[marker] for marker in markers]
+
+    @staticmethod
+    def __destination_tooltip(row: DestinationRow, markers: PlaceMarker) -> str:
+        """The tooltip of a place (#639): the rendered path, then greyed the full path and the template used, then
+        a line for each marker shown (#649).
 
         :param row: the place.
+        :param markers: the markers the row is drawn with.
         :returns: rich text; empty when the row carries nothing to say.
         """
         palette = QToolTip.palette()
@@ -324,6 +328,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
             for text in (row.full_path, row.template)
             if text
         ]
+        lines += [html.escape(PLACE_MARKER_TOOLTIPS[marker]) for marker in markers]
         # no wrapping: a path is read whole, and the tooltip grows to the widest line. A block's white-space does it;
         # <nobr> still lets Qt break after a drive's colon
         return "".join(f'<div style="white-space:pre">{line}</div>' for line in lines)

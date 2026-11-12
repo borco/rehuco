@@ -1,15 +1,14 @@
 """How a record is moved (#579, #339): the Files page's *Moving records* frame -- the folders it leaves, and which of
 its moves verify its checksums.
 
-A plain ``@dataclass``, like `DeletionSettings`: it is read when a move lands, so nothing on screen renders from it and
-an Apply has nothing to update.
+A ``QObject`` with plain attributes: a move reads it when it lands, and the path row's *verified* marker reads it
+too (#649), so :attr:`MoveSettings.changed` fires on every :meth:`MoveSettings.save` for an open row to redraw.
 """
 
-from dataclasses import dataclass
 from functools import lru_cache
 from typing import Final, cast
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QObject, QSettings, Signal
 
 from .persistent_settings import persistent_settings
 
@@ -36,22 +35,26 @@ DEFAULT_VERIFY_ORIGINAL_BEFORE_COPY: Final = True
 the original no longer matches proves nothing."""
 
 
-@dataclass
-class MoveSettings:
+class MoveSettings(QObject):
     """How a record is moved (#579, #339). The copy is always checked before the original is removed: that is the hard
-    rule ([[mounts-and-storage#safe-move-rename]]), never a setting."""
+    rule ([[mounts-and-storage#safe-move-rename]]), never a setting.
 
-    remove_empty_folders: bool = DEFAULT_REMOVE_EMPTY_FOLDERS
-    """Whether the folders a move leaves behind are removed up to the root, only while each is empty."""
+    :param parent: optional Qt parent.
+    """
 
-    verify_renamed_local: bool = DEFAULT_VERIFY_RENAMED_LOCAL
-    """Whether a rename on a local, removable or disc volume verifies before and after."""
+    changed = Signal()
+    """Fires when :meth:`save` has stored the values: what a path row marks a move with may have changed (#649)."""
 
-    verify_renamed_network: bool = DEFAULT_VERIFY_RENAMED_NETWORK
-    """Whether a rename on a network share verifies before and after."""
-
-    verify_original_before_copy: bool = DEFAULT_VERIFY_ORIGINAL_BEFORE_COPY
-    """Whether a copy to another disk or share verifies the original first."""
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.remove_empty_folders = DEFAULT_REMOVE_EMPTY_FOLDERS
+        """Whether the folders a move leaves behind are removed up to the root, only while each is empty."""
+        self.verify_renamed_local = DEFAULT_VERIFY_RENAMED_LOCAL
+        """Whether a rename on a local, removable or disc volume verifies before and after."""
+        self.verify_renamed_network = DEFAULT_VERIFY_RENAMED_NETWORK
+        """Whether a rename on a network share verifies before and after."""
+        self.verify_original_before_copy = DEFAULT_VERIFY_ORIGINAL_BEFORE_COPY
+        """Whether a copy to another disk or share verifies the original first."""
 
     def load(self, settings: QSettings) -> None:
         """Replace the current values with what's in persistent storage.
@@ -84,6 +87,7 @@ class MoveSettings:
         settings.setValue(VERIFY_RENAMED_NETWORK_KEY, self.verify_renamed_network)
         settings.setValue(VERIFY_ORIGINAL_BEFORE_COPY_KEY, self.verify_original_before_copy)
         settings.endGroup()
+        self.changed.emit()
 
 
 @lru_cache(maxsize=1)

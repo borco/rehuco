@@ -33,6 +33,7 @@ from rehuco_core import (
     storage_of,
 )
 
+from ..fields.widgets.place_marker import NO_MARKERS, PlaceMarker
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.move_settings import MoveSettings, shared_move_settings
@@ -41,6 +42,42 @@ from .name_suggestion_model import RootDestination
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
+
+
+def verifies_rename(settings: MoveSettings, folder: Path) -> bool:
+    """Whether a rename onto ``folder``'s volume verifies, by its storage: a share's box, or the local disk's.
+
+    :param settings: the move settings.
+    :param folder: where the record lands.
+    :returns: the box that applies.
+    """
+    if storage_of(folder) is RootStorage.NETWORK:
+        return settings.verify_renamed_network
+    return settings.verify_renamed_local
+
+
+def plan_move(record: Path, into: Path, settings: MoveSettings | None) -> PlaceMarker:
+    """What moving ``record`` into ``into`` involves (#649): the one answer a click acts on and the path row draws.
+
+    :param record: the record's path.
+    :param into: the folder the record's own entry would land in.
+    :param settings: the move settings; ``None`` when there is no queue to move on, so the move is a rename at once,
+        unverified.
+    :returns: :attr:`PlaceMarker.NETWORK` when the record's folder or ``into`` is on a share, :attr:`PlaceMarker.COPY`
+        when they are on different volumes, :attr:`PlaceMarker.VERIFIED` when the move verifies the checksums: a copy
+        always, a rename by the box of the storage it lands on.
+    """
+    left = record.parent.parent if is_directory_scoped(record) else record.parent
+    plan = NO_MARKERS
+    if RootStorage.NETWORK in (storage_of(left), storage_of(into)):
+        plan |= PlaceMarker.NETWORK
+    if settings is None:
+        return plan
+    if not same_volume(left, into):
+        return plan | PlaceMarker.COPY | PlaceMarker.VERIFIED
+    if verifies_rename(settings, into):
+        plan |= PlaceMarker.VERIFIED
+    return plan
 
 
 class RecordMoves(QObject):
@@ -111,27 +148,14 @@ class RecordMoves(QObject):
         if path is None or place.here:
             return
         settings = shared_move_settings()
-        left = path.parent.parent if is_directory_scoped(path) else path.parent
-        renames = same_volume(left, place.into)
-        if renames and not self.__verifies_rename(settings, place.into):
+        plan = plan_move(path, place.into, settings)
+        if PlaceMarker.VERIFIED not in plan:
             self.__model.move_in_root(place.into, place.name, place.source_root)
             return
         target = f"{place.label}: {Path(place.relative)}"
         if not self.__model.prepare_move(target):
             return
-        self.__enqueue(place, target, settings, MoveMode.RENAME if renames else MoveMode.COPY)
-
-    @staticmethod
-    def __verifies_rename(settings: MoveSettings, folder: Path) -> bool:
-        """Whether a rename onto ``folder``'s volume verifies, by its storage: a share's box, or the local disk's.
-
-        :param settings: the move settings.
-        :param folder: where the record lands.
-        :returns: the box that applies.
-        """
-        if storage_of(folder) is RootStorage.NETWORK:
-            return settings.verify_renamed_network
-        return settings.verify_renamed_local
+        self.__enqueue(place, target, settings, MoveMode.COPY if PlaceMarker.COPY in plan else MoveMode.RENAME)
 
     def __enqueue(self, place: RootDestination, target: str, settings: MoveSettings, mode: MoveMode) -> None:
         """Queue the move, unless the same one is already waiting, inside the record's own log scope.
@@ -151,7 +175,7 @@ class RecordMoves(QObject):
             new_name=place.name,
             mode=mode,
             check_source=settings.verify_original_before_copy,
-            check_renamed=self.__verifies_rename(settings, place.into),
+            check_renamed=verifies_rename(settings, place.into),
             create_if_missing=checksums.create_missing_on_verify,
             remove_empty_folders=settings.remove_empty_folders,
             algorithm=checksums.algorithm,

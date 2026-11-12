@@ -117,7 +117,6 @@ from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_selector import AFTER_CONVERSION_COLUMN, CHECK_COLUMN, PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.overlay_surface import viewer_mode_for
-from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
 from rehuco_agent.settings.deletion_settings import DeletionKind, shared_deletion_settings
@@ -2619,7 +2618,7 @@ def test_an_occupied_location_suggestion_is_offered_disabled(
     **Test steps:**
 
     * make the model report every candidate as occupied, and re-render the editor
-    * verify the suggestion is disabled and marker-suffixed, and carries no link
+    * verify the suggestion is disabled and followed by the blocked icon, and carries no link
     """
     mocker.patch.object(model, "rename_conflicts", return_value=True)
     editor = location_editor(widget)
@@ -2627,9 +2626,11 @@ def test_an_occupied_location_suggestion_is_offered_disabled(
 
     labels = editor._PathEditor__suggestion_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
     label = labels["Taken Name"]
+    text = label._MarkedLabel__label  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert label.isEnabled() is False
-    assert label._ElidedLabel__full == f"Taken Name{UNAVAILABLE_SUFFIX}"  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert "<a " not in label.text()
+    assert text._ElidedLabel__full == "Taken Name"  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert label.icon_count() == 1
+    assert "<a " not in text.text()
 
 
 # endregion

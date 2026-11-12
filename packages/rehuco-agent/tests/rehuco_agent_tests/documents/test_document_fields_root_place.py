@@ -6,7 +6,6 @@ from typing import Final
 from unittest.mock import Mock
 from uuid import UUID
 
-from borco_pyside.widgets import ElidedLabel
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -15,8 +14,7 @@ from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel, Ro
 from rehuco_agent.documents.record_moves import RecordMoves
 from rehuco_agent.documents.rehu_document_image_organizer import RehuDocumentImageOrganizer
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.widgets import PathEditor
-from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
+from rehuco_agent.fields.widgets import MarkedLabel, PathEditor, PlaceMarker
 from rehuco_core import RehuDocument
 
 ROOT: Final = Path(Path.cwd().anchor) / "tutorials"
@@ -58,7 +56,7 @@ def path_editor(
     return found, (form, editor)
 
 
-def labels_of(editor: PathEditor) -> list[ElidedLabel]:
+def labels_of(editor: PathEditor) -> list[MarkedLabel]:
     """Return a path row's root-place labels.
 
     :param editor: the path row.
@@ -67,13 +65,14 @@ def labels_of(editor: PathEditor) -> list[ElidedLabel]:
     return editor._PathEditor__destination_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
-def full_text(label: ElidedLabel) -> str:
-    """Return a label's un-elided text.
+def full_text(label: MarkedLabel) -> str:
+    """Return a row's un-elided text.
 
-    :param label: the label to inspect.
+    :param label: the row to inspect.
     :returns: the full text it was given.
     """
-    return label._ElidedLabel__full  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    inner = label._MarkedLabel__label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return inner._ElidedLabel__full  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_with_no_queue_only_the_own_root_is_offered_and_moved_to_by_a_rename(
@@ -145,7 +144,8 @@ def test_an_occupied_place_is_marked(qtbot: QtBot, model: RehuDocumentModel, moc
     (label,) = labels_of(editor)
     conflicts.assert_called_with(ROOT / "Jane", "Foo")
     assert not label.isEnabled()
-    assert full_text(label) == f"{ROW_TEXT}{UNAVAILABLE_SUFFIX}"
+    assert full_text(label) == ROW_TEXT
+    assert label.icon_count() == 1
 
 
 def test_a_root_with_two_rows_moves_by_the_row_clicked(
@@ -194,7 +194,8 @@ def test_an_occupied_layout_place_is_marked_beside_the_current_place(
 
     current, occupied = labels_of(editor)
     assert full_text(current) == f"Tutorials: {Path('Old', 'Foo')}"
-    assert full_text(occupied) == f"Tutorials: Foo{UNAVAILABLE_SUFFIX}"
+    assert full_text(occupied) == "Tutorials: Foo"
+    assert current.icon_count() == 0 and occupied.icon_count() == 1
     assert not current.isEnabled() and not occupied.isEnabled()
     conflicts.assert_called_with(ROOT, "Foo")
 
@@ -358,3 +359,54 @@ def test_a_place_row_carries_what_its_tooltip_shows(
     assert tip.startswith(f'<div style="white-space:pre">{Path("Jane", "Foo")}</div>')
     assert str(ROOT / "Jane" / "Foo") in tip
     assert "{authors}/*" in tip
+
+
+def test_a_row_carries_what_moving_there_involves(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """Each clickable row is marked with the answer of ``plan_move`` for its place, given the shared move settings when
+    there is a queue to move on (#649); the record's own place and an occupied one are never asked.
+
+    **Test steps:**
+
+    * give the suggestions the record's own place and two others, the model reporting only the last occupied
+    * make ``plan_move`` answer network and copy
+    * build the editor with moves and check the live row alone has two icons, ``plan_move`` asked once, of that place
+    """
+    suggestions = NameSuggestionModel(model)
+    here = RootDestination("Tutorials", PurePosixPath("Old/Foo"), ROOT, ROOT_ID, True, ROOT, ROOT_ID)
+    taken = RootDestination("Tutorials", PurePosixPath("Taken"), ROOT, ROOT_ID, False, ROOT, ROOT_ID)
+    mocker.patch.object(suggestions, "root_destinations", return_value=(here, ELSEWHERE, taken))
+    mocker.patch.object(model, "move_conflicts", side_effect=lambda _into, name: name == "Taken")
+    plan = mocker.patch(
+        "rehuco_agent.documents.document_fields.plan_move", return_value=PlaceMarker.NETWORK | PlaceMarker.COPY
+    )
+    settings = mocker.patch("rehuco_agent.documents.document_fields.shared_move_settings")
+
+    editor, _kept = path_editor(qtbot, model, suggestions, Mock(spec=RecordMoves))
+
+    own, live, occupied = labels_of(editor)
+    assert (own.icon_count(), live.icon_count(), occupied.icon_count()) == (0, 2, 1)
+    plan.assert_called_once_with(model.path, ELSEWHERE.into, settings.return_value)
+
+
+def test_with_no_queue_a_row_is_planned_as_a_rename_at_once(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """With nothing to queue a move on, the move settings are not consulted: a click renames at once, unverified (#649).
+
+    **Test steps:**
+
+    * give the suggestions a place in the record's root and build the editor with no moves
+    * check ``plan_move`` was asked with no settings
+    """
+    suggestions = NameSuggestionModel(model)
+    mocker.patch.object(suggestions, "root_destinations", return_value=(PLACE,))
+    mocker.patch.object(model, "move_conflicts", return_value=False)
+    plan = mocker.patch("rehuco_agent.documents.document_fields.plan_move", return_value=PlaceMarker.NETWORK)
+
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    (label,) = labels_of(editor)
+    assert label.icon_count() == 1
+    plan.assert_called_once_with(model.path, PLACE.into, None)

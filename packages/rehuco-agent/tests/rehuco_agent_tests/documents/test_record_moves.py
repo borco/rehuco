@@ -11,9 +11,10 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.name_suggestion_model import RootDestination
-from rehuco_agent.documents.record_moves import RecordMoves
+from rehuco_agent.documents.record_moves import RecordMoves, plan_move
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.settings.move_settings import shared_move_settings
+from rehuco_agent.fields.widgets.place_marker import NO_MARKERS, PlaceMarker
+from rehuco_agent.settings.move_settings import MoveSettings, shared_move_settings
 from rehuco_core import (
     RECORD_MOVE_KIND,
     JobOutcome,
@@ -85,6 +86,80 @@ def volume(mocker: MockerFixture, *, same: bool, storage: RootStorage = RootStor
     """
     mocker.patch(f"{MODULE}.same_volume", return_value=same)
     mocker.patch(f"{MODULE}.storage_of", return_value=storage)
+
+
+# region what a move involves (#649)
+EVERYTHING: Final = PlaceMarker.NETWORK | PlaceMarker.COPY | PlaceMarker.VERIFIED
+"""A slow, copying, verified move."""
+
+
+@mark.parametrize(
+    ("folder_storage", "place_storage", "same", "local_box", "network_box", "expected"),
+    [
+        (RootStorage.LOCAL, RootStorage.LOCAL, True, False, True, NO_MARKERS),
+        (RootStorage.LOCAL, RootStorage.LOCAL, True, True, False, PlaceMarker.VERIFIED),
+        (RootStorage.NETWORK, RootStorage.NETWORK, True, True, False, PlaceMarker.NETWORK),
+        (RootStorage.NETWORK, RootStorage.NETWORK, True, False, True, PlaceMarker.NETWORK | PlaceMarker.VERIFIED),
+        (RootStorage.LOCAL, RootStorage.LOCAL, False, False, False, PlaceMarker.COPY | PlaceMarker.VERIFIED),
+        (RootStorage.NETWORK, RootStorage.LOCAL, False, False, False, EVERYTHING),
+        (RootStorage.LOCAL, RootStorage.NETWORK, False, False, False, EVERYTHING),
+    ],
+    ids=[
+        "local rename, box off",
+        "local rename, box on",
+        "same share, box off",
+        "same share, box on",
+        "local copy",
+        "from a share",
+        "to a share",
+    ],
+)
+def test_plan_move_says_what_the_move_involves(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    mocker: MockerFixture,
+    folder_storage: RootStorage,
+    place_storage: RootStorage,
+    same: bool,
+    local_box: bool,
+    network_box: bool,
+    expected: PlaceMarker,
+) -> None:
+    """The network marker follows either end being on a share, the copy marker the volumes differing, and the verified
+    marker a copy always and a rename by the box of the storage it lands on.
+
+    **Test steps:**
+
+    * give the record's folder and the place their storages, and say whether they share a volume
+    * set the two rename boxes and plan the move
+    * check the markers
+    """
+    mocker.patch(f"{MODULE}.same_volume", return_value=same)
+    mocker.patch(
+        f"{MODULE}.storage_of",
+        side_effect=lambda path: folder_storage if path == RECORD.parent.parent else place_storage,
+    )
+    settings = MoveSettings()
+    settings.verify_renamed_local, settings.verify_renamed_network = local_box, network_box
+
+    plan = plan_move(RECORD, ARCHIVE / "Jane", settings)
+
+    assert plan == expected
+
+
+def test_plan_move_with_no_settings_is_a_rename_at_once(mocker: MockerFixture) -> None:
+    """With no queue to move on there is no copy and no verification, whatever the volumes: only the network shows.
+
+    **Test steps:**
+
+    * put the record on another volume and a share, and plan the move with no settings
+    * check only the network marker is set
+    """
+    mocker.patch(f"{MODULE}.same_volume", return_value=False)
+    mocker.patch(f"{MODULE}.storage_of", return_value=RootStorage.NETWORK)
+
+    assert plan_move(RECORD, ARCHIVE, None) == PlaceMarker.NETWORK
+
+
+# endregion
 
 
 # region which move

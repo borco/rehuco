@@ -2,6 +2,8 @@
 rename suggestions, unavailable candidates, and the live setters.
 """
 
+from typing import Any
+
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QColor, QPalette
@@ -10,8 +12,9 @@ from pytest import mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.fields.widgets import LocationLine
-from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX, DestinationRow, PathEditor
+from rehuco_agent.fields.widgets import LocationLine, MarkedLabel
+from rehuco_agent.fields.widgets.path_editor import DestinationRow, PathEditor
+from rehuco_agent.fields.widgets.place_marker import PLACE_MARKER_ICONS, PlaceMarker
 
 
 def name_label(editor: PathEditor) -> LocationLine:
@@ -23,7 +26,7 @@ def name_label(editor: PathEditor) -> LocationLine:
     return editor._PathEditor__name_line  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
-def suggestion_labels(editor: PathEditor) -> dict[str, ElidedLabel]:
+def suggestion_labels(editor: PathEditor) -> dict[str, MarkedLabel]:
     """Return the editor's private suggestion-name -> label map.
 
     :param editor: the widget to inspect.
@@ -32,13 +35,32 @@ def suggestion_labels(editor: PathEditor) -> dict[str, ElidedLabel]:
     return editor._PathEditor__suggestion_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
-def full_text(label: ElidedLabel) -> str:
+def inner(label: MarkedLabel) -> ElidedLabel:
+    """Return the text label inside a row.
+
+    :param label: the row to inspect.
+    :returns: its text label.
+    """
+    return label._MarkedLabel__label  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def full_text(label: MarkedLabel | ElidedLabel) -> str:
     """Return a label's un-elided text -- ``text()`` is whatever fits its current width.
 
-    :param label: the label to inspect.
+    :param label: the label to inspect, or the row holding it.
     :returns: the full text it was given.
     """
-    return label._ElidedLabel__full  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    text_label = label if isinstance(label, ElidedLabel) else inner(label)
+    return text_label._ElidedLabel__full  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def shown_text(label: MarkedLabel) -> str:
+    """Return a row's text as drawn, a link's markup included.
+
+    :param label: the row to inspect.
+    :returns: what its text label shows.
+    """
+    return inner(label).text()
 
 
 def suggestions_widget(editor: PathEditor) -> ElidedLabel:
@@ -220,9 +242,9 @@ def test_suggestion_matching_current_name_is_disabled_without_a_link(qtbot: QtBo
     labels = suggestion_labels(editor)
 
     assert labels["Foo"].isEnabled() is False
-    assert "<a " not in labels["Foo"].text()
+    assert "<a " not in shown_text(labels["Foo"])
     assert labels["Bar"].isEnabled() is True
-    assert "<a " in labels["Bar"].text()
+    assert "<a " in shown_text(labels["Bar"])
 
 
 def test_an_occupied_suggestion_is_disabled_marked_and_unlinked(qtbot: QtBot) -> None:
@@ -243,11 +265,13 @@ def test_an_occupied_suggestion_is_disabled_marked_and_unlinked(qtbot: QtBot) ->
     labels = suggestion_labels(editor)
 
     assert labels["Foo2"].isEnabled() is False
-    assert full_text(labels["Foo2"]) == f"Foo2{UNAVAILABLE_SUFFIX}"
-    assert "<a " not in labels["Foo2"].text()
+    assert full_text(labels["Foo2"]) == "Foo2"
+    assert labels["Foo2"].icon_count() == 1
+    assert labels["Bar"].icon_count() == 0
+    assert "<a " not in shown_text(labels["Foo2"])
     assert labels["Bar"].isEnabled() is True
     assert full_text(labels["Bar"]) == "Bar"
-    assert "<a " in labels["Bar"].text()
+    assert "<a " in shown_text(labels["Bar"])
 
 
 def test_the_current_name_wins_over_being_occupied(qtbot: QtBot) -> None:
@@ -287,7 +311,7 @@ def test_an_occupied_suggestion_cannot_be_clicked(qtbot: QtBot) -> None:
     editor.set_conflict_check(lambda _name: True)
     editor.set_suggestions(["Foo2"])
 
-    assert "href" not in suggestion_labels(editor)["Foo2"].text()
+    assert "href" not in shown_text(suggestion_labels(editor)["Foo2"])
     assert not received
 
 
@@ -407,7 +431,7 @@ def test_set_suggestions_updates_the_list_live(qtbot: QtBot) -> None:
 
 
 # region the roots' places (#579, #339)
-def destination_labels(editor: PathEditor) -> list[ElidedLabel]:
+def destination_labels(editor: PathEditor) -> list[MarkedLabel]:
     """Return the editor's private root-place labels.
 
     :param editor: the widget to inspect.
@@ -460,16 +484,17 @@ def test_an_occupied_place_is_disabled_and_marked(qtbot: QtBot) -> None:
     **Test steps:**
 
     * set an occupied place
-    * verify the label is disabled and ends in the marker
+    * verify the label is disabled and followed by the blocked icon only, whatever else it was marked with
     """
     editor = PathEditor()
     qtbot.addWidget(editor)
 
-    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", occupied=True)])
+    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", occupied=True, markers=PlaceMarker.COPY)])
 
     (label,) = destination_labels(editor)
     assert not label.isEnabled()
-    assert full_text(label) == f"Tutorials: Jane/Foo{UNAVAILABLE_SUFFIX}"
+    assert full_text(label) == "Tutorials: Jane/Foo"
+    assert label.icon_count() == 1
 
 
 def test_the_place_the_record_is_at_is_disabled_and_plain(qtbot: QtBot) -> None:
@@ -477,17 +502,18 @@ def test_the_place_the_record_is_at_is_disabled_and_plain(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * set a place the record is at, also reported occupied (by itself)
-    * verify the label is disabled and carries no marker
+    * set a place the record is at, also reported occupied (by itself) and carrying a marker
+    * verify the label is disabled and carries no icon
     """
     editor = PathEditor()
     qtbot.addWidget(editor)
 
-    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", here=True, occupied=True)])
+    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", here=True, occupied=True, markers=PlaceMarker.COPY)])
 
     (label,) = destination_labels(editor)
     assert not label.isEnabled()
     assert full_text(label) == "Tutorials: Jane/Foo"
+    assert label.icon_count() == 0
 
 
 def test_clicking_a_place_emits_its_index(qtbot: QtBot) -> None:
@@ -508,11 +534,35 @@ def test_clicking_a_place_emits_its_index(qtbot: QtBot) -> None:
     assert blocker.args == [1]
 
 
+def test_a_live_place_is_followed_by_its_markers_in_the_enums_order(qtbot: QtBot) -> None:
+    """A place that can be clicked draws one icon per marker, in the order :class:`PlaceMarker` defines, whatever order
+    the flags were combined in, and its tooltip says what each means (#649).
+
+    **Test steps:**
+
+    * set a place marked verified, network and copy
+    * verify three icons follow the text, and the tooltip names each marker once
+    * set a place with no marker and verify it has no icon
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    markers = PlaceMarker.VERIFIED | PlaceMarker.NETWORK | PlaceMarker.COPY
+
+    editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", markers=markers), DestinationRow("Archive: Foo")])
+
+    first, second = destination_labels(editor)
+    assert first.icon_count() == 3
+    assert [marker.name for marker in markers] == ["NETWORK", "COPY", "VERIFIED"]
+    assert first.toolTip().count("<div") == 3
+    assert second.icon_count() == 0
+    assert set(PLACE_MARKER_ICONS) == set(PlaceMarker)
+
+
 # endregion
 
 
 @mark.parametrize("state", [{}, {"here": True}, {"occupied": True}])
-def test_a_place_tooltip_names_the_path_the_full_path_and_the_template(qtbot: QtBot, state: dict[str, bool]) -> None:
+def test_a_place_tooltip_names_the_path_the_full_path_and_the_template(qtbot: QtBot, state: dict[str, Any]) -> None:
     """Every place -- a live one, the one the record is at, an occupied one -- has a tooltip: the rendered path, then
     the full path and the template used (#639).
 
