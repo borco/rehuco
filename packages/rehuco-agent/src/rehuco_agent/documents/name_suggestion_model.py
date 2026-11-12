@@ -26,6 +26,7 @@ from rehuco_core import (
 
 from ..settings.location_replacements_settings import shared_location_replacements_settings
 from ..settings.location_templates_settings import shared_location_templates_settings
+from ..settings.move_settings import shared_move_settings
 from .catalog_roots import CatalogRoots
 from .rehu_document_model import RehuDocumentModel
 
@@ -113,8 +114,8 @@ class NameSuggestionModel(QObject):
 
     changed = Signal()
     """Fires when a field :meth:`suggestions` or :meth:`root_destinations` is built from changes
-    (:data:`NAME_SUGGESTION_SOURCE_FIELDS`, the document's type or path, the Locations settings, or the catalog's
-    roots), so a `PathField` can re-pull them live."""
+    (:data:`NAME_SUGGESTION_SOURCE_FIELDS`, the document's type or path, the Locations or move settings, or the
+    catalog's roots), so a `PathField` can re-pull them live."""
 
     def __init__(
         self, model: RehuDocumentModel, catalog_roots: CatalogRoots | None = None, parent: QObject | None = None
@@ -133,6 +134,7 @@ class NameSuggestionModel(QObject):
         model.path_changed.connect(self.__on_source_field_changed)  # type: ignore[attr-defined]
         shared_location_templates_settings().patterns_changed.connect(self.changed)
         shared_location_replacements_settings().rules_changed.connect(self.changed)
+        shared_move_settings().changed.connect(self.changed)  # the places' verified marker reads it (#649)
         if catalog_roots is not None:
             catalog_roots.roots_changed.connect(self.__on_roots_changed)
             catalog_roots.root_reachable.connect(self.__on_roots_changed)

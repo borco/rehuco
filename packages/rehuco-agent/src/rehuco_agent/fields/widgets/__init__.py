@@ -31,12 +31,14 @@ from .line_edit import LineEdit
 from .location_line import LocationLine
 from .markdown_edit import MarkdownEdit
 from .markdown_view import MarkdownView
+from .marked_label import MarkedLabel
 from .measured_value_edit import MeasuredValueEdit
 from .measurement_result import MeasurementResult
 from .membership_table_model import MembershipTableModel
 from .memberships_editor import CollectionsEditor, LearningPathsEditor, MembershipsEditor
 from .overlay_surface import OverlayMode, viewer_mode_for
 from .path_editor import DestinationRow, PathEditor
+from .place_marker import PlaceMarker
 from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
 from .single_choice_radio_buttons import SingleChoiceRadioButtons
@@ -91,12 +93,14 @@ __all__ = [
     "image_size_at",
     "LineEdit",
     "LocationLine",
+    "MarkedLabel",
     "MarkdownEdit",
     "MarkdownView",
     "MeasuredValueEdit",
     "MeasurementResult",
     "DestinationRow",
     "PathEditor",
+    "PlaceMarker",
     "RatingSlider",
     "SingleChoiceComboBox",
     "SingleChoiceRadioButtons",

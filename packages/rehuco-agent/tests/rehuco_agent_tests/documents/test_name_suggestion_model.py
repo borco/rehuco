@@ -17,6 +17,7 @@ from rehuco_agent.settings.location_templates_settings import (
     NAME_SUGGESTION_PATTERNS,
     shared_location_templates_settings,
 )
+from rehuco_agent.settings.move_settings import shared_move_settings
 from rehuco_core import Layouts, MappedRoot, RehuDocument, ReplacementRule
 from rehuco_core.access import ResourceKey
 
@@ -299,6 +300,23 @@ def test_changed_fires_when_the_location_templates_settings_apply(name_suggestio
 
     settings = shared_location_templates_settings()
     settings.patterns = {**settings.patterns, "tutorial": ("{title}",)}
+
+    assert fired == [True]
+
+
+def test_changed_fires_when_the_move_settings_are_saved(name_suggestions: NameSuggestionModel) -> None:
+    """Applying the Files page re-emits ``changed``, since a place's verified marker reads the move settings (#649).
+
+    **Test steps:**
+
+    * connect to ``changed``
+    * announce a save of the shared `MoveSettings`
+    * verify the signal fired
+    """
+    fired: list[bool] = []
+    name_suggestions.changed.connect(lambda: fired.append(True))
+
+    shared_move_settings().changed.emit()
 
     assert fired == [True]
 

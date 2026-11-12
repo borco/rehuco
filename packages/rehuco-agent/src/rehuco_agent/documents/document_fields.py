@@ -38,16 +38,18 @@ from ..fields import (
     UnknownField,
 )
 from ..fields.widgets import DestinationRow
+from ..fields.widgets.place_marker import NO_MARKERS
 from ..settings.description_editor_settings import shared_description_editor_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.identity_settings import shared_identity_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from ..settings.move_settings import shared_move_settings
 from ..settings.record_url_settings import shared_record_url_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
 from ..settings.videos_settings import shared_videos_settings
 from .name_suggestion_model import NameSuggestionModel, RootDestination
-from .record_moves import RecordMoves
+from .record_moves import RecordMoves, plan_move
 from .rehu_document_image_organizer import RehuDocumentImageOrganizer
 from .rehu_document_model import RehuDocumentModel
 
@@ -290,21 +292,29 @@ def root_place_callbacks(
 
     shown: list[RootDestination] = []
 
+    def row_of(place: RootDestination) -> DestinationRow:
+        occupied = not place.here and model.move_conflicts(place.into, place.name)
+        path = model.path
+        # what a click involves, asked only of a place that can be clicked; with no queue a click renames at once,
+        # unverified, so there are no move settings to plan by (#649)
+        markers = NO_MARKERS
+        if path is not None and not place.here and not occupied:
+            markers = plan_move(path, place.into, shared_move_settings() if record_moves is not None else None)
+        return DestinationRow(
+            # a place with no path is the root itself (#641): its label alone
+            f"{place.label}: {Path(place.relative)}" if place.relative.parts else place.label,
+            here=place.here,
+            occupied=occupied,
+            rendered=str(Path(place.relative)) if place.relative.parts else "",
+            full_path=str(place.root.joinpath(*place.relative.parts)),
+            template=place.template,
+            markers=markers,
+        )
+
     def destination_rows() -> list[DestinationRow]:
         # the roots' places, drawn as the names are: one existence check each per render, uncached
         shown[:] = root_places()
-        return [
-            DestinationRow(
-                # a place with no path is the root itself (#641): its label alone
-                f"{place.label}: {Path(place.relative)}" if place.relative.parts else place.label,
-                here=place.here,
-                occupied=not place.here and model.move_conflicts(place.into, place.name),
-                rendered=str(Path(place.relative)) if place.relative.parts else "",
-                full_path=str(place.root.joinpath(*place.relative.parts)),
-                template=place.template,
-            )
-            for place in shown
-        ]
+        return [row_of(place) for place in shown]
 
     def move_to_root_place(index: int) -> None:
         # asked again at click time, by the root and path of the row clicked: the row on screen may be a render

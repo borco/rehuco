@@ -228,7 +228,9 @@ checksums when moving a record**, the third frame, is `MoveSettings`' too
 ([[mounts-and-storage#safe-move-rename]]): *Renamed in place* — *on a local disk* (off
 by default) and *on a network share* (on), which make such a move a task verifying before and after; *Copied to another
 disk or share* — *check the original before copying* (on), and *check the copy before removing the original*, shown
-ticked and disabled because it is the hard rule, not a choice. Each move captures the boxes when it is queued.
+ticked and disabled because it is the hard rule, not a choice. Each move captures the boxes when it is queued, and
+the path row's *verified* icon on a place (#649) reads them too, so an Apply redraws the open rows
+([[plugins#tutorial-plugin]]).
 
 **The whole filter state persists** across restarts — the filter text and both toggles — via
 `SettingsDialogSettings` (`settings/settings_dialog_settings.py`). The dialog restores it in
