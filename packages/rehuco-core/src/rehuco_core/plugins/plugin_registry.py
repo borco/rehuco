@@ -53,6 +53,10 @@ Shared by being named in two declarations, not by a third tier the registry know
 observation about what the types happen to have in common ([[field-schema#resource-types]] draws it), and
 one plugin dropping a field must not be a change to another's schema."""
 
+VIDEOS_KEY: Final = "videos"
+"""The tutorial block's shared map of measured lengths, by content key ([[field-schema#watch-progress]]): written by a
+Measure alone, never edited by a save, so it is the file's and never a conflict (#648)."""
+
 TUTORIAL_FIELD_NAMES: Final = (
     "viewed",
     "todo",
@@ -60,7 +64,7 @@ TUTORIAL_FIELD_NAMES: Final = (
     "original_duration",
     "current_duration",
     "level",
-    "videos",
+    VIDEOS_KEY,
 )
 """The **Tutorial-only** tier ([[field-schema#resource-types]]): the progress flags, the three durations
 ([[field-schema#duration-size]]) and the multi-choice ``level``.

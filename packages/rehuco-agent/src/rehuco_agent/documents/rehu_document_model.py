@@ -38,10 +38,10 @@ from rehuco_core import (
     SavePayload,
     SaveRecordJob,
     VideoFacts,
+    details_of,
     is_directory_scoped,
     is_directory_scoped_name,
     merge_users,
-    metadata_of,
     move_rehu_resource,
     paths_overlap,
     payload_changes,
@@ -59,11 +59,11 @@ from rehuco_core import (
     rename_rehu_resource,
     scan_rehu_screenshot_files,
     scan_unconverted_screenshots,
+    take_videos,
     video_data_keys,
 )
 from rehuco_core.access import FileSignature, KeyRelocation, LoadedRecord, Records, ResourceKey
 from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS
-from rehuco_core.watch_progress import VIDEOS_KEY
 
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
@@ -1994,15 +1994,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             or base is None
             or key is None
             or self.__progress_unsettled(key)
-            or RehuDocumentModel.__details(record.document.data) != RehuDocumentModel.__details(self.__base_data)
+            or details_of(record.document.data) != details_of(self.__base_data)
         ):
             return False
         merge_users(document.data, record.document.data, base, document.username)
-        videos = record.document.active_field(VIDEOS_KEY)
-        if videos is None:
-            document.remove_active_field(VIDEOS_KEY)
-        else:
-            document.set_active_field(VIDEOS_KEY, copy.deepcopy(videos))
+        take_videos(document, record.document)
         self.__version = record.version
         self.__base_data = copy.deepcopy(record.document.data)
         self.__disk_signature = record.signature
@@ -2027,22 +2023,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             or not self.watches_progress
             or self.__pending_save_for(key) is not None
         )
-
-    @staticmethod
-    def __details(data: dict[str, Any]) -> dict[str, Any]:
-        """What a record says about the resource, but for the measured lengths a Measure writes on its own.
-
-        :param data: the record's payload.
-        :returns: its metadata without the tutorial block's ``videos`` map.
-        """
-        details = metadata_of(data)
-        block = details.get(TUTORIAL_PLUGIN.key)
-        if isinstance(block, dict):
-            block.pop(VIDEOS_KEY, None)
-            if not block.keys() - {FORMAT_VERSION_KEY}:
-                # a block holding nothing else is no detail, as `metadata_of` reads it before its first Measure
-                del details[TUTORIAL_PLUGIN.key]
-        return details
 
     def __forget_progress_session(self) -> None:
         """Let go of what this session recorded and no write took in -- a file seam read the record again, so what the

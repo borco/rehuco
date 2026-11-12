@@ -3,7 +3,8 @@
 A record has two kinds of content ([[nodes#access-seam]]): its **metadata** -- everything but the plugin blocks'
 ``users`` maps -- which describes the resource and has one editor at a time, and its **per-user fields**, which many
 writers touch at once (a form's rating, a player's progress, a node serving other users). So a save is checked on the
-metadata alone, and the per-user fields are merged one by one:
+metadata alone -- less the lengths a Measure writes on its own, which are always the file's (:func:`details_of`) --
+and the per-user fields are merged one by one:
 
 - :class:`RecordVersion` -- what a record was when it was read: a hash of its metadata, of its text, and of each
   per-user field. Opaque to its holders, who only hand it back.
@@ -24,7 +25,7 @@ from typing import Any, Final
 
 import xxhash
 
-from .plugins import PUBLIC_USERNAME, USERS_KEY
+from .plugins import PUBLIC_USERNAME, TUTORIAL_PLUGIN, USERS_KEY, VIDEOS_KEY
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
 
 type FieldPath = tuple[str | int, ...]
@@ -54,8 +55,8 @@ class RecordVersion:
 
     Opaque: a holder keeps the one it was given and hands it back with its save.
 
-    :param metadata_hash: the hash of the record without its per-user fields; a save is refused when the record's
-        has moved on, since that is someone else's metadata edit.
+    :param metadata_hash: the hash of the record's details (:func:`details_of`) -- without its per-user fields and a
+        Measure's lengths; a save is refused when the record's has moved on, since that is someone else's edit.
     :param file_hash: the hash of the file's text; while it is unchanged nothing needs merging.
     :param user_fields: every per-user field as read, sorted; what tells a field this holder changed from one it
         merely still holds.
@@ -124,6 +125,26 @@ def metadata_of(data: dict[str, Any]) -> dict[str, Any]:
     return metadata
 
 
+def details_of(data: dict[str, Any]) -> dict[str, Any]:
+    """What a record says about the resource: its metadata (:func:`metadata_of`) without the tutorial block's
+    measured lengths (:data:`~rehuco_core.plugins.VIDEOS_KEY`).
+
+    A Measure writes those into the file on its own, and no save ever edits them, so they are always the file's: a
+    change to them is no one's edit to conflict with (#648). A tutorial block left holding nothing but its version
+    stamp is left out, as :func:`metadata_of` leaves one out before its first Measure.
+
+    :param data: the record's payload.
+    :returns: its details.
+    """
+    details = metadata_of(data)
+    block = details.get(TUTORIAL_PLUGIN.key)
+    if isinstance(block, dict):
+        block.pop(VIDEOS_KEY, None)
+        if not block.keys() - {FORMAT_VERSION_KEY}:
+            del details[TUTORIAL_PLUGIN.key]
+    return details
+
+
 def metadata_text(data: dict[str, Any]) -> str:
     """The metadata of a payload as one canonical text, for comparing and hashing.
 
@@ -134,12 +155,12 @@ def metadata_text(data: dict[str, Any]) -> str:
 
 
 def metadata_hash(data: dict[str, Any]) -> str:
-    """The hash of a payload's metadata.
+    """The hash of a payload's details (:func:`details_of`): what a save is refused on when it has moved on.
 
     :param data: the record's payload.
     :returns: the hash, as hex.
     """
-    return xxhash.xxh3_128_hexdigest(metadata_text(data).encode("utf-8"))
+    return xxhash.xxh3_128_hexdigest(canonical_json(details_of(data)).encode("utf-8"))
 
 
 def canonical_json(value: Any) -> str:
@@ -193,7 +214,8 @@ def users_maps(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def same_details(mine: dict[str, Any], theirs: dict[str, Any]) -> bool:
-    """Whether two payloads carry the same metadata, but for what a save stamps (:data:`STAMPED_PATHS`).
+    """Whether two payloads carry the same details (:func:`details_of`), but for what a save stamps
+    (:data:`STAMPED_PATHS`).
 
     :param mine: one payload.
     :param theirs: the other.
@@ -335,16 +357,16 @@ def metadata_differences(
 
     Objects are compared key by key, and a list item by item while both sides hold as many -- so a source's title and
     its publisher are two rows, not one ``sources`` list. A list whose length differs is one value, compared whole:
-    which item is which is then anyone's guess. Per-user fields are not metadata and never appear, nor does what a
-    save stamps (:data:`STAMPED_PATHS`).
+    which item is which is then anyone's guess. Only the details are compared (:func:`details_of`): per-user fields and
+    a Measure's lengths never appear, nor does what a save stamps (:data:`STAMPED_PATHS`).
 
-    :param base: the metadata when the record was opened (:func:`metadata_of`).
+    :param base: the payload when the record was opened.
     :param mine: the edited payload.
     :param theirs: the payload on disk now.
     :returns: the differences, in document order.
     """
     found: list[MetadataDifference] = []
-    collect_differences(metadata_of(base), metadata_of(mine), metadata_of(theirs), (), found)
+    collect_differences(details_of(base), details_of(mine), details_of(theirs), (), found)
     return found
 
 

@@ -95,6 +95,9 @@ ten seconds. Then:
   ([[field-schema#watch-progress]]); free-text notes that genuinely collide keep both and say so — and a bookmark is
   a timestamped line in those notes ([[field-schema#video-notes]]), so the two rules are one. Data is never
   silently lost.
+- **Changed in a Measure's lengths only** → no conflict: the tutorial's `videos` map is written by the duration Measure
+  on its own, never by a save, so the save takes the file's map as it is and writes ([[field-schema#watch-progress]]).
+  The app's own Measure landing while a save is out would otherwise refuse the next Save (#648).
 - **Changed in the details** → the save is a **conflict**: the job fails with the conflict kept on it, and the document
   stays dirty under the conflict banner. No dialog pops while the user is elsewhere; the **next Save** first shows every
   value the two versions disagree on, the file's side as the failed save read it, with its original, the user's (the
@@ -137,7 +140,10 @@ another land beside them, and none waits behind a checksum run ([[appendices.tas
 - **One pending save per record.** A later Save hands a save that has not landed — queued, waiting, paused or failed —
   the newer data rather than queueing a second write behind it, so edits made while it waits land as one write. One
   made while the save is writing is written by the same job right after, against the version that write left, so it
-  never conflicts with it. A save that landed, or was cancelled, is history: the next Save is a job of its own.
+  never conflicts with it. A save that landed, or was cancelled, is history: the next Save is a job of its own. Pressed
+  before the document heard of the landing, it is still based on what the document handed that save, and is moved onto
+  what was written; a document based on anything else went on since — it heard, then saved inline for a rename or read
+  the file again — and its Save is written as it is (#648).
 - **What the save changed comes back.** A save changes things on its way to disk — the stamps, the per-user fields
   merged from the file, a block only the file had. When it lands they are put onto the live document **except where
   the user edited since the last Save**, so the document stays dirty exactly when it was edited since.

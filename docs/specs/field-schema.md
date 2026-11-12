@@ -659,7 +659,8 @@ read against:
     source is offline (as a queued save, [[sync#apply-payload]]), on the retained copy of a source that can never be
     written. `videos` is shared resource metadata in the record, written under its lock and only while the file is
     reachable. Recording the length into `videos` from the player would fail in exactly the
-    places watching happens away from the source.
+    places watching happens away from the source. Being the Measure's alone, it is never a save's edit: a save keeps
+    the file's map and never conflicts over it ([[sync#compare-and-swap]]).
   - **A missing file's length outlives the file.** A Measure that rebuilds `videos` from disk drops a deleted video;
     its progress entry still carries the length, so the folder totals above keep counting it.
 
