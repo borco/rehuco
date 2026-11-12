@@ -276,9 +276,9 @@ dock object name) and re-apply them via `setSplitterSizes(area, sizes)` on `view
 
 The dock manager becomes load-bearing once a resource *browser* exists alongside the viewer
 ([[plugins#browsers]]'s "clicking a resource opens its viewer dock") — a multi-pane shell, not a single-window
-form. The three-line wiring snippet and the closed-dock-size workaround stay in
-`spikes/pyqtads-qml/` as a working reference until that slice consumes them (then the spike is
-deleted and this issue closed).
+form. The three-line wiring snippet and the closed-dock-size workaround stayed in
+`spikes/pyqtads-qml/` as a working reference until that slice consumed them; the spike was then
+deleted (#20).
 
 ## §16.8 Desktop distribution, file association, and app identity
 

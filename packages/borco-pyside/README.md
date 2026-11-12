@@ -10,8 +10,9 @@
 
 ## Status
 
-**Pre-alpha.** This package is **not rehuco-specific** — it is a home for generic, reusable Qt code. It is currently
-developed inside the [rehuco](https://borco.github.io/rehuco/) monorepo and will later move to its own repository.
+**Alpha.** In daily use by rehuco, but its API changes as rehuco needs it to. This package is **not
+rehuco-specific** — it is a home for generic, reusable Qt code. It is currently developed inside the
+[rehuco](https://borco.github.io/rehuco/) monorepo and will later move to its own repository.
 If you use `borco-pyside` from PyPI, this move will be handled automatically.
 
 ## What it is
@@ -33,7 +34,8 @@ Currently provides:
   `platforms.windows.window_activation`).
 - **`borco_pyside.qtads`** — generic helpers for `pyside6-qtads` (QtAds): `QtAdsFocusTracker` (which dock
   is current, per manager), `QtAdsMaximizeHandler` (a maximize toggle on every dock's tab),
-  `QtAdsAutoHideButtonSuppressor`, `QtAdsLayout` (save and restore a dock layout), `QtAdsEmptyingGuard`, `QtAdsPinSideHandler`, `QtAdsFloatingShowGuard`, `QtAdsLoneTabHider`, `tab_close_button`,
+  `QtAdsAutoHideButtonSuppressor`, `QtAdsLayout` (save and restore a dock layout), `QtAdsEmptyingGuard`,
+  `QtAdsPinSideHandler`, `QtAdsFloatingShowGuard`, `QtAdsLoneTabHider`, `tab_close_button`,
   `tab_label`, `tab_maximize_button`.
 - **`borco_pyside.recycle_bin`** — moving a file to the Recycle Bin / Trash through `send2trash`, behind
   one `RecycleBin` singleton; refuses with `NoRecycleBinError` when no bin is reachable for the path

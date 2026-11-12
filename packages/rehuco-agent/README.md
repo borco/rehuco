@@ -4,22 +4,23 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/borco/rehuco/blob/master/LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/rehuco-agent)](https://pypi.org/project/rehuco-agent/)
 
-*PySide6 desktop GUI for [rehuco](https://borco.github.io/rehuco/): open, view, and edit `.rehu` files.*
+*PySide6 desktop GUI for [rehuco](https://borco.github.io/rehuco/): edit a resource's `.rehu`, browse the folders
+that hold them, and play a tutorial's videos.*
 
 [View on PyPI](https://pypi.org/project/rehuco-agent/) · [View on GitHub](https://github.com/borco/rehuco)
 
 ## Status
 
-**Early.** The editor works: it opens a `.rehu`, shows and edits its fields, and saves.
-The `.rehu` format is still moving and there is no upgrade guarantee between releases yet, so
-keep backups of anything you point it at. See [GitHub Issues](https://github.com/borco/rehuco/issues)
-for what's in progress.
+**Alpha.** In daily use on a real library: the editor, the catalog browser and the video player all work.
+The file formats still change between releases, sometimes with no migration, so keep backups of anything you
+point it at. The [release milestones](https://github.com/borco/rehuco/milestones) say what ships next.
 
 ## What it is
 
 `rehuco-agent` is [rehuco](https://borco.github.io/rehuco/) itself, as far as anything you can run
-goes: a desktop editor for the `.rehu` sidecar that describes one resource, and a browser over the folders that hold them. Tested on Windows, macOS,
-and Linux.
+goes: a desktop editor for the `.rehu` sidecar that describes one resource, a browser over the folders that hold
+them, and a player for a tutorial's videos. Developed and used daily on Windows; CI runs the tests on Windows,
+macOS and Linux.
 
 ![The rehuco-agent editor with a reference-images resource open: edit fields and a read-only viewer alongside description, checksums, content images, files, and an app-wide log dock](https://raw.githubusercontent.com/borco/rehuco/master/docs/assets/images/rehuco-agent--documents.png)
 
@@ -27,10 +28,13 @@ and Linux.
 
 - **Single-instance launcher** — double-click a `.rehu` file to open it in the running instance
 - **Viewer and editor** — common fields, a Markdown description, and the resource's screenshots as a
-  thumbnail strip with a click-to-maximize lightbox
+  thumbnail strip with a double-click lightbox; a reference pack also shows its own images, inside its archives
+  and loose in its folders
+- **Fields filled from a dropped page** — drop an ArtStation or Udemy URL, or one a user's own scraper script
+  reads, and review the result as an ordinary edit before saving
 - **Editing that saves atomically** — with unrecognized fields left untouched, and a file from a newer
   format version opened read-only rather than rewritten
-- **Legacy `.tc` conversion** — read the predecessor format and write `.rehu`, keeping backups
+- **Checksums** — generate and verify them for one resource or a whole folder, skipping files checked recently
 - **A workspace that persists** — per-file panel layout and session restore
 - **Root catalog and browsers** — open a `.rehuco` naming your folders, scan them into a cache, and browse it
   in filterable tables, with a column view of the folders and a preview of whatever is selected
@@ -41,7 +45,7 @@ and Linux.
   installed, the same dock can decode with VLC's own library
 - **Images out to other apps** — drag or copy an image from the app into a file manager, an image editor or a browser
 - **Rebindable shortcuts** — a Shortcuts page in Settings, with conflict detection
-- **Task queue** — background jobs (checksum sweeps, `.tc` imports, conversions) run through a
+- **Task queue** — background jobs (checksum sweeps, imports, scrapes) run through a
   queue dock with per-job progress, state, and log
 - **Log dock** — an app-wide log and a per-resource log, both filterable
 - **Settings** — a docked Settings page for checksums, images, identity, scrapers, the Root Catalog, and more

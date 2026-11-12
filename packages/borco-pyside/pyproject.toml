@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["borco", "pyside6", "qt", "gui", "library", "utilities"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Environment :: X11 Applications :: Qt",
     "Operating System :: OS Independent",

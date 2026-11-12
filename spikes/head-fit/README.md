@@ -5,8 +5,8 @@ Throwaway code for one question ([[reference-images#construction-overlays]], "Th
 > On this collection's photos — hair, three-quarter views, studio lighting, the odd profile — does the
 > automatic head fit land close enough that handles are a *correction* rather than the whole job?
 
-Keep the lesson, delete the code: the verdict goes into `docs/specs/reference-images.md` §18.15, then this
-folder is removed (the convention `spikes/pyqtads-qml/` followed).
+The verdict is in `docs/specs/reference-images.md` §18.15. This folder stays as a working reference for the
+construction models until #588 lands, and #588 removes it.
 
 ## Run
 
@@ -57,4 +57,4 @@ landmarks the fit uses (magenta) and the measured yaw / pitch / roll. `summary.c
   exception to tier 2's no-crop rule.
 - **Beyond ~60° of yaw and from behind** the landmarker gives nothing; the overlay must start from the pose
   stage's coarse head angle (ears and nose) or by hand — the handles' job.
-- **Done.** Verdict is in §18.15; this folder goes when #586 is closed.
+- **Done.** Verdict is in §18.15; this folder goes when #588 lands.

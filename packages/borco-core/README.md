@@ -10,9 +10,10 @@
 
 ## Status
 
-**Pre-alpha.** This package is **not rehuco-specific** — it is a home for generic, reusable code. It is currently
-developed inside the [rehuco](https://borco.github.io/rehuco/) monorepo and will later move to its own repository.
-If you use `borco-core` from PyPI, this move will be handled automatically.
+**Alpha.** In daily use by rehuco, but its API changes as rehuco needs it to. This package is **not
+rehuco-specific** — it is a home for generic, reusable code. It is currently developed inside the
+[rehuco](https://borco.github.io/rehuco/) monorepo and will later move to its own repository. If you use
+`borco-core` from PyPI, this move will be handled automatically.
 
 ## What it is
 

@@ -835,7 +835,7 @@ landmark weights are license-checked like every built-in ([[reference-images#mod
 **The spike first.** Before any of the above is sized for real, one throwaway script answers one question:
 on *this* collection's photos — hair, three-quarter views, studio lighting — does the automatic head fit land
 close enough that handles are a correction rather than the whole job? Its verdict is written here; its code
-is deleted.
+stays until #588 takes over the geometry.
 
 **Verdict so far (#586, 2026-10-30, `spikes/head-fit/`).** On four public-domain portraits — a frontal, two
 three-quarter views (one a painting), one near-frontal under a beret — the yaw, pitch and roll from MediaPipe's
@@ -853,7 +853,8 @@ original correctly, to 63° of yaw. Every remaining miss was a true profile or a
 takes the **face region cut from the original**, an exception to tier 2's no-crop rule; beyond about 60° of
 yaw and from behind, the overlay must start from the pose stage's coarse head angle (ears and nose) or by
 hand — which is what the handles are for. MediaPipe's wheels stop at Python 3.12 while the workspace is on
-3.14, which argues for an ONNX landmarker on `onnxruntime`. The spike's code is deleted once #586 is closed.
+3.14, which argues for an ONNX landmarker on `onnxruntime`. The spike's code stays in `spikes/head-fit/` as a
+working reference until #588 lands, which deletes it.
 
 ## §18.16 Open questions
 

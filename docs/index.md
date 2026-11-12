@@ -17,7 +17,8 @@ The desktop app, `rehuco-agent`, is the only program here. Either:
 - **Or install from PyPI** (Python 3.14+): `pip install rehuco-agent`, or `uv tool install rehuco-agent`, then run
   `rehuco-agent`.
 
-The `.rehu` format is still moving, so keep backups of anything you point it at.
+**Alpha.** The app is in daily use on a real library, but the file formats and the packages' APIs still change
+between releases, sometimes with no migration, so keep backups of anything you point it at.
 
 ## What it is
 
@@ -52,8 +53,6 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
   VLC installed, a Settings choice has that same dock decode with VLC's own library instead, which plays both.
 - **Checks its files.** Generates and verifies checksums for one resource or a whole folder, remembering
   when each file was last checked so a re-run skips what is still fresh.
-- **Converts legacy `.tc` catalogs.** One file or a whole folder tree at once: reads the older format,
-  writes `.rehu`, and keeps backups it can roll back if the conversion goes wrong.
 - **Works in the background.** Checksums, imports and scrapes run on a task queue you can pause,
   reorder and cancel, with a log beside it.
 - **Catalogs your folders.** A `.rehuco` file names the folders to catalog; a scan records every `.rehu` under them in
@@ -73,32 +72,25 @@ rules that keep it trustworthy, the app's panels, and what isn't built.
 Self-describing by design: a `.rehu` sits next to the content it describes, so reading a resource's
 details needs nothing but the file itself — no index, no server, no account.
 
-Tested on Windows, macOS, and Linux.
+Developed and used daily on Windows; CI runs the tests on Windows, macOS and Linux.
 
 ## Where it's going
 
-What's left of the editor is small: a page image picker (a scraping helper, not an editor feature).
-
-What's left of the catalog is filed in the [implementation plan](specs/implementation-plan.md).
-
-Past that the design reaches further — web pages and long jobs served by the node, offline borrowing between
-machines, multi-user access, a browser interface, Daz3D library migration. None of it is implemented, none of
-it is scheduled, and some of it may never be: it is what the architecture is shaped to allow, and each piece has
-to earn its place when its turn comes. The [design specs](specs/README.md) explore that territory in depth — as
-intent, not as a description of the current build.
-
-Maintenance is tracked separately under the **`audit`** label — it collects the issues found during a
-codebase audit, one sweep at a time.
+- **Planned work:** the [implementation plan](specs/implementation-plan.md), by feature family, and the
+  [release milestones](https://github.com/borco/rehuco/milestones).
+- **Not built yet:** [what does not exist yet](specs/how-it-works.md#what-does-not-exist-yet), kept current with
+  the build.
+- **The design:** the [design specs](specs/README.md) describe the system the architecture is shaped to allow — as
+  intent, not as a description of the current build.
 
 ## rehuco packages
 
-rehuco is published as three separate packages on PyPI, all at an early stage — published so the
-names are taken and the release plumbing is exercised, not because they are ready to depend on.
+rehuco is published as three separate packages on PyPI.
 
 | Package | Description | PyPI | Downloads | Python |
 | --- | --- | --- | --- | --- |
 | [rehuco-agent](https://pypi.org/project/rehuco-agent/) | PySide6 desktop GUI | [![PyPI](https://img.shields.io/pypi/v/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [![Downloads](https://static.pepy.tech/badge/rehuco-agent)](https://pepy.tech/project/rehuco-agent) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-agent)](https://pypi.org/project/rehuco-agent/) |
-| [rehuco-core](https://pypi.org/project/rehuco-core/) | Shared library: models, `.rehu` I/O, `.rehuco` and `.rehudb` cache, legacy `.tc` reading | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) |
+| [rehuco-core](https://pypi.org/project/rehuco-core/) | Shared library: models, `.rehu` I/O, `.rehuco` and `.rehudb` cache | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) |
 | [rehuco-node](https://pypi.org/project/rehuco-node/) | The local node: a heartbeat process the agent runs beside itself | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) |
 
 ## Generic libraries (temporarily hosted)

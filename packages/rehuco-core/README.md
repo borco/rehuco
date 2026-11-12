@@ -4,15 +4,16 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/borco/rehuco/blob/master/LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/)
 
-*Shared library for [rehuco](https://borco.github.io/rehuco/): data models, `.rehu` file I/O, legacy `.tc` conversion, checksums, a catalog cache, and a task queue.*
+*Shared library for [rehuco](https://borco.github.io/rehuco/): data models, `.rehu` file I/O, checksums, a catalog
+cache, and a task queue.*
 
 [View on PyPI](https://pypi.org/project/rehuco-core/) · [View on GitHub](https://github.com/borco/rehuco)
 
 ## Status
 
-**Early.** It does real work: it is what the desktop editor reads and writes files with. But
-it is developed for that one consumer, the `.rehu` format is still moving, and the API changes without
-notice. See [GitHub Issues](https://github.com/borco/rehuco/issues) for what's in progress.
+**Alpha.** It does real work: it is what the desktop app reads and writes files with, in daily use. But
+it is developed for that one consumer, the file formats still change between releases, and the API changes without
+notice. The [release milestones](https://github.com/borco/rehuco/milestones) say what ships next.
 
 ## What it is
 
@@ -25,13 +26,16 @@ It provides:
 - **File I/O** — atomic read and write, with unknown fields preserved verbatim
 - **Format versioning** — a per-file version, migrations applied on load, and read-only handling of a
   file written by a newer version
+- **Per-user state** — one user's ratings, flags, learning paths and watch progress for a resource, in a
+  `.rehuser` sidecar of its own beside the `.rehu`
 - **Content checksums** — a `.checksum` record beside the `.rehu` holding, per content file, its hash,
   when it was last verified and what the answer was; generate and verify read it, and can re-check just
   one file or skip whatever was checked recently
 - **Content enumeration** — which files a resource covers, the images inside a reference pack's
   archives, and measured size on disk and video duration
 - **A catalog** — the `.rehuco` file listing folder roots, each a `.rehuroot` file of its own that catalogs share, a
-  root's path layouts rendered per record, and the `.rehudb` SQLite cache of the records found under them: an incremental scan, targeted updates after a save or rename, and filtered reads
+  root's path layouts rendered per record, and the `.rehudb` SQLite cache of the records found under them: an
+  incremental scan, targeted updates after a save or rename, and filtered reads
 - **Staged images** — an image taken out of a resource, written unchanged under a name that traces it back
 - **A task queue** — one long job at a time, pausable, cancellable, reorderable, optionally persisted
   across restarts

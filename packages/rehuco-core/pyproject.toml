@@ -1,7 +1,7 @@
 [project]
 name = "rehuco-core"
 dynamic = ["version"]
-description = "rehuco shared library: models, .rehu I/O, legacy .tc conversion, checksums, a catalog cache, a task queue"
+description = "rehuco shared library: models, .rehu I/O, checksums, a catalog cache, a task queue"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["rehuco", "resource-management", "rehu", "metadata", "catalog", "library"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
