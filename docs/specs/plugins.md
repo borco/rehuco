@@ -678,7 +678,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   warning colour with the reason as its tooltip, and saved as typed; the file keeps the template's text, so editing
   the library later changes no root. **Fallbacks** is a fixed table, one row for each of the five placeholders
   a template may use -- `title`, `publisher`, `authors`, `year`, `count` -- only *When empty* editable, no row
-  added, duplicated or removed, an empty one not written, and as wide as the table above. The same editor serves the
+  added, duplicated or removed, an empty one not written, and with no buttons, the full width. The same editor serves the
   New Root Presets page and the Add Roots dialog's *New layout…*.
   A root whose file cannot be read, or a catalog open read-only, offers no edit. **A root this machine has not mapped**
   is listed in its place, greyed, with one row saying so, never read; its **Map…** action (the root's menu and its

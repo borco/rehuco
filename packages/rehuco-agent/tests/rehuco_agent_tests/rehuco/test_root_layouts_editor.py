@@ -229,17 +229,17 @@ def test_the_fallbacks_are_one_fixed_row_per_placeholder_and_only_what_is_filled
     assert editor.fallbacks == {}
 
 
-def test_the_fallbacks_table_cannot_grow_and_keeps_the_layouts_buttons_width(editor: RootLayoutsEditor) -> None:
-    """No row can be added, duplicated or removed from the fallbacks, and the table is as wide as the layouts table
-    above it, the width of its button column kept (#637).
+def test_the_fallbacks_table_cannot_grow_and_takes_the_whole_width(qtbot: QtBot, editor: RootLayoutsEditor) -> None:
+    """No row can be added, duplicated or removed from the fallbacks, and with no button column the table takes the
+    editor's whole width (#637).
 
     **Test steps:**
 
     * ask the fallbacks table to insert, remove, duplicate and delete a row
     * verify five rows still, and the three actions hidden
-    * verify both button columns have the same width
+    * show the editor and verify the button column hidden and the table as wide as its editor
     """
-    layouts, fallbacks = tables(editor)
+    _, fallbacks = tables(editor)
     model = fallbacks.model
 
     assert not model.insertRow(0)
@@ -256,7 +256,10 @@ def test_the_fallbacks_table_cannot_grow_and_keeps_the_layouts_buttons_width(edi
             fallbacks.item_actions.delete_action,
         )
     )
-    assert fallbacks.item_actions.width() == layouts.item_actions.sizeHint().width()
+    editor.show()
+    qtbot.waitExposed(editor)
+    assert not fallbacks.item_actions.isVisible()
+    assert fallbacks.view.width() == fallbacks.width()
 
 
 def test_f2_is_left_to_the_roots_views_edit_toggle(editor: RootLayoutsEditor) -> None:
