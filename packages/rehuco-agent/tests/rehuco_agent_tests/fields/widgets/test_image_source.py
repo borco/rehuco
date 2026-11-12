@@ -11,7 +11,9 @@ from PySide6.QtGui import QImage, QImageReader, QImageWriter
 from pytest import mark, param
 from pytest_mock import MockerFixture
 from rehuco_agent.fields.widgets.image_source import (
+    BRAND_FORMATS,
     FORMAT_HEAD_SIZE,
+    PILLOW_FORMATS,
     ImageDescription,
     ImageVisibility,
     PathImageSource,
@@ -120,6 +122,7 @@ def pillow_bytes(pillow_format: str) -> bytes:
         ("GIF", b"gif"),
         ("WEBP", b"webp"),
         ("BMP", b"bmp"),
+        ("AVIF", b"avif"),
         param(
             "TIFF",
             b"tiff",
@@ -401,3 +404,103 @@ def test_a_path_source_reports_no_visibility(mocker: MockerFixture) -> None:
     mocker.patch.object(Path, "stat", return_value=file_stat(3))
 
     assert PathImageSource([PATH]).describe(0).visibility is None
+
+
+def ftyp_head(brand: bytes) -> bytes:
+    """The first bytes of an ISO-BMFF file -- a box size, ``ftyp`` and the major ``brand``.
+
+    :param brand: the four-byte major brand.
+    :returns: :data:`FORMAT_HEAD_SIZE` bytes.
+    """
+    return b"\x00\x00\x00\x18ftyp" + brand
+
+
+@mark.parametrize(("brand", "name"), list(BRAND_FORMATS.items()))
+def test_each_iso_bmff_brand_names_its_format(brand: bytes, name: bytes) -> None:
+    """HEIC's and AVIF's ``ftyp`` brands are recognized, and neither is a format Qt's reader is built for (#650).
+
+    **Test steps:**
+
+    * name the leading bytes of a file whose major brand is each one
+    * verify the format, that Pillow is the one to decode it, and that no `QImageReader` is built
+    """
+    head = ftyp_head(brand)
+
+    assert image_format(head) == name
+    assert name in PILLOW_FORMATS
+    assert format_reader(reading_buffer(head), head) is None
+
+
+def test_an_iso_bmff_file_of_another_brand_is_no_image_format() -> None:
+    """A video's ``ftyp`` box names no image format (#650).
+
+    **Test steps:**
+
+    * name the leading bytes of an MP4
+    * verify nothing is named
+    """
+    assert image_format(ftyp_head(b"isom")) is None
+
+
+def test_heic_decodes_and_sizes_through_the_heif_opener(mocker: MockerFixture) -> None:
+    """A HEIC image is read by Pillow's HEIF format, downscaled to the cap and never upscaled (#650). No HEIC
+    encoder ships, so Pillow's `Image.open` is handed a picture of its own.
+
+    **Test steps:**
+
+    * replace `Image.open` with a 30 by 20 picture and decode the leading bytes of a HEIC, capped at 10 and uncapped
+    * verify the sizes, the format `Image.open` was asked for, and the size read without a decode
+    """
+    opened = mocker.patch(
+        "rehuco_agent.fields.widgets.image_source.Image.open", side_effect=lambda *_a, **_k: Image.new("RGB", (30, 20))
+    )
+    data = ftyp_head(b"heic")
+
+    assert decode_image(data, 10).size().toTuple() == (15, 10)
+    assert decode_image(data, None).size().toTuple() == (30, 20)
+    assert decode_image(data, 50).size().toTuple() == (30, 20)
+    assert image_size(data).toTuple() == (30, 20)
+    assert all(call.kwargs == {"formats": ["HEIF"]} for call in opened.call_args_list)
+
+
+def test_a_pillow_format_is_turned_upright_by_its_orientation() -> None:
+    """A sideways-shot AVIF is sized and decoded as it will be shown, the way a JPEG is (#650).
+
+    **Test steps:**
+
+    * encode a 300 by 200 AVIF carrying a 90 degree orientation
+    * verify its size and its decode both read 200 by 300
+    """
+    exif = Image.Exif()
+    exif[EXIF_ORIENTATION] = EXIF_ROTATE_90_CW
+    stream = io.BytesIO()
+    Image.new("RGB", (300, 200), "red").save(stream, "AVIF", exif=exif.tobytes())
+    data = stream.getvalue()
+
+    assert image_size(data).toTuple() == (200, 300)
+    assert decode_image(data, None).size().toTuple() == (200, 300)
+
+
+def test_image_size_at_reads_an_avif_off_its_path(tmp_path: Path) -> None:
+    """A path whose file Qt cannot read is sized by Pillow (#650).
+
+    **Test steps:**
+
+    * write an 8 by 4 AVIF and size its path
+    """
+    path = tmp_path / "a.avif"
+    path.write_bytes(pillow_bytes("AVIF"))
+
+    assert image_size_at(path).toTuple() == (8, 4)
+
+
+def test_a_pillow_format_that_does_not_decode_is_a_null_image() -> None:
+    """Truncated HEIC and AVIF bytes decode to nothing and size to nothing, rather than raising (#650).
+
+    **Test steps:**
+
+    * decode and size a bare ``ftyp`` head of each
+    """
+    for brand in (b"heic", b"avif"):
+        assert decode_image(ftyp_head(brand), None).isNull()
+        assert not image_size(ftyp_head(brand)).isValid()

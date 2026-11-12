@@ -359,9 +359,9 @@ def test_the_extensions_block_is_a_filterable_frame_of_its_own(page: ImagesFiles
     * filter by a term only the extensions block carries
     * verify that frame stays shown
     """
-    frame_filter = SettingsFrameFilter(page, "Sidecar Extensions")
+    frame_filter = SettingsFrameFilter(page, "Content Extensions")
     ui = page._ImagesFilesPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    frame_filter.apply("sidecar image extensions", show_full_on_title_match=False)
+    frame_filter.apply("content image extensions", show_full_on_title_match=False)
 
     assert ui.reference_images_frame.isVisibleTo(page) is True

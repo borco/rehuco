@@ -9,14 +9,19 @@ file-backed one; the archive-backed one lives beside the dock that owns the arch
 own (#370): every row of it, each saying whether it is shown, hidden or not yet numbered.
 """
 
+import io
 from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
-from typing import Final, Protocol
+from typing import BinaryIO, Final, Protocol
 
+from pi_heif import register_heif_opener
+from PIL import Image, ImageOps
 from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt
 from PySide6.QtGui import QImage, QImageIOHandler, QImageReader
+
+register_heif_opener()
 
 
 class ImageVisibility(StrEnum):
@@ -136,15 +141,40 @@ FORMAT_SIGNATURES: Final = (
 """Leading bytes and the Qt format name they announce, for :func:`image_format`. WebP is checked apart:
 its signature has the file's length in the middle."""
 
+PILLOW_FORMATS: Final = {b"heic": "HEIF", b"avif": "AVIF"}
+"""The formats Qt's wheels cannot decode, so Pillow does (#650): the name :func:`image_format` gives each
+and the Pillow format that reads it -- HEIF through ``pi-heif``, AVIF natively."""
+
+EXIF_ORIENTATION: Final = 0x0112
+EXIF_QUARTER_TURNS: Final = (5, 6, 7, 8)
+"""The EXIF orientation tag, and the values of it that turn a picture a quarter (:func:`pillow_image_size`
+swaps the size for those)."""
+
+BRAND_FORMATS: Final = {
+    b"heic": b"heic",
+    b"heix": b"heic",
+    b"heim": b"heic",
+    b"heis": b"heic",
+    b"mif1": b"heic",
+    b"msf1": b"heic",
+    b"avif": b"avif",
+    b"avis": b"avif",
+}
+"""The ISO-BMFF ``ftyp`` major brands (bytes 8-12 of the file) and the format each announces, for
+:func:`image_format` (#650)."""
+
 
 def image_format(head: bytes) -> bytes | None:
-    """The Qt image format ``head`` announces, read off its leading bytes alone (#529).
+    """The image format ``head`` announces, read off its leading bytes alone (#529).
 
     :param head: the encoded image's first bytes -- :data:`FORMAT_HEAD_SIZE` are enough, more is fine.
-    :returns: the format name `QImageReader` takes, or ``None`` for bytes no recognized format starts with.
+    :returns: the format name `QImageReader` takes, or -- for HEIC and AVIF, which it cannot read -- the
+        name of a :data:`PILLOW_FORMATS` key; ``None`` for bytes no recognized format starts with.
     """
     if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         return b"webp"
+    if head[4:8] == b"ftyp":
+        return BRAND_FORMATS.get(head[8:12])
     return next((name for signature, name in FORMAT_SIGNATURES if head.startswith(signature)), None)
 
 
@@ -162,10 +192,10 @@ def format_reader(source: QIODevice | str, head: bytes) -> QImageReader | None:
         reader, so the caller keeps it alive for as long as the reader is used.
     :param head: the image's first bytes (:data:`FORMAT_HEAD_SIZE`).
     :returns: the reader, transforming as the image's orientation says; ``None`` when ``head`` is no
-        format :func:`image_format` knows.
+        format :func:`image_format` knows, or one only Pillow decodes (:data:`PILLOW_FORMATS`).
     """
     name = image_format(head)
-    if name is None:
+    if name is None or name in PILLOW_FORMATS:
         return None
     reader = QImageReader(source, name)
     reader.setAutoDetectImageFormat(False)
@@ -180,13 +210,17 @@ def decode_image(data: bytes, max_height: int | None) -> QImage:
     downscaled decode never materializes the full-size pixels. The reader is asked for
     :data:`DECODE_OVERSAMPLE` times the target, and the rest is a smooth scale of that.
 
-    Runs on pool threads, so the reader is a :func:`format_reader`.
+    Runs on pool threads, so the reader is a :func:`format_reader`. HEIC and AVIF go to
+    :func:`decode_pillow_image` instead (#650).
 
     :param data: the encoded image bytes.
     :param max_height: the height to scale down to, or ``None`` for full size.
     :returns: the image, or a null one when the bytes do not decode or are no format
         :func:`image_format` knows.
     """
+    name = image_format(data[:FORMAT_HEAD_SIZE])
+    if name in PILLOW_FORMATS:
+        return decode_pillow_image(data, name, max_height)
     buffer = reading_buffer(data)
     reader = format_reader(buffer, data)
     if reader is None:
@@ -216,6 +250,9 @@ def image_size(data: bytes) -> QSize:
     :returns: the size, or an invalid one when the header is not there or is no format
         :func:`image_format` knows.
     """
+    name = image_format(data[:FORMAT_HEAD_SIZE])
+    if name in PILLOW_FORMATS:
+        return pillow_image_size(io.BytesIO(data), name)
     buffer = reading_buffer(data)
     reader = format_reader(buffer, data)
     return reader_image_size(reader) if reader is not None else QSize()
@@ -229,8 +266,56 @@ def image_size_at(path: Path) -> QSize:
     :param path: the file.
     :returns: the size, or an invalid one when it cannot be read or has no header.
     """
+    try:
+        with path.open("rb") as stream:
+            name = image_format(stream.read(FORMAT_HEAD_SIZE))
+            if name in PILLOW_FORMATS:
+                return pillow_image_size(stream, name)
+    except OSError:
+        pass  # the reader below meets the same trouble and answers it with an invalid size
     reader = QImageReader(str(path))
     return reader_image_size(reader)
+
+
+def pillow_image_size(source: BinaryIO, name: bytes) -> QSize:
+    """The pixel size of a :data:`PILLOW_FORMATS` image, as it will be shown (#650).
+
+    :param source: the encoded image, positioned anywhere.
+    :param name: the format :func:`image_format` named.
+    :returns: the size, or an invalid one when Pillow cannot read the header.
+    """
+    try:
+        source.seek(0)
+        with Image.open(source, formats=[PILLOW_FORMATS[name]]) as image:
+            width, height = image.size
+            if image.getexif().get(EXIF_ORIENTATION) in EXIF_QUARTER_TURNS:
+                width, height = height, width
+    except OSError, ValueError, SyntaxError, Image.DecompressionBombError:
+        return QSize()
+    return QSize(width, height)
+
+
+def decode_pillow_image(data: bytes, name: bytes, max_height: int | None) -> QImage:
+    """Decode a :data:`PILLOW_FORMATS` image the way :func:`decode_image` does a Qt one: turned upright
+    by its EXIF orientation, scaled down to ``max_height`` and never up (#650).
+
+    :param data: the encoded image bytes.
+    :param name: the format :func:`image_format` named.
+    :param max_height: the height to scale down to, or ``None`` for full size.
+    :returns: the image, or a null one when Pillow cannot decode the bytes.
+    """
+    try:
+        with Image.open(io.BytesIO(data), formats=[PILLOW_FORMATS[name]]) as source:
+            upright = ImageOps.exif_transpose(source)
+            if max_height is not None and upright.height > max_height:
+                upright = upright.resize(
+                    (round(upright.width * max_height / upright.height), max_height), Image.Resampling.LANCZOS
+                )
+            rgba = upright.convert("RGBA")
+    except OSError, ValueError, SyntaxError, Image.DecompressionBombError:
+        return QImage()
+    # copied: the QImage would otherwise point into the bytes this function is about to drop
+    return QImage(rgba.tobytes(), rgba.width, rgba.height, rgba.width * 4, QImage.Format.Format_RGBA8888).copy()
 
 
 def reader_image_size(reader: QImageReader) -> QSize:

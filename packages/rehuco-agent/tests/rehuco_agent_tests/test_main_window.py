@@ -689,7 +689,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     * construct a real ``MainWindow``
     * verify only "Images", "Locations" and "Roots" have children, the cross-platform pages are all top-level
       rows, and the whole top-level list is sorted case-insensitively
-    * verify "Images" nests exactly Display, Sidecar Extensions and Sidecar Names, in that order
+    * verify "Images" nests exactly Display, Content Extensions and Sidecar Names, in that order
     * verify "Locations" nests one page per installed plugin main key and Root Layout Templates, alphabetically by title
     * verify "Roots" nests New Root Presets and Root Catalog
     """
@@ -723,7 +723,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
 
     images_item = items[titles.index("Images")]
     child_titles = [images_item.child(row).text() for row in range(images_item.rowCount())]
-    assert child_titles == ["Display", "Sidecar Extensions", "Sidecar Names"]
+    assert child_titles == ["Display", "Content Extensions", "Sidecar Names"]
 
     locations_item = items[titles.index("Locations")]
     location_child_titles = [locations_item.child(row).text() for row in range(locations_item.rowCount())]
@@ -820,7 +820,7 @@ def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
 
 @mark.usefixtures("real_settings_pages")
 def test_selecting_the_images_group_stacks_every_block_of_its_three_pages(qtbot: QtBot) -> None:
-    """The "Images" group row shows Display, Sidecar Extensions and Sidecar Names together in one column
+    """The "Images" group row shows Display, Content Extensions and Sidecar Names together in one column
     (#230, #294, #298) -- so the group behaves exactly as the one flat Images page did before the
     split.
 
@@ -856,7 +856,7 @@ def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * filter by a Sidecar Names (screenshot patterns) term, then by a quoted Sidecar Extensions phrase
+    * filter by a Sidecar Names (screenshot patterns) term, then by a quoted Content Extensions phrase
     * verify each time the visible tree is the "Images" row with exactly that one child
     """
     window = MainWindow()
@@ -878,8 +878,8 @@ def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None
     assert visible_titles(QModelIndex()) == ["Images", "Sidecar Names"]
 
     # quoted: as bare words they are all on the Sidecar Names page too (its help text mentions extensions)
-    dialog_ui.filter_edit.setText('"sidecar image extensions"')
-    assert visible_titles(QModelIndex()) == ["Images", "Sidecar Extensions"]
+    dialog_ui.filter_edit.setText('"content image extensions"')
+    assert visible_titles(QModelIndex()) == ["Images", "Content Extensions"]
 
 
 @mark.usefixtures("real_settings_pages")

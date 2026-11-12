@@ -1,5 +1,5 @@
-"""Images / Sidecar Extensions settings page: which files count as one of a resource's sidecar
-images (#222, #294)."""
+"""Images / Content Extensions settings page: which files count as one of a resource's content images, inside
+its archives and loose in its folder (#222, #294, #650)."""
 
 from typing import Final
 

@@ -1277,7 +1277,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         There is no **Plugins** group any more (#277): the four pages a resource type owns --
         Descriptions, Files, Images, Videos -- are top-level rows like the rest, because
         "Videos" is findable by its own name while "Plugins" only hides it behind a word the reader has
-        to know first. The reference-images extension list is a block on Images/Files rather than a
+        to know first. The reference-images extension list is a block on Images/Content Extensions rather than a
         page of its own (#222): a page holding one list, whose subject was images, is what a reader
         looking for images had to know a plugin name to find.
 
@@ -1286,9 +1286,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         **Images was the first group in use** (#294): the grouping overload `add_page` has kept since
         #277 for "the next tree that wants a tier" finally has one. "Images" groups three children --
-        Display, Sidecar Extensions, Sidecar Names -- the first named for how an image is
-        *shown*, the other two for the one bucket the extension list and the naming patterns both
-        describe: a resource's **sidecar images**, the files kept beside it that its thumbnail strip
+        Display, Content Extensions, Sidecar Names -- the first named for how an image is
+        *shown*, the second for which files count as a resource's content images, inside its archives
+        and loose in its folder (#650 renamed it from "Sidecar Extensions": the list never governed the sidecars), the
+        third for a resource's **sidecar images**, the files kept beside it that its thumbnail strip
         curates from and its description references with ``![]()``. "Files"/"Screenshots" and
         "File Extensions"/"File Names" were tried and dropped -- the first pair read as though the
         pages covered every file or the screenshots themselves, the second lost that they are about
@@ -1322,8 +1323,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("Descriptions", DescriptionsPage())
         self.__settings_dialog.add_page("Files", FilesPage())
         self.__settings_dialog.add_page("Identity", IdentityPage())
+        # a group's pages keep the order they are added in: Display stays first, ahead of the alphabet
         self.__settings_dialog.add_page("Images", "Display", ImagesDisplayPage())
-        self.__settings_dialog.add_page("Images", "Sidecar Extensions", ImagesFilesPage())
+        self.__settings_dialog.add_page("Images", "Content Extensions", ImagesFilesPage())
         self.__settings_dialog.add_page("Images", "Sidecar Names", ScreenshotPatternsPage())
         self.__settings_dialog.add_page("Location Replacements", LocationReplacementsPage())
         # one page per *installed* plugin main key, not a fixed enumeration (#322): a plugin declared
