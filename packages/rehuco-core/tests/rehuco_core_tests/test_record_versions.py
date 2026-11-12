@@ -9,6 +9,7 @@ from rehuco_core import (
     ABSENT,
     MetadataDifference,
     canonical_json,
+    details_of,
     merge_users,
     metadata_differences,
     metadata_of,
@@ -181,6 +182,44 @@ def test_the_metadata_text_and_hash_ignore_per_user_fields_and_key_order() -> No
     assert metadata_text(reordered) == metadata_text(data)
     assert metadata_hash(reordered) == metadata_hash(data)
     assert metadata_hash(edited) != metadata_hash(data)
+
+
+def test_the_details_leave_out_a_measures_lengths_and_a_tutorial_block_left_with_nothing_else() -> None:
+    """A Measure's ``videos`` map is no detail (#648): a tutorial block holding nothing else goes with it, one holding
+    other fields keeps them.
+
+    **Test steps:**
+
+    * take the details of a tutorial whose block holds only measured lengths, and of one whose block holds a level too
+    * verify the first has no tutorial block, the second keeps its level without the lengths, the payload untouched
+    """
+    measured = payload()
+    measured["tutorial"]["videos"] = {"a.mp4": {"duration": 60.0}}
+    levelled = copy.deepcopy(measured)
+    levelled["tutorial"]["level"] = ["beginner"]
+
+    assert "tutorial" not in details_of(measured)
+    assert details_of(levelled)["tutorial"] == {"format_version": 2, "level": ["beginner"]}
+    assert levelled["tutorial"]["videos"] == {"a.mp4": {"duration": 60.0}}
+
+
+def test_the_metadata_hash_and_differences_ignore_a_measures_lengths() -> None:
+    """A save is refused, and a conflict lists rows, only for details: lengths a Measure wrote meanwhile are neither
+    (#648), while a detail edit still is.
+
+    **Test steps:**
+
+    * build a payload, a copy with measured lengths, and a copy with another description
+    * verify the hash is the same across the lengths and moves with the description, and the lengths are no difference
+    """
+    data = payload(description="one")
+    measured = copy.deepcopy(data)
+    measured["tutorial"]["videos"] = {"a.mp4": {"duration": 60.0}}
+    edited = payload(description="two")
+
+    assert metadata_hash(measured) == metadata_hash(data)
+    assert metadata_hash(edited) != metadata_hash(data)
+    assert not metadata_differences(data, data, measured)
 
 
 # endregion

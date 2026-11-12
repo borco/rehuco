@@ -17,7 +17,7 @@ from ..tc_conversion import convert_tc
 from ..tc_document import load_tc
 from ..tc_screenshots import ScreenshotNamePattern
 from ..user_sidecars import user_sidecar_paths
-from ..watch_progress import WatchRules, forget_progress, record_notes, record_progress, record_videos
+from ..watch_progress import WatchRules, forget_progress, record_notes, record_progress, record_videos, take_videos
 from .keys import ResourceKey
 from .record_ops import FileSignature, LoadedRecord, RecordConflict, SavedRecord
 
@@ -116,6 +116,8 @@ class Records:
                     users_merged = self.__merge_theirs(
                         document, theirs, base, username=username, overwrite=overwrite, dropped=dropped
                     )
+                # a Measure's lengths are the file's: one that landed after this save's snapshot is kept, not undone
+                take_videos(document, theirs[0])
                 # whether this write changes the resource is a question about the file, not about the document's own
                 # baseline: another writer may have moved the file on, and a conflict resolved against the file is
                 # saved with the conflict's version, so the file reads as unchanged since the read

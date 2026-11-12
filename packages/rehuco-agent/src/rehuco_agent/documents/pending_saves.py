@@ -286,14 +286,22 @@ class PendingSaves(QObject):
         -- a Save pressed after that save landed but before its document heard so, which would otherwise be checked
         against the version the landing replaced and refused as a conflict with its own record's save.
 
+        **Only a document that has not moved since is moved**: one still based on what it handed that save. A document
+        based on anything else went on by another road after the landing -- it heard it, then saved inline for a
+        rename, or read the file again -- so its snapshot is newer than that save and is written as it is: moved back
+        onto the landing, it would be checked against a version the file has left behind, and refused (#648).
+
         :param payload: the new Save.
         :param job: the record's last save row's job, if it has one.
         :returns: what the new save writes.
         """
         if not isinstance(job, SaveRecordJob):
             return payload
-        result, written = job.result, job.payload
-        if result is None or written is None or payload.base == result.version:
+        result, written, handed = job.result, job.payload, job.handed
+        if result is None or written is None or handed is None:
+            return payload
+        if payload.base != handed.base or payload.base == result.version:
+            # moved on since, or the landing left the file's version as it found it: nothing to move onto
             return payload
         return rebase_payload(payload, written, result)
 

@@ -14,6 +14,7 @@ with :func:`forget_progress`, so everything a user keeps about one video is that
 (:func:`video_data_keys`).
 """
 
+import copy
 import logging
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -23,16 +24,13 @@ from typing import Any, Final
 from .constants import EXCLUDED_FILE_PATTERNS, VIDEO_EXTENSIONS
 from .content_keys import content_key, content_path, is_valid_content_key
 from .natural_sort import natural_path_sort_key
-from .plugins import DEFAULT_CURRENT_USERNAME, DEFAULT_PLUGIN_REGISTRY, TUTORIAL_PLUGIN, PluginRegistry
+from .plugins import DEFAULT_CURRENT_USERNAME, DEFAULT_PLUGIN_REGISTRY, TUTORIAL_PLUGIN, VIDEOS_KEY, PluginRegistry
 from .record_merge import merge_write
 from .rehu_content_duration import DURATION_KEY, VideoFacts, content_video_files, finite_seconds
 from .rehu_content_files import ContentUnreachableError
 from .rehu_document import RehuDocument
 
 LOG: Final = logging.getLogger(__name__)
-
-VIDEOS_KEY: Final = "videos"
-"""The tutorial block's shared map of measured lengths, by content key."""
 
 PROGRESS_KEY: Final = "progress"
 """A user's submap key holding their progress entries, by content key."""
@@ -171,6 +169,23 @@ def set_videos(document: RehuDocument, measured: Mapping[str, VideoFacts]) -> No
         document.remove_active_field(VIDEOS_KEY)
         return
     document.set_active_field(VIDEOS_KEY, {key: measured[key].to_stored() for key in sorted(measured)})
+
+
+def take_videos(document: RehuDocument, source: RehuDocument) -> None:
+    """Give ``document`` the ``videos`` map ``source`` holds, as it is there -- what a save does with the file's: a
+    Measure writes the map on its own and no save edits it, so the file's is the one to keep (#648). Nothing changes
+    unless both are tutorials.
+
+    :param document: what is about to be written, changed in place.
+    :param source: the record on disk now.
+    """
+    if document.active_block_key != TUTORIAL_PLUGIN.key or source.active_block_key != TUTORIAL_PLUGIN.key:
+        return
+    measured = source.active_field(VIDEOS_KEY)
+    if measured is None:
+        document.remove_active_field(VIDEOS_KEY)
+    else:
+        document.set_active_field(VIDEOS_KEY, copy.deepcopy(measured))
 
 
 def read_progress(document: RehuDocument, username: str) -> dict[str, ProgressEntry]:

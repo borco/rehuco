@@ -31,6 +31,7 @@ from .plugin_registry import (
     RESOURCE_FIELD_NAMES,
     TUTORIAL_FIELD_NAMES,
     TUTORIAL_PLUGIN,
+    VIDEOS_KEY,
     PluginRegistry,
 )
 from .plugin_spec import PluginSpec
@@ -50,6 +51,7 @@ __all__ = [
     "TUTORIAL_FIELD_NAMES",
     "TUTORIAL_PLUGIN",
     "USERS_KEY",
+    "VIDEOS_KEY",
     "PluginRegistry",
     "PluginSpec",
 ]

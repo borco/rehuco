@@ -59,6 +59,9 @@ READ_VERSION: Final = RecordVersion("meta", "read", ())
 SAVED_BASE: Final = RecordVersion("meta", "saved-base", ())
 """The version a restored save was snapshotted against -- not the open document's."""
 
+MOVED_ON_VERSION: Final = RecordVersion("meta-moved-on", "moved-on", ())
+"""The version of a document that went on after its record's save landed: saved inline, or read again."""
+
 RENAMED_SOURCE: Final = Path(Path.cwd().anchor) / "media" / "renamed" / "renamed.rehu"
 """Where the record under test went, renamed in the app."""
 
@@ -435,22 +438,29 @@ def test_a_save_after_a_landed_or_cancelled_row_is_a_new_job(rig: Rig, parent: Q
     assert rig.owner.key_of(first) is None
 
 
-@mark.parametrize(("base", "rebased"), [(READ_VERSION, True), (outcome().version, False)], ids=["unheard", "heard"])
-def test_a_save_after_a_landed_row_is_moved_onto_what_it_wrote_unless_already_based_on_it(
+@mark.parametrize(
+    ("base", "rebased"),
+    [(READ_VERSION, True), (outcome().version, False), (MOVED_ON_VERSION, False)],
+    ids=["unheard", "heard", "moved-on"],
+)
+def test_a_save_after_a_landed_row_is_moved_onto_what_it_wrote_only_while_based_on_what_it_was_handed(
     rig: Rig, parent: QWidget, mocker: MockerFixture, base: RecordVersion, rebased: bool
 ) -> None:
     """A Save made after the record's last save landed but before its document heard so is still based on the version
     that landing replaced: it is moved onto what was written, rather than refused as a conflict with its own record's
-    save. One already based on what was written is queued as it is.
+    save. One already based on what was written is queued as it is -- and so is one based on a version newer still,
+    of a document that went on by another road since (an inline save for a rename, the file read again): moved back
+    onto the landing it would be checked against a version the file has left, and refused (#648).
 
     **Test steps:**
 
     * save once, and land the row
-    * save again, the snapshot based on the version before the landing, or on the one it wrote
+    * save again, the snapshot based on the version before the landing, on the one it wrote, or on a later one
     * verify the new job holds the snapshot moved onto the landed save's payload and outcome only in the first case
     """
     moved = payload_of({"core": {"title": "Moved"}})
     rebase = mocker.patch.object(module, "rebase_payload", return_value=moved)
+    rig.model.snapshot.return_value = payload_of(base=READ_VERSION)
     rig.owner.save(parent, rig.model)
     first = rig.serial_of_save()
     rig.land(first)
