@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["rehuco", "resource-management", "rehu", "pyside6", "qt", "desktop", "gui"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: End Users/Desktop",
     "Environment :: X11 Applications :: Qt",
     "Operating System :: OS Independent",

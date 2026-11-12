@@ -15,8 +15,8 @@
 | [borco-core](https://pypi.org/project/borco-core/) | [![PyPI](https://img.shields.io/pypi/v/borco-core)](https://pypi.org/project/borco-core/) | [![Downloads](https://static.pepy.tech/badge/borco-core)](https://pepy.tech/project/borco-core) | [![Python](https://img.shields.io/pypi/pyversions/borco-core)](https://pypi.org/project/borco-core/) | [changelog](packages/borco-core/CHANGELOG.md) |
 | [borco-pyside](https://pypi.org/project/borco-pyside/) | [![PyPI](https://img.shields.io/pypi/v/borco-pyside)](https://pypi.org/project/borco-pyside/) | [![Downloads](https://static.pepy.tech/badge/borco-pyside)](https://pepy.tech/project/borco-pyside) | [![Python](https://img.shields.io/pypi/pyversions/borco-pyside)](https://pypi.org/project/borco-pyside/) | [changelog](packages/borco-pyside/CHANGELOG.md) |
 
-Every package is at an early stage — published so the names are taken and the release plumbing is
-exercised, not because they are ready to depend on.
+**Alpha.** The app is in daily use on a real library, but the file formats and the packages' APIs still change
+between releases, sometimes with no migration, so keep backups of anything you point it at.
 
 ## Install
 
@@ -27,8 +27,6 @@ The desktop app, `rehuco-agent`, is the only program here. Either:
   macOS Gatekeeper will ask you to confirm the first launch.
 - **Or install from PyPI** (Python 3.14+): `pip install rehuco-agent`, or `uv tool install rehuco-agent`, then run
   `rehuco-agent`.
-
-The `.rehu` format is still moving, so keep backups of anything you point it at.
 
 ## What it is
 
@@ -63,8 +61,6 @@ the rules that keep it trustworthy, the app's panels, and what isn't built.
   VLC installed, a Settings choice has that same dock decode with VLC's own library instead, which plays both.
 - **Checks its files.** Generates and verifies checksums for one resource or a whole folder, remembering
   when each file was last checked so a re-run skips what is still fresh.
-- **Converts legacy `.tc` catalogs.** One file or a whole folder tree at once: reads the older format,
-  writes `.rehu`, and keeps backups it can roll back if the conversion goes wrong.
 - **Works in the background.** Checksums, imports and scrapes run on a task queue you can pause,
   reorder and cancel, with a log beside it.
 - **Catalogs your folders.** A `.rehuco` file names the folders to catalog; a scan records every `.rehu` under them in
@@ -84,22 +80,16 @@ the rules that keep it trustworthy, the app's panels, and what isn't built.
 Self-describing by design: because the details sit next to the content, reading a resource needs
 nothing but the folder it's in — no index to build first, no server, no account.
 
-Tested on Windows, macOS, and Linux.
+Developed and used daily on Windows; CI runs the tests on Windows, macOS and Linux.
 
 ## Where it's going
 
-What's left of the editor is small: a page image picker (a scraping helper, not an editor feature).
-
-What's left of the catalog is filed in the [implementation plan](docs/specs/implementation-plan.md).
-
-Past that the design reaches further — web pages and long jobs served by the node, offline borrowing between
-machines, multi-user access, a browser interface, Daz3D library migration. None of it is implemented, none of
-it is scheduled, and some of it may never be: it is what the architecture is shaped to allow, and each piece has
-to earn its place when its turn comes. The [design specs](docs/specs/README.md) explore that territory in depth —
-as intent, not as a description of the current build.
-
-Maintenance is tracked separately under the **`audit`** label — it collects the issues found during a
-codebase audit, one sweep at a time.
+- **Planned work:** the [implementation plan](docs/specs/implementation-plan.md), by feature family, and the
+  [release milestones](https://github.com/borco/rehuco/milestones).
+- **Not built yet:** [what does not exist yet](docs/specs/how-it-works.md#what-does-not-exist-yet), kept current
+  with the build.
+- **The design:** the [design specs](docs/specs/README.md) describe the system the architecture is shaped to allow —
+  as intent, not as a description of the current build.
 
 ## Monorepo layout
 
@@ -108,7 +98,7 @@ rehuco/                       # uv virtual-workspace root (no [project] table)
 ├── packages/
 │   ├── borco-core/           # generic non-GUI utilities — temporary guest, moving out
 │   ├── borco-pyside/         # generic PySide widgets/utilities — temporary guest, moving out
-│   ├── rehuco-core/          # shared models, .rehu I/O, .rehuco and .rehudb cache, legacy .tc reading
+│   ├── rehuco-core/          # shared models, .rehu I/O, .rehuco and .rehudb cache
 │   ├── rehuco-agent/         # PySide6 desktop GUI — the viewer/editor and catalog browser
 │   └── rehuco-node/          # the local node: a process the agent runs beside itself
 ├── docs/specs/               # design specs (see the document map)

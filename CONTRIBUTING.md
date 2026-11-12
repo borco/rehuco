@@ -27,6 +27,9 @@ assistance. **These labels are not an invitation for outside contributors to sub
 against them.** Since PRs are disabled, this is moot for now, but it's worth stating
 plainly for anyone browsing the issue tracker.
 
+Maintenance is tracked separately under the `audit` label: it collects the issues found during a
+codebase audit, one sweep at a time.
+
 ## Before assuming an issue is "easy"
 
 Please don't assume an issue is trivial just because it reads as short or
