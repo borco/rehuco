@@ -8,6 +8,8 @@ from rehuco_core import (
     EMPTY_GROUP_PROBLEM,
     KNOWN_PLACEHOLDERS,
     MALFORMED_PATTERN_PROBLEM,
+    PLACEHOLDERS,
+    PLUGIN_PLACEHOLDERS,
     STRAY_GROUP_MARKER_PROBLEM,
     UNKNOWN_PLACEHOLDER_PROBLEM,
     LocationPattern,
@@ -244,3 +246,16 @@ def test_location_values_spell_a_records_fields_as_placeholders() -> None:
 
 
 # endregion
+
+
+def test_placeholders_list_every_placeholder_once_in_display_order() -> None:
+    """``PLACEHOLDERS`` is the known four and the plugin ones, each once (#637).
+
+    **Test steps:**
+
+    * read ``PLACEHOLDERS``
+    * verify it has no repeat, equals the known and plugin names together, and starts with the title
+    """
+    assert len(set(PLACEHOLDERS)) == len(PLACEHOLDERS)
+    assert set(PLACEHOLDERS) == KNOWN_PLACEHOLDERS | PLUGIN_PLACEHOLDERS.keys()
+    assert PLACEHOLDERS[0] == "title"

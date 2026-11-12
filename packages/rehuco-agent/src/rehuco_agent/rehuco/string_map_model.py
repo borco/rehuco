@@ -4,7 +4,7 @@
 # because they are the same contract `ItemListEditor` drives every list model through.
 # pylint: disable=duplicate-code
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
@@ -33,6 +33,12 @@ class StringMapModel(QAbstractTableModel):
     **A row whose key is empty, or repeats an earlier row's, is flagged, never refused**: its key cell is coloured and
     says why in a tooltip, and :attr:`mapping` leaves it out, so a typo is fixed in place rather than retyped.
 
+    **A value can be flagged too** (#637): once :meth:`set_value_problem` is given a check, a row whose value it faults
+    has its value cell coloured with the reason as its tooltip, and is still kept.
+
+    **The keys can be fixed** (:meth:`set_fixed_keys`): one row per key, in that order, the key column read-only, no row
+    added, removed or reset, and a row with an empty value left out of :attr:`mapping`.
+
     **Also an `ItemEditor`/`ItemOrderingEditor`** (structurally, as `LocationReplacementsModel` is): the order is only
     how the rows are shown, since a map has none.
 
@@ -48,6 +54,8 @@ class StringMapModel(QAbstractTableModel):
         self.__titles = titles
         self.__entries: list[tuple[str, str]] = []
         self.__defaults: dict[str, str] = {}
+        self.__fixed_keys: tuple[str, ...] | None = None
+        self.__value_problem: Callable[[str, str], str] | None = None
         self.rowsInserted.connect(self.count_changed)
         self.rowsRemoved.connect(self.count_changed)
         self.modelReset.connect(self.count_changed)
@@ -62,19 +70,47 @@ class StringMapModel(QAbstractTableModel):
         """The map the rows make: every row with a key, the first of rows sharing one."""
         result: dict[str, str] = {}
         for key, value in self.__entries:
-            if key and key not in result:
+            if key and key not in result and (value or self.__fixed_keys is None):
                 result[key] = value
         return result
+
+    @property
+    def fixed_keys(self) -> tuple[str, ...] | None:
+        """The keys the rows are fixed to, or ``None`` when rows are added and removed freely."""
+        return self.__fixed_keys
+
+    def set_value_problem(self, value_problem: Callable[[str, str], str] | None) -> None:
+        """Flag values by this check, repainting every row shown.
+
+        :param value_problem: why a row's value is unusable, given its key and value, ``""`` when it is fine; ``None``
+            flags nothing.
+        """
+        self.__value_problem = value_problem
+        if self.__entries:
+            self.dataChanged.emit(self.index(0, VALUE_COLUMN), self.index(len(self.__entries) - 1, VALUE_COLUMN))
+
+    def set_fixed_keys(self, keys: Sequence[str]) -> None:
+        """Fix the rows to these keys, each with an empty value until :meth:`set_mapping` fills it.
+
+        :param keys: the keys, in row order.
+        """
+        self.beginResetModel()
+        self.__fixed_keys = tuple(keys)
+        self.__entries = [(key, "") for key in self.__fixed_keys]
+        self.endResetModel()
 
     def set_mapping(self, mapping: Mapping[str, str]) -> None:
         """Replace every row with the map's entries, as one model reset, unless the rows are those entries already.
 
         :param mapping: the map to show.
         """
-        if list(mapping.items()) == self.__entries:
+        entries = (
+            list(mapping.items()) if self.__fixed_keys is None else [(k, mapping.get(k, "")) for k in self.__fixed_keys]
+        )
+        if entries == self.__entries:
             return
         self.beginResetModel()
-        self.__entries = list(mapping.items())
+        self.__entries = entries
         self.endResetModel()
 
     def set_titles(self, titles: tuple[str, str]) -> None:
@@ -101,6 +137,8 @@ class StringMapModel(QAbstractTableModel):
         :returns: the reason, or ``""`` for a row that counts.
         """
         key = self.__entries[row][0]
+        if self.__fixed_keys is not None:
+            return ""
         if not key:
             return "No key: this row is ignored."
         if any(other == key for other, _ in self.__entries[:row]):
@@ -125,7 +163,7 @@ class StringMapModel(QAbstractTableModel):
         :param at: the row to copy; a negative row is a no-op.
         :returns: the copy's row, or ``at`` when nothing was copied.
         """
-        if at < 0:
+        if at < 0 or self.__fixed_keys is not None:
             return at
         target = at + 1
         self.beginInsertRows(QModelIndex(), target, target)
@@ -139,10 +177,12 @@ class StringMapModel(QAbstractTableModel):
         :param at: the row to drop; a negative row is a no-op.
         """
         if at >= 0:
-            self.removeRow(at)
+            self.removeRow(at)  # a fixed set of keys refuses
 
     def reset(self) -> None:
-        """Put :attr:`defaults` back -- the `ItemEditor` contract."""
+        """Put :attr:`defaults` back -- the `ItemEditor` contract; a fixed set of keys has none."""
+        if self.__fixed_keys is not None:
+            return
         self.beginResetModel()
         self.__entries = list(self.__defaults.items())
         self.endResetModel()
@@ -220,7 +260,10 @@ class StringMapModel(QAbstractTableModel):
     def flags(self, index: ModelIndex) -> Qt.ItemFlag:
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable
+        flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        if self.__fixed_keys is None or index.column() == VALUE_COLUMN:
+            flags |= Qt.ItemFlag.ItemIsEditable
+        return flags
 
     @override
     def data(self, index: ModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
@@ -229,9 +272,11 @@ class StringMapModel(QAbstractTableModel):
         key, value = self.__entries[index.row()]
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             return key if index.column() == KEY_COLUMN else value
-        if index.column() != KEY_COLUMN:
-            return None
-        reason = self.problem(index.row())
+        reason = (
+            self.problem(index.row())
+            if index.column() == KEY_COLUMN
+            else (self.__value_problem(key, value) if self.__value_problem is not None else "")
+        )
         if role == Qt.ItemDataRole.ToolTipRole:
             return reason or None
         if role == Qt.ItemDataRole.ForegroundRole and reason:
@@ -260,7 +305,7 @@ class StringMapModel(QAbstractTableModel):
 
     @override
     def insertRows(self, row: int, count: int, parent: ModelIndex = QModelIndex()) -> bool:  # noqa: N802
-        if parent.isValid() or count < 1 or not 0 <= row <= len(self.__entries):
+        if self.__fixed_keys is not None or parent.isValid() or count < 1 or not 0 <= row <= len(self.__entries):
             return False
         self.beginInsertRows(QModelIndex(), row, row + count - 1)
         self.__entries[row:row] = [("", "")] * count  # pylint: disable=unsupported-assignment-operation
@@ -269,7 +314,12 @@ class StringMapModel(QAbstractTableModel):
 
     @override
     def removeRows(self, row: int, count: int, parent: ModelIndex = QModelIndex()) -> bool:  # noqa: N802
-        if parent.isValid() or count < 1 or not 0 <= row <= len(self.__entries) - count:
+        if (
+            self.__fixed_keys is not None
+            or parent.isValid()
+            or count < 1
+            or not 0 <= row <= len(self.__entries) - count
+        ):
             return False
         self.beginRemoveRows(QModelIndex(), row, row + count - 1)
         del self.__entries[row : row + count]  # pylint: disable=unsupported-delete-operation

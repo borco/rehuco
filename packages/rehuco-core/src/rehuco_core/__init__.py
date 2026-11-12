@@ -145,6 +145,7 @@ from .location_pattern import (
     EMPTY_GROUP_PROBLEM,
     KNOWN_PLACEHOLDERS,
     MALFORMED_PATTERN_PROBLEM,
+    PLACEHOLDERS,
     PLUGIN_PLACEHOLDERS,
     STRAY_GROUP_MARKER_PROBLEM,
     UNKNOWN_PLACEHOLDER_PROBLEM,
@@ -383,7 +384,15 @@ from .resource_scoping import (
     resource_path,
 )
 from .root_candidates import CandidateKind, RootCandidate, RootPick, RootPlanner
-from .root_destination import RecordNaming, Refusal, destination, layout_template
+from .root_destination import (
+    RecordNaming,
+    Refusal,
+    destination,
+    layout_placeholders,
+    layout_template,
+    layout_template_problem,
+    render_layout,
+)
 from .root_folders import RootFolderLister
 from .root_location import (
     LOCAL_SERVER,
@@ -778,6 +787,7 @@ __all__ = [
     "NoteLine",
     "ORGANIZATION_FOLDER_NAME",
     "OverridableDeleter",
+    "PLACEHOLDERS",
     "PLUGIN_PLACEHOLDERS",
     "PROBE_FLAG",
     "PROGRESS_UNIT_BYTES",
@@ -997,7 +1007,9 @@ __all__ = [
     "is_user_sidecar_name",
     "is_valid_content_key",
     "known_placeholders_for",
+    "layout_placeholders",
     "layout_template",
+    "layout_template_problem",
     "learning_path_records_by_scope",
     "learning_path_ref",
     "legacy_manifest_candidates",
@@ -1080,6 +1092,7 @@ __all__ = [
     "remove_empty_parents",
     "remove_leftovers",
     "rename_rehu_resource",
+    "render_layout",
     "render_location_pattern",
     "renumber_screenshots",
     "resolve_location",

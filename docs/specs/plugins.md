@@ -670,8 +670,16 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   The **Name** is the label, which nothing on disk follows: saved as typed when the field is left, even empty -- the
   column then shows where the root is -- and shown in the column while it is typed; a button beside the field gives
   the root its default name, the one it was added with, which is also the empty field's placeholder. The
-  **Layouts** and **Fallbacks** are two tables, the type picked from `*` and the installed types or typed; each edit
-  is written to the root's file at once, and a row with no key, or a key an earlier row has, is flagged and left out.
+  **Layouts** and **Fallbacks** are two tables (#637); each edit is written to the root's file at once. In **Layouts**
+  the type is picked from `*` and the installed types or typed, and a row with no key, or a key an earlier row has, is
+  flagged and left out; the **Path template** is an editable drop-down of `*` and the Root Layout Templates of the
+  settings ([[appendices.settings-pages#category-groups]]) that the row's type accepts -- `*` standing for any type,
+  so only the four placeholders every type has -- or typed. A template the row's type cannot use is shown in the
+  warning colour with the reason as its tooltip, and saved as typed; the file keeps the template's text, so editing
+  the library later changes no root. **Fallbacks** is a fixed table, one row for each of the five placeholders
+  a template may use -- `title`, `publisher`, `authors`, `year`, `count` -- only *When empty* editable, no row
+  added, duplicated or removed, an empty one not written, and as wide as the table above. The same editor serves the
+  New Root Presets page and the Add Roots dialog's *New layout…*.
   A root whose file cannot be read, or a catalog open read-only, offers no edit. **A root this machine has not mapped**
   is listed in its place, greyed, with one row saying so, never read; its **Map…** action (the root's menu and its
   details pane) asks for the folder, and the *Map roots* question opens with the catalog for the roots nobody has
@@ -789,7 +797,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     the Checksums dock's *Verify Old*. **Verify checksums** beside it checks every file whatever its last check was.
     A screenshot or a checksum file never offers *Create rehu*: it belongs to a record already, and its associated
     rehu is that record.
-  - **Automatically preview the current rehu** (the `Root Catalog` menu and the Root Catalog settings page, one
+  - **Automatically preview the current rehu** (the `Root Catalog` menu and the Roots › Root Catalog settings page, one
     setting) lets the Roots view's current row drive the Documents preview. Off, the preview stays where it is; the
     table browsers' selection is not governed by it.
 - **A selection shows in the Documents preview** (#381). The browsers and the Roots view get no document sub-docks of

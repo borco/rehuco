@@ -9,14 +9,19 @@ from uuid import uuid4
 
 from pytest import mark, param
 from rehuco_core import (
+    DEFAULT_PLUGIN_REGISTRY,
     KNOWN_PLACEHOLDERS,
+    LocationPattern,
     RecordNaming,
     Refusal,
     RehucoRoot,
     RehuDocument,
     ReplacementRule,
     destination,
+    layout_placeholders,
     layout_template,
+    layout_template_problem,
+    render_layout,
 )
 
 AUTHORS_THEN_TITLE: Final = "{authors}/{title}{{ [{year}]}}"
@@ -276,3 +281,59 @@ def test_a_type_takes_its_own_template_else_the_star_one_else_none() -> None:
     assert layout_template(root(layouts), "tutorial") == "{title}"
     assert layout_template(root(layouts), "reference_images") == "{authors}/*"
     assert layout_template(root({"tutorial": "{title}"}), "reference_images") is None
+
+
+@mark.parametrize("template", ["*", " * ", "{authors}/{title}", "{title}{{ [{year}]}}"])
+def test_a_usable_template_has_no_problem(template: str) -> None:
+    """``*`` and a template naming only known placeholders have no problem (#637).
+
+    **Test steps:**
+
+    * ask for the problem of each template under the base placeholders
+    * verify each is empty
+    """
+    assert layout_template_problem(template, KNOWN_PLACEHOLDERS) == ""
+
+
+@mark.parametrize("template", ["{author}/{title}", "{count}", "{title", ""])
+def test_an_unusable_template_says_why(template: str) -> None:
+    """A typo, a placeholder the type lacks, an unbalanced brace and a blank each have a problem (#637).
+
+    **Test steps:**
+
+    * ask for the problem of each template under the base placeholders
+    * verify each is the grammar's own problem for it
+    """
+    assert (
+        layout_template_problem(template, KNOWN_PLACEHOLDERS) == LocationPattern(template, KNOWN_PLACEHOLDERS).problem
+    )
+    assert layout_template_problem(template, KNOWN_PLACEHOLDERS)
+
+
+def test_star_takes_the_base_placeholders_and_a_type_takes_its_own() -> None:
+    """``*`` may name the base four; ``reference_images`` also ``{count}``; ``tutorial`` does not (#637).
+
+    **Test steps:**
+
+    * ask the registry for the placeholders of ``*``, ``tutorial`` and ``reference_images``
+    * verify the base four, the base four, and the base four with ``count``
+    """
+    registry = DEFAULT_PLUGIN_REGISTRY
+
+    assert layout_placeholders("*", registry) == KNOWN_PLACEHOLDERS
+    assert layout_placeholders("tutorial", registry) == KNOWN_PLACEHOLDERS
+    assert layout_placeholders("reference_images", registry) == KNOWN_PLACEHOLDERS | {"count"}
+
+
+def test_render_layout_gives_none_for_a_level_that_renders_to_nothing() -> None:
+    """A level with no name has no path (#637).
+
+    **Test steps:**
+
+    * render ``{authors}/{title}`` with empty authors and no fallback, and ``{title}`` with a title
+    * verify ``None`` for the first, and the title as one level for the second
+    """
+    values = {name: "" for name in (*KNOWN_PLACEHOLDERS, "count")} | {"title": "Intro"}
+
+    assert render_layout(LocationPattern("{authors}/{title}", KNOWN_PLACEHOLDERS), values, {}, ()) is None
+    assert render_layout(LocationPattern("{title}", KNOWN_PLACEHOLDERS), values, {}, ()) == PurePosixPath("Intro")

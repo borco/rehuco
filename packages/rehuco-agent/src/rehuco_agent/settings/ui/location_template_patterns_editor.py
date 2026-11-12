@@ -5,7 +5,7 @@
 # whichever domain it holds ([[appendices.settings-pages]])
 # pylint: disable=duplicate-code
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final
 
 from borco_pyside.widgets import ContentSizedTableView, ItemListEditor
@@ -84,6 +84,19 @@ class LocationTemplatePatternsEditor(ItemListEditor):
         """
         self.__model.defaults = defaults
         self.item_actions.reset_action.setVisible(bool(self.__model.defaults))
+
+    @property
+    def refused(self) -> dict[str, str]:
+        """Patterns flagged whatever the grammar says of them, each with why (#637)."""
+        return self.__model.refused
+
+    @refused.setter
+    def refused(self, refused: Mapping[str, str]) -> None:
+        """Set the patterns to flag -- the owning page's job, once, before rows are loaded.
+
+        :param refused: each pattern and the reason its row shows.
+        """
+        self.__model.refused = refused
 
     @property
     def known_placeholders(self) -> frozenset[str]:

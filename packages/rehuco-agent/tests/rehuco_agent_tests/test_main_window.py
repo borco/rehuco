@@ -675,8 +675,8 @@ def test_the_videos_page_link_shows_the_tools_page(qtbot: QtBot) -> None:
 
 
 def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
-    """Every page is a top-level row, except the ones grouped under "Images" (#277, #294, #298) and
-    "Locations" (#322), and the rows are in alphabetical order.
+    """Every page is a top-level row, except the ones grouped under "Images" (#277, #294, #298), "Locations" (#322)
+    and "Roots" (#637), and the rows are in alphabetical order.
 
     The pages that used to nest under "Plugins" are among the top-level ones, so a reader looking for
     "Videos" no longer has to know it is a plugin's setting to find it. Order is registration order
@@ -687,10 +687,11 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify only "Images" and "Locations" have children, the cross-platform pages are all top-level
+    * verify only "Images", "Locations" and "Roots" have children, the cross-platform pages are all top-level
       rows, and the whole top-level list is sorted case-insensitively
     * verify "Images" nests exactly Display, Sidecar Extensions and Sidecar Names, in that order
-    * verify "Locations" nests one page per installed plugin main key, alphabetically by title
+    * verify "Locations" nests one page per installed plugin main key and Root Layout Templates, alphabetically by title
+    * verify "Roots" nests New Root Presets and Root Catalog
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -699,7 +700,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     items = [model.item(row) for row in range(model.rowCount())]
     titles = [item.text() for item in items]
-    grouped_row_counts = {"Images": 3, "Locations": len(DEFAULT_PLUGIN_REGISTRY.main_keys)}
+    grouped_row_counts = {"Images": 3, "Locations": len(DEFAULT_PLUGIN_REGISTRY.main_keys) + 1, "Roots": 2}
     assert [item.rowCount() for item in items] == [grouped_row_counts.get(title, 0) for title in titles]
     assert set(titles) >= {
         "Checksums",
@@ -709,6 +710,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
         "Images",
         "Locations",
         "Logs",
+        "Roots",
         "Session",
         "Shortcuts",
         "Tasks",
@@ -725,7 +727,13 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
 
     locations_item = items[titles.index("Locations")]
     location_child_titles = [locations_item.child(row).text() for row in range(locations_item.rowCount())]
-    assert location_child_titles == ["Collections", "Reference Images", "Tutorials"]
+    assert location_child_titles == ["Collections", "Reference Images", "Root Layout Templates", "Tutorials"]
+
+    roots_item = items[titles.index("Roots")]
+    assert [roots_item.child(row).text() for row in range(roots_item.rowCount())] == [
+        "New Root Presets",
+        "Root Catalog",
+    ]
 
 
 @mark.usefixtures("real_settings_pages")
@@ -740,7 +748,7 @@ def test_a_plugin_this_build_does_not_ship_still_gets_its_own_locations_page(
 
     * swap ``DEFAULT_PLUGIN_REGISTRY`` for one carrying today's three plugins plus a made-up fourth
     * construct a real ``MainWindow``
-    * verify the Locations group now nests a fourth page, alphabetically placed by its display title
+    * verify the Locations group now nests a page for it, alphabetically placed by its display title
     """
     extra_registry = PluginRegistry((*DEFAULT_PLUGIN_REGISTRY, PluginSpec(("daz3d",), color="#5D4037")))
     mocker.patch.object(main_window, "DEFAULT_PLUGIN_REGISTRY", extra_registry)
@@ -755,7 +763,7 @@ def test_a_plugin_this_build_does_not_ship_still_gets_its_own_locations_page(
     locations_item = items[titles.index("Locations")]
     location_child_titles = [locations_item.child(row).text() for row in range(locations_item.rowCount())]
 
-    assert location_child_titles == ["Collections", "Daz3Ds", "Reference Images", "Tutorials"]
+    assert location_child_titles == ["Collections", "Daz3Ds", "Reference Images", "Root Layout Templates", "Tutorials"]
 
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]

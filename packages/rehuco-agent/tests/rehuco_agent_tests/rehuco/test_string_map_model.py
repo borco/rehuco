@@ -1,4 +1,4 @@
-"""Tests for StringMapModel: a ``str -> str`` map as editable rows of a key and a value (#578)."""
+"""Tests for StringMapModel: a ``str -> str`` map as editable rows of a key and a value (#578, #637)."""
 
 from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QBrush
@@ -165,3 +165,84 @@ def test_renaming_the_columns_says_so(qtbot: QtBot, model: StringMapModel) -> No
         model.set_titles(("Placeholder", "When empty"))
 
     assert model.headerData(1, Qt.Orientation.Horizontal) == "When empty"
+
+
+def test_a_value_the_checker_faults_is_coloured_with_its_reason_and_kept(model: StringMapModel) -> None:
+    """With a value checker set, a faulted value shows a warning colour and the reason as a tooltip, on the value cell
+    only, and the row still counts (#637).
+
+    **Test steps:**
+
+    * set a checker that faults the value ``{title}`` with a reason, and read the roles of both value cells
+    * verify the faulted one has the colour and the reason, the other neither, and the map unchanged
+    * clear the checker and verify nothing is flagged
+    """
+    model.set_value_problem(lambda key, value: f"{key} cannot use {value}" if value == "{title}" else "")
+
+    faulted, fine = model.index(1, VALUE_COLUMN), model.index(0, VALUE_COLUMN)
+    assert isinstance(faulted.data(Qt.ItemDataRole.ForegroundRole), QBrush)
+    assert faulted.data(Qt.ItemDataRole.ToolTipRole) == "tutorial cannot use {title}"
+    assert fine.data(Qt.ItemDataRole.ForegroundRole) is None
+    assert fine.data(Qt.ItemDataRole.ToolTipRole) is None
+    assert model.mapping == {"*": "*", "tutorial": "{title}"}
+
+    model.set_value_problem(None)
+    assert faulted.data(Qt.ItemDataRole.ForegroundRole) is None
+
+
+def test_a_changed_checker_is_announced_for_every_value(qtbot: QtBot, model: StringMapModel) -> None:
+    """Rows already shown are repainted when the checker changes (#637).
+
+    **Test steps:**
+
+    * set a checker and verify the data changed over the value column
+    """
+    with qtbot.waitSignal(model.dataChanged):
+        model.set_value_problem(lambda _key, _value: "")
+
+
+def test_fixed_keys_make_one_read_only_row_per_key_and_keep_only_filled_values(model: StringMapModel) -> None:
+    """Fixing the keys shows exactly those rows, in order, their values from the map; a key outside them is dropped,
+    and a row with an empty value is not in the map (#637).
+
+    **Test steps:**
+
+    * fix three keys over a model holding other entries, and show a map of one of them and a stranger
+    * verify three rows in order, the key column read-only and the value column editable
+    * verify the map holds the one filled value; edit another and verify it joins; empty it and verify it leaves
+    """
+    model.set_fixed_keys(("title", "authors", "year"))
+    model.set_mapping({"authors": "Unknown", "colour": "Red"})
+
+    assert model.fixed_keys == ("title", "authors", "year")
+    assert rows(model) == [("title", ""), ("authors", "Unknown"), ("year", "")]
+    assert not model.flags(model.index(0, KEY_COLUMN)) & Qt.ItemFlag.ItemIsEditable
+    assert model.flags(model.index(0, VALUE_COLUMN)) & Qt.ItemFlag.ItemIsEditable
+    assert model.mapping == {"authors": "Unknown"}
+
+    assert model.setData(model.index(2, VALUE_COLUMN), "2025")
+    assert model.mapping == {"authors": "Unknown", "year": "2025"}
+    assert model.setData(model.index(1, VALUE_COLUMN), "")
+    assert model.mapping == {"year": "2025"}
+
+
+def test_fixed_keys_refuse_to_add_remove_duplicate_or_reset_a_row(model: StringMapModel) -> None:
+    """The rows are the keys: nothing inserts, removes, duplicates or resets one (#637).
+
+    **Test steps:**
+
+    * fix two keys, give the model defaults, and ask for each of the four
+    * verify two rows, unchanged
+    """
+    model.set_fixed_keys(("title", "year"))
+    model.set_mapping({"title": "Intro"})
+    model.defaults = {"*": "*"}
+
+    assert not model.insertRow(0)
+    assert model.insert(0) == 1
+    assert not model.removeRow(0)
+    model.delete(0)
+    assert model.duplicate(0) == 0
+    model.reset()
+
+    assert rows(model) == [("title", "Intro"), ("year", "")]

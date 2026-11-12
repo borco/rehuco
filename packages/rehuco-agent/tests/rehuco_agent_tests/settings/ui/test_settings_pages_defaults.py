@@ -26,7 +26,9 @@ from rehuco_agent.settings.ui.images_display_page import ImagesDisplayPage
 from rehuco_agent.settings.ui.images_files_page import ImagesFilesPage
 from rehuco_agent.settings.ui.location_templates_page import LocationTemplatesPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
+from rehuco_agent.settings.ui.new_root_presets_page import NewRootPresetsPage
 from rehuco_agent.settings.ui.root_catalog_page import RootCatalogPage
+from rehuco_agent.settings.ui.root_layout_templates_page import RootLayoutTemplatesPage
 from rehuco_agent.settings.ui.scrapers_page import ScrapersPage
 from rehuco_agent.settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from rehuco_agent.settings.ui.session_page import SessionPage
@@ -51,7 +53,9 @@ PAGE_FACTORIES: list[Callable[[], SettingsPage]] = [
     ImagesFilesPage,
     tutorial_location_templates_page,
     LogsPage,
+    NewRootPresetsPage,
     RootCatalogPage,
+    RootLayoutTemplatesPage,
     ScrapersPage,
     ScreenshotPatternsPage,
     SessionPage,

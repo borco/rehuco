@@ -134,11 +134,14 @@ from .settings.ui.images_files_page import ImagesFilesPage
 from .settings.ui.location_replacements_page import LocationReplacementsPage
 from .settings.ui.location_templates_page import LocationTemplatesPage
 from .settings.ui.logs_page import LogsPage
+from .settings.ui.new_root_presets_page import NewRootPresetsPage
 from .settings.ui.root_catalog_page import RootCatalogPage
+from .settings.ui.root_layout_templates_page import RootLayoutTemplatesPage
 from .settings.ui.scrapers_page import ScrapersPage
 from .settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from .settings.ui.session_page import SessionPage
 from .settings.ui.settings_dialog import SettingsDialog
+from .settings.ui.settings_page import SettingsPage
 from .settings.ui.shortcuts_page import ShortcutsPage
 from .settings.ui.system_integration_page import SystemIntegrationPage
 from .settings.ui.tasks_page import TasksPage
@@ -1278,7 +1281,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         page of its own (#222): a page holding one list, whose subject was images, is what a reader
         looking for images had to know a plugin name to find.
 
-        **Images is the one group in use** (#294): the grouping overload `add_page` has kept since
+        **Roots groups the two pages about roots** (#637): New Root Presets, the layouts a root made from a
+        folder can start with, and Root Catalog, how the Roots view behaves.
+
+        **Images was the first group in use** (#294): the grouping overload `add_page` has kept since
         #277 for "the next tree that wants a tier" finally has one. "Images" groups three children --
         Display, Sidecar Extensions, Sidecar Names -- the first named for how an image is
         *shown*, the other two for the one bucket the extension list and the naming patterns both
@@ -1326,11 +1332,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # the toolbar badge), which is right there but wrong here ("Tutorial" names a document; a
         # Locations page is about every "Tutorials" resource) -- and sorted by that plural title so the
         # group reads alphabetically regardless of plugin declaration order.
-        location_titles = {main_key: location_group_title(main_key) for main_key in DEFAULT_PLUGIN_REGISTRY.main_keys}
-        for main_key, title in sorted(location_titles.items(), key=lambda item: item[1]):
-            self.__settings_dialog.add_page("Locations", title, LocationTemplatesPage(main_key))
+        # Root Layout Templates (#637) is the one page of the group that is no type's: it sorts among them by title
+        location_pages: dict[str, SettingsPage] = {
+            location_group_title(main_key): LocationTemplatesPage(main_key)
+            for main_key in DEFAULT_PLUGIN_REGISTRY.main_keys
+        }
+        location_pages["Root Layout Templates"] = RootLayoutTemplatesPage()
+        for title, page in sorted(location_pages.items()):
+            self.__settings_dialog.add_page("Locations", title, page)
         self.__settings_dialog.add_page("Logs", LogsPage())
-        self.__settings_dialog.add_page("Root Catalog", RootCatalogPage())
+        self.__settings_dialog.add_page("Roots", "New Root Presets", NewRootPresetsPage())
+        self.__settings_dialog.add_page("Roots", "Root Catalog", RootCatalogPage())
         self.__settings_dialog.add_page("Scrapers", ScrapersPage())
         self.__settings_dialog.add_page("Session", SessionPage())
         self.__settings_dialog.add_page("Shortcuts", ShortcutsPage(self.__command_registry))
