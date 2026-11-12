@@ -49,6 +49,7 @@ from ..resource_events import ResourceEvents
 from ..settings.persistent_settings import cache_folder, config_folder
 from .record_verify import RecordVerify
 from .root_overlaps import RootOverlaps
+from .roots_listing import ListedFolder
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -867,6 +868,14 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         :param key: what the call is about -- a listed folder, an opened record -- for superseding.
         """
         self.__verify.verify_records(paths, key=key)
+
+    def verify_listing(self, listed: ListedFolder) -> None:
+        """Bring the cache in line with a Roots folder's listing, off the GUI thread
+        (:meth:`RecordVerify.on_listed <.record_verify.RecordVerify.on_listed>`, #487, #645).
+
+        :param listed: the listing.
+        """
+        self.__verify.on_listed(listed)
 
     # endregion
 

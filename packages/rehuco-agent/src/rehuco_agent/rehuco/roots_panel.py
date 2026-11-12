@@ -703,22 +703,14 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             model.relist(folder, unless_listed_within=FRESH_LISTING_SECONDS)
 
     def __follow_the_catalog(self, catalog: RootCatalog) -> None:
-        """Show what the open catalog holds as it changes; and have every listing check its records against the cache,
-        and the pane follow what that finds (#487).
+        """Show what the open catalog holds as it changes; and have every listing bring the cache in line with what it
+        shows (#487, #645), and the pane follow what that finds.
 
         :param catalog: the open catalog.
         """
         catalog.roots_changed.connect(self.__refresh)
         catalog.rehuco_path_changed.connect(self.__update_enablement)
-        self.__roots_model.records_listed.connect(self.__on_records_listed)
-
-    def __on_records_listed(self, folder: Path, records: tuple[Path, ...]) -> None:
-        """Verify the records a listed folder bears on against the cache, off the GUI thread (#487).
-
-        :param folder: the folder just listed; a newer listing of it supersedes a verify still out.
-        :param records: the records it holds and the one above that manages it.
-        """
-        self.__catalog.verify_records(records, key=folder)
+        self.__roots_model.folder_listed.connect(self.__catalog.verify_listing)
 
     def __follow_pack(self, keys: tuple[ResourceKey, ...]) -> None:
         """Show the current row again when a change touched the record its pack line comes from, or the record it

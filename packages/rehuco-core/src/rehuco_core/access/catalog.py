@@ -279,6 +279,29 @@ class Catalog:
             LOG.error("Could not read the cache %s: %s", session.cache_path, error)
             return []
 
+    def records_beneath(self, folder: ResourceKey) -> list[Path]:
+        """The records the cache holds beneath a folder that was just listed, for the listing to be compared with
+        (#645). **A root's own folder stands for every record of the root** -- which :meth:`record_paths` passes over,
+        since a root a change event names may be away, where a folder that listed is there.
+
+        :param folder: the listed folder; one under no root answers nothing.
+        :returns: the records' absolute paths, each once; none when the cache cannot be read -- logged.
+        """
+        session = self.__session
+        if session is None:
+            return []
+        try:
+            with CatalogCache.open(session.cache_path) as cache:
+                found = dict.fromkeys(cache.record_paths([folder.path]))
+                for root in cache.roots():
+                    if ResourceKey(root.path) == folder:
+                        relatives = cache.signatures(root.root_id)
+                        found.update(dict.fromkeys(root.path.joinpath(*relative.split("/")) for relative in relatives))
+                return list(found)
+        except (OSError, sqlite3.Error) as error:
+            LOG.error("Could not read the cache %s: %s", session.cache_path, error)
+            return []
+
     def mark_reachable(self, root_id: UUID, reachable: bool) -> None:
         """Record whether a root's folder can be reached, as its file notifier says (#511); a failure is logged.
 
