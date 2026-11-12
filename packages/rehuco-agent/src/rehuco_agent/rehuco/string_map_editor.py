@@ -158,20 +158,18 @@ class StringMapEditor(ItemListEditor):
         """Make the table one row per key, in that order: the key column read-only and no way to add, duplicate or
         delete a row (#637). Show the values with :attr:`mapping`.
 
-        The buttons go but their column's width stays, so a table fixed this way is as wide as one above it that keeps
-        its buttons.
+        The button column goes with its buttons, so the table takes the whole width.
 
         :param keys: the keys, in row order.
         """
         self.__model.set_fixed_keys(keys)
-        width = self.item_actions.sizeHint().width()
         for action in (
             self.item_actions.insert_action,
             self.item_actions.duplicate_action,
             self.item_actions.delete_action,
         ):
             action.setVisible(False)
-        self.item_actions.setFixedWidth(width)
+        self.item_actions.setVisible(False)
 
     def set_key_choices(self, choices: Sequence[str]) -> None:
         """Offer these keys in the key column's editor.
