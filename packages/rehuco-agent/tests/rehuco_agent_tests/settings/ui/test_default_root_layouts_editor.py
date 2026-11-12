@@ -20,8 +20,8 @@ from rehuco_agent.settings.ui.root_layout_list_model import RootLayoutListModel
 from rehuco_agent.settings.ui.settings_frame_filter import ValueControl
 
 LAYOUTS = (
-    RootLayout("By author", {"tutorial": "{authors}/{title}"}, {"authors": "Unknown"}),
-    RootLayout("Flat", {"*": "*"}, {}),
+    RootLayout("By author", {"tutorial": ("{authors}/{title}",)}, {"authors": "Unknown"}),
+    RootLayout("Flat", {"*": ("*",)}, {}),
 )
 
 
@@ -86,10 +86,10 @@ def test_the_maps_follow_the_layout_selected(editor: DefaultRootLayoutsEditor) -
     * verify the maps each time and that they are disabled with none
     """
     maps = maps_editor(editor)
-    assert (maps.layouts, maps.fallbacks) == ({"tutorial": "{authors}/{title}"}, {"authors": "Unknown"})
+    assert (maps.layouts, maps.fallbacks) == ({"tutorial": ("{authors}/{title}",)}, {"authors": "Unknown"})
 
     names_editor(editor).set_current_index(1)
-    assert (maps.layouts, maps.fallbacks) == ({"*": "*"}, {})
+    assert (maps.layouts, maps.fallbacks) == ({"*": ("*",)}, {})
 
     names_editor(editor).set_current_index(-1)
     assert (maps.layouts, maps.fallbacks) == ({}, {})
@@ -110,7 +110,7 @@ def test_an_edit_of_the_maps_is_kept_in_the_layout_selected(editor: DefaultRootL
 
     table.model.setData(table.model.index(0, VALUE_COLUMN), "{title}")
 
-    assert editor.layouts == (LAYOUTS[0], RootLayout("Flat", {"*": "{title}"}, {}))
+    assert editor.layouts == (LAYOUTS[0], RootLayout("Flat", {"*": ("{title}",)}, {}))
 
 
 def test_the_heading_names_the_preset_whose_maps_are_shown(editor: DefaultRootLayoutsEditor) -> None:
@@ -163,7 +163,7 @@ def test_a_new_list_keeps_the_row_selected_where_it_can(editor: DefaultRootLayou
 
     editor.layouts = LAYOUTS[:1]
     assert names_editor(editor).current_index == 0
-    assert maps_editor(editor).layouts == {"tutorial": "{authors}/{title}"}
+    assert maps_editor(editor).layouts == {"tutorial": ("{authors}/{title}",)}
 
     editor.layouts = ()
     assert names_editor(editor).current_index == -1
@@ -215,9 +215,9 @@ def test_the_list_model_moves_copies_deletes_and_resets() -> None:
     assert model.move_to_top(2) == 0
     assert model.move_down(0) == 1
     assert model.move_up(1) == 0
-    model.set_maps(1, {"*": "{title}"}, {})
-    model.set_maps(1, {"*": "{title}"}, {})
-    assert model.entries[1] == RootLayout("By author", {"*": "{title}"}, {})
+    model.set_maps(1, {"*": ("{title}",)}, {})
+    model.set_maps(1, {"*": ("{title}",)}, {})
+    assert model.entries[1] == RootLayout("By author", {"*": ("{title}",)}, {})
     model.delete(1)
     assert model.entries == LAYOUTS
 

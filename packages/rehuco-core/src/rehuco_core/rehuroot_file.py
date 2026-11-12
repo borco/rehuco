@@ -8,15 +8,16 @@ is a fact about the root rather than about one catalog or one machine. The shape
       "id": "a41b9c3d-...",
       "label": "Tutorials",
       "location": "//nas/data/Tutorials",
-      "layouts": { "*": "*" },
+      "layouts": { "*": ["*"] },
       "fallbacks": { "authors": "Unknown" }
     }
 
 **``id``** is minted once, so every catalog listing the file names the root the same way, and a machine maps it once
 (:class:`~rehuco_core.root_mappings.RootMappings`). **``label``** and **``location``** are what a ``.rehuco`` root used
 to hold inline. **``layouts``** says where a record of each type lives under the root, by the type's main key or ``*``
-for any type not named: a path template (:func:`~rehuco_core.root_destination.destination`), or ``*`` for *keep the
-record's current name at the root's top*, under the record's own root too (#643).
+for any type not named: a list of path templates, offered in order (:func:`~rehuco_core.root_destination.destinations`;
+a plain string reads as a list of one, #638), each a template or ``*`` for *keep the record's current name at the root's
+top*, under the record's own root too (#643).
 **``fallbacks``** names what a placeholder renders as when a record leaves it empty.
 
 What this build does not understand is carried: an unknown top-level key comes back out of a save unchanged. A file
@@ -25,7 +26,7 @@ if the file is still what this machine last read or wrote (:class:`RehurootChang
 """
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final
@@ -66,8 +67,56 @@ KEEP_NAME: Final = "*"
 """The ``layouts`` value that keeps a record's current folder name, at the root's top, under the record's own root
 too (#643)."""
 
-DEFAULT_LAYOUTS: Final[Mapping[str, str]] = MappingProxyType({ANY_TYPE: KEEP_NAME})
+type Layouts = Mapping[str, tuple[str, ...]]
+"""A root's layouts: each type's main key, or ``*``, to its path templates in the order they are offered (#638)."""
+
+DEFAULT_LAYOUTS: Final[Layouts] = MappingProxyType({ANY_TYPE: (KEEP_NAME,)})
 """What a root made from a folder starts with: any record, under its current name."""
+
+
+def read_layouts(value: object) -> dict[str, tuple[str, ...]]:
+    """Layouts as a file or a setting holds them: an object whose values are a list of templates, or one template as a
+    plain string (#638).
+
+    :param value: the parsed value.
+    :returns: each type's templates, in order, an exact repeat dropped.
+    :raises ValueError: it is not an object of strings or lists of strings.
+    """
+    if not isinstance(value, Mapping):
+        raise ValueError("not an object")
+    layouts: dict[str, tuple[str, ...]] = {}
+    for key, item in value.items():
+        if isinstance(item, str):
+            templates: tuple[str, ...] = (item,)
+        elif isinstance(item, (list, tuple)) and all(isinstance(template, str) for template in item):
+            templates = tuple(dict.fromkeys(item))
+        else:
+            raise ValueError(f"'{key}' is neither a template nor a list of them")
+        layouts[str(key)] = templates
+    return layouts
+
+
+def layout_rows(layouts: Layouts) -> tuple[tuple[str, str], ...]:
+    """The layouts as the rows a table or a read-only display shows: one ``(type, template)`` each, in offer order.
+
+    :param layouts: the layouts.
+    :returns: the rows.
+    """
+    return tuple((key, template) for key, templates in layouts.items() for template in templates)
+
+
+def grouped_layouts(rows: Iterable[tuple[str, str]]) -> dict[str, tuple[str, ...]]:
+    """Rows of ``(type, template)`` as layouts: a type's templates together, at the type's first row, in row order; a
+    row with no type, or an exact repeat of an earlier row, is left out (#638).
+
+    :param rows: the rows.
+    :returns: the layouts.
+    """
+    grouped: dict[str, dict[str, None]] = {}
+    for key, template in rows:
+        if key:
+            grouped.setdefault(key, {})[template] = None
+    return {key: tuple(templates) for key, templates in grouped.items()}
 
 
 class RehurootFileError(ValueError):
@@ -107,7 +156,11 @@ class RehurootFile:
             raise self.__error(f"No '{ROOT_LOCATION_KEY}'")
         if not isinstance(data.get(ROOT_LABEL_KEY), str):
             raise self.__error(f"No '{ROOT_LABEL_KEY}'")
-        self.__read_strings(data.setdefault(LAYOUTS_KEY, dict(DEFAULT_LAYOUTS)), LAYOUTS_KEY)
+        try:
+            layouts = read_layouts(data.get(LAYOUTS_KEY, DEFAULT_LAYOUTS))
+        except ValueError as error:
+            raise self.__error(f"'{LAYOUTS_KEY}' is not an object of templates ({error})") from error
+        data[LAYOUTS_KEY] = {key: list(templates) for key, templates in layouts.items()}
         self.__read_strings(data.setdefault(FALLBACKS_KEY, {}), FALLBACKS_KEY)
 
     @classmethod
@@ -117,7 +170,7 @@ class RehurootFile:
         location: str,
         label: str,
         *,
-        layouts: Mapping[str, str] = DEFAULT_LAYOUTS,
+        layouts: Layouts = DEFAULT_LAYOUTS,
         fallbacks: Mapping[str, str] | None = None,
     ) -> RehurootFile:
         """A root file never saved, under a fresh id.
@@ -192,13 +245,13 @@ class RehurootFile:
             self.__dirty = True
 
     @property
-    def layouts(self) -> Mapping[str, str]:
-        """The path template of each type's main key, ``*`` for any type not named."""
-        return MappingProxyType(self.__data[LAYOUTS_KEY])
+    def layouts(self) -> Layouts:
+        """The path templates of each type's main key, ``*`` for any type not named, in the order they are offered."""
+        return MappingProxyType({key: tuple(templates) for key, templates in self.__data[LAYOUTS_KEY].items()})
 
     @layouts.setter
-    def layouts(self, value: Mapping[str, str]) -> None:
-        self.__replace(LAYOUTS_KEY, value)
+    def layouts(self, value: Layouts) -> None:
+        self.__replace(LAYOUTS_KEY, {key: list(templates) for key, templates in value.items()})
 
     @property
     def fallbacks(self) -> Mapping[str, str]:
@@ -207,21 +260,20 @@ class RehurootFile:
 
     @fallbacks.setter
     def fallbacks(self, value: Mapping[str, str]) -> None:
-        self.__replace(FALLBACKS_KEY, value)
+        self.__replace(FALLBACKS_KEY, dict(value))
 
-    def __replace(self, key: str, value: Mapping[str, str]) -> None:
+    def __replace(self, key: str, value: dict[str, Any]) -> None:
         """Replace one of the maps, marking the file dirty only when it changes.
 
         :param key: :data:`LAYOUTS_KEY` or :data:`FALLBACKS_KEY`.
-        :param value: the new map, copied.
+        :param value: the new map, already copied.
         :raises ValueError: the file is read-only (:attr:`lock_reason`).
         """
         reason = self.lock_reason
         if reason is not None:
             raise ValueError(f"Refusing to edit a read-only .rehuroot: {reason.message}")
-        copied = dict(value)
-        if copied != self.__data[key]:
-            self.__data[key] = copied
+        if value != self.__data[key]:
+            self.__data[key] = value
             self.__dirty = True
 
     @property

@@ -3,7 +3,7 @@ button for everything its context menu offers (#378), what a record says about i
 made of (#456)."""
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,6 +34,7 @@ from rehuco_core import (
     RehucoFile,
     RehucoRoot,
     RenameCoordinator,
+    layout_rows,
     read_archive_facts,
 )
 from rehuco_core.access import Records, ResourceKey
@@ -591,8 +592,8 @@ class RootsPreview(QWidget):
             return
         layouts, fallbacks = root.layouts, root.fallbacks
         ui.root_name_value.setText(root.label or root_where(root))
-        ui.root_layouts_value.setText(RootsPreview.__map_lines(layouts))
-        ui.root_fallbacks_value.setText(RootsPreview.__map_lines(fallbacks) or NO_FALLBACKS)
+        ui.root_layouts_value.setText(RootsPreview.__rows_lines(layout_rows(layouts)))
+        ui.root_fallbacks_value.setText(RootsPreview.__rows_lines(fallbacks.items()) or NO_FALLBACKS)
         self.__root_file = "" if root.file is None else str(root.file)
         ui.root_file_value.set_text(self.__root_file)
         self.__default_name = RehucoFile.default_label(root.location)
@@ -612,13 +613,13 @@ class RootsPreview(QWidget):
             ui.root_storage_value.setText(NOT_MAPPED_ROW if root.readable else UNREADABLE_ROW)
 
     @staticmethod
-    def __map_lines(mapping: Mapping[str, str]) -> str:
-        """A map as the read-only rows show it, one ``key → value`` line per entry.
+    def __rows_lines(rows: Iterable[tuple[str, str]]) -> str:
+        """Rows as the read-only display shows them, one ``key → value`` line each (#638).
 
-        :param mapping: the layouts or the fallbacks.
-        :returns: the lines; empty for an empty map.
+        :param rows: the layouts' rows (:func:`~rehuco_core.layout_rows`) or the fallbacks' entries.
+        :returns: the lines; empty for no rows.
         """
-        return "\n".join(f"{key} \N{RIGHTWARDS ARROW} {value}" for key, value in mapping.items())
+        return "\n".join(f"{key} \N{RIGHTWARDS ARROW} {value}" for key, value in rows)
 
     def __rebuild_buttons(self, index: QModelIndex) -> None:
         """Make one button for each action the row's context menu holds.

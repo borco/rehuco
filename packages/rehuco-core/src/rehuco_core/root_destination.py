@@ -1,8 +1,9 @@
 """Where a record would live under a root, by the root's layouts -- or why it may not live there at all
 ([[mounts-and-storage#rehuroot]], #577).
 
-A root's ``layouts`` map a type's main key, or ``*`` for any type not named, to a **path template**: the Locations
-grammar (:class:`~rehuco_core.location_pattern.LocationPattern`) plus ``/`` as a level separator. The value ``*`` keeps
+A root's ``layouts`` map a type's main key, or ``*`` for any type not named, to **path templates** in the order they are
+offered (#638), each the Locations grammar (:class:`~rehuco_core.location_pattern.LocationPattern`) plus ``/`` as a
+level separator. The value ``*`` keeps
 the record's current folder name, at the root's top, under the record's own root too (#643). A type with no
 entry and no ``*`` is not admitted.
 
@@ -21,9 +22,10 @@ from pathlib import PurePosixPath
 from typing import Final, Protocol
 
 from .location_pattern import KNOWN_PLACEHOLDERS, LocationPattern, known_placeholders_for, location_values
+from .path_keys import path_key
 from .plugins.plugin_registry import PluginRegistry
 from .rehu_document import RehuDocument
-from .rehuroot_file import ANY_TYPE, KEEP_NAME
+from .rehuroot_file import ANY_TYPE, KEEP_NAME, Layouts
 from .replacement_rule import ReplacementRule, apply_location_replacements
 from .sanitized_names import sanitize_name
 
@@ -48,8 +50,8 @@ class LaidOutRoot(Protocol):
         """Where the root is, the name when it has no label."""
 
     @property
-    def layouts(self) -> Mapping[str, str]:  # pyright: ignore[reportReturnType]
-        """The path template of each type's main key, ``*`` for any type not named."""
+    def layouts(self) -> Layouts:  # pyright: ignore[reportReturnType]
+        """The path templates of each type's main key, ``*`` for any type not named, in offer order."""
 
     @property
     def fallbacks(self) -> Mapping[str, str]:  # pyright: ignore[reportReturnType]
@@ -98,32 +100,74 @@ class Refusal:
     reason: str
 
 
-def layout_template(root: LaidOutRoot, main_key: str) -> str | None:
-    """The path template a root gives a type: the type's own, else the ``*`` one (#639).
+@dataclass(frozen=True, slots=True)
+class Placement:
+    """One place a root's template puts a record (#638).
+
+    :param relative: the place, relative to the root's folder, one segment per level.
+    :param template: the path template that rendered it, as written and stripped; ``*`` included.
+    """
+
+    relative: PurePosixPath
+    template: str
+
+
+def layout_templates(root: LaidOutRoot, main_key: str) -> tuple[str, ...]:
+    """The path templates a root gives a type, in offer order: the type's own, else the ``*`` ones (#639, #638).
 
     :param root: the root, its layouts.
     :param main_key: the record's type, as its plugin's main key.
-    :returns: the template as written, or ``None`` when the root takes no such type.
+    :returns: the templates as written; none when the root takes no such type.
     """
-    return root.layouts.get(main_key, root.layouts.get(ANY_TYPE))
+    return root.layouts.get(main_key) or root.layouts.get(ANY_TYPE) or ()
 
 
-def destination(
+def destinations(
     root: LaidOutRoot,
     record: RecordNaming,
     rules: Sequence[ReplacementRule],
-) -> PurePosixPath | Refusal:
-    """Where a record would live under a root, relative to the root's folder.
+) -> tuple[Placement, ...] | Refusal:
+    """Every place a root's layouts put a record, in row order (#638): a template that cannot be rendered for it is
+    skipped, and two rendering the same place offer it once, at the first.
 
     :param root: the root, its layouts and fallbacks.
     :param record: what the layouts read of the record.
     :param rules: the Location Replacements, applied to each level before it is sanitized.
-    :returns: the path, one segment per level; or why the root does not take the record.
+    :returns: the places; or why the root offers none -- it takes no such type, or the first template's refusal when
+        every one refuses.
+    """
+    templates = layout_templates(root, record.main_key)
+    if not templates:
+        name = root.label or root.location
+        return Refusal(f"{name} does not take a {record.main_key}: its layouts name no such type, and no '*'.")
+    places: dict[str, Placement] = {}
+    first_refusal: Refusal | None = None
+    for template in templates:
+        relative = destination(root, template, record, rules)
+        if isinstance(relative, Refusal):
+            first_refusal = first_refusal or relative
+        else:
+            places.setdefault(path_key(str(relative)), Placement(relative, template.strip()))
+    if places:
+        return tuple(places.values())
+    return first_refusal or Refusal("")
+
+
+def destination(
+    root: LaidOutRoot,
+    template: str,
+    record: RecordNaming,
+    rules: Sequence[ReplacementRule],
+) -> PurePosixPath | Refusal:
+    """Where one of a root's templates puts a record, relative to the root's folder.
+
+    :param root: the root, its fallbacks.
+    :param template: the path template, as written.
+    :param record: what the layouts read of the record.
+    :param rules: the Location Replacements, applied to each level before it is sanitized.
+    :returns: the path, one segment per level; or why the template does not take the record.
     """
     name = root.label or root.location
-    template = layout_template(root, record.main_key)
-    if template is None:
-        return Refusal(f"{name} does not take a {record.main_key}: its layouts name no such type, and no '*'.")
     if template.strip() == KEEP_NAME:
         return PurePosixPath(record.folder_name)
     pattern = LocationPattern(template, record.placeholders)

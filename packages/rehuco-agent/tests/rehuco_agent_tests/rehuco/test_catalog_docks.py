@@ -599,7 +599,7 @@ def folder_candidate(dock: CatalogDocks, folder: str | Path, name: str = "") -> 
     label = name or RehucoFile.default_label(path)
     root_file = file.free_root_file(sanitize_name(label) or "root")
     return RootCandidate(
-        RootPick(path, name or None), CandidateKind.FOLDER, label, location_at(path), root_file, path, {"*": "*"}
+        RootPick(path, name or None), CandidateKind.FOLDER, label, location_at(path), root_file, path, {"*": ("*",)}
     )
 
 

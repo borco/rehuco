@@ -4,7 +4,7 @@
 # the table chrome here is `LocationReplacementsEditor`'s: both are multi-column rows over `ItemListEditor`
 # pylint: disable=duplicate-code
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Final, override
 
 from borco_pyside.widgets import ContentSizedTableView, ItemListEditor, RowBandDelegate
@@ -87,7 +87,7 @@ class MapChoicesDelegate(RowBandDelegate):
 
 class StringMapEditor(ItemListEditor):
     """A ``str -> str`` map as a table of a key and a value, both stretched, with no ordering column -- a map has no
-    order.
+    order -- until :meth:`allow_repeated_keys` makes it a list of rows, whose order is what a caller reads (#638).
 
     **F2 is not this table's**: it is left to the Roots view's *Edit* toggle, which holds these tables
     (:class:`~.root_edit_pane.RootEditPane`); a cell still opens on a double-click or by typing.
@@ -129,6 +129,21 @@ class StringMapEditor(ItemListEditor):
     @mapping.setter
     def mapping(self, mapping: Mapping[str, str]) -> None:
         self.__model.set_mapping(mapping)
+
+    @property
+    def rows(self) -> tuple[tuple[str, str], ...]:
+        """The ``(key, value)`` rows that count, in order (#638): a row with no key or value, or one that repeats an
+        earlier row whole, is left out."""
+        return self.__model.rows
+
+    @rows.setter
+    def rows(self, rows: Iterable[tuple[str, str]]) -> None:
+        self.__model.set_rows(rows)
+
+    def allow_repeated_keys(self) -> None:
+        """Let rows share a key, and show the move up / down buttons: the rows' order is kept (#638)."""
+        self.__model.set_repeated_keys()
+        self.set_ordering_visible(True)
 
     def set_titles(self, key: str, value: str) -> None:
         """Name the two columns.

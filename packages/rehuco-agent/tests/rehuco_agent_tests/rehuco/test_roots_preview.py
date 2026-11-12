@@ -239,7 +239,7 @@ def test_the_edit_mode_shows_a_roots_editors_filled_quietly_and_lasts_from_root_
 
     assert preview.root_edit_pane.isVisibleTo(preview)
     assert preview.root_name_edit.text() == "lib"
-    assert (preview.root_layouts_editor.layouts, preview.root_layouts_editor.fallbacks) == ({"*": "*"}, {})
+    assert (preview.root_layouts_editor.layouts, preview.root_layouts_editor.fallbacks) == ({"*": ("*",)}, {})
     assert shown.hidden("root_name_value")
     assert shown.hidden("root_layouts_value")
     assert not shown.hidden("root_storage_value")

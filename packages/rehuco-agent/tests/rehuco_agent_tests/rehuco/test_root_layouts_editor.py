@@ -6,7 +6,7 @@ from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.root_layouts_editor import RootLayoutsEditor
 from rehuco_agent.rehuco.string_map_editor import MapChoicesDelegate, StringMapEditor
-from rehuco_agent.rehuco.string_map_model import KEY_COLUMN, VALUE_COLUMN
+from rehuco_agent.rehuco.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
 from rehuco_agent.settings.root_layout_templates_settings import shared_root_layout_templates_settings
 from rehuco_core import DEFAULT_PLUGIN_REGISTRY, PLACEHOLDERS
 
@@ -23,7 +23,7 @@ def fixture_editor(qtbot: QtBot) -> RootLayoutsEditor:
     """
     built = RootLayoutsEditor()
     qtbot.addWidget(built)
-    built.set_values({"tutorial": "{authors}/{title}"}, {"authors": "Unknown"})
+    built.set_values({"tutorial": ("{authors}/{title}",)}, {"authors": "Unknown"})
     return built
 
 
@@ -36,6 +36,16 @@ def tables(editor: RootLayoutsEditor) -> tuple[StringMapEditor, StringMapEditor]
     found = tuple(editor.findChild(StringMapEditor, name) for name in ("layouts_editor", "fallbacks_editor"))
     assert all(table is not None for table in found)
     return found  # type: ignore[return-value]
+
+
+def string_map(table: StringMapEditor) -> StringMapModel:
+    """A table's model, as the string map it is.
+
+    :param table: the table.
+    :returns: its model.
+    """
+    assert isinstance(table.model, StringMapModel)
+    return table.model
 
 
 def view(table: StringMapEditor) -> QTableView:
@@ -60,9 +70,9 @@ def test_the_values_set_are_shown_without_an_edit_being_announced(qtbot: QtBot) 
     qtbot.addWidget(editor)
 
     with qtbot.assertNotEmitted(editor.edited):
-        editor.set_values({"*": "*"}, {"title": "Untitled"})
+        editor.set_values({"*": ("*",)}, {"title": "Untitled"})
 
-    assert (editor.layouts, editor.fallbacks) == ({"*": "*"}, {"title": "Untitled"})
+    assert (editor.layouts, editor.fallbacks) == ({"*": ("*",)}, {"title": "Untitled"})
 
 
 def test_an_edit_of_either_table_is_announced_once(qtbot: QtBot, editor: RootLayoutsEditor) -> None:
@@ -80,7 +90,7 @@ def test_an_edit_of_either_table_is_announced_once(qtbot: QtBot, editor: RootLay
     with qtbot.waitSignal(editor.edited):
         fallbacks.model.setData(fallbacks.model.index(PLACEHOLDERS.index("authors"), VALUE_COLUMN), "Anonymous")
 
-    assert (editor.layouts, editor.fallbacks) == ({"tutorial": "{title}"}, {"authors": "Anonymous"})
+    assert (editor.layouts, editor.fallbacks) == ({"tutorial": ("{title}",)}, {"authors": "Anonymous"})
 
 
 def test_the_layouts_type_is_picked_from_the_installed_types_or_typed(qtbot: QtBot, editor: RootLayoutsEditor) -> None:
@@ -109,7 +119,7 @@ def test_the_layouts_type_is_picked_from_the_installed_types_or_typed(qtbot: QtB
     assert combo.currentText() == "tutorial"
     combo.setCurrentText("reference_images")
     delegate.setModelData(combo, layouts.model, key)
-    assert editor.layouts == {"reference_images": "{authors}/{title}"}
+    assert editor.layouts == {"reference_images": ("{authors}/{title}",)}
 
     template = layouts.model.index(0, VALUE_COLUMN)
     field = delegate.createEditor(view(layouts).viewport(), QStyleOptionViewItem(), template)
@@ -138,7 +148,7 @@ def template_choices(qtbot: QtBot, editor: RootLayoutsEditor, key: str) -> list[
     :returns: the combo's items.
     """
     layouts, _ = tables(editor)
-    editor.set_values({key: "*"}, {})
+    editor.set_values({key: ("*",)}, {})
     template = layouts.model.index(0, VALUE_COLUMN)
     combo = view(layouts).itemDelegate().createEditor(view(layouts).viewport(), QStyleOptionViewItem(), template)
     qtbot.addWidget(combo)
@@ -190,7 +200,7 @@ def test_a_template_invalid_for_its_type_is_flagged_and_still_saved_as_typed(edi
     * verify all four are read back as typed
     """
     layouts, _ = tables(editor)
-    typed = {"tutorial": "{author}", "*": "{count}", "reference_images": "{count}", "other": "*"}
+    typed = {"tutorial": ("{author}",), "*": ("{count}",), "reference_images": ("{count}",), "other": ("*",)}
     editor.set_values(typed, {})
 
     def flagged(row: int) -> tuple[bool, bool]:
@@ -294,3 +304,43 @@ def test_a_map_choices_delegate_with_no_choices_edits_keys_in_a_plain_field(qtbo
     qtbot.addWidget(field)
 
     assert isinstance(field, QLineEdit)
+
+
+def test_the_layouts_table_repeats_types_and_orders_its_rows_the_fallbacks_do_not(editor: RootLayoutsEditor) -> None:
+    """The layouts table has the move buttons and takes a type twice; the fallbacks table has neither (#638).
+
+    **Test steps:**
+
+    * show the editor, set two templates for a type and a ``*``
+    * move the second row to the top through the table's own ordering
+    * verify the ordering column shown only on the layouts, the layouts read in the new order, and the type's
+      templates together
+    """
+    editor.show()
+    layouts, fallbacks = tables(editor)
+    editor.set_values({"tutorial": ("{title}", "{authors}/{title}"), "*": ("*",)}, {})
+
+    assert layouts.ordering_actions.isVisible()
+    assert not fallbacks.ordering_actions.isVisible()
+    assert editor.layouts == {"tutorial": ("{title}", "{authors}/{title}"), "*": ("*",)}
+
+    string_map(layouts).move_to_top(1)
+
+    assert editor.layouts == {"tutorial": ("{authors}/{title}", "{title}"), "*": ("*",)}
+
+
+def test_an_exact_repeat_in_the_layouts_is_read_back_once(editor: RootLayoutsEditor) -> None:
+    """A row alike in type and template to an earlier row is ignored (#638).
+
+    **Test steps:**
+
+    * set the layouts, then duplicate the first row through the model
+    * verify the layouts read back as before
+    """
+    layouts, _ = tables(editor)
+    before = editor.layouts
+
+    string_map(layouts).duplicate(0)
+
+    assert string_map(layouts).count == 2
+    assert editor.layouts == before

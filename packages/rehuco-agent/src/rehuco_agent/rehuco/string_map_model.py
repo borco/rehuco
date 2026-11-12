@@ -4,7 +4,7 @@
 # because they are the same contract `ItemListEditor` drives every list model through.
 # pylint: disable=duplicate-code
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
@@ -36,6 +36,9 @@ class StringMapModel(QAbstractTableModel):
     **A value can be flagged too** (#637): once :meth:`set_value_problem` is given a check, a row whose value it faults
     has its value cell coloured with the reason as its tooltip, and is still kept.
 
+    **A key can repeat** once :meth:`set_repeated_keys` says so (#638): a row is then flagged only for an empty key or
+    for repeating an earlier row whole, key and value, and :attr:`rows` lists the rows that count, in order.
+
     **The keys can be fixed** (:meth:`set_fixed_keys`): one row per key, in that order, the key column read-only, no row
     added, removed or reset, and a row with an empty value left out of :attr:`mapping`.
 
@@ -55,6 +58,7 @@ class StringMapModel(QAbstractTableModel):
         self.__entries: list[tuple[str, str]] = []
         self.__defaults: dict[str, str] = {}
         self.__fixed_keys: tuple[str, ...] | None = None
+        self.__repeated_keys = False
         self.__value_problem: Callable[[str, str], str] | None = None
         self.rowsInserted.connect(self.count_changed)
         self.rowsRemoved.connect(self.count_changed)
@@ -75,9 +79,18 @@ class StringMapModel(QAbstractTableModel):
         return result
 
     @property
+    def rows(self) -> tuple[tuple[str, str], ...]:
+        """The rows that count, in order: every row with a key and a value, the first of rows alike in both."""
+        return tuple(entry for row, entry in enumerate(self.__entries) if not self.__ignored(row))
+
+    @property
     def fixed_keys(self) -> tuple[str, ...] | None:
         """The keys the rows are fixed to, or ``None`` when rows are added and removed freely."""
         return self.__fixed_keys
+
+    def set_repeated_keys(self) -> None:
+        """Let rows share a key (#638): the order of the rows is then what a caller reads."""
+        self.__repeated_keys = True
 
     def set_value_problem(self, value_problem: Callable[[str, str], str] | None) -> None:
         """Flag values by this check, repainting every row shown.
@@ -113,6 +126,18 @@ class StringMapModel(QAbstractTableModel):
         self.__entries = entries
         self.endResetModel()
 
+    def set_rows(self, rows: Iterable[tuple[str, str]]) -> None:
+        """Replace every row, as one model reset, unless the rows are these already (#638).
+
+        :param rows: the ``(key, value)`` rows to show, in order.
+        """
+        entries = list(rows)
+        if entries == self.__entries:
+            return
+        self.beginResetModel()
+        self.__entries = entries
+        self.endResetModel()
+
     def set_titles(self, titles: tuple[str, str]) -> None:
         """Rename the two columns.
 
@@ -136,14 +161,26 @@ class StringMapModel(QAbstractTableModel):
         :param row: the row.
         :returns: the reason, or ``""`` for a row that counts.
         """
-        key = self.__entries[row][0]
+        key, value = self.__entries[row]
         if self.__fixed_keys is not None:
             return ""
         if not key:
             return "No key: this row is ignored."
-        if any(other == key for other, _ in self.__entries[:row]):
+        if self.__repeated_keys:
+            if (key, value) in self.__entries[:row]:
+                return f"'{key} \N{RIGHTWARDS ARROW} {value}' is already a row above: this row is ignored."
+        elif any(other == key for other, _ in self.__entries[:row]):
             return f"'{key}' is already a key above: this row is ignored."
         return ""
+
+    def __ignored(self, row: int) -> bool:
+        """Whether a row is left out of :attr:`rows`.
+
+        :param row: the row.
+        :returns: whether it has no key or no value, or repeats an earlier row whole.
+        """
+        key, value = self.__entries[row]
+        return not key or not value or (key, value) in self.__entries[:row]
 
     # region ItemEditor and ItemOrderingEditor
 

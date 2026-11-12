@@ -16,7 +16,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QMouseEvent, QPainter, QPalette
 from PySide6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QWidget
-from rehuco_core import CandidateKind, RootCandidate, RootPick
+from rehuco_core import CandidateKind, RootCandidate, RootPick, layout_rows
 
 from ..fields.colors import WARNING_COLOR
 from ..settings.root_catalog_settings import RootLayout
@@ -73,7 +73,7 @@ class RootCandidateDelegate(QStyledItemDelegate):
         if line.location:
             lines.append((f"{line.label} \N{MIDDLE DOT} {line.location}", False))
         if line.layouts:
-            joined = "; ".join(f"{key} \N{RIGHTWARDS ARROW} {value}" for key, value in line.layouts.items())
+            joined = "; ".join(f"{key} \N{RIGHTWARDS ARROW} {value}" for key, value in layout_rows(line.layouts))
             lines.append((f"Layouts: {joined}", False))
         if line.addable:
             lines.append((UNMAPPED if line.folder is None else f"On this machine: {line.folder}", False))

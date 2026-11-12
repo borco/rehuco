@@ -9,7 +9,7 @@ from typing import Any, Final, cast
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, QSettings, Signal
-from rehuco_core import DEFAULT_LAYOUTS
+from rehuco_core import DEFAULT_LAYOUTS, Layouts, read_layouts
 
 from .persistent_settings import persistent_settings
 
@@ -30,12 +30,12 @@ class RootLayout:
     ([[mounts-and-storage#rehuroot]]).
 
     :param label: the name the Add Roots dialog's combo shows.
-    :param layouts: the path template of each type's main key, ``*`` for any type not named.
+    :param layouts: the path templates of each type's main key, ``*`` for any type not named, in offer order (#638).
     :param fallbacks: what each placeholder renders as when a record leaves it empty.
     """
 
     label: str
-    layouts: Mapping[str, str] = field(default_factory=lambda: dict(DEFAULT_LAYOUTS))
+    layouts: Layouts = field(default_factory=lambda: dict(DEFAULT_LAYOUTS))
     fallbacks: Mapping[str, str] = field(default_factory=dict)
 
 
@@ -106,8 +106,8 @@ class RootCatalogSettings(QObject):
                 layouts.append(
                     RootLayout(
                         str(settings.value(LABEL_KEY, "")),
-                        RootCatalogSettings.__read_map(settings, LAYOUTS_KEY),
-                        RootCatalogSettings.__read_map(settings, FALLBACKS_KEY),
+                        RootCatalogSettings.__read_layouts(settings),
+                        RootCatalogSettings.__read_fallbacks(settings),
                     )
                 )
             settings.endArray()
@@ -130,27 +130,46 @@ class RootCatalogSettings(QObject):
             for index, layout in enumerate(self.default_layouts):
                 settings.setArrayIndex(index)
                 settings.setValue(LABEL_KEY, layout.label)
-                settings.setValue(LAYOUTS_KEY, json.dumps(dict(layout.layouts), ensure_ascii=False))
+                stored = {key: list(templates) for key, templates in layout.layouts.items()}
+                settings.setValue(LAYOUTS_KEY, json.dumps(stored, ensure_ascii=False))
                 settings.setValue(FALLBACKS_KEY, json.dumps(dict(layout.fallbacks), ensure_ascii=False))
             settings.endArray()
         finally:
             settings.endGroup()
 
     @staticmethod
-    def __read_map(settings: QSettings, key: str) -> dict[str, str]:
-        """One map of a stored layout, written as JSON text.
+    def __read_layouts(settings: QSettings) -> dict[str, tuple[str, ...]]:
+        """The layouts of a stored layout, written as JSON text: each type's list of templates, or one template as a
+        plain string (#638).
 
         :param settings: the ``QSettings``, at the layout's array index.
-        :param key: :data:`LAYOUTS_KEY` or :data:`FALLBACKS_KEY`.
+        :returns: the layouts; empty, and logged, when they are not that.
+        """
+        text = str(settings.value(LAYOUTS_KEY, "{}"))
+        try:
+            return read_layouts(json.loads(text))
+        except ValueError:  # a `JSONDecodeError` is one
+            LOG.warning(
+                "A default root layout's %s are not an object of templates, and were dropped: %s", LAYOUTS_KEY, text
+            )
+            return {}
+
+    @staticmethod
+    def __read_fallbacks(settings: QSettings) -> dict[str, str]:
+        """The fallbacks of a stored layout, written as JSON text.
+
+        :param settings: the ``QSettings``, at the layout's array index.
         :returns: the map; empty, and logged, when it is not an object of strings.
         """
-        text = str(settings.value(key, "{}"))
+        text = str(settings.value(FALLBACKS_KEY, "{}"))
         try:
             value: Any = json.loads(text)
         except json.JSONDecodeError:
             value = None
         if not isinstance(value, dict) or not all(isinstance(item, str) for item in value.values()):
-            LOG.warning("A default root layout's %s are not an object of strings, and were dropped: %s", key, text)
+            LOG.warning(
+                "A default root layout's %s are not an object of strings, and were dropped: %s", FALLBACKS_KEY, text
+            )
             return {}
         return value
 

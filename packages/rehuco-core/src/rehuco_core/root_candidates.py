@@ -83,7 +83,7 @@ class RootCandidate:  # pylint: disable=too-many-instance-attributes
     location: str
     root_file: Path
     folder: Path | None
-    layouts: dict[str, str] = field(default_factory=dict)
+    layouts: dict[str, tuple[str, ...]] = field(default_factory=dict)
     fallbacks: dict[str, str] = field(default_factory=dict)
     problem: str = ""
     root: RehurootFile | None = field(default=None, compare=False)

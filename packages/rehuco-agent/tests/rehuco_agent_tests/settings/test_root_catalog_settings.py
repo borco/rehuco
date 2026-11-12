@@ -11,6 +11,7 @@ from rehuco_agent.settings.root_catalog_settings import (
     DEFAULT_LAYOUTS_KEY,
     DEFAULT_ROOT_LAYOUTS,
     DEFAULT_SCAN_AFTER_ADDING,
+    FALLBACKS_KEY,
     GROUP,
     LABEL_KEY,
     LAYOUTS_KEY,
@@ -168,7 +169,7 @@ def test_the_default_layouts_start_as_the_current_name_layout(stored: FakeSettin
 
     settings.load(stored)  # type: ignore[arg-type]
 
-    assert settings.default_layouts == DEFAULT_ROOT_LAYOUTS == (RootLayout("Keep folder names", {"*": "*"}, {}),)
+    assert settings.default_layouts == DEFAULT_ROOT_LAYOUTS == (RootLayout("Keep folder names", {"*": ("*",)}, {}),)
 
 
 def test_the_default_layouts_round_trip_and_a_shorter_list_leaves_nothing_behind(stored: FakeSettings) -> None:
@@ -181,8 +182,8 @@ def test_the_default_layouts_round_trip_and_a_shorter_list_leaves_nothing_behind
     * verify both reads and that no stale entry is left in the store
     """
     layouts = (
-        RootLayout("By author", {"tutorial": "{authors}/{title}"}, {"authors": "Unknown"}),
-        RootLayout("Flat", {"*": "*"}, {}),
+        RootLayout("By author", {"tutorial": ("{authors}/{title}",)}, {"authors": "Unknown"}),
+        RootLayout("Flat", {"*": ("*",)}, {}),
     )
     settings = RootCatalogSettings()
     settings.default_layouts = layouts
@@ -232,7 +233,7 @@ def test_a_layout_map_that_cannot_be_read_is_dropped_and_logged(
     * verify the layout is kept with empty layouts and its fallbacks, and the warning
     """
     settings = RootCatalogSettings()
-    settings.default_layouts = (RootLayout("Kept", {"*": "*"}, {"title": "Untitled"}),)
+    settings.default_layouts = (RootLayout("Kept", {"*": ("*",)}, {"title": "Untitled"}),)
     settings.save(stored)  # type: ignore[arg-type]
     stored.beginGroup(GROUP)
     stored.setValue(f"{DEFAULT_LAYOUTS_KEY}/1/{LAYOUTS_KEY}", text)
@@ -243,4 +244,57 @@ def test_a_layout_map_that_cannot_be_read_is_dropped_and_logged(
         reloaded.load(stored)  # type: ignore[arg-type]
 
     assert reloaded.default_layouts == (RootLayout("Kept", {}, {"title": "Untitled"}),)
-    assert "are not an object of strings" in caplog.text
+    assert "are not an object of templates" in caplog.text
+
+
+def test_a_stored_layout_reads_a_string_as_one_template_and_saves_lists(stored: FakeSettings) -> None:
+    """A preset holding a plain string for a type reads as one template, and a save writes every type as a list (#638).
+
+    **Test steps:**
+
+    * store a preset whose layouts hold a string and a list of two, and load
+    * save it again and read the stored text
+    * verify the templates read, and the stored text holding both as lists
+    """
+    settings = RootCatalogSettings()
+    settings.default_layouts = (RootLayout("Kept"),)
+    settings.save(stored)  # type: ignore[arg-type]
+    stored.beginGroup(GROUP)
+    stored.setValue(f"{DEFAULT_LAYOUTS_KEY}/1/{LAYOUTS_KEY}", '{"tutorial": "{title}", "*": ["*", "{title}"]}')
+    stored.endGroup()
+    reloaded = RootCatalogSettings()
+    reloaded.load(stored)  # type: ignore[arg-type]
+
+    assert reloaded.default_layouts[0].layouts == {"tutorial": ("{title}",), "*": ("*", "{title}")}
+
+    reloaded.save(stored)  # type: ignore[arg-type]
+    stored.beginGroup(GROUP)
+    assert stored.value(f"{DEFAULT_LAYOUTS_KEY}/1/{LAYOUTS_KEY}") == '{"tutorial": ["{title}"], "*": ["*", "{title}"]}'
+    stored.endGroup()
+
+
+@mark.parametrize("text", [param("not json", id="not-json"), param('{"title": 1}', id="not-strings")])
+def test_a_fallback_map_that_cannot_be_read_is_dropped_and_logged(
+    stored: FakeSettings, caplog: LogCaptureFixture, text: str
+) -> None:
+    """Fallbacks edited by hand into something no root can hold are read as empty, and the log says so; the layout
+    stays.
+
+    **Test steps:**
+
+    * save a layout, then overwrite its fallbacks with ``text``, and load
+    * verify the layout is kept with its layouts and no fallbacks, and the warning
+    """
+    settings = RootCatalogSettings()
+    settings.default_layouts = (RootLayout("Kept", {"*": ("*",)}, {"title": "Untitled"}),)
+    settings.save(stored)  # type: ignore[arg-type]
+    stored.beginGroup(GROUP)
+    stored.setValue(f"{DEFAULT_LAYOUTS_KEY}/1/{FALLBACKS_KEY}", text)
+    stored.endGroup()
+    reloaded = RootCatalogSettings()
+
+    with caplog.at_level(logging.WARNING, logger=root_catalog_settings.__name__):
+        reloaded.load(stored)  # type: ignore[arg-type]
+
+    assert reloaded.default_layouts == (RootLayout("Kept", {"*": ("*",)}, {}),)
+    assert "fallbacks are not an object of strings" in caplog.text

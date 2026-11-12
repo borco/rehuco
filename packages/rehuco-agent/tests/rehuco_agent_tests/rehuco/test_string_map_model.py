@@ -246,3 +246,43 @@ def test_fixed_keys_refuse_to_add_remove_duplicate_or_reset_a_row(model: StringM
     model.reset()
 
     assert rows(model) == [("title", "Intro"), ("year", "")]
+
+
+def test_with_repeated_keys_only_an_exact_repeat_or_a_blank_row_is_flagged(model: StringMapModel) -> None:
+    """A type may list several templates (#638): a row repeating a key with another value counts, and one alike in
+    both, or with no key or no value, is flagged and left out of the rows.
+
+    **Test steps:**
+
+    * allow repeated keys, then add ``tutorial`` with a second value, ``tutorial`` with the first again, and a blank
+      row
+    * verify the tooltips of the exact repeat and the blank row, none for the second value, and the rows that count
+    """
+    model.set_repeated_keys()
+    model.set_rows([("tutorial", "{title}"), ("tutorial", "{authors}/{title}"), ("tutorial", "{title}"), ("", "x")])
+
+    tooltips = [model.index(row, KEY_COLUMN).data(Qt.ItemDataRole.ToolTipRole) for row in range(4)]
+
+    assert tooltips[:2] == [None, None]
+    assert "already a row above" in tooltips[2]
+    assert "No key" in tooltips[3]
+    assert model.rows == (("tutorial", "{title}"), ("tutorial", "{authors}/{title}"))
+
+
+def test_the_rows_are_set_once_and_a_row_with_no_value_is_left_out(model: StringMapModel, qtbot: QtBot) -> None:
+    """Setting the rows already shown resets nothing; a row with a key and no value does not count (#638).
+
+    **Test steps:**
+
+    * allow repeated keys and set rows, then set the same rows again, watching for a reset
+    * set rows with an empty value
+    * verify one reset only, and the empty-valued row absent from the rows
+    """
+    model.set_repeated_keys()
+    model.set_rows([("a", "1")])
+
+    with qtbot.assertNotEmitted(model.modelReset):
+        model.set_rows([("a", "1")])
+    model.set_rows([("a", "1"), ("b", "")])
+
+    assert model.rows == (("a", "1"),)

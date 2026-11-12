@@ -210,7 +210,7 @@ def test_a_root_file_stands_for_the_folder_it_resolves_to_in_either_order(
     * take the file out and read the rows again
     """
     (shared,) = folders(tmp_path, "shared")
-    root = RehurootFile.new(tmp_path / "shared.rehuroot", location_of(shared), "Shared", layouts={"*": "{title}"})
+    root = RehurootFile.new(tmp_path / "shared.rehuroot", location_of(shared), "Shared", layouts={"*": ("{title}",)})
     root.save()
 
     dialog.stage([shared])
@@ -220,7 +220,7 @@ def test_a_root_file_stands_for_the_folder_it_resolves_to_in_either_order(
     assert dialog.model.rowCount() == 1
     assert dialog.model.index(0).data(CandidateRole.KIND) == CandidateKind.FILE
     (line,) = dialog.candidates
-    assert (line.label, line.folder, line.layouts) == ("Shared", shared, {"*": "{title}"})
+    assert (line.label, line.folder, line.layouts) == ("Shared", shared, {"*": ("{title}",)})
 
     dialog.model.remove(0)
     planned(qtbot, dialog)
@@ -323,7 +323,7 @@ def test_the_preset_picked_gives_the_root_its_layouts(qtbot: QtBot, dialog: AddR
     * have two presets, stage a folder, and pick the second in its combo
     * verify the candidate carries the second preset's maps
     """
-    second = RootLayout("By title", {"tutorial": "{title}"}, {"title": "?"})
+    second = RootLayout("By title", {"tutorial": ("{title}",)}, {"title": "?"})
     shared_root_catalog_settings().default_layouts = (*DEFAULT_ROOT_LAYOUTS, second)
     (folder,) = folders(tmp_path, "Krita")
     dialog.stage([folder])
@@ -332,7 +332,7 @@ def test_the_preset_picked_gives_the_root_its_layouts(qtbot: QtBot, dialog: AddR
     editor_at(dialog, 0).layout_combo.activated.emit(1)
 
     (line,) = dialog.candidates
-    assert (line.layouts, line.fallbacks) == ({"tutorial": "{title}"}, {"title": "?"})
+    assert (line.layouts, line.fallbacks) == ({"tutorial": ("{title}",)}, {"title": "?"})
 
 
 def test_new_layout_saves_a_preset_and_gives_it_to_the_folder(
@@ -347,7 +347,7 @@ def test_new_layout_saves_a_preset_and_gives_it_to_the_folder(
     * verify nothing changed the first time; then the settings hold the preset, the store has it, the candidate
       carries its maps, and the combo offers it before *New layout…*
     """
-    made = RootLayout("Deep", {"tutorial": "{authors}/{title}"}, {})
+    made = RootLayout("Deep", {"tutorial": ("{authors}/{title}",)}, {})
     ask = mocker.patch.object(dialog, "ask_new_layout", side_effect=[None, made])
     (folder,) = folders(tmp_path, "Krita")
     dialog.stage([folder])
@@ -363,7 +363,7 @@ def test_new_layout_saves_a_preset_and_gives_it_to_the_folder(
     stored.beginGroup("root_catalog")
     assert stored.value("default_layouts/2/label") == "Deep"
     stored.endGroup()
-    assert next(iter(dialog.candidates)).layouts == {"tutorial": "{authors}/{title}"}
+    assert next(iter(dialog.candidates)).layouts == {"tutorial": ("{authors}/{title}",)}
     combo = editor_at(dialog, 0).layout_combo
     assert [combo.itemText(row) for row in range(combo.count())][-2] == "Deep"
     assert combo.currentText() == "Deep"
@@ -544,7 +544,7 @@ def test_the_new_layout_question_answers_the_preset_or_nothing(mocker: MockerFix
         return QDialog.DialogCode.Accepted
 
     mocker.patch.object(NewLayoutDialog, "exec", new=accept)
-    assert dialog.ask_new_layout(frozenset()) == RootLayout("Deep", {"*": "*"}, {})
+    assert dialog.ask_new_layout(frozenset()) == RootLayout("Deep", {"*": ("*",)}, {})
 
     mocker.patch.object(NewLayoutDialog, "exec", return_value=QDialog.DialogCode.Rejected)
     assert dialog.ask_new_layout(frozenset()) is None

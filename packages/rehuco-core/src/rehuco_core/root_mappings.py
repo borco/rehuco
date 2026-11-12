@@ -32,7 +32,7 @@ from uuid import UUID
 from borco_core import atomic_write_text
 
 from .rehuco_file import RehucoFile, RehucoRoot, RootStorage
-from .rehuroot_file import DEFAULT_LAYOUTS
+from .rehuroot_file import DEFAULT_LAYOUTS, Layouts
 from .root_location import storage_of
 
 ROOT_MAPPINGS_FILE_NAME: Final = "root-mappings.json"
@@ -79,7 +79,8 @@ class MappedRoot:  # pylint: disable=too-many-instance-attributes
     :param storage: what that folder lives on.
     :param file: the ``.rehuroot`` it was read from, which the cache keeps so the root's rows outlive the file
         becoming unreadable; ``None`` for a root not read from one.
-    :param layouts: the path template of each type's main key, ``*`` for any type not named (#578).
+    :param layouts: the path templates of each type's main key, ``*`` for any type not named, in offer order (#578,
+        #638).
     :param fallbacks: what each placeholder renders as when a record leaves it empty (#578).
     """
 
@@ -89,7 +90,7 @@ class MappedRoot:  # pylint: disable=too-many-instance-attributes
     path: Path
     storage: RootStorage = RootStorage.LOCAL
     file: Path | None = field(default=None, compare=False)
-    layouts: Mapping[str, str] = field(default=DEFAULT_LAYOUTS, compare=False)
+    layouts: Layouts = field(default=DEFAULT_LAYOUTS, compare=False)
     fallbacks: Mapping[str, str] = field(default_factory=dict, compare=False)
 
     @property

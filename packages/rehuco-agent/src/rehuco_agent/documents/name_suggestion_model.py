@@ -16,10 +16,9 @@ from rehuco_core import (
     RecordNaming,
     Refusal,
     apply_location_replacements,
-    destination,
+    destinations,
     is_directory_scoped,
     known_placeholders_for,
-    layout_template,
     location_values,
     path_key,
     render_location_pattern,
@@ -92,7 +91,8 @@ class NameSuggestionModel(QObject):
     never touches the filesystem.
 
     **The roots' places** (#579, #339), :meth:`root_destinations`, are the second group the path row offers: where
-    each root's layout puts the record, the root holding it first, then every other this machine maps and reaches, in
+    each root's layout puts the record -- one place for each of its templates that renders, in row order, a place two
+    render once (#638) -- the root holding it first, then every other this machine maps and reaches, in
     the catalog's order. Only a place that can be built is offered -- a root this machine does not reach, and one whose
     layout does not take the record's type or needs a field the record leaves empty with no fallback, offer none. A
     record under no root is offered every root's place; one under a root that cannot be reached now, none. A ``*``
@@ -216,27 +216,27 @@ class NameSuggestionModel(QObject):
         naming = RecordNaming.of(self.__model.document, current_name)
         rules = shared_location_replacements_settings().rules
         folder = path.parent.parent if is_directory_scoped(path) else path.parent
+        current = path_key(folder / current_name)
         places: list[RootDestination] = []
         for root in [*([own] if own is not None else []), *others]:
-            relative = destination(root, naming, rules)
-            here = not isinstance(relative, Refusal) and (
-                path_key(root.path.joinpath(*relative.parts)) == path_key(folder / current_name)
-            )
-            if root is own and not here:
+            offered = destinations(root, naming, rules)
+            if isinstance(offered, Refusal):
+                offered = ()
+            here = [path_key(root.path.joinpath(*place.relative.parts)) == current for place in offered]
+            if root is own and not any(here):
                 places.append(self.__current_place(root, folder, current_name))
-            if isinstance(relative, Refusal):
-                continue
-            places.append(
+            places.extend(
                 RootDestination(
                     root.label or root.location,
-                    relative,
+                    place.relative,
                     root.path,
                     root.root_id,
-                    here,
+                    is_here,
                     None if own is None else own.path,
                     None if own is None else own.root_id,
-                    (layout_template(root, naming.main_key) or "").strip(),
+                    place.template,
                 )
+                for place, is_here in zip(offered, here, strict=True)
             )
         return tuple(places)
 

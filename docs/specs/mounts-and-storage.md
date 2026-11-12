@@ -132,7 +132,7 @@ references** to such files and nothing more about a root: its role is to aggrega
   "id": "…",
   "label": "Tutorials",
   "location": "//nas/data/Tutorials",
-  "layouts": { "*": "*" },
+  "layouts": { "*": ["*"] },
   "fallbacks": { "authors": "Unknown" }
 }
 ```
@@ -148,12 +148,15 @@ references** to such files and nothing more about a root: its role is to aggrega
   id>.rehudb`), so a root two catalogs share is scanned into both; a cache per root is the follow-up
   ([[appendices.open-questions#still-open]]), not this.
 - **`layouts`** says where a record of each type lives under this root: a map from a resource type's main key, or
-  `*` for any type not named, to a **path template** — the Locations grammar ([[plugins#tutorial-plugin]]'s
+  `*` for any type not named, to a **list of path templates** (#638; a plain string reads as a list of one, and a save
+  writes lists) — each the Locations grammar ([[plugins#tutorial-plugin]]'s
   placeholders, `{{ … }}` optional groups, `{count}` where the type declares it, the Location Replacements applied
   after) **plus `/` as a level separator**, each segment sanitized as a name is today and the separators kept. The
   value `*` means *keep the record's current folder name*, at the root's top, under the record's own root too (#643);
-  the place the record sits at is a row of its own in the path row. The default `{"*": "*"}` admits
-  anything under its current name; `{"tutorial": "{authors}/{title}{{ [{year}]}}"}` groups tutorials under their
+  the place the record sits at is a row of its own in the path row. **The list's order is the order the path row
+  offers the places in**: a template that cannot render for a record is skipped, and two rendering one place offer it
+  once. A type's own list replaces the `*` one for that type. The default `{"*": ["*"]}` admits
+  anything under its current name; `{"tutorial": ["{authors}/{title}{{ [{year}]}}"]}` groups tutorials under their
   authors **and admits no other type** — a type with no entry and no `*` cannot be moved here.
 - **`fallbacks`** names what a placeholder renders as when the record leaves it empty — **outside an optional group
   only**: a group whose placeholder is empty drops out, a fallback for it notwithstanding. An empty placeholder
