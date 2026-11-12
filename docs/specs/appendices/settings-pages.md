@@ -87,13 +87,16 @@ and Tasks docks get.
 
 [[[appendices.settings-pages#category-groups]]]
 
-**Today the tree is a flat list, in alphabetical order, with one group** (#277, #294, #298):
+**Today the tree is a flat list, in alphabetical order, with three groups** (#277, #294, #298, #322, #637):
 "Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Files" (`FilesPage`, #226,
 #291, #298), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
-"Root Catalog" (`RootCatalogPage`, #457), "Session" (`SessionPage`, #65), "Shortcuts" (`ShortcutsPage`, #344),
+"Roots" (a group, below), "Session" (`SessionPage`, #65), "Shortcuts" (`ShortcutsPage`, #344),
 "System Integration", "Tasks" (`TasksPage`, #202), "Tools" (`ToolsPage`, #521) and "Videos" (`VideosPage`, #225).
 "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar Extensions" (`ImagesFilesPage`) and
-"Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
+"Sidecar Names" (`ScreenshotPatternsPage`, #53, #287). "Locations" nests a page per resource type
+(`LocationTemplatesPage`, #322) and "Root Layout Templates" (`RootLayoutTemplatesPage`, #637), in alphabetical order.
+"Roots" nests "New Root Presets" (`NewRootPresetsPage`, #637) and "Root Catalog" (`RootCatalogPage`, #457); the saved
+path of the last page shown for the second is `Roots/Root Catalog`.
 
 Four settings the 0.4.0 video and root work adds to existing pages: **Videos** gains a *Playback* block (#318):
 *Qt (bundled FFmpeg)*, the default and the player SHIFT+double-click always opens, *Qt with external FFmpeg libraries*
@@ -113,14 +116,26 @@ with *Unknown* for the tracks that name none; a name libvlc does not know is dro
 `English` ([[plugins#in-app-player]]). The *Notes* frame #573 added, with its *Adding a note pauses the
 video and opens the notes for editing* box (`add_note_edits`), is gone (owner, #574): the player's `B` only adds its
 bookmark, docked or maximized ([[plugins#video-notes-dock]]), and a stored value is ignored.
-**Root Catalog**
-gains a *Default root layouts* frame — a list of named entries, each a per-type layout map (one row per type or `*`)
+**Roots › New Root Presets** (#578, moved here by #637; it was a frame of Root Catalog)
+is the *New root presets* frame — a list of named entries, each a per-type layout map (one row per type or `*`)
 and a fallback map, edited below the list for the entry selected with the same two tables the Roots view's edit mode
 uses, seeded with *Keep folder names* (`{"*": "*"}`) and never saved empty (an emptied list is the seed again). The Add
 Roots dialog offers them in its combo and can add to them from the dialog, which saves at once, so the page is
-rebased as it is by the menu's preview toggle ([[mounts-and-storage#rehuroot]], #578). Stored in the `.ini` as an
-array under `root_catalog/default_layouts`, each entry's maps as JSON text. The per-type Locations pages keep their
+rebased as it is by the menu's preview toggle ([[mounts-and-storage#rehuroot]]). Stored in the `.ini` as an
+array under `root_catalog/default_layouts`, each entry's maps as JSON text. **Roots › Root Catalog** keeps the
+*Roots view* frame, the *Automatically preview the current rehu* checkbox. The per-type Locations pages keep their
 single-name templates: those are in-place renames, a root's layout is where a record lives.
+
+**Locations › Root Layout Templates** (#637) is the library of path templates the root editor's *Path template* cell
+offers: one list for every type, a row being the Locations grammar plus `/` between folder levels, shaped like the
+per-type pages -- the list above, *Try it* below. A row that does not parse or names an unknown placeholder is **kept
+and flagged** with its reason, and not offered; so is a `*` row, which the editor always offers already and so never
+offers twice. It ships empty. *Try it* is
+a sample record (title, publisher, authors, year, count) and, for each valid row, the path it gives it through the
+Location Replacements and the name sanitising as a root's destination does, or why it would offer no place (an empty
+placeholder with no fallback, a level that renders to nothing). Stored as a list under `root_layout_templates/templates`
+and the sample, a key per field, under `root_layout_try_it`. A root keeps the template text it was given: editing the
+library changes no root.
 
 "System Integration" is one page, `SystemIntegrationPage`, on every platform (#508). It declares the tray
 and local node blocks every platform has, and takes the platform's own blocks as frames inserted ahead of
@@ -141,7 +156,7 @@ broad page plus a set of specific ones names the broad one "General" and registe
 its title would sort — "Scrapers/General" before "Scrapers/ArtStation", were Scrapers ever to split. No
 group has a "General" page today; the rule is written down so the first one does not reinvent it.
 
-**"Images" is the one group in use** (#294) — the `group=` machinery kept dormant since #277 for "the
+**"Images" was the first group in use** (#294; "Locations", #322, and "Roots", #637, followed) — the `group=` machinery kept dormant since #277 for "the
 next tree that wants a tier" finally has one. Until #277 the four pages a resource type owns —
 Descriptions, Files, Images, Videos — nested under a **Plugins** group row. What that bought
 was a word the reader has to know before they can look under it: "Videos" is findable by its own name,
@@ -574,8 +589,8 @@ now folded into a group (`"Images"`) finds the group row it became.
   existing calls**, since registration order is tree order
   ([[appendices.settings-pages#category-groups]]). The page itself declares no title. Nesting it under a
   group uses the three-argument overload instead,
-  `self.__settings_dialog.add_page("Its Group", "Its Title", ItsPage())` — "Images" is the one group in
-  use today (#294). The *first* page registered is the initially-selected one.
+  `self.__settings_dialog.add_page("Its Group", "Its Title", ItsPage())` — "Images", "Locations" and
+  "Roots" are the groups in use today (#294, #322, #637). The *first* page registered is the initially-selected one.
 - A platform-gated block (like `RegistrationFrameWindows` — "System Integration", Windows-only) is
   imported lazily inside the `if sys.platform == "win32":` branch, and takes whatever app-level data it
   needs (e.g. `ARCHIVE_EXTENSIONS`) as a constructor parameter rather than importing it back from

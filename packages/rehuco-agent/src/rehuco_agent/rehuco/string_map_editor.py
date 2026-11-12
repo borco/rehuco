@@ -4,7 +4,7 @@
 # the table chrome here is `LocationReplacementsEditor`'s: both are multi-column rows over `ItemListEditor`
 # pylint: disable=duplicate-code
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Final, override
 
 from borco_pyside.widgets import ContentSizedTableView, ItemListEditor, RowBandDelegate
@@ -19,9 +19,11 @@ type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a delegate method."""
 
 
-class KeyChoicesDelegate(RowBandDelegate):
-    """Edits the key column with an editable combo of the keys it knows, so a known key is picked rather than
-    spelled; any other text can still be typed. The value column keeps the plain line edit.
+class MapChoicesDelegate(RowBandDelegate):
+    """Edits a column with an editable combo of the entries it knows, so a known one is picked rather than spelled; any
+    other text can still be typed. The key column offers :attr:`choices`; the value column offers what
+    :meth:`set_value_choices` was given says for the row's key (#637). A column with no choices keeps the plain line
+    edit.
 
     :param parent: optional Qt parent.
     """
@@ -29,6 +31,7 @@ class KeyChoicesDelegate(RowBandDelegate):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__choices: tuple[str, ...] = ()
+        self.__value_choices: Callable[[str], Sequence[str]] | None = None
 
     @property
     def choices(self) -> tuple[str, ...]:
@@ -39,14 +42,30 @@ class KeyChoicesDelegate(RowBandDelegate):
     def choices(self, choices: Sequence[str]) -> None:
         self.__choices = tuple(choices)
 
+    def set_value_choices(self, value_choices: Callable[[str], Sequence[str]] | None) -> None:
+        """Offer these values in the value column, by the row's key.
+
+        :param value_choices: what a key's row offers, asked each time an editor opens; ``None`` leaves a plain line
+            edit.
+        """
+        self.__value_choices = value_choices
+
     @override
     def createEditor(self, parent: QWidget, option: QStyleOptionViewItem, index: ModelIndex) -> QWidget:  # noqa: N802
-        if index.column() != KEY_COLUMN or not self.__choices:
+        if index.column() == KEY_COLUMN:
+            choices = self.__choices
+        elif self.__value_choices is not None:
+            choices = tuple(
+                self.__value_choices(str(index.model().index(index.row(), KEY_COLUMN).data(Qt.ItemDataRole.EditRole)))
+            )
+        else:
+            choices = ()
+        if not choices:
             return super().createEditor(parent, option, index)
         combo = QComboBox(parent)
         combo.setEditable(True)
         combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        combo.addItems(list(self.__choices))
+        combo.addItems(list(choices))
         return combo
 
     @override
@@ -79,7 +98,7 @@ class StringMapEditor(ItemListEditor):
     def __init__(self, parent: QWidget | None = None) -> None:
         model = StringMapModel(("Key", "Value"))
         table = ContentSizedTableView()
-        delegate = KeyChoicesDelegate(table)
+        delegate = MapChoicesDelegate(table)
         super().__init__(table, model, parent, with_ordering=False, delegate=delegate)
         self.__model: Final = model
         self.__delegate: Final = delegate
@@ -118,6 +137,41 @@ class StringMapEditor(ItemListEditor):
         :param value: the value column's header.
         """
         self.__model.set_titles((key, value))
+
+    def set_value_choices(self, value_choices: Callable[[str], Sequence[str]] | None) -> None:
+        """Offer these values in the value column's editor, by the row's key (#637).
+
+        :param value_choices: the values a key's row offers, in order; asked each time an editor opens. ``None`` leaves
+            a plain line edit.
+        """
+        self.__delegate.set_value_choices(value_choices)
+
+    def set_value_problem(self, value_problem: Callable[[str, str], str] | None) -> None:
+        """Flag a value the checker finds fault with, in colour and with the reason as a tooltip (#637); the value is
+        still kept.
+
+        :param value_problem: given a row's key and value, the reason it is unusable, or ``""``.
+        """
+        self.__model.set_value_problem(value_problem)
+
+    def set_fixed_keys(self, keys: Sequence[str]) -> None:
+        """Make the table one row per key, in that order: the key column read-only and no way to add, duplicate or
+        delete a row (#637). Show the values with :attr:`mapping`.
+
+        The buttons go but their column's width stays, so a table fixed this way is as wide as one above it that keeps
+        its buttons.
+
+        :param keys: the keys, in row order.
+        """
+        self.__model.set_fixed_keys(keys)
+        width = self.item_actions.sizeHint().width()
+        for action in (
+            self.item_actions.insert_action,
+            self.item_actions.duplicate_action,
+            self.item_actions.delete_action,
+        ):
+            action.setVisible(False)
+        self.item_actions.setFixedWidth(width)
 
     def set_key_choices(self, choices: Sequence[str]) -> None:
         """Offer these keys in the key column's editor.

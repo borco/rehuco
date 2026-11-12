@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>RootLayoutTemplatesPage</class>
+ <widget class="QWidget" name="RootLayoutTemplatesPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>620</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="templates_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="templates_frame_layout">
+      <item>
+       <widget class="QLabel" name="templates_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Root path templates</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="LocationTemplatePatternsEditor" name="templates_editor">
+        <property name="toolTip">
+         <string>Each row is a path template: the Locations grammar, with / between folder levels. Double-click a cell to edit it.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="templates_note_label">
+        <property name="text">
+         <string>The root editor's Path template drop-down offers these, after *, for each type that accepts them. A template uses the Locations placeholders {title}, {publisher}, {authors} and {year}, plus {count} for a type that declares it, with {{ ... }} groups that drop out when a field inside is empty, and / between folder levels: {authors}/{title}{{ [{year}]}}. A template that does not parse, or names an unknown placeholder, is kept and shown in red, and not offered; so is a * row, which the drop-down always has. A root keeps the template it was given: editing this list changes no root.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="try_it_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="try_it_frame_layout">
+      <item>
+       <widget class="QLabel" name="try_it_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Try it</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="try_it_note_label">
+        <property name="text">
+         <string>Edit the sample record to see the path each valid template gives it, through the Location Replacements and name sanitising, or why it would offer no place. Apply keeps the sample, like any other setting.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QFormLayout" name="sample_fields_layout">
+        <item row="0" column="0">
+         <widget class="QLabel" name="sample_title_label">
+          <property name="text">
+           <string>Title</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QLineEdit" name="sample_title_edit"/>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="sample_publisher_label">
+          <property name="text">
+           <string>Publisher</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QLineEdit" name="sample_publisher_edit"/>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="sample_authors_label">
+          <property name="text">
+           <string>Authors</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QLineEdit" name="sample_authors_edit"/>
+        </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="sample_year_label">
+          <property name="text">
+           <string>Year</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="1">
+         <widget class="QLineEdit" name="sample_year_edit"/>
+        </item>
+        <item row="4" column="0">
+         <widget class="QLabel" name="sample_count_label">
+          <property name="text">
+           <string>Count</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="1">
+         <widget class="QLineEdit" name="sample_count_edit"/>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="try_it_result_label">
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LocationTemplatePatternsEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.settings.ui.location_template_patterns_editor</header>
+  </customwidget>
+  <customwidget>
+   <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,16 +1,11 @@
-"""Tests for RootCatalogPage: the Root Catalog settings page (#457)."""
+"""Tests for RootCatalogPage: the Roots › Root Catalog settings page (#457)."""
 
 from PySide6.QtWidgets import QCheckBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings.root_catalog_settings import (
-    DEFAULT_ROOT_LAYOUTS,
-    RootLayout,
-    shared_root_catalog_settings,
-)
+from rehuco_agent.settings.root_catalog_settings import shared_root_catalog_settings
 from rehuco_agent.settings.ui import root_catalog_page
-from rehuco_agent.settings.ui.default_root_layouts_editor import DefaultRootLayoutsEditor
 from rehuco_agent.settings.ui.root_catalog_page import RootCatalogPage
 from rehuco_agent.settings.ui.settings_page import ExternallySavedPage, SettingsPage
 
@@ -150,77 +145,3 @@ def test_the_page_says_so_whenever_the_saved_choice_changes(qtbot: QtBot, page: 
     box(page).setChecked(True)
     with qtbot.waitSignal(page.saved_changed, timeout=1000):
         page.save_changes()
-
-
-def layouts_editor(page: RootCatalogPage) -> DefaultRootLayoutsEditor:
-    """The page's default root layouts.
-
-    :param page: the page.
-    :returns: the editor.
-    """
-    found = page.findChild(DefaultRootLayoutsEditor)
-    assert found is not None
-    return found
-
-
-def test_the_default_layouts_are_staged_applied_dropped_and_seeded(page: RootCatalogPage, stored: FakeSettings) -> None:
-    """The default root layouts are staged like the box: an edit dirties the page, Apply saves it, Reset and Defaults
-    put back the saved and the shipped layouts (#578).
-
-    **Test steps:**
-
-    * verify the page shows the saved layouts; stage two layouts and verify the page dirty and the setting unchanged
-    * apply, and verify the setting, the store and a clean page
-    * stage none, drop it, and verify the saved layouts are back; seed the defaults and verify the shipped ones staged
-    """
-    settings = shared_root_catalog_settings()
-    assert layouts_editor(page).layouts == DEFAULT_ROOT_LAYOUTS
-    staged = (RootLayout("Deep", {"tutorial": "{authors}/{title}"}, {}), *DEFAULT_ROOT_LAYOUTS)
-
-    layouts_editor(page).layouts = staged
-    assert page.is_dirty()
-    assert settings.default_layouts == DEFAULT_ROOT_LAYOUTS
-
-    page.save_changes()
-    assert settings.default_layouts == staged
-    assert not page.is_dirty()
-    stored.beginGroup("root_catalog")
-    assert stored.value("default_layouts/1/label") == "Deep"
-    stored.endGroup()
-
-    layouts_editor(page).layouts = ()
-    page.drop_changes()
-    assert layouts_editor(page).layouts == staged
-
-    page.seed_defaults()
-    assert layouts_editor(page).layouts == DEFAULT_ROOT_LAYOUTS
-    assert page.is_dirty()
-
-
-def test_applying_no_layouts_saves_the_shipped_one(page: RootCatalogPage) -> None:
-    """A folder always needs a layout, so an emptied list is applied as the shipped one.
-
-    **Test steps:**
-
-    * stage no layouts and apply
-    * verify the setting holds the shipped layout
-    """
-    layouts_editor(page).layouts = ()
-
-    page.save_changes()
-
-    assert shared_root_catalog_settings().default_layouts == DEFAULT_ROOT_LAYOUTS
-    assert layouts_editor(page).layouts == DEFAULT_ROOT_LAYOUTS
-    assert not page.is_dirty()
-
-
-def test_the_page_says_so_when_a_layout_is_saved_from_the_add_roots_dialog(qtbot: QtBot, page: RootCatalogPage) -> None:
-    """*New layout…* saves at once, behind the page's back, so the page is told to be rebased.
-
-    **Test steps:**
-
-    * change the shared layouts as the dialog does
-    * verify the page said the saved values changed
-    """
-    with qtbot.waitSignal(page.saved_changed, timeout=1000):
-        shared_root_catalog_settings().default_layouts = (RootLayout("New"),)

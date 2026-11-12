@@ -4,7 +4,7 @@
 # line -- see that module's own note on why this is a copy rather than a shared generic base.
 # pylint: disable=duplicate-code
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
@@ -71,6 +71,7 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
         self.__entries: list[str] = []
         self.__defaults: tuple[str, ...] = tuple(defaults)
         self.__known_placeholders: frozenset[str] = known_placeholders
+        self.__refused: dict[str, str] = {}
         self.rowsInserted.connect(self.count_changed)
         self.rowsRemoved.connect(self.count_changed)
         self.modelReset.connect(self.count_changed)
@@ -125,6 +126,19 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
         :param known_placeholders: the placeholders this type's patterns accept.
         """
         self.__known_placeholders = known_placeholders
+
+    @property
+    def refused(self) -> dict[str, str]:
+        """Patterns flagged whatever the grammar says of them, each with why (#637); none by default."""
+        return dict(self.__refused)
+
+    @refused.setter
+    def refused(self, refused: Mapping[str, str]) -> None:
+        """Set the patterns to flag, once, before any row is loaded.
+
+        :param refused: each pattern, as trimmed, and the reason its row shows.
+        """
+        self.__refused = dict(refused)
 
     def insert(self, at: int) -> int:
         """Insert a blank pattern after ``at``, or at the end -- the `ItemEditor` contract.
@@ -224,7 +238,8 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
         :param row: the row to test.
         :returns: the explanation, or an empty string when the pattern is fine.
         """
-        return location_pattern_problem(self.__entries[row], self.__known_placeholders)
+        entry = self.__entries[row]
+        return self.__refused.get(entry.strip()) or location_pattern_problem(entry, self.__known_placeholders)
 
     # region Qt model interface
 

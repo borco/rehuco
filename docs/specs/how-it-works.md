@@ -190,7 +190,7 @@ way. A root that cannot be reached keeps its rows, greyed, and they do not open;
 
 Selecting a row in a table, or a record in the Roots view, shows that resource in a preview panel in Documents, without
 creating anything; a double-click on a table row opens it for real. `Root Catalog` > **Automatically preview the current rehu**, also
-on the Root Catalog settings page, turns off the Roots view driving that preview. The tables always do.
+on the Roots › Root Catalog settings page, turns off the Roots view driving that preview. The tables always do.
 
 The biggest user is **checksums**. Beside each resource sits a `.checksum` record of *when each of its
 files was last checked and what the answer was* — not a manifest for an external tool, which is what lets

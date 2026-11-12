@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Final, Protocol
 
-from .location_pattern import LocationPattern, known_placeholders_for, location_values
+from .location_pattern import KNOWN_PLACEHOLDERS, LocationPattern, known_placeholders_for, location_values
+from .plugins.plugin_registry import PluginRegistry
 from .rehu_document import RehuDocument
 from .rehuroot_file import ANY_TYPE, KEEP_NAME
 from .replacement_rule import ReplacementRule, apply_location_replacements
@@ -131,12 +132,57 @@ def destination(
     missing = pattern.missing(record.values, root.fallbacks)
     if missing:
         return Refusal(f"The record has no {', '.join(missing)}, and {name} names no fallback for it.")
-    held = {key: value.replace(LEVEL_SEPARATOR, SEPARATOR_STAND_IN) for key, value in record.values.items()}
-    held_fallbacks = {key: value.replace(LEVEL_SEPARATOR, SEPARATOR_STAND_IN) for key, value in root.fallbacks.items()}
+    path = render_layout(pattern, record.values, root.fallbacks, rules)
+    if path is None:
+        return Refusal(f"{name}'s layout for a {record.main_key} renders a folder with no name.")
+    return path
+
+
+def layout_template_problem(template: str, placeholders: frozenset[str]) -> str:
+    """Why a path template cannot be used by a type that accepts ``placeholders``, or ``""`` when it can (#637).
+
+    :param template: the template as written; ``*`` keeps the record's name and is always fine.
+    :param placeholders: the placeholders the type's templates may name.
+    :returns: the parse problem, or ``""``.
+    """
+    if template.strip() == KEEP_NAME:
+        return ""
+    return LocationPattern(template, placeholders).problem
+
+
+def layout_placeholders(main_key: str, registry: PluginRegistry) -> frozenset[str]:
+    """The placeholders a root's template for ``main_key`` may name: the base four under ``*``, which covers every type,
+    else the type's own (#637).
+
+    :param main_key: a type's main key, or ``*``.
+    :param registry: the plugins, which say what a type declares.
+    :returns: the placeholder names.
+    """
+    if main_key == ANY_TYPE:
+        return KNOWN_PLACEHOLDERS
+    return known_placeholders_for(registry.field_names(main_key))
+
+
+def render_layout(
+    pattern: LocationPattern,
+    values: Mapping[str, str],
+    fallbacks: Mapping[str, str],
+    rules: Sequence[ReplacementRule],
+) -> PurePosixPath | None:
+    """Render a valid pattern into a path, one segment per level, each replaced and sanitized on its own.
+
+    :param pattern: the parsed template.
+    :param values: the record's fields, every placeholder present.
+    :param fallbacks: what a blank placeholder outside a group renders as.
+    :param rules: the Location Replacements.
+    :returns: the path, or ``None`` when a level renders to nothing.
+    """
+    held = {key: value.replace(LEVEL_SEPARATOR, SEPARATOR_STAND_IN) for key, value in values.items()}
+    held_fallbacks = {key: value.replace(LEVEL_SEPARATOR, SEPARATOR_STAND_IN) for key, value in fallbacks.items()}
     segments: list[str] = []
     for raw in pattern.render(held, held_fallbacks).split(LEVEL_SEPARATOR):
         segment = sanitize_name(apply_location_replacements(raw.replace(SEPARATOR_STAND_IN, LEVEL_SEPARATOR), rules))
         if segment is None:
-            return Refusal(f"{name}'s layout for a {record.main_key} renders a folder with no name.")
+            return None
         segments.append(segment)
     return PurePosixPath(*segments)

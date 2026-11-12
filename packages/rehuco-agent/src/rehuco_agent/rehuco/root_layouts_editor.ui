@@ -36,7 +36,7 @@
    <item>
     <widget class="StringMapEditor" name="layouts_editor">
      <property name="toolTip">
-      <string>Where a record of each type lives under the root: a path template, with / between levels, or * to keep the record's current name at the root's top. The type * stands for every type not named. A type with no row, and no * row, cannot be moved here.</string>
+      <string>Where a record of each type lives under the root: a path template, with / between levels, or * to keep the record's current name at the root's top, picked from * and the Root Layout Templates of the settings that the type accepts, or typed. A template the type cannot use is shown in colour, with the reason as its tooltip, and kept as typed. The type * stands for every type not named. A type with no row, and no * row, cannot be moved here.</string>
      </property>
     </widget>
    </item>
@@ -53,7 +53,7 @@
    <item>
     <widget class="StringMapEditor" name="fallbacks_editor">
      <property name="toolTip">
-      <string>What a placeholder of a layout becomes when a record leaves it empty, outside an optional group. With no fallback, an empty placeholder keeps the record from this root.</string>
+      <string>What a placeholder of a layout becomes when a record leaves it empty, outside an optional group: one row for each placeholder, an empty one meaning no fallback. With no fallback, an empty placeholder keeps the record from this root.</string>
      </property>
     </widget>
    </item>

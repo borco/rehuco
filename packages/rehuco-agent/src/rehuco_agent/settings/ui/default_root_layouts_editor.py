@@ -1,4 +1,4 @@
-"""The default root layouts, edited on the Root Catalog settings page: their names, and the maps of the one selected
+"""The default root layouts, edited on the New Root Presets settings page: their names, and the maps of the one selected
 ([[appendices.settings-pages#category-groups]], #578)."""
 
 from collections.abc import Sequence

@@ -30,6 +30,10 @@ PLUGIN_PLACEHOLDERS: Final[Mapping[str, str]] = {"count": "advertised_count"}
 refused on a tutorial one, without either page's declaration knowing the other's shape. Keyed by
 placeholder name, which is what a pattern spells and what :func:`known_placeholders_for` returns."""
 
+PLACEHOLDERS: Final = ("title", "publisher", "authors", "year", "count")
+"""Every placeholder a template of any type may name, in the order a page shows them: :data:`KNOWN_PLACEHOLDERS` and
+the :data:`PLUGIN_PLACEHOLDERS` names (#637)."""
+
 BLANK_PATTERN_PROBLEM: Final = "A pattern is a format string interpolating {title} / {publisher} / {authors} / {year}."
 MALFORMED_PATTERN_PROBLEM: Final = (
     "This does not parse as a format string: a { or } is unbalanced, or a placeholder carries a "
