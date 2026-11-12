@@ -141,16 +141,15 @@ def destinations(
         name = root.label or root.location
         return Refusal(f"{name} does not take a {record.main_key}: its layouts name no such type, and no '*'.")
     places: dict[str, Placement] = {}
-    first_refusal: Refusal | None = None
+    refusals: list[Refusal] = []
     for template in templates:
         relative = destination(root, template, record, rules)
         if isinstance(relative, Refusal):
-            first_refusal = first_refusal or relative
+            refusals.append(relative)
         else:
             places.setdefault(path_key(str(relative)), Placement(relative, template.strip()))
-    if places:
-        return tuple(places.values())
-    return first_refusal or Refusal("")
+    # every template either placed the record or refused it, so no place means a refusal
+    return tuple(places.values()) or refusals[0]
 
 
 def destination(
