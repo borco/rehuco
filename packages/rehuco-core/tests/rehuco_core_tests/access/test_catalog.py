@@ -120,6 +120,7 @@ def test_a_detached_catalog_answers_nothing_and_changes_nothing(cache: MagicMock
     assert catalog.count(LIBRARY_ID) == 0
     assert catalog.follow(KeyRelocation(((key, key.with_name("moved.rehu")),))) == set()
     assert not catalog.record_paths([key])
+    assert not catalog.records_beneath(key.parent)
     catalog.mark_reachable(LIBRARY_ID, False)
     assert not catalog.plan_verify([key])
     assert catalog.apply_verify([]) == (set(), set())
@@ -517,6 +518,30 @@ def test_the_records_at_or_beneath_a_key_are_read_from_the_cache(cache: MagicMoc
     cache.record_paths.assert_called_once()
 
 
+def test_the_records_beneath_a_listed_folder_include_every_record_of_a_root_listed_itself(cache: MagicMock) -> None:
+    """``records_beneath`` answers what the cache holds under a folder, and for a root's own folder -- which
+    ``record_paths`` passes over -- every record of that root, each once (#645).
+
+    **Test steps:**
+
+    * make the cache answer one record beneath a folder, and list two records for the library root
+    * ask for a folder of the library: verify only the cache's answer for that folder comes back
+    * ask for the library's own folder: verify every record of the library comes back, spelled under its folder, and
+      the other root's were not asked for
+    """
+    beneath = LIBRARY.path / "a" / "one.rehu"
+    cache.roots.return_value = (cached_root(LIBRARY, 0), cached_root(PACKS, 1))
+    cache.record_paths.side_effect = lambda paths: [beneath] if paths == [LIBRARY.path / "a"] else []
+    cache.signatures.return_value = {"a/one.rehu": MagicMock(), "b/info.rehu": MagicMock()}
+    catalog = attached(LIBRARY, PACKS)
+
+    assert catalog.records_beneath(ResourceKey(LIBRARY.path / "a")) == [beneath]
+    cache.signatures.assert_not_called()
+
+    assert catalog.records_beneath(ResourceKey(LIBRARY.path)) == [beneath, LIBRARY.path / "b" / "info.rehu"]
+    cache.signatures.assert_called_once_with(LIBRARY_ID)
+
+
 def test_a_roots_reachability_is_recorded_for_a_root_of_the_view_only(cache: MagicMock) -> None:
     """``mark_reachable`` writes what the root's file notifier saw into the cache; a root the view dropped is left
     alone (#511).
@@ -598,6 +623,7 @@ def test_upkeep_that_cannot_reach_the_cache_is_logged_and_answers_nothing(
             == set()
         )
         assert not catalog.record_paths([key])
+        assert not catalog.records_beneath(key.parent)
         catalog.mark_reachable(LIBRARY_ID, False)
         assert not catalog.plan_verify([key])
         assert catalog.apply_verify([finding]) == (set(), set())

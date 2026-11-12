@@ -872,11 +872,17 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
   root is gone; under an offline one nothing changes. The agent verifies a Roots folder's records — and the
   directory-scoped one above that manages it — whenever the folder is listed, which the selection does when it enters a
   folder (again, at most once every few seconds: a time stamp of the last answer, no timer; F5 always lists), and a
-  document's record whenever it is opened or reloaded (#487). The rows are read on the cache's thread, the `stat` and
-  any read run on the pool, and a finding the cache has moved past meanwhile — a save, a scan or a rename — is dropped
-  rather than written. **Each view compares with what it showed, not with the cache**: every check reports every
-  record's stat signature, changed or not, so the Roots pane and an open document follow a change the cache learned from
-  an earlier look; a clean document reloads, one with unsaved edits says on its banner that the file changed.
+  document's record whenever it is opened or reloaded (#487). **A listing brings the cache in line with the folder**
+  (#645): every record the cache holds beneath it that the listing shows no way to any more — its file not listed, or
+  its first folder down — is verified too, which finds it gone, whether it went while the app ran or while it was
+  closed; and a folder new since the folder's listing before is walked on the pool for records, each verified, which
+  adds its row. A folder's first listing, or the first after it could not be read, has no listing before it, so a
+  folder made before its column was ever opened is a scan's to find. The rows are read on the cache's thread, the
+  `stat` and any read run on the pool, and a finding the cache has moved past meanwhile — a save, a scan or a rename
+  — is dropped rather than written. **Each view compares with what it showed, not with the cache**: every check
+  reports every record's stat signature, changed or not, so the Roots pane and an open document follow a change the
+  cache learned from an earlier look; a clean document reloads, one with unsaved edits says on its banner that the
+  file changed.
 - **A type's columns are where the cache and its plugin meet** (#399). The cache says which type-specific fields
   it stores; the plugin declares which fields its type has; a type contributes the fields in both, and a scan fills
   only those — so a stray key in another type's block, or a type no plugin here claims, reads empty. Labels are the

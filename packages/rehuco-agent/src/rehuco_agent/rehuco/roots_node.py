@@ -88,6 +88,8 @@ class RootsNode:  # pylint: disable=too-many-instance-attributes
     :param bookkeeping: whether a file is a record, a checksum file or a screenshot.
     :param listed_at: :func:`time.monotonic` when its listing last landed, reachable or not; ``None`` until one
         has.
+    :param listing_was_reachable: whether the listing that last landed could read the folder -- so its rows are what
+        the folder held, for the next listing to compare with (#645).
     """
 
     name: str
@@ -104,6 +106,7 @@ class RootsNode:  # pylint: disable=too-many-instance-attributes
     listing: NodeListing = NodeListing.UNLISTED
     request: int = 0
     listed_at: float | None = None
+    listing_was_reachable: bool = False
 
     @property
     def label(self) -> str:

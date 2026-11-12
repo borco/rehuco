@@ -440,4 +440,58 @@ def test_refresh_lists_the_open_folders_again_whatever_their_age(
     assert () in listed_folders(start)
 
 
+@mark.usefixtures("served")
+def test_refresh_verifies_the_cached_records_of_a_folder_deleted_outside_the_app(
+    qtbot: QtBot, dock: CatalogDocks, catalog: Mock, folders: Path
+) -> None:
+    """A folder deleted outside the app leaves the cache with F5, not only the columns: the records the cache holds
+    beneath it are verified, which finds them gone (#645).
+
+    **Test steps:**
+
+    * a cache holding a record under ``alpha/sub``; select ``alpha/sub``, delete it on disk and trigger Refresh
+    * verify the record was planned for verifying
+    """
+    gone = folders / "alpha" / "sub"
+    record = gone / "info.rehu"
+    catalog.records_beneath.side_effect = lambda key: [record] if key == ResourceKey(folders / "alpha") else []
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    open_root_folder(qtbot, dock, "alpha", "sub")
+    settle(qtbot)
+    catalog.plan_verify.reset_mock()
+    gone.rmdir()
+
+    dock.roots.refresh_roots_action.trigger()
+    settle(qtbot)
+
+    planned = [key for call in catalog.plan_verify.call_args_list for key in call.args[0]]
+    assert ResourceKey(record) in planned
+
+
+@mark.usefixtures("served")
+def test_a_first_listing_verifies_the_cached_records_of_a_folder_deleted_while_the_app_was_closed(
+    qtbot: QtBot, dock: CatalogDocks, catalog: Mock, folders: Path
+) -> None:
+    """Nothing watches a share while the app is closed: the first listing of the folder that held a deleted one still
+    finds the records the cache keeps beneath it, and verifies them (#645).
+
+    **Test steps:**
+
+    * a cache holding a record under ``alpha/sub``, deleted on disk before the catalog is opened
+    * open the catalog and ``alpha``
+    * verify the record was planned for verifying
+    """
+    gone = folders / "alpha" / "sub"
+    record = gone / "info.rehu"
+    catalog.records_beneath.side_effect = lambda key: [record] if key == ResourceKey(folders / "alpha") else []
+    gone.rmdir()
+
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    open_root_folder(qtbot, dock, "alpha")
+    settle(qtbot)
+
+    planned = [key for call in catalog.plan_verify.call_args_list for key in call.args[0]]
+    assert ResourceKey(record) in planned
+
+
 # endregion

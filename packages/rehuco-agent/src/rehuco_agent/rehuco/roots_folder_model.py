@@ -43,7 +43,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QFont
 from rehuco_core import (
-    DIRECTORY_SCOPED_FILENAMES,
     DirectoryEntry,
     DirectoryListing,
     FileType,
@@ -68,6 +67,7 @@ from .root_storage import (
     UNREADABLE_ROW,
 )
 from .roots_checksum import BOOKKEEPING_KINDS, row_checksum
+from .roots_listing import ListedFolder, appeared_folders, scoped_record_above
 from .roots_node import (
     LISTABLE_KINDS,
     PLACEHOLDER_KINDS,
@@ -118,10 +118,12 @@ class RootsFolderModel(QAbstractItemModel):
     """``(root id, row)``: a root was dropped, and should end up at ``row`` in the list as it will be. The model changes
     nothing itself -- the file owns the order -- so whoever hears this edits the file and shows the result."""
 
-    records_listed = Signal(object, object)
-    """``(folder, records)``: a folder just listed, and the absolute paths of the records that bear on it -- those it
-    holds and the directory-scoped one above that manages it -- for their rows to be verified (#487). Emitted for every
-    listing that could read the folder, a relist included."""
+    folder_listed = Signal(object)
+    """A :class:`~.roots_listing.ListedFolder`: a folder just listed, the records that bear on it -- those it holds and
+    the directory-scoped one above that manages it -- for their rows to be verified (#487), the names it holds, and
+    which folders appeared in it since its listing before, for the cache to follow (#645). Emitted for every listing
+    that could read the folder, a relist included; a first listing, or one after the folder could not be read, has
+    nothing to compare with, so no folder appeared in it."""
 
     ICON_PATH_ROLE: Final = int(Qt.ItemDataRole.UserRole)
     GREYED_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 1
@@ -209,6 +211,7 @@ class RootsFolderModel(QAbstractItemModel):
             self.__remove_children(node)
             node.listing = NodeListing.UNLISTED
             node.listed_at = None
+            node.listing_was_reachable = False
             self.__request(node)
         self.__changed(node)
 
@@ -342,62 +345,46 @@ class RootsFolderModel(QAbstractItemModel):
             serial, lister, self.__root_above(node).root_id, self.__relative(node), self.__covering(node)
         )
 
-    def __announce_records(self, node: RootsNode) -> None:
-        """Say which records a folder bears on: those it shows, and the one above that manages it (#487).
+    def __announce(self, node: RootsNode, appeared: list[str]) -> None:
+        """Say what a listing tells the cache: the records the folder bears on -- those it shows, and the one above
+        that manages it (#487) -- the names it holds, and the folders that appeared in it since the listing before
+        (#645).
 
         :param node: the root or folder, whose rows are the listing's.
+        :param appeared: the names of the folders this listing shows and the one before did not.
         """
-        folder = self.__mapped_above(node).path.joinpath(*self.__relative(node))
+        root = self.__mapped_above(node).path
+        folder = root.joinpath(*self.__relative(node))
         records = [
             folder / child.name
             for child in node.children
             if child.kind is RootsNodeKind.FILE and is_record_name(child.name)
         ]
-        above = self.__record_above(node)
+        above = scoped_record_above(node, self.__top)
         if above is not None:
-            records.append(self.__mapped_above(node).path.joinpath(*above))
-        self.records_listed.emit(folder, tuple(records))
-
-    def __record_above(self, node: RootsNode) -> tuple[str, ...] | None:
-        """The directory-scoped record above ``node`` that manages it, as a path under the root.
-
-        Read from the listings the model already holds, like :meth:`__covering` -- which also wants a checksum file
-        beside it, where this wants only the record. The nearest ancestor with one decides; ``info.rehu`` before
-        ``info.tc``.
-
-        :param node: the root or folder.
-        :returns: the record's path under its root; ``None`` when no loaded ancestor holds one.
-        """
-        ancestor = node.parent
-        while ancestor is not None and ancestor is not self.__top:
-            names = {child.name for child in ancestor.children if child.kind is RootsNodeKind.FILE}
-            record = next((name for name in DIRECTORY_SCOPED_FILENAMES if name in names), None)
-            if record is not None:
-                return (*self.__relative(ancestor), record)
-            ancestor = ancestor.parent
-        return None
+            records.append(root.joinpath(*self.__relative(above.folder), above.name))
+        self.folder_listed.emit(
+            ListedFolder(
+                folder,
+                tuple(records),
+                tuple(child.name for child in node.children if child.kind is RootsNodeKind.FOLDER),
+                tuple(child.name for child in node.children if child.kind is RootsNodeKind.FILE),
+                tuple(folder / name for name in appeared),
+            )
+        )
 
     def __covering(self, node: RootsNode) -> tuple[str, ...] | None:
-        """The directory-scoped record above ``node`` whose ``info.checksum`` covers it, as a path under the root.
-
-        Read from the listings the model already holds, so it costs no disk read: the nearest ancestor with a
-        directory-scoped record decides, and a record that has no ``info.checksum`` beside it covers nothing. An
-        ``info.rehu`` is preferred over an ``info.tc`` a conversion left beside it.
+        """The directory-scoped record above ``node`` whose ``info.checksum`` covers it, as a path under the root
+        (:func:`~.roots_listing.scoped_record_above`); a record with no ``info.checksum`` beside it covers nothing.
 
         :param node: the root or folder about to be listed.
         :returns: the record's path under its root; ``None`` when no loaded ancestor is a resource with a checksum
             file.
         """
-        ancestor = node.parent
-        while ancestor is not None and ancestor is not self.__top:
-            names = {child.name for child in ancestor.children if child.kind is RootsNodeKind.FILE}
-            record = next((name for name in DIRECTORY_SCOPED_FILENAMES if name in names), None)
-            if record is not None:
-                if "info.checksum" not in {name.lower() for name in names}:
-                    return None
-                return (*self.__relative(ancestor), record)
-            ancestor = ancestor.parent
-        return None
+        above = scoped_record_above(node, self.__top)
+        if above is None or not above.checksummed:
+            return None
+        return (*self.__relative(above.folder), above.name)
 
     def __on_listed(self, serial: int, listing: DirectoryListing) -> None:
         """Show an answer, unless the row it was for has gone or asked again since.
@@ -412,9 +399,15 @@ class RootsFolderModel(QAbstractItemModel):
         for row in reversed(range(len(node.children))):
             if node.children[row].kind in PLACEHOLDER_KINDS:
                 self.__remove(node, row)
+        before = (
+            {child.name for child in node.children if child.kind is RootsNodeKind.FOLDER}
+            if node.listing_was_reachable
+            else None
+        )
+        node.listing_was_reachable = listing.reachable
         if listing.reachable:
             self.__show_entries(node, listing)
-            self.__announce_records(node)
+            self.__announce(node, appeared_folders(before, listing.entries))
         else:
             self.__remove_children(node)
             node.listing = NodeListing.UNREACHABLE

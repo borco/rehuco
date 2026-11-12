@@ -685,7 +685,10 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   is listed in its place, greyed, with one row saying so, never read; its **Map…** action (the root's menu and its
   details pane) asks for the folder, and the *Map roots* question opens with the catalog for the roots nobody has
   answered for ([[mounts-and-storage#rehuco-scope]]). `F5` re-lists the visible columns: a
-  folder deleted outside the app disappears, and the selection falls back to its nearest surviving ancestor. A root
+  folder deleted outside the app disappears, and the selection falls back to its nearest surviving ancestor. The
+  cache follows what the columns show (#645): a cached record a listed folder no longer leads to loses its row, even
+  one deleted while the app was closed, and a folder that appeared is walked for records
+  ([[data-model#cache-schema]]). A root
   that cannot be listed says so by what it lives on: a **local** folder that is gone is struck through, a share, a
   drive or a disc that is merely away keeps its glyph greyed out, and either way its column holds one row saying
   what is wrong. The model lists off the GUI thread, holds no handle between listings and never uses

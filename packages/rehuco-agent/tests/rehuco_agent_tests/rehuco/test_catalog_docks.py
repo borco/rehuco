@@ -256,6 +256,7 @@ def mock_catalog(mocker: MockerFixture) -> Mock:
     catalog.plan_verify.return_value = []
     catalog.apply_verify.return_value = (set(), set())
     catalog.record_paths.return_value = []
+    catalog.records_beneath.return_value = []
     return catalog
 
 
