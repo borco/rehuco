@@ -19,7 +19,7 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "borco-core>=0.3.0",
+    "borco-core>=0.4.0",
     # with pathvalidate, the sanitize step: a name transliterated to ASCII before it is sanitized (#577). ISC, pure
     # Python -- not Unidecode, whose GPL-2.0+ the licensing policy rules out ([[packaging-deployment#licensing-policy]]).
     "anyascii>=0.3.2",

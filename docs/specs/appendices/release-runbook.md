@@ -21,7 +21,8 @@ hand-typed, build jobs split per platform, TestPyPI ahead of PyPI — is in
 > Every release so far is listed in the packages' changelogs. The first, `rehuco-agent-0.1.0`
 > (2026-07-29), predates `publish-packages.yml` and so reached GitHub Releases but not PyPI;
 > `rehuco-agent-0.1.1` was the first agent release on PyPI, and `rehuco-core`, `borco-core` and
-> `borco-pyside` reached it at `0.1.0`. `rehuco-node` has only its `0.0.x` name-reservation stubs.
+> `borco-pyside` reached it at `0.1.0`. `rehuco-node`'s first release with code is `0.4.0`, after its `0.0.x`
+> name-reservation stubs.
 
 Both workflows read the same tag, so releasing a package is one push either way; the difference is only how
 much a tag produces. `rehuco-agent` is the only package with installers and the only one whose changelog

@@ -10,128 +10,91 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
 ### Added
 
-- **Adding a root scans it** (#542). The Add Root dialog has a **Scan after adding** checkbox, on by default, so the
-  new root's resources appear without a click on Scan. What you last set is remembered across runs.
-- **The local node runs beside the agent** (#506). A few seconds after the window is up, the agent starts
-  `rehuco-node` as the same user and keeps it running for as long as it runs itself, in the tray included; quitting
-  stops it at once, and a node still starting is killed rather than waited for, so opening a file never pays for it.
-  *Settings* > *System Integration* gains a **Local node** block on every platform: *Run the local node while rehuco
-  is running* (on by default, applied live) and a line saying whether it runs and under which pid. The status
-  bar's right end says *Local Node: Running*, or *Local Node: Stopped* greyed out.
-- **The catalog follows the disk** (#511). Every root of the open catalog is watched: a folder on this machine's own
-  disks through the system's change events, a share on Windows through a session of rehuco's own with the server --
-  which hears every machine's writes -- and anything else by looking at its known records every two minutes. A
-  record saved, renamed or deleted -- in rehuco, on another machine, or in a text editor -- changes its table row, the
-  Roots view and an open document a moment later, with no scan: a document with no unsaved edits reloads, one with
-  edits says the file changed. A document opened from outside every root has its folder watched the same way. A root
-  that cannot be reached keeps its rows in the browsers, greyed, and double-clicking one says why in the status bar
-  instead of opening it; once it is back, it is scanned again.
-- **Unsaved changes can be kept across a quit** (#497). *Settings* > *Session* gains *Keep unsaved changes when
-  quitting, and reopen those documents on the next start*, off by default. On, quitting asks nothing about unsaved
-  edits: they are kept, with each document's panel layout, and the next start reopens those documents with their
-  edits, still unsaved, whether or not the session is restored -- at once on a local drive, once its share answers
-  otherwise. A document never saved comes back as a new one bound to its path; one whose file changed meanwhile says
-  so, and its Save shows the differences; one whose file or folder is gone reopens with its edits and says that.
-  Off, quitting asks as before. Closing one document by hand still asks Save / Discard / Cancel.
+- **A video player in the app**: a tutorial's Player dock with a transport bar and keys, the whole tutorial as its
+  playlist, each video resuming where it was left (#317).
+- **Watch progress per user**: the Files dock shows each video's and folder's percentage, with *Viewed* and *Forget*
+  on its menu; progress is written as you watch and never asks for a Save (#316, #410).
+- **A choice of playback** on *Settings* > *Videos*: Qt's bundled FFmpeg, Qt with your own FFmpeg libraries (AV1 in
+  software, Windows), or your own VLC inside the player, all set up on a new **Tools** page (#318, #319, #521, #580,
+  #592).
+- **Maximize the player** over the document, the window or the screen with a double-click; a click pauses, and `I`,
+  `T` and `N` show the video's info, the tree and the notes beside it (#574, #575).
+- **Scrub preview and subtitles**: dragging the seek bar shows the frame under the handle; under VLC, `V`, `Alt+V`,
+  `Shift+V` and a dropdown pick subtitles, remembered per record (#613, #618).
+- **Video notes, favorites and a Tree**: a Notes dock with Markdown and `B` timestamp bookmarks that seek the player,
+  and a Tree dock listing the tutorial's videos with progress, favorites and notes (#571, #572, #573).
+- **Roots are `.rehuroot` files** a catalog lists and other catalogs can share, each with its path layouts and
+  fallbacks; a machine maps them once, through a wizard for what it cannot find itself (#514, #577, #626).
+- **Add Roots** stages many folders or `.rehuroot` files at once and scans them (*Scan after adding*); `F2` in the Roots
+  view edits a root's layouts, and *Settings* > *Roots* and *Root Layout Templates* hold the presets (#542, #578,
+  #625, #637, #638).
+- **Move a record to where its root's layout puts it** from the Location row, with a tooltip naming the full path and
+  icons for network, copying and verified moves (#579, #636, #638, #639, #643, #649).
+- **Move a record to another root**: a rename on one volume, a checksum-verified copy that resumes across volumes
+  (#339).
+- **The catalog follows the disk**: a record saved, renamed or deleted anywhere updates its row, the Roots view and an
+  open document with no scan; a root that cannot be reached is greyed (#511).
+- **The local node runs beside the agent**, switched on *Settings* > *System Integration*, with its state in the status
+  bar (#506).
+- **Unsaved changes can be kept across a quit** (*Settings* > *Session*), and reopen with their documents (#497).
+- **Restore everything**: a restart brings back the preview, each browser's selection, the Roots path, maximized docks,
+  lightboxes, players and a tutorial's panels (#576).
+- **Server and Root columns** in the browsers, and **Copy paths** / **Copy paths as JSON** on selected rows (#627,
+  #646).
+- **See what holds a file** on Windows: a refused rename opens a list of the programs holding it, with *Show App* and
+  *End Task* (#505).
+- **The record's URL on the Description View** too, chosen on *Settings* > *Descriptions* (#620).
+- **HEIC and AVIF content images** display; the setting is now *Images* > *Content Extensions* (#650).
+- **`--settings-dir DIR`** (or `REHUCO_AGENT_SETTINGS_DIR`) keeps a run's settings and cache in a folder of its own
+  (#494).
 
 ### Changed
 
-- **Opening, reverting and previewing no longer freeze the window** (#564). The record's file is read in the
-  background: until it arrives the document says *Reading…* with its editors, Save and Revert locked, and a share
-  that never answers ends in the locked view naming why. A record whose save has not landed opens on that save at
-  once, editable, whether or not its share answers -- the read only fills in what the save is based on. Quitting
-  never waits for a read still out.
-- **Saving no longer freezes the window** (#497). Save, and Upgrade, hand the document's edits to a save task on the
-  task queue and leave the document editable; its banner says *Saving…* while the task is out, and *Save pending*,
-  *Save waiting* (with what for), *Save paused* or *Save failed* (with why) for a save that has not landed. Saves to
-  one share take turns, saves to different shares run side by side, and none waits behind a checksum run. A save
-  whose share does not answer, or whose record another writer holds, waits and tries again by itself, and is kept
-  with the queue across a restart; a root coming back tries its waiting saves at once. A record has one save task: a
-  later Save gives it the newer edits instead of queueing another -- even while it is writing, when they are written
-  right after. When a save lands, what it changed on the way -- the dates, another user's or device's progress
-  merged in -- shows in the document without touching anything edited since, and the document is unsaved exactly
-  when there are such edits. A save follows its record across a rename made in the app, and a first save of a record
-  someone else created meanwhile stops as a conflict instead of writing over it.
-- **A save that has not landed is the record's saved state on this machine**, like a borrowed copy (#497). Save leaves
-  the document saved; **Revert** goes back to the pending save rather than the file, and **opening the record** --
-  again, or after a restart -- shows it at once, editable even while its share does not answer. Closing a document and choosing *Discard* drops only what was edited since
-  the last Save; the save stays and lands later. A change on disk while a save is pending reloads nothing: the save's
-  own check judges it. Save stays available on a document whose save failed or waits, and tries it again. A rename
-  from the location field is refused while a save of the record has not landed, since it writes the record first.
-- **A save that meets a conflict no longer pops up a dialog.** The document shows its conflict notice, and the next
-  Save shows the differences the refused save found first, the *Mine* column being the document as it is now; what is
-  kept is checked like any save, so a file changed once more is refused again. A Save on a document whose file
-  changed on disk while it had edits is a save like any other: it merges the change, or stops as a conflict.
-- **Closing an unsaved document, Save All and quitting wait for the save** behind a progress dialog (Cancel stops
-  waiting and leaves the save queued). A conflict there shows the differences; a save that cannot land asks **Try
-  Again**, **Leave It Pending** or **Cancel**.
-- **The Tasks dock shows saves that are waiting** (#497): a clock icon, the reason in the Info column and tooltip,
-  and Resume reading *Try Now*. A **Pending Saves** toggle shows only the saves not yet landed; **Inspect Save**
-  opens a failed or waiting save's document with its edits -- and the differences, if the file changed since -- and
-  saves again; **Discard Save…** asks once, drops the selected saves and reverts their open documents to the file.
-  Cancel and Clear on a save that has not landed do the same, and Clear All and the *Clear Done* / *Clear Failed*
-  sweeps -- here or at a restart -- leave such saves alone: each still holds edits. The status bar says *N pending
-  saves* while there are any, and a click opens the Tasks dock on that filter.
-- **A record that disappears under an open document is noticed** (#497). With no unsaved edits the document reverts
-  to the locked *missing* view, as reopening it would; with edits, or a save not landed, it keeps them and says *The
-  file is gone* or *The resource's folder is gone*, and Save does nothing until the record is back, which clears the
-  notice. A save never recreates a folder, or the file of a record that was read: it fails and keeps its edits, so
-  putting the record back and pressing Retry writes them.
-
-- **Saving no longer overwrites what changed on disk since you opened the document.** Another user's rating, or
-  progress written by a player while you edit, is merged into your save and shown at once. When the record's
-  details were changed elsewhere, the save stops and lists every value the two versions disagree on -- the details
-  and your own per-user fields -- with its original value, yours and the file's, the ones that changed in bold. Pick
-  one per row (or *All Mine* / *All On Disk*) and **Save**, or **Discard My Edits** to load the file as it is. Save
-  stays disabled while every pick is the file's own value, since that would change nothing. A notice on the document
-  says its save was refused until you resolve it.
-- **A rating or other per-user change no longer moves a record's *updated* date**, and neither does a resolved
-  conflict that keeps the file's details.
-- **The agent keeps its files in one `borco/rehuco` folder, shared with the node.** On Windows that is
-  `%LOCALAPPDATA%\borco\rehuco` (it was Roaming, plus a cache folder elsewhere), on macOS `~/Library/Application
-  Support/borco/rehuco`, and on Linux `borco/rehuco` under `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME` and `$XDG_CACHE_HOME`.
-  The files are not moved for you: copy the old `borco/rehuco-agent` folder, `rehuco-agent.ini` and the old cache
-  folder's `.rehudb` files across, or let the app start afresh. `--settings-dir DIR` now puts everything directly in
-  `DIR`, and `--info` also prints the data folder.
-- **The table browsers no longer freeze the window while they read the catalog.** The rows are read in the
-  background when a catalog opens, and then only the rows a scan or a change on disk touched, and each browser keeps
-  showing its rows until the new ones arrive. Typing in a filter line filters the rows already read, so it answers at
-  once even on a large catalog, and a browser sorted by a column stays quick too.
-- **A root's context menu in the Root Catalog dock ends with *Scan*, *Add Root* and *Refresh***, under a separator
-  (#543). They were offered only on the empty part of the roots column, which is gone once the roots fill it.
-
-### Added
-
-- **A run can keep its settings and cache in a folder of its own**: `rehuco-agent --settings-dir DIR`, or the
-  `REHUCO_AGENT_SETTINGS_DIR` environment variable. The settings file, the saved session and layouts, the task queue,
-  the scraper persona and the catalog cache all go under `DIR`, and the run is an instance of its own -- it opens its
-  own window instead of handing its files to an agent already running elsewhere. The window title shows the folder's
-  name, and `--info` prints where the settings and cache are.
+- **Breaking: catalogs are `.rehuco` format 4.** An older catalog is refused: make a new one and add its roots again
+  with Add Roots (#514, #577).
+- **Breaking: per-user values move to a `<stem>.user-<name>.rehuser` file** beside the record on its next save, so an
+  earlier version no longer sees them; a broken one locks only its own user's fields (#513, #568).
+- **Breaking: the app's files move to one `borco/rehuco` folder**, shared with the node, and are not moved for you:
+  copy the old `borco/rehuco-agent` files across or start afresh (#412).
+- **Opening, reverting and saving no longer freeze the window**: records are read and saved in the background, and a
+  save waiting for its share or a lock retries by itself, even after a restart (#497, #512, #564).
+- **Pending saves** show in the status bar and the Tasks dock, where they can be inspected or discarded; closing,
+  Save All and quitting wait for them (#497).
+- **A save merges what changed on disk** and, when the details clash, lists the differences to pick from instead of
+  overwriting; a rating no longer moves the *updated* date (#416, #497).
+- **A record deleted under an open document is noticed**, its edits kept until it is back (#497).
+- **The browsers no longer freeze while reading the catalog**, and show *Updated* and *Released* in local time
+  (#455, #500, #623).
+- **Free text in the filter line also matches authors, publishers and tags**; `in:` narrows where it looks (#647).
+- **Roots view menus**: *Scan root*, *Scan all roots*, *Add Roots* and *Refresh* on root rows, *Refresh* on every row
+  (#543, #644).
+- **The location is the link**, with no *(open)* after it, and list editors lose their pencil button (#621, #640).
 
 ### Fixed
 
-- **A record is listed once, however its roots and links are arranged** (#498). Add Root refuses a folder inside an
-  existing root or containing one, comparing the folders also through links, a junction or a mapped drive. A catalog
-  whose roots already overlap still opens, and a banner across the top of the window says which roots overlap,
-  whichever docks are showing, and the Roots view draws the root that duplicates an earlier one in red; both go once
-  one of the two roots is removed. A scan no longer walks into another root of the catalog, into a junction or a
-  folder symlink, and no longer lists a symlinked `.rehu`. A `.rehu` hardlinked under two names is listed once, the
-  banner saying how many such records were found.
-- **Closing the main window with a floated Settings (or Browsers) window on screen no longer leaves rehuco
-  running with no window and no tray icon** (#507). An accepted close now quits the app explicitly, as a Quit from
-  the tray already did; Qt's own last-window quit never came, because a floating dock window is a top-level window
-  of its own and its close is one QtAds only hides.
-- **Opening a `.rehuco` scans the roots its cache has never scanned** (#541). A catalog opened for the first time,
-  switched to, or opened again showed empty browsers until *Scan* was clicked. Now each root the cache holds no scan
-  of is scanned as the file opens; a root scanned before is left to its watcher and to verify-on-access, and one
-  that cannot be reached is scanned once it is back, as before. Opening the open file again while its scans run
-  queues nothing more.
-- **Renaming a resource from its location field updates the catalog with what was just saved** (#566). A rename
-  saves unsaved edits first; the Browsers and the Root Catalog kept the values from before that save until a later
-  one, and a new record named this way was not listed at all. The record is now read again under its new name once
-  the rename lands.
+- **A record is listed once** however its roots and links overlap: nested roots are refused, and a banner names the
+  overlap (#498).
+- **The catalog stays current**: opening it scans never-scanned roots, Refresh drops deleted records, a rename from the
+  Location row updates its row, and an empty catalog has its context menu (#541, #566, #570, #645).
+- **Fewer crashes and hangs**: random hangs while thumbnails decode, reloading a tutorial whose videos just appeared,
+  closing the preview, and closing a document while its videos were listed (#529, #619, #630).
+- **Closing the main window** with a floated dock no longer leaves rehuco running unseen, and no empty floating
+  window opens on start (#507, #624).
+- **Long and case-folded paths**: Windows opens and scans paths of 260 characters or more, and macOS no longer has
+  two root files overwrite each other by case (#628, #629).
+- **A Save is no longer refused as a conflict with the app's own writes**: a Measure's lengths, or a save made just
+  before (#648).
+- **Saves on a share**: a save on a Samba share no longer leaves the record hidden (unhide earlier ones once with
+  `attrib -h`), and a Windows save no longer fails while another program reads the record (#526, #546).
+- **Text dropped on a source card's Title or Publisher** is inserted instead of refused (#567).
+- **Converting a `.tc`** no longer writes an `info.user-unknown.rehuser` (#622).
+- **A record at its root's top** can no longer be moved or renamed, which renamed the root's folder (#641).
+- **Released in 0.3.0 but missing from its notes**: unpinning a dock could crash the app, and a document's own docks
+  could end up pinned to the main window (#491, #492).
 
 ## [0.3.0] - 2026-10-12
 

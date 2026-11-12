@@ -9,6 +9,27 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
+### Added
+
+- `BandTreeView`: a tree view whose selected and hovered rows are each one band, branch arrow included (#572).
+- `ElidedRadioButton`: a radio button whose caption middle-elides to its width, with a suffix kept whole (#521, #592).
+- `QtAdsTitleBarActionVisibility`: a dock's title-bar buttons show and hide with their actions (#572).
+- `QtAdsMaximizeHandler.maximized_name` and `maximize_named`, to save a maximized dock beside a layout and restore it
+  once the manager is on screen (#576).
+- `ElidedLabel`: a `rich=` keyword keeping its height with or without a link, a `tooltip` argument to `set_text`, and
+  overridable `link_color` / `text_color` (#621, #639).
+- `ItemListEditor` takes a `delegate=`, a `RowBandDelegate` subclass for columns with editors of their own (#578).
+
+### Changed
+
+- `ItemEditActionsColumn` shows no Edit (pencil) button; the Edit action and its key stay (#640).
+
+### Fixed
+
+- `LogBridge` no longer delivers a queued batch into a freed bridge; `close()` deletes its `QObject` (#529).
+
 ## [0.3.0] - 2026-10-12
 
 ### Added

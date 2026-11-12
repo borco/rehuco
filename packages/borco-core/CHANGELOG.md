@@ -9,11 +9,22 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
+### Added
+
+- `absolute_path`: a path made absolute with `.` and `..` folded, never resolved: a mapped drive keeps its letter
+  (#511).
+- `folder_holders`: the processes holding a folder or anything under it open, a shell standing in it included (#505).
+- `has_window`, `show_window` and `end_process`: bring a holder's window to the front, or end it (Windows) (#505).
+- `retry_refused`: retry a call Windows refuses with `PermissionError` while another process briefly holds the file
+  (#546).
+
 ### Fixed
 
-- `atomic_write_bytes` names its temporary sibling `<name>.<random>.tmp`, not `.<name>.<random>.tmp`. Samba reports a
-  dot-file as hidden and `os.chmod` on Windows stores that flag, so every save on a Samba share left the record hidden.
-  Records already hidden by earlier saves stay so: unhide them once on the share (`attrib -h` over the `.rehu` files).
+- `atomic_write_bytes` no longer leaves a file hidden on a Samba share: its temporary sibling has no leading dot
+  (#526). Files hidden by earlier saves stay so: unhide them once (`attrib -h`).
+- `atomic_write_bytes` retries a replace refused by a reader holding the file on Windows, for half a second (#546).
 
 ## [0.3.0] - 2026-10-12
 

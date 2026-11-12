@@ -22,8 +22,8 @@ requires-python = ">=3.14"
 # only what the heartbeat process imports; the web stack (FastAPI, uvicorn, jinja2, python-multipart, zeroconf) joins
 # this list the day the first endpoint is written, not before
 dependencies = [
-    "rehuco-core",
-    "borco-core",
+    "rehuco-core>=0.4.0",
+    "borco-core>=0.4.0",
 ]
 
 [project.scripts]

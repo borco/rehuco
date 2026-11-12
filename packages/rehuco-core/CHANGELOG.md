@@ -9,158 +9,67 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
 ### Added
 
-- `rehuco_core.access`, the record and catalog operations, and the keys the agent names its open documents and file
-  announcements by. A `ResourceKey(path)` has path arithmetic (`name`, `stem`, `parent`, `with_name`, `joinpath`,
-  `is_at_or_beneath`), folds case as the filesystem does, and its `str()` is a stable name for it. `KeyRelocation` is
-  `Relocation` over keys (`KeyRelocation.from_local`, and `to_local` back to paths). `ChangeFeed` announces `Moved`,
-  `Changed`, `FolderChanged`, `RootStale` and `RootReachable` without Qt; `Records` writes and announces nothing, the
-  file notifier reporting its writes like anyone else's.
-- `Records` loads a record, saves it, reads its text as stored and converts a legacy `.tc`. A file that cannot be read
-  loads as a locked stub rather than raising. A save is a read-merge-write against the `RecordVersion` the document was
-  read at -- a hash of its metadata (every block's `users` map left out), of the file, and of each per-user field. A
-  metadata edit made on disk since the read refuses the save as a `RecordConflict` carrying the file as it is now; the
-  per-user fields merge field by field (`merge_users`), a field the caller changed being the caller's and every other
-  one the file's, in the caller's own scope and `public` only. `record_differences` lists what an edited document and
-  the file disagree on -- the metadata and the caller's own per-user fields, each with its original value -- and
-  `put_paths` puts the values kept. A legacy `.tc` is never saved over.
-- Every write to a record takes its lock file, `<record>.lock` beside it (`info.rehu.lock`), so writers in other
-  processes and on other machines are kept apart: `Records.save`, `merge_write`, a `.tc` conversion and a `.rehuco`
-  save. `RecordFileLock` creates it exclusively, writes `user@host pid app time` and closes it at once, removing it
-  after the write. A busy lock is retried with a random back-off for two seconds, then the write fails with a
-  `RecordLockedError` (an `OSError`) naming the holder; a lock older than two minutes is broken, with a warning in the
-  log. A create Windows refuses for a lock whose delete is still pending is busy, not a folder the process may not
-  write -- even when the delete has finished by the time the name is looked at: only a refusal twice running with no
-  lock there fails the write with the `PermissionError`. `locked_record` holds a record for one write. A lock file is
-  no content (`is_lock_name`): scans, checksums, the Files listing and the file notifier leave it out, and a rename
-  leaves it behind and refuses while another process holds it.
-- A `.checksum` is written under its own lock file, `info.checksum.lock`, by every writer: a generate, a verify, a
-  Forget, a claim moved in or out, a legacy manifest seeded or merged. `update_checksum_record` re-reads the record
-  under the lock and applies one change to what is there now. A verify or a generate, which read the record when it
-  started, merges its entries into the record as re-read (`merge_checksum_entries`): what it did not change is the
-  file's, so a claim moved in or an entry forgotten meanwhile survives; what it changed is its own; where both
-  changed one entry, the later `verified` date wins.
-- The Root Catalog: `Catalog` answers `roots()`, `query(CatalogQuery)`, `row(key)` and `count(root_id)` over a
-  `.rehudb`, each call opening the cache on its own thread, and raises `CatalogUnreadable` for a cache it cannot read.
-  `Catalog` also keeps the cache current: `prepare` and `attach` for the open `.rehuco`, `reconcile` and `hide` for
-  an edit of its roots, `follow` for a rename, `record_paths` for the records at or beneath a changed folder,
-  `mark_reachable` for a root's folder going away or coming back, and `plan_verify` / `apply_verify` for
-  verify-on-access. `Records.signature(key)` answers a record's modification time and size under the rename
-  hold; both take the `RenameCoordinator` that stat and the catalog's record re-reads go through.
-- `CatalogSnapshot` holds a catalog's rows in memory and filters them there: `build` keys every row once,
-  `select(query, ids)` picks what a `CatalogQuery` matches -- exactly the rows `CatalogCache.rows` reads, in its
-  order -- and `patched` brings it up to date after a change. `CatalogMatcher` is the query compiled, and
-  `CatalogSearchKey` one row's folded text, holding its row. `CatalogCache.rows` shares one `UUID` per root among a
-  read's rows.
-- `app_folders()` answers where the agent and the node keep their files without Qt: one `borco/rehuco` folder on
-  Windows (`%LOCALAPPDATA%`) and macOS, the XDG config / data / cache split on Linux. `default_username()` is the OS
-  login name, or `admin` when the platform has none.
-- Per-user watch progress on a tutorial's videos. `record_progress(path, username, relative, position, duration, *,
-  viewed)` is the one write path for every player: it re-reads the record as the host's `current_username`, replaces
-  only that user's entry for that file, and leaves `updated` alone. With `WatchRules`' two settings, reaching within
-  a second of a file's end marks it viewed, and the tutorial is marked viewed at the moment its last file is — every
-  video on disk and every missing file with an entry. `watch_totals` sums the watched seconds per folder and for the
-  whole tutorial, a viewed file counting its full length and a missing file still counting. `read_progress`,
-  `set_progress_entry`, `read_videos` and `set_videos` read and write the two maps, `ProgressEntry` and
-  `WatchTotals` describe them.
-- `RootOverlap` decides whether two roots overlap: `find` compares a candidate with the roots as spelled, and
-  `find_resolved` compares them through their links, resolved forms with resolved forms only. `among` and
-  `among_resolved` list the pairs that already overlap. `RehucoFile.add_root` refuses a folder inside a root or
-  containing one, and `RehucoFile.overlaps` lists the pairs of a file opened nesting. `root_path_key` is the key both
-  compare on.
-- `merge_write` re-reads a record, applies one change and writes it back atomically, one writer at a time per record,
-  so a progress write and a metadata write both survive. `RehuDocument.save` takes
-  `touch_updated=False` for a write that must not stamp `updated` or `created`.
-- `DurationProbe.probe_video` reads a video's frame size beside its length, as `VideoFacts`; `content_videos` probes
-  each of a resource's videos into the `videos` map, and `content_video_files` lists them without probing. Both are
-  keyed by `content_key`: the path under an `info.rehu`'s folder, or a standalone `<stem>.rehu`'s file name without
-  the stem. `content_path` resolves a key back, refusing one that could reach outside the resource.
-- `RehuDocument.user_field`, `set_user_field` and `remove_user_field` take the username, for a caller serving
-  several users.
-- A watched file that is gone keeps its progress entry: `missing_progress_keys` names the entries whose file is not
-  on disk, and `forget_progress` removes one by hand — nothing removes one on its own.
-- A renamed video keeps its progress. `reattach_renamed_progress` moves a missing file's entry to a file under a new
-  name anywhere in the resource, a renamed folder included, when exactly one same-size candidate hashes equal to the
-  file's recorded `.checksum` hash, or, with no hash recorded and the size rung allowed, when exactly one candidate
-  has the same size and length. `plan_progress_renames` is the decision on its own. Progress entries record the
-  file's size for it.
-- `rehuco_core.notify`, the file notifier (#511): `FileNotifier` watches one `WatchedFolder` and publishes on a
-  `ChangeFeed` what changed in it, with the backend its storage allows -- `NativeWatch` (`watchdog`) on a local or
-  removable disk, `SmbWatch` (`CHANGE_NOTIFY` on an `smbprotocol` session of its own, the Windows logon as
-  credentials) on a share, and `PollingWatch` (the known files by stat signature, every two minutes) for anything
-  else and whenever a backend fails, which it retries while the folder can be reached. `ChangeCoalescer` turns the
-  backends' `RawChange` observations into debounced `Moved`, `Changed` and `FolderChanged` events -- an atomic save
-  as the file changed, a rename's halves as one move -- and a lost buffer into `RootStale`. `RootNotifiers` keeps one
-  notifier per root. New dependencies: `watchdog` and `smbprotocol`.
-- `CatalogCache.apply_root_scan(touched=)` fills a set with the rows a scan read or removed, and
-  `ScanCatalogRootJob.touched_rows` carries them out of the job; `CatalogCache.mark_root_reachable` records what a
-  root's notifier saw.
-- A seventh job state, `JobState.WAITING` (#497): a job raises `JobWaiting(reason, retry_after)` when it cannot
-  proceed now for a reason that will pass, and the queue records the reason as the row's message and puts the job
-  back in line after `retry_after` seconds, timed by its chain's worker. `resume_job` on a waiting job retries it at
-  once, `pause_job` holds it and `cancel` cancels it; a waiting job moves like a queued one. The bulk `pause()` and
-  `resume()` leave waiting jobs alone, and `paused` ignores them, so a queue written at quit keeps them waiting. A
-  pause or cancel asked while the job runs wins over a wait it then reports. A restored waiting job comes back
-  waiting and due at once, whatever state unfinished work is restored in. `validate()`'s refusal is still `FAILED`.
-- `JobStatus.kind`, the persistable job's kind (`None` for a job not written down), and `TaskQueue.job(serial)`, the
-  job behind a row -- for the surface that owns a kind of job and must reach one the queue rebuilt from disk.
-- `SaveRecordJob` (kind `save-record`), a record's save as a persistable, safely interruptible task-queue job in a
-  `save:<server or drive>` chain, carrying a `SavePayload` snapshot -- path, username, payload, base payload, base
-  `RecordVersion`, the blocks it drops and those not logged yet, first-save flag, excluded patterns. It waits when
-  the share does not answer (retried in 30 s), when the lock is held elsewhere (10 s) and when a write fails because
-  the share went offline; it fails when the folder is gone or a record that was read is no longer there, never
-  recreating either, and on a metadata conflict, kept as its `conflict`. After the write it logs the discarded
-  blocks and, on a first save, moves the enclosing record's checksums. `replace` hands it a later Save until it has
-  landed -- in place of its data while it waits, or written by the same run right after the write under way, moved
-  onto it with `rebase_payload`; `handed` is the last Save as handed and `result` the `SaveOutcome` of its last
-  landed write. It follows its record across renames through the `RenameCoordinator`, writing inside its barrier.
-- `payload_changes(before, after)` lists the field paths two payloads differ at, and `paths_overlap` says whether
-  two of them touch. `RehuDocument.unlogged_dropped_block_keys` names the dropped blocks not logged yet, and
-  `note_written` records what a save wrote and discarded.
-- `RehuDocument.adopt_disk_versions(read)` takes the on-disk format versions from a fresh read of the file, keeping
-  everything else -- for a document showing a save not landed yet (#564).
-- `merge_users` and `Records.save` take `dropped`, the blocks a snapshot left out on purpose, so a save built from
-  one never adds them back from the file (`add_file_only_blocks`). `Records.save(new=True)` refuses as a
-  `RecordConflict` a first save onto a record that already exists.
+- **Records** (`rehuco_core.access`): `Records` loads, saves and converts a record by `ResourceKey`, merging a save
+  against the `RecordVersion` it read; a metadata edit made on disk meanwhile is a `RecordConflict` (#413, #416, #648).
+- **Lock files**: every write to a record, a `.rehuco` or a `.checksum` takes `<file>.lock` (`RecordFileLock`,
+  `locked_record`), retrying, then failing with `RecordLockedError`; a stale lock is broken (#512, #545, #546).
+- **Per-user sidecars**: each user's fields live in `<stem>.user-<name>.rehuser` (format 1), joined on read and split
+  on save; an unreadable one locks only its own scope (`UserSidecarError`) (#513, #568, #622).
+- **Saves as jobs**: `SaveRecordJob`, a persistable task-queue save that waits out an offline share or a held lock and
+  keeps a conflict for its caller (#497, #564).
+- **Task queue**: jobs run one per `chain`, chains in parallel (`ChainRegistry`, `DISK_CHAIN`); a job raising
+  `JobWaiting` waits and retries (`JobState.WAITING`); `AbandonableTaskJob` cleans up when cancelled (#563, #497, #339).
+- **File notifier** (`rehuco_core.notify`): `FileNotifier` watches each root -- `watchdog` locally, its own SMB
+  session on a share, polling as the floor -- and publishes what changed on a `ChangeFeed` (#511).
+- **Catalog**: `Catalog` reads and maintains a `.rehudb`; `CatalogSnapshot` filters its rows in memory as the cache
+  would; free text also matches authors, publishers and tags (`CatalogQuery.scope`) (#417, #455, #500, #645, #647).
+- **Roots**: `RehurootFile`, a shareable `.rehuroot` whose `location` reads the same on every machine; `RootMappings`
+  keeps where this machine finds it; `RootPlanner` and `RootOverlap` vet new roots (#498, #514, #577, #578, #626, #627).
+- **Layouts**: `destination` and `destinations` render a record's place under a root from its path templates (several
+  per type, `*` for the root's top), sanitized by `sanitize_name` (#577, #637, #638, #643).
+- **Moving records**: `move_rehu_resource` moves a record within a root; `MoveRecordJob` moves it to another volume as a
+  checksum-gated, resumable `VerifiedCopy` (#579, #339).
+- **Watch progress and notes**: per-user progress (`record_progress`, `watch_totals`), notes and favorites
+  (`record_notes`) on a tutorial's videos, kept for a missing file and following a rename (#316, #410, #411, #571-#573).
+- **External tools and playback**: `ToolLocator` finds FFmpeg, its libraries and VLC (`VlcLibrary`);
+  `read_video_format` and subtitle choice (`SubtitlePreferences`) (#317, #318, #319, #521, #580, #618).
+- **App folders and images**: `app_folders()` and `default_username()` without Qt; `.heic` and `.heif` join
+  `CONTENT_IMAGE_EXTENSIONS` (#412, #650).
+- **Checksum logging**: `log_report_findings` logs one line per file at INFO, WARNING or ERROR;
+  `ChecksumReport.unadopted` lists new files a run could not read (#642).
 
 ### Changed
 
-- The task queue runs one job at a time **per chain** (#563). A job declares `chain`, the resource it would hammer:
-  jobs sharing one take turns in the queue's order, jobs in different chains run at the same time, each chain on a
-  daemon thread started when it has work and let go once idle, and `None` runs a job as soon as it is accepted.
-  Every job keeps today's behaviour through `TaskJobBase.chain = DISK_CHAIN`. `JobStatus.chain` carries it; shutdown
-  joins every worker against one deadline. A chain belongs to a family registered once in a `ChainRegistry`
-  (`DEFAULT_CHAIN_REGISTRY`), which builds its keys as `name` or `name:resource`; a second claim of a name is refused,
-  and so is a job whose chain no family owns -- dropped, with a warning, when it comes back from a queue file.
-- `TaskQueue.shutdown()` stops the workers and leaves every job in the state it stands in, instead of cancelling every
-  unfinished one (#564): a queue written by the exit sequence stays true whoever listens, so a waiting job comes back
-  waiting. A job still running is asked to pause rather than cancelled.
-- `JobStatus.error` is now `JobStatus.message` (#497): why a job failed, or what a waiting one waits for. A queue
-  file is written with the key `message`, and one written by an earlier build is still read by its `error` key.
-- The file notifier recognises an atomic save by the temporary sibling's new name, `<name>.<random>.tmp` (the random
-  part being `tempfile.mkstemp`'s eight characters, so a user's own `a.b.tmp` is no save); the dotted name earlier
-  builds wrote is still recognised.
-- Writing `None` to a per-user field (`set_active_user_field`, `set_user_field`) removes the key instead of storing
-  a JSON `null`.
-- The ffprobe probe asks for JSON output, to read the frame size along with the duration.
-- `updated` moves only when a save changes the record's metadata: a per-user change -- a rating, a progress entry,
-  another user's fields merged in -- no longer stamps it. Saved through `Records`, the change is judged against
-  the file the save replaces, so a save whose details are the file's keeps the file's `updated`.
-  `RehuDocument.save(edited=...)` takes that decision from its caller, and `payload_to_write()` is what a save writes.
-- `RehuDocument.load` decodes the file as UTF-8 text and hands it back with `load_with_text`, so a record's version
-  describes the very text it was read from.
+- **`.rehuco` format 4** (breaking): roots are references to `.rehuroot` files; a format 1-3 file is refused, not
+  migrated -- create a new catalog and add the roots again (#514, #577).
+- **`.rehudb` schema v8**: one row per hardlinked file (`file_id`), each root's `.rehuroot` recorded; upgraded in
+  place (#498, #577).
+- **Per-user fields** move out of the `.rehu` into sidecars on a record's next save (the `.rehu` format version is
+  unchanged), and writing `None` removes a key instead of storing `null` (#513).
+- **`updated`** moves only when a save changes the record's metadata, not on a per-user change (#416, #648).
+- **Task queue**: `JobStatus.error` is `JobStatus.message` (old queue files still read); `shutdown()` leaves every job
+  as it stands instead of cancelling it (#497, #564).
+- **Catalog scans**: `CatalogCache.apply_root_scan` takes `identities` and reports `RootScanEffects` (#498).
+- **Dependencies**: adds `watchdog`, `smbprotocol`, `anyascii`, `pathvalidate` and `python-vlc`.
+
+### Removed
+
+- `save_checksum_record`: use `update_checksum_record`, which applies one change under the lock (#512).
+- `RehucoFile.set_storage` and `RehucoRoot`'s `path`, `storage` and `removable`: a root has a `location`, and its
+  storage is detected per machine (#514).
 
 ### Fixed
 
-- A record has one row in the catalog cache (#498). `CatalogRootScan` takes the catalog's other roots and never
-  enters one, matching a directory by `(st_dev, st_ino)` (`RootFence`) and naming it in `RootScanResult.met_roots`;
-  `ScanCatalogRootJob` reads them from the cache when it runs and exposes `met_roots` and `hardlinked`. Every walk
-  skips a junction as it skips a directory symlink (`rehuco_core.directory_entries`), and `CatalogScanner` no longer
-  takes a symlinked record. A record with more than one link keeps one name per scan, and across roots
-  `CatalogCache.apply_root_scan` keeps one row per file (`HardlinkedRecord`), the cache gaining a `file_id` column
-  (schema v7). `apply_root_scan` takes `identities` and reports what it did in `RootScanEffects`, which replaces its
-  `touched` argument.
+- A record has one row in the catalog: scans never enter another root, skip junctions and count a hardlink once (#498).
+- An atomic save no longer leaves the record hidden on a Samba share (#526).
+- A save on Windows no longer fails while another process is reading the record (#546).
+- Path case folds on every OS when choosing a name or matching a root (`path_key`) (#629).
+- `CatalogCache.rows` reads rows and their names in one snapshot (#528).
+- Renaming a file record renames its checksum entries too (#339).
 
 ## [0.3.0] - 2026-10-12
 

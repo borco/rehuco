@@ -11,7 +11,7 @@ from .retry_refused import retry_refused
 from .shared_read import shared_read_open
 from .text_search import TextMatcher, fold, read_value, search_terms
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "Device",

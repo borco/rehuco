@@ -5,6 +5,6 @@ agent does. The agent's System Integration page turns it on and off and shows wh
 serve on top of that lifecycle is design, not code ([[nodes]]).
 """
 
-__version__ = "0.0.1"
+__version__ = "0.4.0"
 
 __all__ = ["__version__"]

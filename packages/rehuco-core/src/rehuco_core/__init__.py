@@ -599,7 +599,7 @@ from .watch_progress import (
     watch_totals,
 )
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 # plain `sorted()` order -- uppercase names, then `__version__`, then the lowercase ones -- so a new
 # export has exactly one correct place and no convention to remember (`borco_core.__init__` is the same)

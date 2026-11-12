@@ -9,12 +9,15 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
+The first release with code: the 0.0.x versions on PyPI only held the name.
+
 ### Added
 
-- **The local node runs.** `rehuco-node [--settings-dir DIR]` writes a heartbeat file (`node/node.json`: pid,
-  version, started, last beat) every two seconds and a log (`node/rehuco-node.log`) under the folder it shares
-  with the agent, and stops cleanly on SIGINT/SIGTERM or when its stdin reaches EOF, so an agent that started it
-  with a pipe and quits or crashes takes it down with it (#506). `rehuco-agent --node` runs the same program.
+- **The local node**, the process the agent runs beside itself, keeping a heartbeat file and a log (#506).
+- `rehuco-node [--settings-dir DIR]` writes `node/node.json` and `node/rehuco-node.log` under the agent's folder,
+  and stops on SIGINT/SIGTERM or when its stdin closes, so it goes with the agent that started it (#506).
 
 ## [0.0.1] - 2026-06-30
 

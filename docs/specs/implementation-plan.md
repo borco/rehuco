@@ -19,8 +19,8 @@ priorities:
 
 1. View/edit local `.rehu` for tutorials and reference images — **done** (`rehuco-agent` 0.1.0–0.3.0).
 2. Scan folders into a cached catalog and search it — close to the original tutcatalog — **done** (0.3.0).
-3. Watch a tutorial from the agent and from a tablet's browser — **ahead**: the in-app player first, then the node's
-   watch page ("Node" below).
+3. Watch a tutorial from the agent — **done** (0.4.0, the in-app player) — and from a tablet's browser — **ahead**:
+   the node's watch page ("Node" below).
 4. Borrow a local copy for offline viewing on leave — **ahead** ("Borrowing" below).
 
 ## Methodology: agile cadence, tracer-bullet spines
