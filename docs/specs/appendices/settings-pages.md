@@ -117,12 +117,13 @@ with *Unknown* for the tracks that name none; a name libvlc does not know is dro
 video and opens the notes for editing* box (`add_note_edits`), is gone (owner, #574): the player's `B` only adds its
 bookmark, docked or maximized ([[plugins#video-notes-dock]]), and a stored value is ignored.
 **Roots › New Root Presets** (#578, moved here by #637; it was a frame of Root Catalog)
-is the *New root presets* frame — a list of named entries, each a per-type layout map (one row per type or `*`)
-and a fallback map, edited below the list for the entry selected with the same two tables the Roots view's edit mode
-uses, seeded with *Keep folder names* (`{"*": "*"}`) and never saved empty (an emptied list is the seed again). The Add
+is the *New root presets* frame — a list of named entries, each a per-type layout map (one row per template, a type or
+`*` repeating) and a fallback map, edited below the list for the entry selected with the same two tables the Roots view's edit mode
+uses, seeded with *Keep folder names* (`{"*": ["*"]}`) and never saved empty (an emptied list is the seed again). The Add
 Roots dialog offers them in its combo and can add to them from the dialog, which saves at once, so the page is
 rebased as it is by the menu's preview toggle ([[mounts-and-storage#rehuroot]]). Stored in the `.ini` as an
-array under `root_catalog/default_layouts`, each entry's maps as JSON text. **Roots › Root Catalog** keeps the
+array under `root_catalog/default_layouts`, each entry's maps as JSON text (a type's templates a list, a plain string
+read as one, #638). **Roots › Root Catalog** keeps the
 *Roots view* frame, the *Automatically preview the current rehu* checkbox. The per-type Locations pages keep their
 single-name templates: those are in-place renames, a root's layout is where a record lives.
 

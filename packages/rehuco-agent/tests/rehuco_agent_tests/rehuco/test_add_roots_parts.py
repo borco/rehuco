@@ -22,7 +22,7 @@ from rehuco_core import CandidateKind, RootCandidate, RootPick
 
 pytestmark = mark.usefixtures("real_path_stat")
 
-PRESETS = (*DEFAULT_ROOT_LAYOUTS, RootLayout("By title", {"tutorial": "{title}"}, {}))
+PRESETS = (*DEFAULT_ROOT_LAYOUTS, RootLayout("By title", {"tutorial": ("{title}",)}, {}))
 
 
 def mouse_release(point: QPoint) -> QMouseEvent:
@@ -68,7 +68,7 @@ def file_line(path: Path, **changes: object) -> RootCandidate:
         "location": "//nas/data/Music",
         "root_file": path,
         "folder": Path("T:/Music"),
-        "layouts": {"*": "*"},
+        "layouts": {"*": ("*",)},
         "fallbacks": {},
         "problem": "",
     }
@@ -347,7 +347,7 @@ def test_only_planned_addable_lines_are_added(tmp_path: Path) -> None:
 
     assert len(model.addable) == 1
     added = next(iter(model.addable))
-    assert (added.label, added.layouts) == ("a", {"tutorial": "{title}"})
+    assert (added.label, added.layouts) == ("a", {"tutorial": ("{title}",)})
     assert model.checking
 
 
@@ -375,6 +375,12 @@ def test_a_root_files_row_says_what_it_holds_and_where_it_is(tmp_path: Path) -> 
         ("Layouts: * \N{RIGHTWARDS ARROW} *", False),
         (f"On this machine: {Path('T:/Music')}", False),
     ]
+    several = file_line(path, layouts={"tutorial": ("{title}", "{authors}/{title}"), "*": ("*",)})
+    assert lines_of(several, pick)[2] == (
+        "Layouts: tutorial \N{RIGHTWARDS ARROW} {title}; tutorial \N{RIGHTWARDS ARROW} {authors}/{title}; "
+        "* \N{RIGHTWARDS ARROW} *",
+        False,
+    )
     assert lines_of(file_line(path, folder=None), pick)[-1] == (UNMAPPED, False)
     assert lines_of(file_line(path, problem="Nope."), pick)[-1] == ("Nope.", True)
     assert lines_of(file_line(path, location="", layouts={}, problem="Unreadable."), pick) == [
@@ -530,13 +536,13 @@ def test_new_layout_needs_a_name_no_preset_has(qtbot: QtBot) -> None:
     dialog = NewLayoutDialog(frozenset({"Keep folder names"}))
     qtbot.addWidget(dialog)
     assert not dialog.ok_button.isEnabled()
-    assert dialog.layouts_editor.layouts == {"*": "*"}
+    assert dialog.layouts_editor.layouts == {"*": ("*",)}
 
     dialog.set_name("keep FOLDER names")
     assert not dialog.ok_button.isEnabled()
     dialog.set_name(" Deep ")
     assert dialog.ok_button.isEnabled()
-    assert dialog.preset == RootLayout("Deep", {"*": "*"}, {})
+    assert dialog.preset == RootLayout("Deep", {"*": ("*",)}, {})
 
 
 # endregion

@@ -12,7 +12,10 @@ from rehuco_core import (
     DEFAULT_PLUGIN_REGISTRY,
     KEEP_NAME,
     PLACEHOLDERS,
+    Layouts,
+    grouped_layouts,
     layout_placeholders,
+    layout_rows,
     layout_template_problem,
 )
 
@@ -21,7 +24,8 @@ from .root_layouts_editor_ui import Ui_RootLayoutsEditor
 
 
 class RootLayoutsEditor(QWidget):
-    """Two tables: the **layouts**, a path template per type -- the type picked from ``*`` and the installed types,
+    """Two tables: the **layouts**, path templates per type, a type repeating and the order of the rows the order they
+    are offered in (#638) -- the type picked from ``*`` and the installed types,
     or typed, the template picked from ``*`` and the Root Layout Templates the type accepts, or typed -- and the
     **fallbacks**, a text per placeholder, one fixed row for each placeholder a template may use (#637).
 
@@ -45,6 +49,7 @@ class RootLayoutsEditor(QWidget):
         self.__filling = False
         layouts, fallbacks = self.__ui.layouts_editor, self.__ui.fallbacks_editor
         layouts.set_titles("Type", "Path template")
+        layouts.allow_repeated_keys()
         layouts.set_key_choices((ANY_TYPE, *DEFAULT_PLUGIN_REGISTRY.main_keys))
         layouts.set_value_choices(RootLayoutsEditor.__template_choices)
         layouts.set_value_problem(RootLayoutsEditor.__template_problem)
@@ -54,16 +59,17 @@ class RootLayoutsEditor(QWidget):
         fallbacks.values_changed.connect(self.__on_edited)
 
     @property
-    def layouts(self) -> dict[str, str]:
-        """The layouts as the table makes them; a row with no type, or a type an earlier row has, is left out."""
-        return self.__ui.layouts_editor.mapping
+    def layouts(self) -> dict[str, tuple[str, ...]]:
+        """The layouts as the table makes them: a type's templates together, in row order; a row with no type or no
+        template, or an exact repeat of an earlier row, is left out (#638)."""
+        return grouped_layouts(self.__ui.layouts_editor.rows)
 
     @property
     def fallbacks(self) -> dict[str, str]:
         """The fallbacks as the table makes them, on the same rule."""
         return self.__ui.fallbacks_editor.mapping
 
-    def set_values(self, layouts: Mapping[str, str], fallbacks: Mapping[str, str]) -> None:
+    def set_values(self, layouts: Layouts, fallbacks: Mapping[str, str]) -> None:
         """Show these maps, announcing nothing.
 
         :param layouts: the layouts.
@@ -71,7 +77,7 @@ class RootLayoutsEditor(QWidget):
         """
         self.__filling = True
         try:
-            self.__ui.layouts_editor.mapping = layouts
+            self.__ui.layouts_editor.rows = layout_rows(layouts)
             self.__ui.fallbacks_editor.mapping = fallbacks
         finally:
             self.__filling = False

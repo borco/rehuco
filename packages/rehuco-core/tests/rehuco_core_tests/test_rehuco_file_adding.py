@@ -54,7 +54,7 @@ def test_add_root_makes_a_root_file_beside_the_rehuco(tmp_path: Path, home: Rehu
         "id": str(added.root_id),
         "label": "courses",
         "location": "//nas/data/courses",
-        "layouts": {"*": "*"},
+        "layouts": {"*": ["*"]},
         "fallbacks": {},
     }
     assert read_json(tmp_path / "home.rehuco")["roots"][3] == {"file": "nas--data--courses.rehuroot"}
@@ -184,14 +184,14 @@ def test_add_root_takes_layouts_fallbacks_and_a_chosen_file(tmp_path: Path, home
     shared.mkdir()
     chosen = shared / "courses.rehuroot"
     row = home.add_root(
-        "//nas/data/courses", layouts={"tutorial": "{title}"}, fallbacks={"title": "Untitled"}, file=chosen
+        "//nas/data/courses", layouts={"tutorial": ("{title}",)}, fallbacks={"title": "Untitled"}, file=chosen
     )
     home.save()
 
     assert home.roots[row].file == chosen
-    assert dict(home.roots[row].layouts) == {"tutorial": "{title}"}
+    assert dict(home.roots[row].layouts) == {"tutorial": ("{title}",)}
     saved = read_json(chosen)
-    assert (saved["layouts"], saved["fallbacks"]) == ({"tutorial": "{title}"}, {"title": "Untitled"})
+    assert (saved["layouts"], saved["fallbacks"]) == ({"tutorial": ["{title}"]}, {"title": "Untitled"})
     assert read_json(tmp_path / "home.rehuco")["roots"][3] == {"file": f"../{shared.name}/courses.rehuroot"}
 
 
@@ -267,13 +267,13 @@ def test_set_root_layouts_writes_only_that_root_file(tmp_path: Path, home: Rehuc
     rehuco_text = (tmp_path / "home.rehuco").read_text(encoding="utf-8")
     other = (tmp_path / "discs.rehuroot").read_text(encoding="utf-8")
 
-    home.set_root_layouts(0, {"tutorial": "{authors}/{title}"}, {"authors": "Unknown"})
+    home.set_root_layouts(0, {"tutorial": ("{authors}/{title}",)}, {"authors": "Unknown"})
     home.save()
 
-    assert dict(home.roots[0].layouts) == {"tutorial": "{authors}/{title}"}
+    assert dict(home.roots[0].layouts) == {"tutorial": ("{authors}/{title}",)}
     assert dict(home.roots[0].fallbacks) == {"authors": "Unknown"}
     saved = read_json(tmp_path / "tutorials.rehuroot")
-    assert (saved["layouts"], saved["fallbacks"]) == ({"tutorial": "{authors}/{title}"}, {"authors": "Unknown"})
+    assert (saved["layouts"], saved["fallbacks"]) == ({"tutorial": ["{authors}/{title}"]}, {"authors": "Unknown"})
     assert (tmp_path / "home.rehuco").read_text(encoding="utf-8") == rehuco_text
     assert (tmp_path / "discs.rehuroot").read_text(encoding="utf-8") == other
 
@@ -291,9 +291,9 @@ def test_set_root_layouts_refuses_an_unreadable_root(tmp_path: Path) -> None:
     rehuco = RehucoFile.load(path)
 
     with pytest.raises(ValueError, match="could not be read"):
-        rehuco.set_root_layouts(1, {"*": "*"}, {})
+        rehuco.set_root_layouts(1, {"*": ("*",)}, {})
     with pytest.raises(IndexError):
-        rehuco.set_root_layouts(3, {"*": "*"}, {})
+        rehuco.set_root_layouts(3, {"*": ("*",)}, {})
 
 
 # endregion
@@ -313,7 +313,7 @@ def test_an_existing_root_file_joins_as_it_is_named_from_the_rehuco(tmp_path: Pa
     """
     shared = tmp_path.parent / f"{tmp_path.name}-nas"
     shared.mkdir()
-    made = RehurootFile.new(shared / "music.rehuroot", "//nas/data/Music", "Music", layouts={"*": "{title}"})
+    made = RehurootFile.new(shared / "music.rehuroot", "//nas/data/Music", "Music", layouts={"*": ("{title}",)})
     made.save()
     before = made.path.read_bytes()
 
@@ -322,7 +322,7 @@ def test_an_existing_root_file_joins_as_it_is_named_from_the_rehuco(tmp_path: Pa
 
     root = home.roots[row]
     assert (row, root.root_id, root.label, root.location) == (3, made.root_id, "Music", "//nas/data/Music")
-    assert dict(root.layouts) == {"*": "{title}"}
+    assert dict(root.layouts) == {"*": ("{title}",)}
     assert read_json(tmp_path / "home.rehuco")["roots"][3] == {"file": f"../{shared.name}/music.rehuroot"}
     assert made.path.read_bytes() == before
 

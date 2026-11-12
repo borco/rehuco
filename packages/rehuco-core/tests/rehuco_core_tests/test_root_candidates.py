@@ -72,7 +72,7 @@ def root_file(path: Path, location: str, label: str = "shared") -> Path:
     :param label: its label.
     :returns: the path.
     """
-    RehurootFile.new(path, location, label, layouts={"tutorial": "{title}"}, fallbacks={"title": "?"}).save()
+    RehurootFile.new(path, location, label, layouts={"tutorial": ("{title}",)}, fallbacks={"title": "?"}).save()
     return path
 
 
@@ -131,7 +131,7 @@ def test_a_root_file_joins_with_what_it_holds_resolved_here_or_unmapped(tmp_path
         near,
         tmp_path / "near",
     )
-    assert (first.layouts, first.fallbacks) == ({"tutorial": "{title}"}, {"title": "?"})
+    assert (first.layouts, first.fallbacks) == ({"tutorial": ("{title}",)}, {"title": "?"})
     assert (second.label, second.location, second.folder, second.addable) == ("Far", UNREACHABLE, None, True)
 
 

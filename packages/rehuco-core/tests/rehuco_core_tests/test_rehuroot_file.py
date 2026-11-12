@@ -27,7 +27,7 @@ TUTORIALS: Final = {
     "id": ROOT_ID,
     "label": "Tutorials",
     "location": "//nas/data/Tutorials",
-    "layouts": {"tutorial": "{authors}/{title}{{ [{year}]}}"},
+    "layouts": {"tutorial": ["{authors}/{title}{{ [{year}]}}"]},
     "fallbacks": {"authors": "Unknown"},
     "some_future_key": [1, 2],
 }
@@ -74,7 +74,7 @@ def test_load_reads_every_part(tmp_path: Path, tutorials: RehurootFile) -> None:
     assert tutorials.path == tmp_path / "tutorials.rehuroot"
     assert tutorials.root_id == UUID(ROOT_ID)
     assert (tutorials.label, tutorials.location) == ("Tutorials", "//nas/data/Tutorials")
-    assert dict(tutorials.layouts) == TUTORIALS["layouts"]
+    assert dict(tutorials.layouts) == {"tutorial": ("{authors}/{title}{{ [{year}]}}",)}
     assert dict(tutorials.fallbacks) == TUTORIALS["fallbacks"]
     assert tutorials.format_version == REHUROOT_FORMAT_VERSION
     assert tutorials.lock_reason is None
@@ -90,7 +90,7 @@ def test_layouts_and_fallbacks_are_read_only(tutorials: RehurootFile) -> None:
     * verify both raise ``TypeError``
     """
     with pytest.raises(TypeError):
-        tutorials.layouts["*"] = "*"  # type: ignore[index]
+        tutorials.layouts["*"] = ("*",)  # type: ignore[index]
     with pytest.raises(TypeError):
         tutorials.fallbacks["title"] = "x"  # type: ignore[index]
 
@@ -106,7 +106,7 @@ def test_a_file_with_no_layouts_or_fallbacks_takes_the_defaults(tmp_path: Path) 
     data = {key: TUTORIALS[key] for key in ("format_version", "id", "label", "location")}
     root = RehurootFile.load(write_json(tmp_path / "bare.rehuroot", data))
 
-    assert dict(root.layouts) == dict(DEFAULT_LAYOUTS) == {"*": "*"}
+    assert dict(root.layouts) == dict(DEFAULT_LAYOUTS) == {"*": ("*",)}
     assert not root.fallbacks
 
 
@@ -150,20 +150,20 @@ def test_new_layouts_and_fallbacks_are_saved_and_copied(tmp_path: Path, tutorial
     * verify the file holds what was set and is dirty
     * save and verify the file's content
     """
-    layouts = {"*": "*", "tutorial": "{title}"}
+    layouts = {"*": ("*",), "tutorial": ("{title}", "{authors}/{title}")}
     fallbacks = {"title": "Untitled"}
     tutorials.layouts = layouts
     tutorials.fallbacks = fallbacks
-    layouts["*"] = "changed"
+    layouts["*"] = ("changed",)
     fallbacks.clear()
 
-    assert dict(tutorials.layouts) == {"*": "*", "tutorial": "{title}"}
+    assert dict(tutorials.layouts) == {"*": ("*",), "tutorial": ("{title}", "{authors}/{title}")}
     assert dict(tutorials.fallbacks) == {"title": "Untitled"}
     assert tutorials.dirty
     tutorials.save()
     assert read_json(tmp_path / "tutorials.rehuroot") == {
         **TUTORIALS,
-        "layouts": {"*": "*", "tutorial": "{title}"},
+        "layouts": {"*": ["*"], "tutorial": ["{title}", "{authors}/{title}"]},
         "fallbacks": {"title": "Untitled"},
     }
 
@@ -175,7 +175,7 @@ def test_setting_the_same_layouts_and_fallbacks_changes_nothing(tutorials: Rehur
 
     * set the layouts and fallbacks to copies of their own values and verify the file is not dirty
     """
-    tutorials.layouts = dict(TUTORIALS["layouts"])
+    tutorials.layouts = dict(tutorials.layouts)
     tutorials.fallbacks = dict(TUTORIALS["fallbacks"])
 
     assert not tutorials.dirty
@@ -192,10 +192,10 @@ def test_a_read_only_file_refuses_new_layouts_and_fallbacks(tmp_path: Path) -> N
     root = RehurootFile.load(write_json(tmp_path / "newer.rehuroot", {**TUTORIALS, "format_version": 2}))
 
     with pytest.raises(ValueError, match="read-only"):
-        root.layouts = {"*": "*"}
+        root.layouts = {"*": ("*",)}
     with pytest.raises(ValueError, match="read-only"):
         root.fallbacks = {}
-    assert dict(root.layouts) == TUTORIALS["layouts"]
+    assert dict(root.layouts) == {"tutorial": ("{authors}/{title}{{ [{year}]}}",)}
     assert dict(root.fallbacks) == TUTORIALS["fallbacks"]
 
 
@@ -207,14 +207,14 @@ def test_a_new_file_takes_the_layouts_and_fallbacks_given(tmp_path: Path) -> Non
     * create a new file with layouts and fallbacks, then change the dict given
     * save and verify the file holds what was given
     """
-    layouts = {"tutorial": "{authors}/{title}"}
+    layouts = {"tutorial": ("{authors}/{title}",)}
     root = RehurootFile.new(tmp_path / "a.rehuroot", "//nas/data/a", "a", layouts=layouts, fallbacks={"authors": "?"})
     layouts.clear()
 
     root.save()
 
     saved = read_json(tmp_path / "a.rehuroot")
-    assert (saved["layouts"], saved["fallbacks"]) == ({"tutorial": "{authors}/{title}"}, {"authors": "?"})
+    assert (saved["layouts"], saved["fallbacks"]) == ({"tutorial": ["{authors}/{title}"]}, {"authors": "?"})
 
 
 def test_a_new_file_refuses_layouts_that_are_not_strings(tmp_path: Path) -> None:
@@ -224,7 +224,7 @@ def test_a_new_file_refuses_layouts_that_are_not_strings(tmp_path: Path) -> None
 
     * create a new file whose layouts hold a number and verify ``RehurootFileError``
     """
-    with pytest.raises(RehurootFileError, match="'layouts' is not an object of strings"):
+    with pytest.raises(RehurootFileError, match="'layouts' is not an object of templates"):
         RehurootFile.new(tmp_path / "a.rehuroot", "//nas/data/a", "a", layouts={"*": 1})  # type: ignore[dict-item]
 
 
@@ -249,7 +249,7 @@ def test_a_new_file_has_a_fresh_id_and_the_default_layouts(tmp_path: Path) -> No
         "id": str(first.root_id),
         "label": "a",
         "location": "//nas/data/a",
-        "layouts": {"*": "*"},
+        "layouts": {"*": ["*"]},
         "fallbacks": {},
     }
     assert not first.dirty
@@ -395,8 +395,11 @@ def test_a_file_that_is_no_json_object_is_refused(tmp_path: Path, content: bytes
         param({"location": ""}, "No 'location'", id="location-empty"),
         param({"location": 3}, "No 'location'", id="location-not-a-string"),
         param({"label": None}, "No 'label'", id="no-label"),
-        param({"layouts": []}, "'layouts' is not an object of strings", id="layouts-not-an-object"),
-        param({"layouts": {"*": 1}}, "'layouts' is not an object of strings", id="layout-not-a-string"),
+        param({"layouts": []}, "'layouts' is not an object of templates", id="layouts-not-an-object"),
+        param({"layouts": {"*": 1}}, "'layouts' is not an object of templates", id="layout-not-a-string"),
+        param(
+            {"layouts": {"*": ["{title}", 1]}}, "'layouts' is not an object of templates", id="template-not-a-string"
+        ),
         param({"fallbacks": {"title": None}}, "'fallbacks' is not an object of strings", id="fallback-not-a-string"),
     ],
 )

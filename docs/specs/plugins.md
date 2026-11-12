@@ -671,8 +671,9 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   column then shows where the root is -- and shown in the column while it is typed; a button beside the field gives
   the root its default name, the one it was added with, which is also the empty field's placeholder. The
   **Layouts** and **Fallbacks** are two tables (#637); each edit is written to the root's file at once. In **Layouts**
-  the type is picked from `*` and the installed types or typed, and a row with no key, or a key an earlier row has, is
-  flagged and left out; the **Path template** is an editable drop-down of `*` and the Root Layout Templates of the
+  the type is picked from `*` and the installed types or typed, a type may repeat (#638) and **the order of the rows is
+  the order the path row offers them in**, which the table's move up / down buttons change, and a row with no type, no
+  template, or alike in type and template to an earlier row, is flagged and left out; the **Path template** is an editable drop-down of `*` and the Root Layout Templates of the
   settings ([[appendices.settings-pages#category-groups]]) that the row's type accepts -- `*` standing for any type,
   so only the four placeholders every type has -- or typed. A template the row's type cannot use is shown in the
   warning colour with the reason as its tooltip, and saved as typed; the file keeps the template's text, so editing
@@ -1112,7 +1113,8 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   **The suggestion list is two groups** (#579, #339). First the **current names**: the type's Locations templates
   rendered into a name, a rename within the record's folder as above. Then, under a separator, **the roots' places**
   ([[mounts-and-storage#rehuroot]]): where each root's layout puts the record, labelled by the root's name and the
-  rendered path — the root holding the record first, then every other root this machine maps and reaches, in the
+  rendered path — one place for each of its templates for the type that renders, in the table's row order, a place two
+  templates render offered once (#638); the root holding the record first, then every other root this machine maps and reaches, in the
   catalog's order. A record under no root (opened from outside every root) is offered every root's place, which is how
   a stray record joins the catalog. Choosing a place on the record's own volume is a **move by rename** — the
   destination's missing parents made, the folder or the file set moved in one plan — through the same coordinator and

@@ -36,7 +36,7 @@
    <item>
     <widget class="StringMapEditor" name="layouts_editor">
      <property name="toolTip">
-      <string>Where a record of each type lives under the root: a path template, with / between levels, or * to keep the record's current name at the root's top, picked from * and the Root Layout Templates of the settings that the type accepts, or typed. A template the type cannot use is shown in colour, with the reason as its tooltip, and kept as typed. The type * stands for every type not named. A type with no row, and no * row, cannot be moved here.</string>
+      <string>Where a record of each type lives under the root: a path template, with / between levels, or * to keep the record's current name at the root's top, picked from * and the Root Layout Templates of the settings that the type accepts, or typed. A type may have several rows: each is offered as a place, in the order of the rows, which the move buttons change. A row repeating an earlier one is ignored. A template the type cannot use is shown in colour, with the reason as its tooltip, and kept as typed. The type * stands for every type not named. A type with no row, and no * row, cannot be moved here.</string>
      </property>
     </widget>
    </item>

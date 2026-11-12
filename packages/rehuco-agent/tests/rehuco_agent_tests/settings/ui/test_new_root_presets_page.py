@@ -80,7 +80,7 @@ def test_the_default_layouts_are_staged_applied_dropped_and_seeded(
     settings = shared_root_catalog_settings()
     assert layouts_editor(page).layouts == DEFAULT_ROOT_LAYOUTS
     assert not page.is_dirty()
-    staged = (RootLayout("Deep", {"tutorial": "{authors}/{title}"}, {}), *DEFAULT_ROOT_LAYOUTS)
+    staged = (RootLayout("Deep", {"tutorial": ("{authors}/{title}",)}, {}), *DEFAULT_ROOT_LAYOUTS)
 
     layouts_editor(page).layouts = staged
     assert page.is_dirty()

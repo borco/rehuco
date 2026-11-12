@@ -15,8 +15,8 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.roots_preview import RootsPreview
 from rehuco_agent.rehuco.string_map_editor import StringMapEditor
-from rehuco_agent.rehuco.string_map_model import VALUE_COLUMN
-from rehuco_core import RehucoFile
+from rehuco_agent.rehuco.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
+from rehuco_core import RehucoFile, read_layouts
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     HOME,
@@ -161,7 +161,7 @@ def test_the_edit_mode_stays_on_from_root_to_root_showing_each_ones_values(dock:
     assert editing(dock)
     assert dock.roots.edit_root_action.isChecked()
     assert dock.roots.root_name_edit.text() == "packs"
-    assert preview(dock).root_layouts_editor.layouts == saved_root(1).get("layouts", {"*": "*"})
+    assert preview(dock).root_layouts_editor.layouts == read_layouts(saved_root(1).get("layouts", {"*": "*"}))
 
 
 @mark.usefixtures("served")
@@ -180,11 +180,38 @@ def test_an_edit_of_the_layouts_is_written_to_the_roots_file(dock: CatalogDocks,
 
     table.model.setData(table.model.index(0, VALUE_COLUMN), "{title}")
 
-    assert saved_root(0)["layouts"] == {"*": "{title}"}
+    assert saved_root(0)["layouts"] == {"*": ["{title}"]}
     assert saved_root(1)["layouts"] == {"*": "*"}
     saves.assert_not_called()
     dock.roots.edit_root_action.setChecked(False)
     assert preview(dock).root_texts["layouts"] == "* \N{RIGHTWARDS ARROW} {title}"
+
+
+@mark.usefixtures("served", "saves")
+def test_a_second_template_for_a_type_is_written_in_row_order_and_read_one_line_each(dock: CatalogDocks) -> None:
+    """A second row for the same type is a second template, kept in the order of the rows (#638).
+
+    **Test steps:**
+
+    * open a catalog, select the first root, turn the mode on, retype its ``*`` layout and add a ``*`` row below it
+    * verify the root file holds both templates as a list, and the read-only rows give each its own line
+    """
+    dock.catalog.open_rehuco(REHUCO_PATH)
+    select_root(dock, 0)
+    dock.roots.edit_root_action.setChecked(True)
+    table = layouts_table(dock)
+    table.model.setData(table.model.index(0, VALUE_COLUMN), "{title}")
+
+    model = table.model
+    assert isinstance(model, StringMapModel)
+    row = model.insert(0)
+    table.model.setData(table.model.index(row, KEY_COLUMN), "*")
+    table.model.setData(table.model.index(row, VALUE_COLUMN), "{authors}/{title}")
+
+    assert saved_root(0)["layouts"] == {"*": ["{title}", "{authors}/{title}"]}
+    dock.roots.edit_root_action.setChecked(False)
+    arrow = "\N{RIGHTWARDS ARROW}"
+    assert preview(dock).root_texts["layouts"] == f"* {arrow} {{title}}\n* {arrow} {{authors}}/{{title}}"
 
 
 @mark.usefixtures("served", "saves")
@@ -207,7 +234,7 @@ def test_a_refused_layouts_write_is_said_and_the_tables_go_back(mocker: MockerFi
     table.model.setData(table.model.index(0, VALUE_COLUMN), "{title}")
 
     warning.assert_called_once()
-    assert preview(dock).root_layouts_editor.layouts == {"*": "*"}
+    assert preview(dock).root_layouts_editor.layouts == {"*": ("*",)}
     assert saved_root(0) == before
 
 

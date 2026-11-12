@@ -44,7 +44,7 @@ from .migrations import CURRENT_REHUCO_VERSION, RehucoTooOldError, migrate_rehuc
 from .path_keys import path_key
 from .record_file_lock import RecordFileLock
 from .rehu_format import FORMAT_VERSION_KEY
-from .rehuroot_file import DEFAULT_LAYOUTS, REHUROOT_SUFFIX, RehurootFile, RehurootFileError
+from .rehuroot_file import DEFAULT_LAYOUTS, REHUROOT_SUFFIX, Layouts, RehurootFile, RehurootFileError
 from .sanitized_names import location_stem
 from .shared_file_digest import disk_digest, text_digest
 
@@ -104,7 +104,7 @@ class RehucoRoot:
     :param root_id: the root's stable id; for an unreadable root, one derived from its file's path, never written.
     :param label: the name the browser shows and a folder filter addresses; for an unreadable root, its file's stem.
     :param location: where the root is, spelled the same on every machine; empty for an unreadable root.
-    :param layouts: the path template of each type's main key, ``*`` for any type not named.
+    :param layouts: the path templates of each type's main key, ``*`` for any type not named, in offer order.
     :param fallbacks: what each placeholder renders as when a record leaves it empty.
     :param file: the root's ``.rehuroot``; ``None`` for a root built by hand.
     :param problem: why the root's file could not be read, or ``""`` when it was.
@@ -113,7 +113,7 @@ class RehucoRoot:
     root_id: UUID
     label: str
     location: str
-    layouts: Mapping[str, str] = field(default=DEFAULT_LAYOUTS, compare=False)
+    layouts: Layouts = field(default=DEFAULT_LAYOUTS, compare=False)
     fallbacks: Mapping[str, str] = field(default_factory=dict, compare=False)
     file: Path | None = None
     problem: str = ""
@@ -318,7 +318,7 @@ class RehucoFile:  # pylint: disable=too-many-public-methods
         location: str,
         label: str | None = None,
         *,
-        layouts: Mapping[str, str] = DEFAULT_LAYOUTS,
+        layouts: Layouts = DEFAULT_LAYOUTS,
         fallbacks: Mapping[str, str] | None = None,
         file: Path | None = None,
     ) -> int:
@@ -399,7 +399,7 @@ class RehucoFile:  # pylint: disable=too-many-public-methods
             suffix += 1
         return candidate
 
-    def set_root_layouts(self, at: int, layouts: Mapping[str, str], fallbacks: Mapping[str, str]) -> None:
+    def set_root_layouts(self, at: int, layouts: Layouts, fallbacks: Mapping[str, str]) -> None:
         """Replace a root's layouts and fallbacks, in its ``.rehuroot``; the next :meth:`save` writes it.
 
         :param at: the root's row.

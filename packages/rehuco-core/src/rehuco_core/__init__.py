@@ -354,9 +354,13 @@ from .rehuroot_file import (
     KEEP_NAME,
     REHUROOT_FORMAT_VERSION,
     REHUROOT_SUFFIX,
+    Layouts,
     RehurootChangedError,
     RehurootFile,
     RehurootFileError,
+    grouped_layouts,
+    layout_rows,
+    read_layouts,
 )
 from .relocation import Relocation
 from .rename_coordination import (
@@ -386,12 +390,14 @@ from .resource_scoping import (
 )
 from .root_candidates import CandidateKind, RootCandidate, RootPick, RootPlanner
 from .root_destination import (
+    Placement,
     RecordNaming,
     Refusal,
     destination,
+    destinations,
     layout_placeholders,
-    layout_template,
     layout_template_problem,
+    layout_templates,
     render_layout,
 )
 from .root_folders import RootFolderLister
@@ -755,6 +761,7 @@ __all__ = [
     "LIBVLC_PROBE_FLAG",
     "LOCAL_SERVER",
     "LOCK_SUFFIX",
+    "Layouts",
     "LearningPathEntry",
     "LegacyDrop",
     "LegacySeed",
@@ -798,6 +805,7 @@ __all__ = [
     "PUBLIC_USERNAME",
     "PartialRenameError",
     "PersistableTaskJob",
+    "Placement",
     "PluginBlock",
     "PluginRegistry",
     "PluginSpec",
@@ -980,6 +988,7 @@ __all__ = [
     "default_username",
     "delete_screenshot",
     "destination",
+    "destinations",
     "digest_content",
     "discard_conversion_backups",
     "duplicate_source_rows",
@@ -994,6 +1003,7 @@ __all__ = [
     "forget_progress",
     "free_libraries",
     "generate_checksums",
+    "grouped_layouts",
     "hand_over_claims",
     "insert_bookmark",
     "is_checksum_fresh",
@@ -1010,8 +1020,9 @@ __all__ = [
     "is_valid_content_key",
     "known_placeholders_for",
     "layout_placeholders",
-    "layout_template",
+    "layout_rows",
     "layout_template_problem",
+    "layout_templates",
     "learning_path_records_by_scope",
     "learning_path_ref",
     "legacy_manifest_candidates",
@@ -1069,6 +1080,7 @@ __all__ = [
     "read_archive_facts",
     "read_content_chunks",
     "read_last_video",
+    "read_layouts",
     "read_notes",
     "read_progress",
     "read_video_favorites",

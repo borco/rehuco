@@ -10,6 +10,7 @@ from typing import Any, override
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
+from rehuco_core import Layouts
 
 from ...fields.colors import WARNING_COLOR
 from ..root_catalog_settings import DEFAULT_ROOT_LAYOUTS, RootLayout
@@ -60,7 +61,7 @@ class RootLayoutListModel(QAbstractListModel):
         self.__entries = list(entries)
         self.endResetModel()
 
-    def set_maps(self, row: int, layouts: Mapping[str, str], fallbacks: Mapping[str, str]) -> None:
+    def set_maps(self, row: int, layouts: Layouts, fallbacks: Mapping[str, str]) -> None:
         """Replace one layout's maps.
 
         :param row: the layout's row.

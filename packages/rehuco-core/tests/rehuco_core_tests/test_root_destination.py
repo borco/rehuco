@@ -12,15 +12,16 @@ from rehuco_core import (
     DEFAULT_PLUGIN_REGISTRY,
     KNOWN_PLACEHOLDERS,
     LocationPattern,
+    Placement,
     RecordNaming,
     Refusal,
     RehucoRoot,
     RehuDocument,
     ReplacementRule,
-    destination,
+    destinations,
     layout_placeholders,
-    layout_template,
     layout_template_problem,
+    layout_templates,
     render_layout,
 )
 
@@ -38,7 +39,23 @@ def root(layouts: dict[str, str], fallbacks: dict[str, str] | None = None, label
     :param label: its label.
     :returns: the root.
     """
-    return RehucoRoot(uuid4(), label, "//nas/data/Tutorials", layouts, fallbacks or {})
+    return RehucoRoot(
+        uuid4(), label, "//nas/data/Tutorials", {key: (template,) for key, template in layouts.items()}, fallbacks or {}
+    )
+
+
+def destination(
+    laid_out: RehucoRoot, record: RecordNaming, rules: tuple[ReplacementRule, ...]
+) -> PurePosixPath | Refusal:
+    """Where a root with one template per type puts a record.
+
+    :param laid_out: the root.
+    :param record: the record.
+    :param rules: the Location Replacements.
+    :returns: its one place, or why there is none.
+    """
+    placements = destinations(laid_out, record, rules)
+    return placements if isinstance(placements, Refusal) else placements[0].relative
 
 
 def naming(main_key: str = "tutorial", folder_name: str = "old name", **values: str) -> RecordNaming:
@@ -274,13 +291,109 @@ def test_a_type_takes_its_own_template_else_the_star_one_else_none() -> None:
     **Test steps:**
 
     * ask a root naming a type and ``*`` for each, and a root naming neither
-    * verify the own template, the ``*`` one, and ``None``
+    * verify the own templates, the ``*`` ones, and none
     """
     layouts = {"tutorial": "{title}", "*": "{authors}/*"}
 
-    assert layout_template(root(layouts), "tutorial") == "{title}"
-    assert layout_template(root(layouts), "reference_images") == "{authors}/*"
-    assert layout_template(root({"tutorial": "{title}"}), "reference_images") is None
+    assert layout_templates(root(layouts), "tutorial") == ("{title}",)
+    assert layout_templates(root(layouts), "reference_images") == ("{authors}/*",)
+    assert layout_templates(root({"tutorial": "{title}"}), "reference_images") == ()
+
+
+def test_a_type_with_an_empty_list_takes_the_star_templates() -> None:
+    """A type whose list is empty is a type with no entry (#638).
+
+    **Test steps:**
+
+    * ask a root whose ``tutorial`` list is empty and whose ``*`` has two templates
+    * verify the ``*`` templates, in order
+    """
+    laid_out = RehucoRoot(uuid4(), "Tutorials", "//nas/x", {"tutorial": (), "*": ("{title}", "*")})
+
+    assert layout_templates(laid_out, "tutorial") == ("{title}", "*")
+
+
+def several(templates: tuple[str, ...], fallbacks: dict[str, str] | None = None) -> RehucoRoot:
+    """A root with these templates for any type.
+
+    :param templates: the ``*`` templates.
+    :param fallbacks: its fallbacks.
+    :returns: the root.
+    """
+    return RehucoRoot(uuid4(), "Tutorials", "//nas/x", {"*": templates}, fallbacks or {})
+
+
+def test_every_template_that_renders_is_a_place_in_row_order() -> None:
+    """Each template offers its place, the template that made it beside it, in the order of the rows (#638).
+
+    **Test steps:**
+
+    * ask a root with three templates for a record
+    * verify three places, in row order, each with its template
+    """
+    record = naming(authors="Jane", title="Intro")
+
+    answer = destinations(several(("{authors}/{title}", "{title}", "*")), record, ())
+
+    assert answer == (
+        Placement(PurePosixPath("Jane", "Intro"), "{authors}/{title}"),
+        Placement(PurePosixPath("Intro"), "{title}"),
+        Placement(PurePosixPath("old name"), "*"),
+    )
+
+
+def test_two_templates_rendering_one_place_offer_it_once_at_the_first() -> None:
+    """A place two templates make, even in another case, is offered once, by the first (#638).
+
+    **Test steps:**
+
+    * ask a root whose templates render ``Intro`` and ``intro``
+    * verify one place, the first template's
+    """
+    answer = destinations(several(("{title}", "{title}/", "intro")), naming(title="Intro"), ())
+
+    assert answer == (Placement(PurePosixPath("Intro"), "{title}"),)
+
+
+def test_a_template_that_cannot_render_is_skipped_while_another_does() -> None:
+    """A refused template offers nothing, and the others still do (#638).
+
+    **Test steps:**
+
+    * ask a root whose first template needs an author the record lacks, with no fallback
+    * verify only the second template's place
+    """
+    answer = destinations(several(("{authors}/{title}", "{title}")), naming(title="Intro"), ())
+
+    assert answer == (Placement(PurePosixPath("Intro"), "{title}"),)
+
+
+def test_a_root_whose_every_template_refuses_says_why_by_the_first() -> None:
+    """When nothing renders, the answer is the first template's refusal (#638).
+
+    **Test steps:**
+
+    * ask a root whose two templates both need a field the record lacks
+    * verify a refusal naming the first missing field
+    """
+    answer = destinations(several(("{authors}/{title}", "{publisher}/{title}")), naming(title="Intro"), ())
+
+    assert answer == Refusal("The record has no authors, and Tutorials names no fallback for it.")
+
+
+def test_a_root_with_no_template_for_the_type_refuses_it() -> None:
+    """A root naming no such type and no ``*`` takes none of it (#638).
+
+    **Test steps:**
+
+    * ask a root with only a ``tutorial`` entry for a reference-images record
+    * verify the refusal naming the type
+    """
+    laid_out = RehucoRoot(uuid4(), "Tutorials", "//nas/x", {"tutorial": ("{title}",)})
+
+    assert destinations(laid_out, naming("reference_images"), ()) == Refusal(
+        "Tutorials does not take a reference_images: its layouts name no such type, and no '*'."
+    )
 
 
 @mark.parametrize("template", ["*", " * ", "{authors}/{title}", "{title}{{ [{year}]}}"])

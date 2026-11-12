@@ -332,14 +332,14 @@ def test_several_roots_are_added_in_order_with_one_save(dock: CatalogDocks, save
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
     lines = [folder_candidate(dock, TUTORIALS.parent / name) for name in ("a", "b", "c")]
-    lines[1] = replace(lines[1], layouts={"tutorial": "{title}"}, fallbacks={"title": "?"})
+    lines[1] = replace(lines[1], layouts={"tutorial": ("{title}",)}, fallbacks={"title": "?"})
 
     added = dock.catalog.add_roots(lines)
 
     written = written_root_contents(saves)
     assert added == tuple(UUID(root["id"]) for root in written[2:])
     assert [root["label"] for root in written[2:]] == ["a", "b", "c"]
-    assert (written[3]["layouts"], written[3]["fallbacks"]) == ({"tutorial": "{title}"}, {"title": "?"})
+    assert (written[3]["layouts"], written[3]["fallbacks"]) == ({"tutorial": ["{title}"]}, {"title": "?"})
     assert saves.call_count == 1
 
 
