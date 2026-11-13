@@ -14,6 +14,8 @@ Read before any non-trivial task:
 - **Implementation plan:** `docs/specs/implementation-plan.md` — milestones, tracer-bullet methodology, gates.
 - **Code conventions:** [[appendices.code-conventions]] (`docs/specs/appendices/code-conventions.md`) — code,
   PySide6 UI, and Markdown conventions for any contributor (not just Claude Code sessions).
+- **Reporting a Qt or PySide6 bug upstream:** [[appendices.qt]] (`docs/specs/appendices/qt.md`) — the reproducer and
+  its Jira draft, written the Qt way so a Qt Company reviewer reads past the code to the bug.
 
 ## Public-facing claims
 

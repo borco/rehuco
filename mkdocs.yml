@@ -123,6 +123,7 @@ nav:
           - Open Questions: specs/appendices/open-questions.md
           - Post-Mortem: specs/appendices/post-mortem.md
           - Project Management: specs/appendices/project-management.md
+          - Qt: specs/appendices/qt.md
           - QtAds: specs/appendices/qt-ads.md
           - Release Runbook: specs/appendices/release-runbook.md
           - Settings Pages: specs/appendices/settings-pages.md
