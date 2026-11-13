@@ -96,6 +96,14 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   `disconnectNotify`, only on that object's first lookup, the "no override" answer then cached per object. Both were
   caught in native stacks (#651, #652). A reproducer needs a fresh sender each time; a plain `disconnect` unlocks
   before notifying, and never deadlocks (#654's mechanism too).
+- **The thread under the mutex can be Qt's own.** Qt Multimedia's FFmpeg backend deletes, on its threads, objects it
+  connected to a Python-built `QAudioOutput`, and that output's first `disconnectNotify` lookup takes the GIL there;
+  the GUI thread meets it in `setAudioOutput`, which PySide calls with the GIL held (#654, PYSIDE-3514). To name the
+  wrapper a native stack only shows as its module, answer its lookup early (connect and disconnect one of its
+  signals on the GUI thread) and see the deadlock go. Several instances side by side (four players) turned a
+  deadlock in half the runs into one in every run.
+- **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
+  and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
   live, Python-owned `QObject` caught in a reference cycle there, and shiboken releases the GIL to run its C++
   destructor (#652).
