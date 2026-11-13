@@ -53,10 +53,12 @@ working editor teaches readers to discount the status line, which is what makes 
 ### Milestones
 
 **A GH milestone is a release**, and only a release — the use they were always meant for. A release is numbered
-(`Release 0.4.0`) when its order is known, and **named** when it is not: `Release DrawingAtelier` gathers the actors
-and construction-overlay work whose internal order is undecided. An issue joins one when it is cut into that
-release, so a milestone answers *what ships next* and nothing else: which feature family work belongs to is its
-**category** label above, and the order it is done in is recorded on neither.
+(`0.5.0`, the bare version) when its order is known, and **named** when it is not: `Drawing Atelier` gathers the
+actors and construction-overlay work whose internal order is undecided, beside `Network Support`, `Daz3D` and the
+rest. An issue joins one when it is cut into that release, so a milestone answers *what ships next* and nothing else:
+which feature family work belongs to is its **category** label above, and the order it is done in is recorded on
+neither. A milestone is closed when its release ships; the closed `Release 0.2.0` and `Release 0.3.0` keep their
+older titles.
 
 The per-family and per-slice milestones this replaced are gone from GH: `Pre-work`, `LocalEdit`,
 `WebScrapping`, `RefImages`, their `LocalEdit1`/`LocalEdit2`/`<Milestone>X` slices, and the `Audit1`/`Audit2`
