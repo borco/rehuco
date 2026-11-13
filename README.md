@@ -7,14 +7,6 @@
 [![macOS](https://img.shields.io/codecov/c/github/borco/rehuco?flag=macos&label=macOS)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=macos)
 [![Linux](https://img.shields.io/codecov/c/github/borco/rehuco?flag=linux&label=Linux)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=linux)
 
-| Package | Version | Downloads | Python | Changelog |
-| --- | --- | --- | --- | --- |
-| [rehuco-core](https://pypi.org/project/rehuco-core/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) | [changelog](packages/rehuco-core/CHANGELOG.md) |
-| [rehuco-node](https://pypi.org/project/rehuco-node/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) | [changelog](packages/rehuco-node/CHANGELOG.md) |
-| [rehuco-agent](https://pypi.org/project/rehuco-agent/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [![Downloads](https://static.pepy.tech/badge/rehuco-agent)](https://pepy.tech/project/rehuco-agent) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [changelog](packages/rehuco-agent/CHANGELOG.md) |
-| [borco-core](https://pypi.org/project/borco-core/) | [![PyPI](https://img.shields.io/pypi/v/borco-core)](https://pypi.org/project/borco-core/) | [![Downloads](https://static.pepy.tech/badge/borco-core)](https://pepy.tech/project/borco-core) | [![Python](https://img.shields.io/pypi/pyversions/borco-core)](https://pypi.org/project/borco-core/) | [changelog](packages/borco-core/CHANGELOG.md) |
-| [borco-pyside](https://pypi.org/project/borco-pyside/) | [![PyPI](https://img.shields.io/pypi/v/borco-pyside)](https://pypi.org/project/borco-pyside/) | [![Downloads](https://static.pepy.tech/badge/borco-pyside)](https://pepy.tech/project/borco-pyside) | [![Python](https://img.shields.io/pypi/pyversions/borco-pyside)](https://pypi.org/project/borco-pyside/) | [changelog](packages/borco-pyside/CHANGELOG.md) |
-
 **Alpha.** The app is in daily use on a real library, but the file formats and the packages' APIs still change
 between releases, sometimes with no migration, so keep backups of anything you point it at.
 
@@ -109,6 +101,14 @@ rehuco/                       # uv virtual-workspace root (no [project] table)
 `rehuco-node` is the local node: a process the agent starts a few seconds after its window is up, as
 the same user, and stops when it quits — today it keeps a heartbeat file and a log in the folder the two
 share, and the agent's System Integration settings page turns it on or off and shows whether it runs.
+
+| Package | Version | Downloads | Python | Changelog |
+| --- | --- | --- | --- | --- |
+| [rehuco-core](https://pypi.org/project/rehuco-core/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) | [changelog](packages/rehuco-core/CHANGELOG.md) |
+| [rehuco-node](https://pypi.org/project/rehuco-node/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) | [changelog](packages/rehuco-node/CHANGELOG.md) |
+| [rehuco-agent](https://pypi.org/project/rehuco-agent/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [![Downloads](https://static.pepy.tech/badge/rehuco-agent)](https://pepy.tech/project/rehuco-agent) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [changelog](packages/rehuco-agent/CHANGELOG.md) |
+| [borco-core](https://pypi.org/project/borco-core/) | [![PyPI](https://img.shields.io/pypi/v/borco-core)](https://pypi.org/project/borco-core/) | [![Downloads](https://static.pepy.tech/badge/borco-core)](https://pepy.tech/project/borco-core) | [![Python](https://img.shields.io/pypi/pyversions/borco-core)](https://pypi.org/project/borco-core/) | [changelog](packages/borco-core/CHANGELOG.md) |
+| [borco-pyside](https://pypi.org/project/borco-pyside/) | [![PyPI](https://img.shields.io/pypi/v/borco-pyside)](https://pypi.org/project/borco-pyside/) | [![Downloads](https://static.pepy.tech/badge/borco-pyside)](https://pepy.tech/project/borco-pyside) | [![Python](https://img.shields.io/pypi/pyversions/borco-pyside)](https://pypi.org/project/borco-pyside/) | [changelog](packages/borco-pyside/CHANGELOG.md) |
 
 ## File formats
 
