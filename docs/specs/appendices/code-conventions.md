@@ -122,11 +122,16 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   connects the backend's signals (#653, PYSIDE-3513); a player has to live on the GUI thread, which is what made a Qt
   Multimedia duration probe not worth its keep
   ([[appendices.post-mortem#ui-and-deployment]]).
-- **Qt's own threads can wait for the GIL under a signal-slot mutex too** (#573): Qt Multimedia's FFmpeg renderer,
-  destroyed on its own thread as a video's source is cleared, disconnects from the Python-built `QAudioOutput`, whose
-  wrapper asks for the GIL. So the GUI thread makes no connection in that moment, and a `QToolButton` never holds an
-  action that changes: its default action is applied again, with a new connection, at every change of icon or text.
-  The player's buttons are connected once (`clicked` → `trigger`) and copy what the action shows.
+- **Qt's own threads can wait for the GIL under a signal-slot mutex too** (#573, #654, PYSIDE-3514): Qt Multimedia's FFmpeg
+  backend destroys, on a thread of its own, objects it had connected to the Python-built `QAudioOutput`, and the
+  output's wrapper asks for the GIL the first time that happens to it (PySide caches the answer per object). The
+  GUI thread deadlocks against it in any call that takes a signal-slot mutex with the GIL held: a connection, the
+  `QMediaPlayer` constructor, `setAudioOutput`. No rule of ours keeps Qt's thread away, so the rules keep the
+  moments few. **A player keeps one `QAudioOutput` for its life**, changed with `setDevice` and `setVolume`, never
+  replaced, and an engine is not built anew where the one built will do (`PlayerEngine` keeps Qt's while it stands
+  in for an unusable VLC). And a `QToolButton` never holds an action that changes: its default action is applied
+  again, with a new connection, at every change of icon or text, so the player's buttons are connected once
+  (`clicked` → `trigger`) and copy what the action shows.
 - **A `QObject` gets a parent, usually `self`, or an explicit delete** (#529). One held only in an attribute, once in
   a reference cycle, is destroyed by the cyclic collector on whichever thread allocates next, and on a pool thread
   `~QObject` takes a signal-slot mutex and then waits for the GIL the GUI thread may hold. With no natural parent,

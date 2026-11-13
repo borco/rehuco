@@ -68,6 +68,58 @@ def test_the_volume_reaches_whichever_engine_is_built(qtbot: QtBot, mocker: Mock
     audio.deleteLater.assert_called_once_with()
 
 
+def test_qts_engine_stands_in_until_vlc_can_be_used(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A new ``QAudioOutput`` at every video would be one more chance each time for Qt Multimedia's own thread to
+    wait for the GIL under a signal-slot mutex (#654).
+
+    **Test steps:**
+
+    * choose VLC with the library unavailable and ask for the engine twice, the reason changing in between
+    * verify one Qt player and one audio output were built, connected once, with the later reason
+    * make the library available and ask again
+    * verify the libvlc engine took over, connected, with no reason left, and Qt's player and output were deleted
+    """
+    audio_class = mocker.patch.object(player_engine, "QAudioOutput")
+    audio = audio_class.return_value
+    qt_class = mocker.patch.object(player_engine, "QMediaPlayer")
+    qt_player = qt_class.return_value
+    # the player answers the output it was given, as a real one does
+    qt_player.audioOutput.return_value = audio
+    vlc_player = mocker.patch.object(player_engine, "VlcMediaPlayer").return_value
+    library = Mock(available=False, reason="No VLC is set up on the Tools page.")
+    mocker.patch.object(player_engine, "shared_vlc_library", return_value=library)
+    shared_videos_settings().player = VLC_PLAYER
+    connect = Mock()
+    engine = holder(qtbot)
+
+    first = engine.ensure(1.0, 1.0, connect)
+    library.reason = "The VLC on the Tools page is gone."
+    second = engine.ensure(1.0, 1.0, connect)
+
+    assert first is qt_player
+    assert second is qt_player
+    assert not engine.vlc
+    assert engine.fallback_reason == "The VLC on the Tools page is gone."
+    qt_class.assert_called_once()
+    audio_class.assert_called_once()
+    connect.assert_called_once_with(qt_player)
+    audio.deleteLater.assert_not_called()
+
+    library.available = True
+    library.reason = None
+    third = engine.ensure(0.5, 2.0, connect)
+
+    assert third is vlc_player
+    assert engine.player is vlc_player
+    assert engine.vlc
+    assert engine.fallback_reason is None
+    vlc_player.setVolume.assert_called_once_with(0.5)
+    vlc_player.setPlaybackRate.assert_called_once_with(2.0)
+    connect.assert_called_with(vlc_player)
+    audio.deleteLater.assert_called_once_with()
+    qt_player.deleteLater.assert_called_once_with()
+
+
 def test_qts_player_decodes_into_the_sink_it_was_given(qtbot: QtBot) -> None:
     """The view hands the frames on from there, so a pause can hold the last one on the video widget (#574).
 
