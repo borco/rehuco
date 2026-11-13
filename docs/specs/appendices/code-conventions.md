@@ -118,9 +118,9 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
 - **A worker holds the GIL inside every Qt call PySide does not release it for, so it never makes one that can take a
   signal-slot mutex** (#529). A `QImageReader` left to find its format asks every plugin to look at the bytes, and
   the SVG plugin's look connects a signal, so a reader on a pool thread is a `format_reader`, told its format up front
-  with detection off. **So no `QMediaPlayer` on a worker** (#522): PySide releases the GIL only for `setSource` and
-  the event loop, and holds it across the constructor, `connect` and the destructor, each of which takes a signal-slot
-  mutex; a player has to live on the GUI thread, which is what made a Qt Multimedia duration probe not worth its keep
+  with detection off. **So no `QMediaPlayer` on a worker** (#522): PySide holds the GIL across its constructor, which
+  connects the backend's signals (#653, PYSIDE-3513); a player has to live on the GUI thread, which is what made a Qt
+  Multimedia duration probe not worth its keep
   ([[appendices.post-mortem#ui-and-deployment]]).
 - **Qt's own threads can wait for the GIL under a signal-slot mutex too** (#573): Qt Multimedia's FFmpeg renderer,
   destroyed on its own thread as a video's source is cleared, disconnects from the Python-built `QAudioOutput`, whose

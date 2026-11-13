@@ -78,8 +78,9 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   takes `~QObject` into Python: a copy of the script without the `connect` ran clean, and the report says so.
   #651's "each job must be new" was checked the same way after posting: one long-lived job ran clean on 6.11 and 6.12.
 - **The version matrix**: PySide6 6.11 / Python 3.14, 6.12 / 3.14 and 6.12 / 3.15, by `uv run --python 3.x --with
-  "PySide6-Essentials==6.1x.*" <name>.py`. `==6.11.*` resolves to the newest patch, not the app's locked one: name
-  the exact versions the script printed.
+  "PySide6-Essentials==6.1x.*" <name>.py`. `==6.11.*` resolves to the newest patch, not the app's locked one, and
+  `--python 3.14` beside 6.12 once ran on 3.15 (#653): ask for the full version (`3.14.6`), and name the exact
+  versions the script printed.
 - Rerun after every change to the script, both the failing run and the workaround run, the workaround on every
   combination too.
 - **Before handing over, read the pair against each other**: the script's docstring, the Description and the stacks
@@ -99,7 +100,9 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   live, Python-owned `QObject` caught in a reference cycle there, and shiboken releases the GIL to run its C++
   destructor (#652).
 - **PySide releases the GIL around its own `connect`**, but not around a Qt call that connects internally: a
-  `QToolButton` re-applies its default action, with a fresh `connect`, at every change of that action (#529).
+  `QToolButton` re-applies its default action, with a fresh `connect`, at every change of that action (#529), or
+  `QMediaPlayer`'s constructor, whose backend connects its own signals (#653). PySide's own `disconnect` keeps the
+  GIL while it waits for the mutex (#653's experiments).
 
 ## 5. The Jira form
 
