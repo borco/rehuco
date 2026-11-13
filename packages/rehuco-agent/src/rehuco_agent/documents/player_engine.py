@@ -24,7 +24,9 @@ class PlayerEngine:
     choice is read each time an engine is asked for, so a change applies to the next video selected, in every open
     document: an engine built for another choice is dropped and the chosen one built in its place. A VLC chosen but
     not usable gives Qt, with :attr:`fallback_reason` for the banner, and is tried again at the next video, since the
-    Tools page may have been set up meanwhile.
+    Tools page may have been set up meanwhile. Qt's engine stands in until that try succeeds, rather than being
+    built anew at every video: each new ``QAudioOutput`` is one more chance for Qt Multimedia's own thread to wait
+    for the GIL under a signal-slot mutex (#654, [[appendices.code-conventions#worker-threads]]).
 
     **Building is cheap and the view owns the signals**: the view hands :meth:`ensure` the callable that connects a
     new engine's signals, so the view's state machine never knows which engine it drives.
@@ -76,18 +78,24 @@ class PlayerEngine:
         :returns: the engine.
         """
         choice = shared_videos_settings().player
-        if self.__player is not None and (choice != self.__built_for or self.__fallback_reason is not None):
-            # another choice, or a VLC that could not be used last time and may be set up by now
+        if self.__player is not None and choice != self.__built_for:
             self.drop()
-        if self.__player is None:
-            self.__built_for = choice
-            player = self.__build_vlc(volume) if choice == VLC_PLAYER else None
-            if player is None:
-                player = self.__build_qt(volume)
-            player.setPlaybackRate(speed)
-            self.__player = player
-            connect(player)
-        return self.__player
+        fallback = self.__player
+        if fallback is not None and self.__fallback_reason is None:
+            return fallback
+        # nothing built, or Qt standing in for a VLC that could not be used last time and may be set up by now
+        self.__built_for = choice
+        player: Engine | None = self.__build_vlc(volume) if choice == VLC_PLAYER else None
+        if player is None and fallback is not None:
+            return fallback
+        if player is None:
+            player = self.__build_qt(volume)
+        elif fallback is not None:
+            self.__delete_qt(cast(QMediaPlayer, fallback))
+        player.setPlaybackRate(speed)
+        self.__player = player
+        connect(player)
+        return player
 
     def drop(self) -> None:
         """Let the engine go, with whatever it was built for: the next :meth:`ensure` builds the one chosen then.
@@ -98,9 +106,9 @@ class PlayerEngine:
             return
         if self.__vlc:
             cast(VlcMediaPlayer, self.__player).close()
+            cast(QObject, self.__player).deleteLater()
         else:
-            cast(QMediaPlayer, self.__player).audioOutput().deleteLater()
-        cast(QObject, self.__player).deleteLater()
+            self.__delete_qt(cast(QMediaPlayer, self.__player))
         self.__player = None
         self.__vlc = False
         self.__fallback_reason = None
@@ -131,7 +139,17 @@ class PlayerEngine:
             return None
         player.setVolume(volume)
         self.__vlc = True
+        self.__fallback_reason = None
         return player
+
+    @staticmethod
+    def __delete_qt(player: QMediaPlayer) -> None:
+        """Delete Qt's engine, with its audio output.
+
+        :param player: the player to delete.
+        """
+        player.audioOutput().deleteLater()
+        player.deleteLater()
 
     def __build_qt(self, volume: float) -> QMediaPlayer:
         """Build the Qt Multimedia engine.
