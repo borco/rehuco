@@ -111,6 +111,15 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   where the write-up said: `~QObject` calls a sender's `disconnectNotify` holding only the dying object's own mutex,
   and only for its incoming connections. The control (the same GUI loop against a PySide `disconnect` on an object
   sharing that pooled mutex, `shiboken6.getCppPointer(o)[0] % 131`) deadlocked at once, with the expected stacks.
+- **A getter moves what it returns under its caller.** PySide is generated with the return value heuristic: a
+  method returning a `QObject` makes the result's wrapper a Python child of the object it was called on, taken from
+  the Python parent it had (exempt: names starting with `parent`, static methods, those with an ownership rule). When
+  that caller is a Python-made object and is deleted, shiboken invalidates its Python subtree recursively: every
+  wrapper of a Qt-made object in it reads "already deleted" while Qt still holds the object; Python-made ones are
+  skipped. `subWindow.mdiArea()`, then that sub-window closed, killed the other documents' `addWidget` actions
+  (#656, PYSIDE-3515); `nextInFocusChain()` and `QLabel.buddy()` move theirs too, `window()` does not.
+  A wrapper freed with children does the same (#461's `container.dockWidget()`). Read the chain with
+  `shiboken6.dump(obj)`'s `parent` line.
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
@@ -142,6 +151,11 @@ The `.md` follows the form's order, one heading per field: **Project** (Qt for P
 - Read the posted issue through Jira's REST API (`https://qt-project.atlassian.net/rest/api/2/issue/<KEY>`; the
   browse page renders in JavaScript): every field, the description's formatting, and the attachment downloaded and
   compared byte for byte with the local `.py`.
-- Our issue gets a comment linking the Qt issue and the `upstream bug` label. The script stays on the Qt issue only.
-- The closing comment gives each version's outcome, whether the workaround stays (fixed on 6.12 or not, #525), and
-  where the findings differ from the issue.
+- Our issue gets a comment linking the Qt issue, and **two labels: `upstream bug` and `pending cleanup`**. The
+  script stays on the Qt issue only.
+- **A reported issue stays open until Qt fixes it**, out of the release's milestone: it now tracks the Qt issue, so
+  the workaround is removed when the fix ships (`gh issue list --label "upstream bug"` lists them). Its last comment
+  gives each version's outcome, where the findings differ from the issue, and the workaround to remove, by file or
+  rule. When the fix ships: rerun the reproducer on that version, remove the workaround, close.
+- An issue that did not reproduce, or was not a bug of its own (#655), is closed as not planned with its
+  measurements.
