@@ -102,6 +102,15 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   wrapper a native stack only shows as its module, answer its lookup early (connect and disconnect one of its
   signals on the GUI thread) and see the deadlock go. Several instances side by side (four players) turned a
   deadlock in half the runs into one in every run.
+- **A worker's queued `emit` is never one side.** PySide releases the GIL around `QMetaObject::metacall` and takes
+  it back only for the sender's `metaObject()`, under no Qt lock; `queued_activate` copies the arguments, a
+  `PyObjectWrapper` taking the GIL, outside the receiver's mutex (PySide and Qt 6.11.1 and 6.12.0). A worker idle in
+  `emit` is waiting for the GIL like any other thread: look for the thread that holds it. Emitting at a listener the
+  GUI thread was destroying, its mutex held and the GIL wanted, ran clean on every version (#655).
+- **A clean run counts only beside a control that deadlocks.** #655's first "clean" runs never put the GUI thread
+  where the write-up said: `~QObject` calls a sender's `disconnectNotify` holding only the dying object's own mutex,
+  and only for its incoming connections. The control (the same GUI loop against a PySide `disconnect` on an object
+  sharing that pooled mutex, `shiboken6.getCppPointer(o)[0] % 131`) deadlocked at once, with the expected stacks.
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
