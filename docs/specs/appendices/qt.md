@@ -151,6 +151,13 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   `QObject.connect(sender, SIGNAL(...), context, o.m)`, with `o` a plain object nothing else holds, calls `m` on
   freed memory: an `AttributeError` for an attribute `__init__` set (3.14) or an access violation (3.15), on 6.11.1,
   6.11.3 and 6.12.0. Without a context, or at 0 ms, it is safe (#671, PYSIDE-3517, found validating #661).
+- **A style's `unpolish` can undo what its `polish` never did.** `QWindows11Style::unpolish` sets every scroll
+  area's viewport `autoFillBackground` from `_q_original_autofill_background`, which `polish` stores only for a
+  styled-panel `QTextEdit` or `QPlainTextEdit` (from 6.11.2; before, for any styled-panel scroll area). Unset, it
+  reads false, and a stylesheet set on any shown ancestor re-polishes the views below it: a frameless view is then
+  drawn in the window's colour. A framed one loses the flag too but is still drawn in Base, the style painting the
+  framed panel itself. 6.9.2 keeps the fill; 6.9.3 to 6.12.0 lose it (#662, QTBUG-152290). Compare such a flag across versions,
+  not pixels: before 6.9.3 the style replaced the viewport's palette, so Base read black.
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
@@ -168,6 +175,13 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
 The `.md` follows the order Jira's form shows its fields in, one heading per field: **Project** (Qt for Python,
 PYSIDE), **Issue Type** (Bug), **Summary**, **Description** (straight after the Summary, not last), **Priority** (left
 at Not Evaluated), **Affects Version/s**, **Component/s** (PySide), **Environment**, **Attachment** (the `.py`).
+A bug in Qt itself goes to **Qt (QTBUG)** instead, its component the module's (`Widgets: Styles` for #662), and its
+Summary starts with Qt's regression tag when a release that worked is known (`[Reg 6.9.2 -> 6.9.3]`). It carries a
+second attachment, the same program in C++ (one `.cpp`, its `CMakeLists.txt` in the top comment, built against the
+Qt installs in `C:\Qt`), so the report cannot be read as a PySide matter.
+
+A reproducer for something seen keeps its window open: it shows the result in a label and prints it when the
+window is closed, and a `--no-wait` flag ends it by itself for the version matrix.
 
 - **The Description is plain Markdown**, written unfenced in the `.md`: the owner opens VS Code's Markdown preview
   and drags the rendered text into Jira's Description field, which takes no raw wiki text. Real `###` subheadings,
