@@ -120,6 +120,11 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   (#656, PYSIDE-3515); `nextInFocusChain()` and `QLabel.buddy()` move theirs too, `window()` does not.
   A wrapper freed with children does the same (#461's `container.dockWidget()`). Read the chain with
   `shiboken6.dump(obj)`'s `parent` line.
+- **`shiboken6.dump` on 6.11.1 faults on a wrapper with an invalid neighbour.** It calls `str()` on the wrapper's
+  Python parent, children and referred objects, never on its own C++ object; `str()` of an invalid one raises, and
+  6.11.1 dereferences the NULL. An invalid wrapper stays in its Python parent's child list (Qt deleting an object it
+  made only clears the wrapper's flag), so a live, valid line edit whose clear action Qt deleted faults. Fixed in
+  6.11.2. #631's "valid while gone" wrappers were this, not freed objects (#657): probe with 6.11.2 or later.
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
