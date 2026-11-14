@@ -168,6 +168,10 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
   deleted widget ("already deleted"), and `sender()` reads `None` in it. A `@Slot` does not help; a public name,
   or the method on the widget's own class, does. `OverlaySurface` keeps the `QMetaObject.Connection` handles and
   disconnects them on close and on `destroyed`, a no-op the second time; that goes with the move to 6.12 (#525).
+- **Mask modifiers through `.value`** on Python 3.14 (#575, #660, PYSIDE-3507): on Windows `~` of a
+  `Qt.KeyboardModifier` keeps only the bits below that member, so `modifiers & ~ShiftModifier` drops Ctrl. Write
+  `Qt.KeyboardModifier(modifiers.value & ~ShiftModifier.value)` (`player_panel_keys`); that goes with the move to
+  Python 3.15 (#525).
 - **Qt Multimedia** (#574): `QMediaPlayer.setPosition` reports its target through `positionChanged` before it
   returns, about 110 ms ahead of any frame of it, and a frame from before the seek can still arrive meanwhile. A
   `QVideoWidget` keeps drawing a frame set on its sink after the player that decoded it let the file go, GPU

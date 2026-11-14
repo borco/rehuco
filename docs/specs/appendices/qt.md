@@ -73,7 +73,8 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   (`sender()` is `None` there), already fixed in 6.12.0: no report, the issue closed with its measurements.
 - **Measure the mechanism before writing the script.** Experiments in the scratchpad, then native stacks of a hung run
   (`py-spy dump --native --pid <child pid>`) showing each side holding what the other waits for. The issue's guess
-  at the trigger can be wrong (#651's GUI side was a deletion, not a property assignment).
+  at the trigger can be wrong (#651's GUI side was a deletion, not a property assignment; #660 blamed
+  `~KeypadModifier`, which loses only `GroupSwitchModifier`, where `~ShiftModifier` loses Ctrl).
 - **A stall is not a deadlock.** Busy Python threads can starve the GUI thread of the GIL for long enough to look hung
   (#652's first experiments). A real deadlock leaves the process near 0% CPU and its stacks unchanged between dumps.
   Measure and dump the real interpreter: a venv's `python.exe` is a launcher stub, always idle, whose child is the
@@ -134,6 +135,12 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   6.11.1 dereferences the NULL. An invalid wrapper stays in its Python parent's child list (Qt deleting an object it
   made only clears the wrapper's flag), so a live, valid line edit whose clear action Qt deleted faults. Fixed in
   6.11.2. #631's "valid while gone" wrappers were this, not freed objects (#657): probe with 6.11.2 or later.
+- **A negative flag member breaks `~` for its whole class on Python 3.14.** On Windows, shiboken gives a flag member
+  with bit 31 set a negative value (`KeyboardModifierMask`, `0xfe000000`, reads `-0x2000000`); Python 3.14's `enum`
+  then makes `_flag_mask_` negative, and `~member` keeps only the bits below that member: `~ShiftModifier` is
+  `0x1ffffff` on 6.11.1, 6.11.3 and 6.12.0, and fine on 6.12.0 / 3.15.2. A pure-Python `Flag` with the same negative
+  member does the same. PYSIDE-3507's fix makes flag values unsigned only from Python 3.15, so 3.14 stays as it is
+  (#660: no report).
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
