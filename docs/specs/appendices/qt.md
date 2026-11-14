@@ -75,6 +75,10 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   (`py-spy dump --native --pid <child pid>`) showing each side holding what the other waits for. The issue's guess
   at the trigger can be wrong (#651's GUI side was a deletion, not a property assignment; #660 blamed
   `~KeypadModifier`, which loses only `GroupSwitchModifier`, where `~ShiftModifier` loses Ctrl).
+- **A bug guessed at, never seen, is not a report.** #661's `QTimer.singleShot(ms, receiver, callable)` that never
+  fired was #506's guess at a coverage gap, made before the uncovered lines were read (they were `stop()`'s kill
+  branch); its workaround, a member `QTimer`, went into the lessons though it was never written. The call fires on
+  6.11.1, 6.11.3 and 6.12.0 / Python 3.14.6 and 6.12.0 / 3.15.2, in a plain app and under pytest-qt: not reproduced.
 - **A stall is not a deadlock.** Busy Python threads can starve the GUI thread of the GIL for long enough to look hung
   (#652's first experiments). A real deadlock leaves the process near 0% CPU and its stacks unchanged between dumps.
   Measure and dump the real interpreter: a venv's `python.exe` is a launcher stub, always idle, whose child is the
@@ -141,6 +145,12 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   `0x1ffffff` on 6.11.1, 6.11.3 and 6.12.0, and fine on 6.12.0 / 3.15.2. A pure-Python `Flag` with the same negative
   member does the same. PYSIDE-3507's fix makes flag values unsigned only from Python 3.15, so 3.14 stays as it is
   (#660: no report).
+- **A context connection outlives its method's owner.** PySide keeps a bound method's `self` as a borrowed pointer
+  and disconnects by weak reference when it dies, through a table the connect overload taking a context never fills
+  (`qobjectConnectCallback`, no `registerSlotConnection`). `QTimer.singleShot(ms, context, o.m)` above 0 ms, or
+  `QObject.connect(sender, SIGNAL(...), context, o.m)`, with `o` a plain object nothing else holds, calls `m` on
+  freed memory: an `AttributeError` for an attribute `__init__` set (3.14) or an access violation (3.15), on 6.11.1,
+  6.11.3 and 6.12.0. Without a context, or at 0 ms, it is safe (#671, PYSIDE-3517, found validating #661).
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
@@ -155,9 +165,9 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
 
 [[[appendices.qt#jira-form]]]
 
-The `.md` follows the form's order, one heading per field: **Project** (Qt for Python, PYSIDE), **Issue Type** (Bug),
-**Summary**, **Priority** (left at Not Evaluated), **Affects Version/s**, **Component/s** (PySide), **Environment**,
-**Description**, **Attachment** (the `.py`).
+The `.md` follows the order Jira's form shows its fields in, one heading per field: **Project** (Qt for Python,
+PYSIDE), **Issue Type** (Bug), **Summary**, **Description** (straight after the Summary, not last), **Priority** (left
+at Not Evaluated), **Affects Version/s**, **Component/s** (PySide), **Environment**, **Attachment** (the `.py`).
 
 - **The Description is plain Markdown**, written unfenced in the `.md`: the owner opens VS Code's Markdown preview
   and drags the rendered text into Jira's Description field, which takes no raw wiki text. Real `###` subheadings,

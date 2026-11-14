@@ -188,10 +188,12 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
   parent was shown stays hidden until `show()`; an unshown `ElidedLabel` reads `…` (#378).
 - **Widgets**: `QColumnView` — `createColumn` for a delegate, `setFixedWidth(0)` for the preview (#378); a `QToolButton`
   mirrors its action but not its font; a `StrEnum` item comes back `str`; `applicationDisplayName()` falls back to
-  `applicationName()` (#412); `QStatusBar.addPermanentWidget` appends rightwards; `QTimer.singleShot(ms, receiver,
-  callable)` did not fire in tests — use a member `QTimer` (#506); `CDockManager` works under a plain widget (#498). A
-  row removed from a layout and `deleteLater`-ed is gone by the next wait — test `shiboken6.isValid`, not
-  `isVisible` (#505).
+  `applicationName()` (#412); `QStatusBar.addPermanentWidget` appends rightwards; the agent's conftest makes
+  `NodeHost.start_later` a no-op, so a host test arms the real one, kept at import (#506; #661:
+  `QTimer.singleShot(ms, receiver, callable)` fires), and its callable is a method of the receiver, a `partial` or a
+  lambda, never a method of a plain object nothing else holds, which is called freed (#671, PYSIDE-3517);
+  `CDockManager` works under a plain widget (#498). A row removed from a layout and `deleteLater`-ed is gone by the
+  next wait — test `shiboken6.isValid`, not `isVisible` (#505).
 - **Menus**: a `QWidgetAction` row owns its columns — raise `maxIconWidth` (#465); an `aboutToShow` tail keeps one
   `QActionGroup` (#402); a card list marks its current card by its buttons alone (#463).
 - **Drag routing** (#387, #461, #485): a drag belongs to the widget that accepted its enter; a disabled widget gets
