@@ -94,8 +94,9 @@ class LineEditClearActionFilter(QObject):
     def __ensure_clear_action(self, line_edit: QLineEdit) -> None:
         """Equip ``line_edit`` with its clear action once; a no-op on a later ``Show`` of an equipped one.
 
-        An action deleted out from under a live line edit (#365) is simply missing here and is made again; one
-        whose wrapper alone died (#459) is found by name and left be, so there is never a second one.
+        An action whose wrapper alone died is found by name and left be, so there is never a second one (#365,
+        #459: the wrapper was invalidated while the action lived on; the action itself was never deleted, #658).
+        A missing action is made again.
 
         :param line_edit: the line edit to equip.
         """

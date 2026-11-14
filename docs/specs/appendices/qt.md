@@ -118,8 +118,13 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   wrapper of a Qt-made object in it reads "already deleted" while Qt still holds the object; Python-made ones are
   skipped. `subWindow.mdiArea()`, then that sub-window closed, killed the other documents' `addWidget` actions
   (#656, PYSIDE-3515); `nextInFocusChain()` and `QLabel.buddy()` move theirs too, `window()` does not.
-  A wrapper freed with children does the same (#461's `container.dockWidget()`). Read the chain with
-  `shiboken6.dump(obj)`'s `parent` line.
+  A wrapper freed with children does the same, with nothing deleted in C++: PySide wraps a Qt-made object it has no
+  wrapper of for one call (a slot's argument, an event filter's `watched`), a getter called on it moves a Python
+  tree under that wrapper, and the wrapper is freed as the call returns. #461's `container.dockWidget()` in a pin's
+  slot killed a line edit's own actions that way (#365, #658); in PySide alone, `watched.childAt()` on a scroll
+  area's viewport does (`qscrollarea_viewport_childat_invalidates_wrappers`, a comment on PYSIDE-3515). Asked for
+  once by a getter (`scroll_area.viewport()`), such an object has a lasting wrapper and nothing is freed. Read the
+  chain with `shiboken6.dump(obj)`'s `parent` line.
 - **`shiboken6.dump` on 6.11.1 faults on a wrapper with an invalid neighbour.** It calls `str()` on the wrapper's
   Python parent, children and referred objects, never on its own C++ object; `str()` of an invalid one raises, and
   6.11.1 dereferences the NULL. An invalid wrapper stays in its Python parent's child list (Qt deleting an object it
