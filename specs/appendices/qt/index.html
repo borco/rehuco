@@ -1,0 +1,2998 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/appendices/qt/">
+      
+      
+        <link rel="prev" href="../project-management/">
+      
+      
+        <link rel="next" href="../qt-ads/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Qt - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#qt-reporting-bugs-upstream" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Qt
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../external-tools/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  External Tools
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Qt
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Qt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-two-files-per-report" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Two files per report
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-reproducer-is-ordinary-supported-qt-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The reproducer is ordinary, supported Qt code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-skimmable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Skimmable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-proving-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Proving it
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Proving it">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-mechanisms-found-so-far" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Mechanisms found so far
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-the-jira-form" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. The Jira form
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-after-it-is-posted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. After it is posted
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vlc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../external-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-two-files-per-report" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Two files per report
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-reproducer-is-ordinary-supported-qt-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The reproducer is ordinary, supported Qt code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-skimmable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Skimmable
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-proving-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Proving it
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Proving it">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-mechanisms-found-so-far" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 Mechanisms found so far
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-the-jira-form" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. The Jira form
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-after-it-is-posted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. After it is posted
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="qt-reporting-bugs-upstream">Qt — Reporting Bugs Upstream</h1>
+<p><span class="slug-ref">[[[appendices.qt]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[appendices.qt#overview]]]</span></p>
+<p>How a Qt or PySide6 bug found here becomes a report on <a href="https://bugreports.qt.io">bugreports.qt.io</a>: what to write,
+how to write it so it is read, and what to do once it is posted. The first report made this way was PYSIDE-3511
+(<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/651" title="GitHub Issue: borco/rehuco #651">#651</a>); <code>qt-repros/qimagereader_getter_keeps_gil.py</code> and its <code>.md</code>, beside the work queue, are the worked example,
+with <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/652" title="GitHub Issue: borco/rehuco #652">#652</a>'s <code>collected_qobject_takes_gil_under_mutex</code> pair.</p>
+<h2 id="1-two-files-per-report">1. Two files per report</h2>
+<p><span class="slug-ref">[[[appendices.qt#two-files]]]</span></p>
+<p>Each report is a pair in <code>qt-repros/</code> beside the work queue, outside every checkout:</p>
+<ul>
+<li><strong><code>&lt;name&gt;.py</code></strong>: a self-contained reproducer. One file, PySide6 only, its dependencies in a PEP 723 <code># /// script</code>
+  block (<code>requires-python</code>, <code>PySide6-Essentials</code>), run by <code>uv run &lt;name&gt;.py</code>. It is attached to the Qt report.</li>
+<li><strong><code>&lt;name&gt;.md</code></strong>: how to fill the Jira form, field by field (<span class="slug-ref">[[appendices.qt#jira-form]]</span>). The owner posts; nothing
+  is filed from a session.</li>
+</ul>
+<h2 id="2-the-reproducer-is-ordinary-supported-qt-code">2. The reproducer is ordinary, supported Qt code</h2>
+<p><span class="slug-ref">[[[appendices.qt#qt-way]]]</span></p>
+<p>A Qt Company reviewer dismisses a report whose code is not the Qt way of doing things ("you are not supposed to do
+that") without looking at the bug. So the reproducer reads like a small, well-behaved application:</p>
+<ul>
+<li><strong>Qt's own facilities first.</strong> A <code>QThreadPool</code> running <code>QRunnable</code>s, not Python's <code>threading</code>; a <code>QTimer</code> driving the
+  GUI thread's work; signals and slots (<code>Signal</code>, <code>@Slot</code>) between <code>QObject</code> subclasses. Python's standard library
+  only where Qt has no equivalent.</li>
+<li><strong>Nothing a Qt developer would call misuse.</strong> Every object lives on the thread that made it; a <code>QImageReader</code> never
+  outlives its device; no stop flag on a pool task -- bounded tasks and <code>waitForDone()</code> instead.</li>
+<li><strong>A familiar shape.</strong> Name things after what an application does (a thumbnail loader, a job and the listener that
+  follows it), not after the bug.</li>
+<li><strong>Ordinary Python.</strong> Lifetimes follow from the code's shape (a temporary, a local), never from <code>del</code> tricks; no
+  <code>__import__</code>, no reaching into private names.</li>
+<li><strong>Each choice that exposes the bug is marked.</strong> The module docstring lists them, numbered and explained, and a
+  <code># Exposes the bug (n): ...</code> comment sits on the line that makes each one, so the reviewer sees at once which lines
+  are the bug and that everything else is supported use. A loop that only turns a rare race into a frequent one says
+  so.</li>
+<li><strong>The reviewer's first objection is answered first.</strong> When the bug itself breaks a Qt rule (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/652" title="GitHub Issue: borco/rehuco #652">#652</a>: a <code>QObject</code>
+  destroyed off its thread), the docstring and the Description say up front who breaks it: PySide, not a line of
+  the script.</li>
+</ul>
+<h2 id="3-skimmable">3. Skimmable</h2>
+<p><span class="slug-ref">[[[appendices.qt#skimmable]]]</span></p>
+<ul>
+<li>The module docstring says what the bug is, how the two sides meet, which choices expose it, how to run the script,
+  what each exit code means, and <strong>how long to wait</strong>: a deadlock is silent until the watchdog fires.</li>
+<li>Every function and class has a docstring that says why it exists, not only what it does; comments only where the
+  why is not obvious. Our code conventions hold (<span class="slug-ref">[[appendices.code-conventions#python]]</span>): <code>Final</code> constants with
+  docstrings, Sphinx docstrings, <code>@override</code>, no <code>_</code> names.</li>
+<li><strong>A deadlock runs in a child.</strong> A deadlocked process cannot report or end itself (exit waits on the same locks), so
+  <code>main()</code> only routes: <code>run_harness()</code> starts the same file again as the child and reports or kills it, and
+  <code>run_child()</code> runs the loops under faulthandler's watchdog, which prints every thread's Python stack without
+  needing the GIL. Each says so in its docstring.</li>
+<li>A <code>--with-format</code>-style flag runs the workaround, so the report shows the same script running clean. The
+  workaround is the one the app uses, and it removes the cause rather than narrowing the window: <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/652" title="GitHub Issue: borco/rehuco #652">#652</a>'s first one, a
+  <code>deleteLater()</code> alone, still let the collector reach the object before the event loop did; a parent does not.</li>
+</ul>
+<h2 id="4-proving-it">4. Proving it</h2>
+<p><span class="slug-ref">[[[appendices.qt#proving]]]</span></p>
+<ul>
+<li><strong>Search Jira by the symptom once it is narrowed</strong>, through the REST API
+  (<code>/rest/api/2/search/jql?jql=project = PYSIDE AND text ~ "..."</code>). <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/659" title="GitHub Issue: borco/rehuco #659">#659</a>'s "a base class's slot outlives its widget"
+  narrowed to a base class's name-mangled method, and <code>text ~ "mangled"</code> found PYSIDE-3376, its other symptom
+  (<code>sender()</code> is <code>None</code> there), already fixed in 6.12.0: no report, the issue closed with its measurements.</li>
+<li><strong>Measure the mechanism before writing the script.</strong> Experiments in the scratchpad, then native stacks of a hung run
+  (<code>py-spy dump --native --pid &lt;child pid&gt;</code>) showing each side holding what the other waits for. The issue's guess
+  at the trigger can be wrong (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/651" title="GitHub Issue: borco/rehuco #651">#651</a>'s GUI side was a deletion, not a property assignment; <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/660" title="GitHub Issue: borco/rehuco #660">#660</a> blamed
+  <code>~KeypadModifier</code>, which loses only <code>GroupSwitchModifier</code>, where <code>~ShiftModifier</code> loses Ctrl).</li>
+<li><strong>A stall is not a deadlock.</strong> Busy Python threads can starve the GUI thread of the GIL for long enough to look hung
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/652" title="GitHub Issue: borco/rehuco #652">#652</a>'s first experiments). A real deadlock leaves the process near 0% CPU and its stacks unchanged between dumps.
+  Measure and dump the real interpreter: a venv's <code>python.exe</code> is a launcher stub, always idle, whose child is the
+  process to read.</li>
+<li><strong>Each cause the report names is checked by taking it away.</strong> <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/652" title="GitHub Issue: borco/rehuco #652">#652</a> says the connection between job and listener
+  takes <code>~QObject</code> into Python: a copy of the script without the <code>connect</code> ran clean, and the report says so.
+  <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/651" title="GitHub Issue: borco/rehuco #651">#651</a>'s "each job must be new" was checked the same way after posting: one long-lived job ran clean on 6.11 and 6.12.</li>
+<li><strong>The version matrix</strong>: PySide6 6.11 / Python 3.14, 6.12 / 3.14 and 6.12 / 3.15, by <code>uv run --python 3.x --with
+  "PySide6-Essentials==6.1x.*" &lt;name&gt;.py</code>. <code>==6.11.*</code> resolves to the newest patch, not the app's locked one, and
+  <code>--python 3.14</code> beside 6.12 once ran on 3.15 (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/653" title="GitHub Issue: borco/rehuco #653">#653</a>): ask for the full version (<code>3.14.6</code>), and name the exact
+  versions the script printed.</li>
+<li>Rerun after every change to the script, both the failing run and the workaround run, the workaround on every
+  combination too.</li>
+<li><strong>Before handing over, read the pair against each other</strong>: the script's docstring, the Description and the stacks
+  tell one story (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/652" title="GitHub Issue: borco/rehuco #652">#652</a>'s docstring named one GIL path while its stack showed another).</li>
+</ul>
+<h3 id="41-mechanisms-found-so-far">4.1 Mechanisms found so far</h3>
+<p><span class="slug-ref">[[[appendices.qt#mechanisms]]]</span></p>
+<ul>
+<li><strong><code>~QObject</code> reaches Python under the signal-slot mutex.</strong> While holding its own mutex it calls each sender's
+  <code>metaObject()</code> and <code>disconnectNotify</code>; for a Python-built sender, PySide takes the GIL in either: in
+  <code>retrieveMetaObject</code> (a Python subclass's meta-object), or in <code>Sbk_GetPyOverride</code> looking for a Python
+  <code>disconnectNotify</code>, only on that object's first lookup, the "no override" answer then cached per object. Both were
+  caught in native stacks (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/651" title="GitHub Issue: borco/rehuco #651">#651</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/652" title="GitHub Issue: borco/rehuco #652">#652</a>). A reproducer needs a fresh sender each time; a plain <code>disconnect</code> unlocks
+  before notifying, and never deadlocks (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/654" title="GitHub Issue: borco/rehuco #654">#654</a>'s mechanism too).</li>
+<li><strong>The thread under the mutex can be Qt's own.</strong> Qt Multimedia's FFmpeg backend deletes, on its threads, objects it
+  connected to a Python-built <code>QAudioOutput</code>, and that output's first <code>disconnectNotify</code> lookup takes the GIL there;
+  the GUI thread meets it in <code>setAudioOutput</code>, which PySide calls with the GIL held (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/654" title="GitHub Issue: borco/rehuco #654">#654</a>, PYSIDE-3514). To name the
+  wrapper a native stack only shows as its module, answer its lookup early (connect and disconnect one of its
+  signals on the GUI thread) and see the deadlock go. Several instances side by side (four players) turned a
+  deadlock in half the runs into one in every run.</li>
+<li><strong>A worker's queued <code>emit</code> is never one side.</strong> PySide releases the GIL around <code>QMetaObject::metacall</code> and takes
+  it back only for the sender's <code>metaObject()</code>, under no Qt lock; <code>queued_activate</code> copies the arguments, a
+  <code>PyObjectWrapper</code> taking the GIL, outside the receiver's mutex (PySide and Qt 6.11.1 and 6.12.0). A worker idle in
+  <code>emit</code> is waiting for the GIL like any other thread: look for the thread that holds it. Emitting at a listener the
+  GUI thread was destroying, its mutex held and the GIL wanted, ran clean on every version (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/655" title="GitHub Issue: borco/rehuco #655">#655</a>).</li>
+<li><strong>A clean run counts only beside a control that deadlocks.</strong> <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/655" title="GitHub Issue: borco/rehuco #655">#655</a>'s first "clean" runs never put the GUI thread
+  where the write-up said: <code>~QObject</code> calls a sender's <code>disconnectNotify</code> holding only the dying object's own mutex,
+  and only for its incoming connections. The control (the same GUI loop against a PySide <code>disconnect</code> on an object
+  sharing that pooled mutex, <code>shiboken6.getCppPointer(o)[0] % 131</code>) deadlocked at once, with the expected stacks.</li>
+<li><strong>A getter moves what it returns under its caller.</strong> PySide is generated with the return value heuristic: a
+  method returning a <code>QObject</code> makes the result's wrapper a Python child of the object it was called on, taken from
+  the Python parent it had (exempt: names starting with <code>parent</code>, static methods, those with an ownership rule). When
+  that caller is a Python-made object and is deleted, shiboken invalidates its Python subtree recursively: every
+  wrapper of a Qt-made object in it reads "already deleted" while Qt still holds the object; Python-made ones are
+  skipped. <code>subWindow.mdiArea()</code>, then that sub-window closed, killed the other documents' <code>addWidget</code> actions
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/656" title="GitHub Issue: borco/rehuco #656">#656</a>, PYSIDE-3515); <code>nextInFocusChain()</code> and <code>QLabel.buddy()</code> move theirs too, <code>window()</code> does not.
+  A wrapper freed with children does the same, with nothing deleted in C++: PySide wraps a Qt-made object it has no
+  wrapper of for one call (a slot's argument, an event filter's <code>watched</code>), a getter called on it moves a Python
+  tree under that wrapper, and the wrapper is freed as the call returns. <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/461" title="GitHub Issue: borco/rehuco #461">#461</a>'s <code>container.dockWidget()</code> in a pin's
+  slot killed a line edit's own actions that way (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/365" title="GitHub Issue: borco/rehuco #365">#365</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/658" title="GitHub Issue: borco/rehuco #658">#658</a>); in PySide alone, <code>watched.childAt()</code> on a scroll
+  area's viewport does (<code>qscrollarea_viewport_childat_invalidates_wrappers</code>, a comment on PYSIDE-3515). Asked for
+  once by a getter (<code>scroll_area.viewport()</code>), such an object has a lasting wrapper and nothing is freed. Read the
+  chain with <code>shiboken6.dump(obj)</code>'s <code>parent</code> line.</li>
+<li><strong><code>shiboken6.dump</code> on 6.11.1 faults on a wrapper with an invalid neighbour.</strong> It calls <code>str()</code> on the wrapper's
+  Python parent, children and referred objects, never on its own C++ object; <code>str()</code> of an invalid one raises, and
+  6.11.1 dereferences the NULL. An invalid wrapper stays in its Python parent's child list (Qt deleting an object it
+  made only clears the wrapper's flag), so a live, valid line edit whose clear action Qt deleted faults. Fixed in
+  6.11.2. <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/631" title="GitHub Issue: borco/rehuco #631">#631</a>'s "valid while gone" wrappers were this, not freed objects (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/657" title="GitHub Issue: borco/rehuco #657">#657</a>): probe with 6.11.2 or later.</li>
+<li><strong>A negative flag member breaks <code>~</code> for its whole class on Python 3.14.</strong> On Windows, shiboken gives a flag member
+  with bit 31 set a negative value (<code>KeyboardModifierMask</code>, <code>0xfe000000</code>, reads <code>-0x2000000</code>); Python 3.14's <code>enum</code>
+  then makes <code>_flag_mask_</code> negative, and <code>~member</code> keeps only the bits below that member: <code>~ShiftModifier</code> is
+  <code>0x1ffffff</code> on 6.11.1, 6.11.3 and 6.12.0, and fine on 6.12.0 / 3.15.2. A pure-Python <code>Flag</code> with the same negative
+  member does the same. PYSIDE-3507's fix makes flag values unsigned only from Python 3.15, so 3.14 stays as it is
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/660" title="GitHub Issue: borco/rehuco #660">#660</a>: no report).</li>
+<li><strong>One <code>uv run</code> of a script at a time.</strong> Parallel runs of the same PEP 723 script race on its cached environment
+  and fail to install.</li>
+<li><strong>The cyclic collector runs on whichever thread allocates.</strong> Ordinary Python work on a pool thread can free a
+  live, Python-owned <code>QObject</code> caught in a reference cycle there, and shiboken releases the GIL to run its C++
+  destructor (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/652" title="GitHub Issue: borco/rehuco #652">#652</a>).</li>
+<li><strong>PySide releases the GIL around its own <code>connect</code></strong>, but not around a Qt call that connects internally: a
+  <code>QToolButton</code> re-applies its default action, with a fresh <code>connect</code>, at every change of that action (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/529" title="GitHub Issue: borco/rehuco #529">#529</a>), or
+  <code>QMediaPlayer</code>'s constructor, whose backend connects its own signals (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/653" title="GitHub Issue: borco/rehuco #653">#653</a>). PySide's own <code>disconnect</code> keeps the
+  GIL while it waits for the mutex (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/653" title="GitHub Issue: borco/rehuco #653">#653</a>'s experiments).</li>
+</ul>
+<h2 id="5-the-jira-form">5. The Jira form</h2>
+<p><span class="slug-ref">[[[appendices.qt#jira-form]]]</span></p>
+<p>The <code>.md</code> follows the form's order, one heading per field: <strong>Project</strong> (Qt for Python, PYSIDE), <strong>Issue Type</strong> (Bug),
+<strong>Summary</strong>, <strong>Priority</strong> (left at Not Evaluated), <strong>Affects Version/s</strong>, <strong>Component/s</strong> (PySide), <strong>Environment</strong>,
+<strong>Description</strong>, <strong>Attachment</strong> (the <code>.py</code>).</p>
+<ul>
+<li><strong>The Description is plain Markdown</strong>, written unfenced in the <code>.md</code>: the owner opens VS Code's Markdown preview
+  and drags the rendered text into Jira's Description field, which takes no raw wiki text. Real <code>###</code> subheadings,
+  bold labels (Expected, Actual, Workaround, Suggested fix), stacks in a code block.</li>
+<li>The one-line fields go in fenced blocks, copied as plain text. The file disables MD013 with a comment, since those
+  blocks stay unwrapped.</li>
+</ul>
+<h2 id="6-after-it-is-posted">6. After it is posted</h2>
+<p><span class="slug-ref">[[[appendices.qt#after-posting]]]</span></p>
+<ul>
+<li>Read the posted issue through Jira's REST API (<code>https://qt-project.atlassian.net/rest/api/2/issue/&lt;KEY&gt;</code>; the
+  browse page renders in JavaScript): every field, the description's formatting, and the attachment downloaded and
+  compared byte for byte with the local <code>.py</code>.</li>
+<li>Our issue gets a comment linking the Qt issue, and <strong>two labels: <code>upstream bug</code> and <code>pending cleanup</code></strong>. The
+  script stays on the Qt issue only.</li>
+<li><strong>A reported issue stays open until Qt fixes it</strong>, out of the release's milestone: it now tracks the Qt issue, so
+  the workaround is removed when the fix ships (<code>gh issue list --label "upstream bug"</code> lists them). Its last comment
+  gives each version's outcome, where the findings differ from the issue, and the workaround to remove, by file or
+  rule. When the fix ships: rerun the reproducer on that version, remove the workaround, close.</li>
+<li>An issue that did not reproduce, or was not a bug of its own (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/655" title="GitHub Issue: borco/rehuco #655">#655</a>), is closed as not planned with its
+  measurements.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../project-management/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Project Management">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Project Management
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../qt-ads/" class="md-footer__link md-footer__link--next" aria-label="Next: QtAds">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                QtAds
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
