@@ -582,9 +582,9 @@ def test_a_document_closed_after_its_app_window_overlay_was_dismissed_reaches_no
 ) -> None:
     """A dismissed viewer is deleted; the document's own end must not call it (#574).
 
-    Regression: the connections to the document's ``destroyed`` are made by the shared base and inherited, and
-    PySide drops an inherited bound method's connection with its widget only when the method is the widget's own
-    class's -- so the deleted viewer was told its document had gone, and raised.
+    Regression: the connections to the document's ``destroyed`` are made by the shared base to its own ``__``
+    methods, and PySide 6.11 does not drop a base class's name-mangled method's connection with a subclass's widget
+    (#659, PYSIDE-3376, fixed in 6.12.0) -- so the deleted viewer was told its document had gone, and raised.
 
     **Test steps:**
 

@@ -67,6 +67,10 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
 
 [[[appendices.qt#proving]]]
 
+- **Search Jira by the symptom once it is narrowed**, through the REST API
+  (`/rest/api/2/search/jql?jql=project = PYSIDE AND text ~ "..."`). #659's "a base class's slot outlives its widget"
+  narrowed to a base class's name-mangled method, and `text ~ "mangled"` found PYSIDE-3376, its other symptom
+  (`sender()` is `None` there), already fixed in 6.12.0: no report, the issue closed with its measurements.
 - **Measure the mechanism before writing the script.** Experiments in the scratchpad, then native stacks of a hung run
   (`py-spy dump --native --pid <child pid>`) showing each side holding what the other waits for. The issue's guess
   at the trigger can be wrong (#651's GUI side was a deletion, not a property assignment).

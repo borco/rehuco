@@ -163,11 +163,11 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
   form keeping strong references to the widgets its grids own leaves the model's receivers doubled after a teardown
   (`test_a_teardown_lets_go_of_every_model_connection`): hold `weakref.ref` (#568). A host-parented `QAction` a
   document's sub-docks make is deleted in their `teardown`, or a preview leaks one per document switch (#505).
-- **An inherited slot outlives its widget** (#574): PySide drops a bound method's connection when its widget is
-  deleted only if the method is of the widget's own class. A base class's slot, connected for a subclass, keeps
-  being called on the deleted widget ("already deleted"), and a `@Slot` or a public name does not help: keep the
-  `QMetaObject.Connection` handles and disconnect them on close and on `destroyed` (`OverlaySurface`), a no-op the
-  second time.
+- **A base class's `__` slot outlives its widget** on PySide 6.11 (#574, #659, PYSIDE-3376, fixed in 6.12.0): a
+  name-mangled method (`self.__on_tick`) a base class connects for a subclass instance keeps being called on the
+  deleted widget ("already deleted"), and `sender()` reads `None` in it. A `@Slot` does not help; a public name,
+  or the method on the widget's own class, does. `OverlaySurface` keeps the `QMetaObject.Connection` handles and
+  disconnects them on close and on `destroyed`, a no-op the second time; that goes with the move to 6.12 (#525).
 - **Qt Multimedia** (#574): `QMediaPlayer.setPosition` reports its target through `positionChanged` before it
   returns, about 110 ms ahead of any frame of it, and a frame from before the seek can still arrive meanwhile. A
   `QVideoWidget` keeps drawing a frame set on its sink after the player that decoded it let the file go, GPU

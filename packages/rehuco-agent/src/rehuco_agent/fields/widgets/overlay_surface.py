@@ -118,9 +118,9 @@ class OverlaySurface(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         connections: list[QMetaObject.Connection] = []
         self.__connections: Final = connections
-        """Every connection to another object's signal, let go by hand (:meth:`__let_go`): PySide drops a bound
-        method's connection with its widget only when the method is of the widget's own class, and to a subclass
-        these are inherited (measured, #574), so left alone they would reach this view once it is deleted. Closing
+        """Every connection to another object's signal, let go by hand (:meth:`__let_go`): PySide 6.11 does not drop a
+        base class's name-mangled method's connection with a subclass's widget (#574, #659, PYSIDE-3376, fixed in
+        6.12.0; goes with #525), so left alone these would reach this view once it is deleted. Closing
         lets go, since a closed view needs none; so does being destroyed unclosed, with a document. A handle, unlike
         the method, is a no-op to disconnect twice."""
         self.destroyed.connect(lambda: OverlaySurface.__let_go(connections))
