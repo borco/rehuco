@@ -164,6 +164,11 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   cleared before the first show, with nothing polishing it in between, the attribute stays, and the widget inherits
   neither palette nor font again. A widget cleared after it was shown is fine, so #621's "kept for good once set" was
   this narrower case. Any style, the same guard since Qt 5.15 (#663, QTBUG-152291).
+- **Inline `nowrap` only keeps spaces from breaking.** `<nobr>` or a span's `white-space:nowrap` turns each space
+  into a no-break space as the HTML is imported, and layout still breaks wherever Unicode allows: after `T:` before a
+  `\`, after a `/`. An inline `pre` breaks at its spaces too. Only a block's `white-space` (`nowrap` or `pre`) makes
+  its lines unbreakable. Known since 2007 (QTBUG-1135, its duplicates QTBUG-12057 and QTBUG-54787), and the block form
+  is Qt's own advice there, so it is not a workaround to remove; the same on 6.11.3 and 6.12.0 (#664, no report).
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a

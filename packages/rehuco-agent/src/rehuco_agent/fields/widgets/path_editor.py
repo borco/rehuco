@@ -330,7 +330,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         ]
         lines += [html.escape(PLACE_MARKER_TOOLTIPS[marker]) for marker in markers]
         # no wrapping: a path is read whole, and the tooltip grows to the widest line. A block's white-space does it;
-        # <nobr> still lets Qt break after a drive's colon
+        # <nobr> only keeps spaces whole, so Qt still breaks after a drive's colon (QTBUG-1135)
         return "".join(f'<div style="white-space:pre">{line}</div>' for line in lines)
 
     @staticmethod
