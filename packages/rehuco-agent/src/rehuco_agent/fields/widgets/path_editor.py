@@ -8,12 +8,11 @@ own "misc" grid column (see `FieldsForm`/`PathField`); this widget only exposes 
 import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Final, override
+from typing import Final
 
 from borco_pyside.core import SimpleProperty
-from PySide6.QtCore import QEvent, Signal
-from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QFrame, QToolTip, QVBoxLayout, QWidget
+from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 from rehuco_core import sanitize_name
 
 from .location_line import LocationLine
@@ -210,17 +209,6 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         self.expanded = state[:1] == b"\x01"
 
-    @override
-    def changeEvent(self, event: QEvent) -> None:  # noqa: N802  (Qt API name)
-        """Redraw the places on a palette change: their tooltips' grey is mixed from the tooltip palette, which a
-        theme switch has already replaced by the time this arrives (#639).
-
-        :param event: the Qt change event; only a palette change redraws.
-        """
-        if event.type() == QEvent.Type.PaletteChange:
-            self.__render_destinations()
-        super().changeEvent(event)
-
     def __on_expanded_changed(self, value: bool) -> None:
         """Show or hide the suggestions panel to match :attr:`expanded`.
 
@@ -316,21 +304,17 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         :param markers: the markers the row is drawn with.
         :returns: rich text; empty when the row carries nothing to say.
         """
-        palette = QToolTip.palette()
-        text, base = palette.color(QPalette.ColorRole.ToolTipText), palette.color(QPalette.ColorRole.ToolTipBase)
-        # the tooltip's own text halfway to its background: the palette's placeholder role reads as plain text here
-        grey = QColor(
-            (text.red() + base.red()) // 2, (text.green() + base.green()) // 2, (text.blue() + base.blue()) // 2
-        ).name()
         lines = [html.escape(row.rendered)] if row.rendered else []
+        # the role, not its colour: Qt resolves it each time the tooltip is shown, so a theme switch can never leave
+        # the light grey behind on a dark tooltip (#665)
         lines += [
-            f'<span style="color:{grey}; font-size:small;">{html.escape(text)}</span>'
+            f'<span style="color:palette(placeholder-text); font-size:small;">{html.escape(text)}</span>'
             for text in (row.full_path, row.template)
             if text
         ]
         lines += [html.escape(PLACE_MARKER_TOOLTIPS[marker]) for marker in markers]
         # no wrapping: a path is read whole, and the tooltip grows to the widest line. A block's white-space does it;
-        # <nobr> still lets Qt break after a drive's colon
+        # <nobr> only keeps spaces whole, so Qt still breaks after a drive's colon (QTBUG-1135)
         return "".join(f'<div style="white-space:pre">{line}</div>' for line in lines)
 
     @staticmethod
