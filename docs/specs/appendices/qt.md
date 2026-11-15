@@ -158,6 +158,12 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   drawn in the window's colour. A framed one loses the flag too but is still drawn in Base, the style painting the
   framed panel itself. 6.9.2 keeps the fill; 6.9.3 to 6.12.0 lose it (#662, QTBUG-152290). Compare such a flag across versions,
   not pixels: before 6.9.3 the style replaced the viewport's palette, so Base read black.
+- **A stylesheet removed before the first polish leaves `WA_StyleSheet` set.** `QStyleSheetStyle` sets the
+  attribute the first time a widget asks it anything (`initWidget`), and a `QFrame` asks at once, for its frame
+  width on `StyleChange`; only `unpolish` clears it, and `setStyle_helper` unpolishes only a polished widget. Set and
+  cleared before the first show, with nothing polishing it in between, the attribute stays, and the widget inherits
+  neither palette nor font again. A widget cleared after it was shown is fine, so #621's "kept for good once set" was
+  this narrower case. Any style, the same guard since Qt 5.15 (#663, QTBUG-152291).
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
@@ -178,10 +184,13 @@ at Not Evaluated), **Affects Version/s**, **Component/s** (PySide), **Environmen
 A bug in Qt itself goes to **Qt (QTBUG)** instead, its component the module's (`Widgets: Styles` for #662), and its
 Summary starts with Qt's regression tag when a release that worked is known (`[Reg 6.9.2 -> 6.9.3]`). It carries a
 second attachment, the same program in C++ (one `.cpp`, its `CMakeLists.txt` in the top comment, built against the
-Qt installs in `C:\Qt`), so the report cannot be read as a PySide matter.
+Qt installs in `C:\Qt`), so the report cannot be read as a PySide matter. From #663 on, a four-line `<name>.pro`
+is attached with it: a qmake project keeps the reproducer's name, so the tester builds without writing a file.
 
 A reproducer for something seen keeps its window open: it shows the result in a label and prints it when the
-window is closed, and a `--no-wait` flag ends it by itself for the version matrix.
+window is closed, and a `--no-wait` flag ends it by itself for the version matrix. It shows the state before the
+change for a second or two, so the tester sees both, and a flag sets that pause (#663: `--light-ms=0` for
+scripted runs).
 
 - **The Description is plain Markdown**, written unfenced in the `.md`: the owner opens VS Code's Markdown preview
   and drags the rendered text into Jira's Description field, which takes no raw wiki text. Real `###` subheadings,

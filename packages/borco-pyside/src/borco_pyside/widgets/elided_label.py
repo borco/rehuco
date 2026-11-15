@@ -66,7 +66,8 @@ class ElidedLabel(QLabel):
     def link_color(self) -> QColor:
         """The color a link is drawn in: the palette's ``Link`` role. A subclass drawing its link in another
         color overrides this rather than pinning a palette or a stylesheet on the widget: either stops a theme
-        change from reaching it (a stylesheet for good -- Qt keeps ``WA_StyleSheet`` set once one was set).
+        change from reaching it (a stylesheet for good, when it is set and cleared before the label is first
+        shown -- Qt then keeps ``WA_StyleSheet`` set, QTBUG-152291).
 
         :returns: the current link color.
         """
