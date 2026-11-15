@@ -75,6 +75,8 @@ class PlayerPanels(QObject):
         side.setStretchFactor(1, 1)
         divider = side.handle(1)
         divider.setEnabled(False)
+        # Qt already shows the arrow over a disabled widget (measured, #667); the handle's cursor() still reports
+        # the split shape it was made with, so this only makes it report the arrow it shows
         divider.setCursor(Qt.CursorShape.ArrowCursor)
         self.__ui.info_panel.installEventFilter(self)
         self.__keys.watch(tree)

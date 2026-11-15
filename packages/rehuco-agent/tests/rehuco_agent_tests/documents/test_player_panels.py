@@ -596,13 +596,14 @@ def test_the_divider_above_the_notes_shows_and_does_not_drag(stage: Stage, qtbot
     """**Test steps:**
 
     * show the info above the notes
-    * verify the divider shows with no resize cursor
+    * verify the divider shows, disabled, and reports the arrow cursor
     * drag it down and verify the column's split did not move
     """
     side, _ = show_info_and_notes(stage, qtbot)
     divider = side.handle(1)
     sizes = side.sizes()
     assert divider.isVisible() and not divider.isEnabled()
+    # the property only: Qt shows the arrow over any disabled widget, whatever cursor() says (#667)
     assert divider.cursor().shape() == Qt.CursorShape.ArrowCursor
 
     QTest.mousePress(divider, Qt.MouseButton.LeftButton, pos=QPoint(5, 1))
