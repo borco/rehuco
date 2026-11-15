@@ -179,6 +179,11 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   `actionTriggered(SliderMove)` again, `sliderPressed`. The style only picks the button: windows11 gives the left
   button absolute set and no button page set, fusion and windowsvista the middle button absolute set, and their
   middle press logs the same order, on 6.11.3 and 6.12.0 (#666, not a bug).
+- **A disabled widget shows no cursor of its own, and `cursor()` still returns the one set.** `qt_qpa_set_cursor`
+  clears the cursor over a disabled widget, and an enter on a disabled child takes its nearest enabled ancestor's.
+  A disabled `QSplitterHandle` reports `SplitHCursor` or `SplitVCursor` and shows the arrow, under windows11, fusion
+  and windowsvista, on 6.11.3 and 6.12.0: read what Windows shows (`GetCursorInfo`), not the property (#667, not a
+  bug).
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
