@@ -5,11 +5,9 @@ rename suggestions, unavailable candidates, and the live setters.
 from typing import Any
 
 from borco_pyside.widgets import ElidedLabel
-from PySide6.QtCore import QEvent
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QApplication, QFrame, QToolTip
+from PySide6.QtWidgets import QFrame
 from pytest import mark
-from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.colors import WARNING_COLOR
 from rehuco_agent.fields.widgets import LocationLine, MarkedLabel
@@ -607,26 +605,19 @@ def test_a_place_with_no_path_has_no_rendered_line_and_no_template_line(qtbot: Q
     assert label.toolTip().count("<div") == 1
 
 
-def test_a_theme_switch_remixes_the_tooltip_grey(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """The tooltip's grey follows a live theme switch, rather than staying what it was drawn in (#639).
+def test_the_tooltip_grey_names_the_placeholder_role(qtbot: QtBot) -> None:
+    """The tooltip's grey is the placeholder role by name, which Qt resolves each time the tooltip is shown: a
+    colour baked in at a theme switch stayed light on a dark tooltip (#639, #665).
 
     **Test steps:**
 
-    * set a place and keep its tooltip
-    * give tooltips another palette and send the editor a palette change
-    * verify the tooltip was redrawn in another grey
+    * set a place with a full path
+    * verify its greyed line names ``palette(placeholder-text)``
     """
     editor = PathEditor()
     qtbot.addWidget(editor)
+
     editor.set_destinations([DestinationRow("Tutorials: Jane/Foo", rendered="Jane/Foo", full_path="T:/Jane/Foo")])
+
     (label,) = destination_labels(editor)
-    before = label.toolTip()
-
-    dark = QPalette()
-    dark.setColor(QPalette.ColorRole.ToolTipText, QColor("#d4d4d4"))
-    dark.setColor(QPalette.ColorRole.ToolTipBase, QColor("#3c3c3c"))
-    mocker.patch.object(QToolTip, "palette", return_value=dark)
-    QApplication.sendEvent(editor, QEvent(QEvent.Type.PaletteChange))
-
-    assert "color:#888888" in label.toolTip()
-    assert label.toolTip() != before
+    assert '<span style="color:palette(placeholder-text);' in label.toolTip()

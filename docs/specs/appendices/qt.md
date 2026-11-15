@@ -169,6 +169,11 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   `\`, after a `/`. An inline `pre` breaks at its spaces too. Only a block's `white-space` (`nowrap` or `pre`) makes
   its lines unbreakable. Known since 2007 (QTBUG-1135, its duplicates QTBUG-12057 and QTBUG-54787), and the block form
   is Qt's own advice there, so it is not a workaround to remove; the same on 6.11.3 and 6.12.0 (#664, no report).
+- **A palette colour can carry alpha, and `QColor.name()` drops it.** `QToolTip.palette()`'s `PlaceholderText` is
+  its text at half alpha (`#80000000` light, `#80ffffff` dark) under windows11, fusion and windowsvista, on 6.11.3
+  and 6.12.0; through `name()` it reads as the text itself. Print a colour with `name(QColor.NameFormat.HexArgb)`.
+  Rich text takes the role by name, `color:palette(placeholder-text)`, resolved each time the text is parsed: a
+  colour written in once stays the light one on a dark tooltip after a live theme switch (#665, not a bug).
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
