@@ -174,6 +174,11 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   and 6.12.0; through `name()` it reads as the text itself. Print a colour with `name(QColor.NameFormat.HexArgb)`.
   Rich text takes the role by name, `color:palette(placeholder-text)`, resolved each time the text is parsed: a
   colour written in once stays the light one on a dark tooltip after a live theme switch (#665, not a bug).
+- **A slider's absolute-set press acts before `sliderPressed`, in every style.** `QSlider::mousePressEvent` sets the
+  position, triggers `SliderMove` and only then sets the slider down: `actionTriggered(SliderMove)`, `valueChanged`,
+  `actionTriggered(SliderMove)` again, `sliderPressed`. The style only picks the button: windows11 gives the left
+  button absolute set and no button page set, fusion and windowsvista the middle button absolute set, and their
+  middle press logs the same order, on 6.11.3 and 6.12.0 (#666, not a bug).
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
