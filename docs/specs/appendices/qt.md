@@ -89,7 +89,9 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
 - **The version matrix**: PySide6 6.11 / Python 3.14, 6.12 / 3.14 and 6.12 / 3.15, by `uv run --python 3.x --with
   "PySide6-Essentials==6.1x.*" <name>.py`. `==6.11.*` resolves to the newest patch, not the app's locked one, and
   `--python 3.14` beside 6.12 once ran on 3.15 (#653): ask for the full version (`3.14.6`), and name the exact
-  versions the script printed.
+  versions the script printed. The C++ twin likewise runs on the newest 6.11 and 6.12 installs. **No older
+  releases**: the latest 6.11 and 6.12 are enough for a report, and Qt 5 is out of support (owner, after #668's
+  sweep of 6.3 to 6.10 and 5.15.2).
 - Rerun after every change to the script, both the failing run and the workaround run, the workaround on every
   combination too.
 - **Before handing over, read the pair against each other**: the script's docstring, the Description and the stacks
@@ -184,6 +186,15 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   A disabled `QSplitterHandle` reports `SplitHCursor` or `SplitVCursor` and shows the arrow, under windows11, fusion
   and windowsvista, on 6.11.3 and 6.12.0: read what Windows shows (`GetCursorInfo`), not the property (#667, not a
   bug).
+- **A list view tells accessibility any current row is its own.** `QListView::currentChanged` sends the current
+  index's row as the Focus event's child, and `QAccessibleTable::focusChild` answers with it, neither checking it is
+  under `rootIndex()`. In a `QColumnView`, the column holding the current row has the view's selection model and
+  the focus, so a click on a row in an earlier column makes it name its own row with that number, or log
+  `QAccessibleList::child: Invalid index` past its end, on 6.11 and 6.12 (#668, QTBUG-152295).
+  `QAccessible::updateAccessibility` resolves the child whenever accessibility is active:
+  `QAccessible.setActive(True)` reproduces it, and only in the active window, since the event needs `hasFocus()`.
+  PySide has no `installUpdateHandler`, so a script reads the focused widget's `focusChild()` as the click is
+  reported; a focusable widget beside the view takes the focus first, so the log is a label.
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
@@ -210,7 +221,9 @@ is attached with it: a qmake project keeps the reproducer's name, so the tester 
 A reproducer for something seen keeps its window open: it shows the result in a label and prints it when the
 window is closed, and a `--no-wait` flag ends it by itself for the version matrix. It shows the state before the
 change for a second or two, so the tester sees both, and a flag sets that pause (#663: `--light-ms=0` for
-scripted runs).
+scripted runs). **When nothing on screen is wrong, the program shows what is**: #668's first reproducer only
+logged a warning, and the owner clicking it saw no bug. It now prints, for every click, its own and the tester's,
+the item clicked beside the item accessibility reports, marked OK or WRONG.
 
 - **The Description is plain Markdown**, written unfenced in the `.md`: the owner opens VS Code's Markdown preview
   and drags the rendered text into Jira's Description field, which takes no raw wiki text. Real `###` subheadings,
