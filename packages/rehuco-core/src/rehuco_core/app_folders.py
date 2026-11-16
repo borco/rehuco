@@ -12,11 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Self
 
-ORGANIZATION_FOLDER_NAME: Final = "borco"
-"""The folder every borco app keeps its own folder in."""
-
 APP_FOLDER_NAME: Final = "rehuco"
-"""The folder, under :data:`ORGANIZATION_FOLDER_NAME`, shared by the agent and the node."""
+"""The folder, under each platform's base folder, shared by the agent and the node."""
 
 
 @dataclass(frozen=True)
@@ -66,17 +63,16 @@ def app_folders(
     :param environ: the environment to read ``LOCALAPPDATA`` and the ``XDG_*`` variables from; this process's
         when ``None``.
     :param home: the user's home folder; this user's own when ``None``.
-    :returns: the folders, each ending in ``borco/rehuco``.
+    :returns: the folders, each ending in ``rehuco``.
     """
     environ = os.environ if environ is None else environ
     home = Path.home() if home is None else home
-    own = Path(ORGANIZATION_FOLDER_NAME) / APP_FOLDER_NAME
     if platform == "win32":
-        return AppFolders.single(base_folder(environ, "LOCALAPPDATA", home / "AppData" / "Local") / own)
+        return AppFolders.single(base_folder(environ, "LOCALAPPDATA", home / "AppData" / "Local") / APP_FOLDER_NAME)
     if platform == "darwin":
-        return AppFolders.single(home / "Library" / "Application Support" / own)
+        return AppFolders.single(home / "Library" / "Application Support" / APP_FOLDER_NAME)
     return AppFolders(
-        settings=base_folder(environ, "XDG_CONFIG_HOME", home / ".config") / own,
-        data=base_folder(environ, "XDG_DATA_HOME", home / ".local" / "share") / own,
-        cache=base_folder(environ, "XDG_CACHE_HOME", home / ".cache") / own,
+        settings=base_folder(environ, "XDG_CONFIG_HOME", home / ".config") / APP_FOLDER_NAME,
+        data=base_folder(environ, "XDG_DATA_HOME", home / ".local" / "share") / APP_FOLDER_NAME,
+        cache=base_folder(environ, "XDG_CACHE_HOME", home / ".cache") / APP_FOLDER_NAME,
     )

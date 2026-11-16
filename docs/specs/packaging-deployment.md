@@ -741,18 +741,18 @@ consumer can reach `design/icons/`, and copy only where it cannot**:
 
 - [#405: docs: spec root caching, borrowing UI, and per-file watch progress](https://github.com/borco/rehuco/issues/405)
 
-**The agent and the node share their files, per machine and OS user**, under the organization folder every borco app
-uses. What they keep: both apps' settings side by side (`rehuco-agent.ini`, and the node's own settings file), their
-caches (`.rehudb`, [[data-model#local-file-trio]]), and their durable local state — the retention store
+**The agent and the node share their files, per machine and OS user**, under a folder of their own in each platform's
+usual place. What they keep: both apps' settings side by side (`rehuco-agent.ini`, and the node's own settings file),
+their caches (`.rehudb`, [[data-model#local-file-trio]]), and their durable local state — the retention store
 ([[mounts-and-storage#durable-retention]]), the saved task queue, the open-document session and the window and
 dock layouts (JSON files, not the `.ini`, #404), the scraper browser's persona, crash dumps. Where it
 goes follows each platform's own convention:
 
 | Platform | Settings | Durable state | Caches |
 | --- | --- | --- | --- |
-| Windows | `%LOCALAPPDATA%\borco\rehuco` | same folder | same folder |
-| macOS | `~/Library/Application Support/borco/rehuco` | same folder | same folder |
-| Linux | `$XDG_CONFIG_HOME/borco/rehuco` (`~/.config`) | `$XDG_DATA_HOME/borco/rehuco` (`~/.local/share`) | `$XDG_CACHE_HOME/borco/rehuco` (`~/.cache`) |
+| Windows | `%LOCALAPPDATA%\rehuco` | same folder | same folder |
+| macOS | `~/Library/Application Support/rehuco` | same folder | same folder |
+| Linux | `$XDG_CONFIG_HOME/rehuco` (`~/.config`) | `$XDG_DATA_HOME/rehuco` (`~/.local/share`) | `$XDG_CACHE_HOME/rehuco` (`~/.cache`) |
 
 - **One folder on Windows and macOS.** Neither platform separates settings from data by convention as Linux does, so
   everything sits in one place there — one answer to "where are rehuco's files".
@@ -773,10 +773,11 @@ goes follows each platform's own convention:
 - **One folder, because the agent and the node run as the same OS user** ([[nodes#two-roles]]): the node is the
   agent's child and reads the same `.rehuco` and settings. A system service would run under its own account with a
   folder of its own, which is one of the costs that kept it out for now ([[nodes#overview]]).
-- **The move from the earlier location is manual.** Before #412 the agent's files sat in a `borco/rehuco-agent` folder
+- **The moves from earlier locations are manual.** Before #412 the agent's files sat in a `borco/rehuco-agent` folder
   beside its `.ini` (#361) — Roaming on Windows, `~/.config` on Linux — and its caches in `borco/rehuco-agent` under
-  the platform's cache location. They are moved once, by hand — or deleted and let the app recreate them — and no
-  migration code is written for it.
+  the platform's cache location. From #412 to #670 the shared folder sat one level deeper, under a `borco` publisher
+  folder (`%LOCALAPPDATA%\borco\rehuco`); #670 dropped that level. Each move is made once, by hand, with every rehuco
+  process closed — or the folder deleted and let the app recreate it — and no migration code is written for either.
 - **The agent's files sit loose in these folders**, with no subfolder of their own; the node keeps its heartbeat, its
   log and later its sessions under `node/` ([[multiplicity#instances]]).
 - **A run can be pointed at a folder of its own** (#494): `rehuco-agent --settings-dir DIR`, or

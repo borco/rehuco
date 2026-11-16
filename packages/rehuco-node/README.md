@@ -14,7 +14,7 @@ same user, for as long as it runs.*
 `rehuco-node [--settings-dir DIR]` runs until stopped. While it runs it writes a heartbeat file,
 `node/node.json` (its pid, version, start time and last beat), every two seconds, and a log,
 `node/rehuco-node.log`, both under the folder it shares with [rehuco-agent](https://pypi.org/project/rehuco-agent/)
-(`%LOCALAPPDATA%\borco\rehuco` on Windows, `~/Library/Application Support/borco/rehuco` on macOS, the XDG data folder
+(`%LOCALAPPDATA%\rehuco` on Windows, `~/Library/Application Support/rehuco` on macOS, the XDG data folder
 on Linux). It stops on SIGINT or SIGTERM, and when its standard input reaches end of file: the agent starts it with a
 pipe and holds that pipe, so an agent that quits, or crashes, takes the node down with it.
 
