@@ -9,8 +9,8 @@ from rehuco_core import AppFolders, app_folders
 HOME: Final = Path("/home/user")
 """A home folder no test touches on disk: nothing in :func:`app_folders` creates a folder."""
 
-OWN: Final = PurePosixPath("borco", "rehuco")
-"""The organization and app folders every answer ends in."""
+OWN: Final = PurePosixPath("rehuco")
+"""The app folder every answer ends in."""
 
 PLATFORM_VARIABLES: Final = ("LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME")
 """Every environment variable some platform's answer reads."""
@@ -31,7 +31,7 @@ def test_windows_keeps_everything_in_one_folder_under_local_app_data() -> None:
     **Test steps:**
 
     * ask for the folders on Windows with ``LOCALAPPDATA`` set
-    * verify all three are ``borco/rehuco`` under it
+    * verify all three are ``rehuco`` under it
     """
     folders = app_folders("win32", {"LOCALAPPDATA": "/local"}, HOME)
 
@@ -44,7 +44,7 @@ def test_windows_falls_back_to_the_profiles_local_folder_without_local_app_data(
     **Test steps:**
 
     * ask for the folders on Windows with an empty environment
-    * verify all three are ``AppData/Local/borco/rehuco`` under the home folder
+    * verify all three are ``AppData/Local/rehuco`` under the home folder
     """
     folders = app_folders("win32", {}, HOME)
 
@@ -57,7 +57,7 @@ def test_macos_keeps_everything_in_one_folder_under_application_support() -> Non
     **Test steps:**
 
     * ask for the folders on macOS
-    * verify all three are ``Library/Application Support/borco/rehuco`` under the home folder
+    * verify all three are ``Library/Application Support/rehuco`` under the home folder
     """
     folders = app_folders("darwin", {}, HOME)
 
@@ -70,7 +70,7 @@ def test_linux_splits_settings_data_and_cache_by_the_xdg_defaults() -> None:
     **Test steps:**
 
     * ask for the folders on Linux with an empty environment
-    * verify ``~/.config``, ``~/.local/share`` and ``~/.cache``, each with ``borco/rehuco``
+    * verify ``~/.config``, ``~/.local/share`` and ``~/.cache``, each with ``rehuco``
     """
     folders = app_folders("linux", {}, HOME)
 
@@ -87,7 +87,7 @@ def test_linux_honors_absolute_xdg_variables() -> None:
     **Test steps:**
 
     * ask for the folders on Linux with all three ``XDG_*`` variables set to absolute paths
-    * verify each folder is ``borco/rehuco`` under its variable
+    * verify each folder is ``rehuco`` under its variable
     """
     environ = {"XDG_CONFIG_HOME": "/xdg/config", "XDG_DATA_HOME": "/xdg/data", "XDG_CACHE_HOME": "/xdg/cache"}
 
