@@ -195,6 +195,13 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   `QAccessible.setActive(True)` reproduces it, and only in the active window, since the event needs `hasFocus()`.
   PySide has no `installUpdateHandler`, so a script reads the focused widget's `focusChild()` as the click is
   reported; a focusable widget beside the view takes the focus first, so the log is a label.
+- **Under a style sheet, a line edit's text keeps the old colour scheme.** After a runtime
+  `QStyleHints.setColorScheme()` switch, a `QLineEdit` under any style sheet (its own, or an ancestor's naming no
+  `QLineEdit`) draws its text in the previous scheme's colour while `palette()` already holds the new one. windows11
+  fills it from the new scheme, so the text can become unreadable; fusion keeps the whole old look. A hand-set
+  palette's `Text` follows the switch. Without a style sheet, windows11 fills a line edit from its scheme's tables,
+  not the palette's `Base`, which only shows when `Base` is set by hand; rehuco themes by scheme, and the app
+  showed neither. Known as QTBUG-125110, on 6.11.3 and 6.12.0 (#672, no report).
 - **One `uv run` of a script at a time.** Parallel runs of the same PEP 723 script race on its cached environment
   and fail to install.
 - **The cyclic collector runs on whichever thread allocates.** Ordinary Python work on a pool thread can free a
