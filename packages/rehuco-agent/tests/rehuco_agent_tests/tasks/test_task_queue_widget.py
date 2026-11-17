@@ -84,6 +84,8 @@ class Rig:
         """Each row, in the queue's order."""
         self.queue: Final = mocker.Mock(spec=TaskQueue)
         self.queue.jobs.side_effect = lambda: tuple(self.statuses.values())
+        # rows only, no job objects: a job with a partial copy to ask about is test_task_queue_widget_partials'
+        self.queue.job.return_value = None
 
     def add(self, label: str, state: JobState, **fields: Any) -> int:
         """Put a row at the end of the queue; the widget hears of it at the next :meth:`settle`.
@@ -437,9 +439,9 @@ def test_every_control_is_disabled_with_nothing_selected(widget: TaskQueueWidget
 @mark.parametrize(
     ("state", "expected"),
     [
-        (JobState.QUEUED, {"pause", "cancel", "clear", "move"}),
-        (JobState.RUNNING, {"pause", "cancel", "clear"}),
-        (JobState.PAUSED, {"resume", "cancel", "clear", "move"}),
+        (JobState.QUEUED, {"pause", "cancel", "move"}),
+        (JobState.RUNNING, {"pause", "cancel"}),
+        (JobState.PAUSED, {"resume", "cancel", "move"}),
         (JobState.DONE, {"clear"}),
         (JobState.FAILED, {"retry", "clear"}),
         (JobState.CANCELLED, {"retry", "clear"}),
@@ -501,7 +503,7 @@ def test_a_mixed_selection_moves_nothing(widget: TaskQueueWidget, rig: Rig) -> N
     **Test steps:**
 
     * script one running job beside one queued one, and select both
-    * verify the move controls are off, while Clear (which acts on both) is on
+    * verify the move controls are off, while Cancel (which acts on both) is on
     """
     rig.add("running", JobState.RUNNING)
     rig.add("queued", JobState.QUEUED)
@@ -511,6 +513,26 @@ def test_a_mixed_selection_moves_nothing(widget: TaskQueueWidget, rig: Rig) -> N
     ui = ui_of(widget)
 
     assert not ui.move_to_top_action.isEnabled()  # type: ignore[attr-defined]
+    assert ui.cancel_action.isEnabled()  # type: ignore[attr-defined]
+
+
+def test_clear_is_refused_over_a_selection_holding_anything_unfinished(widget: TaskQueueWidget, rig: Rig) -> None:
+    """An unfinished job leaves by Cancel, which asks what it asks (#634): one in the selection withdraws Clear.
+
+    **Test steps:**
+
+    * script a done job beside a running one, select both: Clear is off
+    * select the done one alone: Clear is on
+    """
+    rig.add("done", JobState.DONE)
+    rig.add("running", JobState.RUNNING)
+    rig.settle()
+    ui = ui_of(widget)
+
+    select_rows(widget, 0, 1)
+    assert not ui.clear_action.isEnabled()  # type: ignore[attr-defined]
+
+    select_rows(widget, 0)
     assert ui.clear_action.isEnabled()  # type: ignore[attr-defined]
 
 
@@ -895,25 +917,26 @@ def test_a_sweep_with_nothing_of_its_kind_removes_nothing(widget: TaskQueueWidge
     rig.queue.remove.assert_not_called()
 
 
-def test_clear_all_cancels_what_is_unfinished_and_empties_the_queue(widget: TaskQueueWidget, rig: Rig) -> None:
-    """*Clear all* is a clean slate: it stops whatever is unfinished first, then removes everything.
+def test_clear_all_removes_every_finished_job_and_leaves_the_unfinished(widget: TaskQueueWidget, rig: Rig) -> None:
+    """*Clear all* removes what is finished, however it finished; an unfinished job is not cancelled by it, but left
+    for Cancel (#634).
 
     **Test steps:**
 
-    * script one done job beside one running one
+    * script a done, a failed, a cancelled and a running job
     * trigger Clear all
-    * verify the engine was asked to cancel only the running job, then to remove both
+    * verify the engine was asked to remove the three finished ones, and to cancel nothing
     """
     rig.add("done", JobState.DONE)
+    rig.add("failed", JobState.FAILED)
+    rig.add("cancelled", JobState.CANCELLED)
     rig.add("running", JobState.RUNNING)
     rig.settle()
-    calls = Mock()
-    calls.attach_mock(rig.queue.cancel, "cancel")
-    calls.attach_mock(rig.queue.remove, "remove")
 
     ui_of(widget).clear_all_action.trigger()  # type: ignore[attr-defined]
 
-    assert calls.mock_calls == [call.cancel(rig.serial("running")), call.remove(*rig.serials("done", "running"))]
+    rig.queue.remove.assert_called_once_with(*rig.serials("done", "failed", "cancelled"))
+    rig.queue.cancel.assert_not_called()
 
 
 def test_clear_all_over_an_empty_queue_removes_nothing(widget: TaskQueueWidget, queue: Mock) -> None:

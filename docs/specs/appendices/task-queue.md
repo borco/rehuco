@@ -355,6 +355,13 @@ with the queue's lock held, and does its taking back elsewhere: a paused verifie
 copy it left ([[mounts-and-storage#safe-move-rename]]). Every other job is untroubled, as before; the
 running job still hears through `cancel`.
 
+**What a job left part-way is asked about before it is given up** (#634). A job satisfying `PartialOutputJob` — a
+third protocol, the engine never calls it — names where its partial output is (`partial`, read without touching a
+file), and is told before a cancel whether to keep it (`keep_partial`) or, as a finished row is cleared, to remove it
+(`discard_partial`). The dock asks: the output's place is first asked whether it answers, on daemon threads, and one
+that does not is said to stay, for the owner to remove by hand; one that does is offered both ways, removing it the
+default.
+
 Removing the *running* job is the sharp edge. Cancellation is cooperative, so a detached job may still
 be inside `run()` for a checkpoint or two; the engine **drops its terminal notification**, because
 telling a listener that a row it deleted has just been cancelled would announce a job that, as far as
@@ -697,10 +704,12 @@ show or drop, so the window acts on them. The status bar's *N pending saves*, hi
 toggle on.
 
 **The bulk clears are the dock's own sweeps, not an engine feature.** #237 deleted `clear_finished()`
-because deciding *which* jobs a sweep drops is a view's business: *Clear done jobs* and *Clear failed
-jobs* filter `queue.jobs()` and call `queue.remove(*serials)`; *Clear all jobs* cancels whatever is
-unfinished first. There is no *clear cancelled jobs on restart* — a cancelled job was stopped on purpose
-and is the one most likely to be retried, and *Clear all jobs* already covers a clean slate.
+because deciding *which* jobs a sweep drops is a view's business: *Clear done jobs*, *Clear failed
+jobs* and *Clear all finished jobs* filter `queue.jobs()` and call `queue.remove(*serials)`. **Clear removes
+finished rows only** (#634): an unfinished job leaves by Cancel, which asks what it asks, so *Clear* is off over a
+selection holding one and *Clear all finished jobs* leaves it. There is no *clear cancelled jobs on restart* — a
+cancelled job was stopped on purpose and is the one most likely to be retried, and *Clear all finished jobs* already
+covers a clean slate.
 
 **Three restart-time settings, all off by default** (`Settings > Tasks`, `TasksSettings`): *clear done
 tasks*, *clear failed tasks*, and *resume tasks*. The two clears are **applied at load, before

@@ -15,7 +15,7 @@ from typing import Any, Final
 
 import shiboken6
 from PySide6.QtCore import QCoreApplication, QModelIndex, QObject, Qt
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.checksum_rows import (
@@ -742,6 +742,7 @@ def test_a_flat_table_has_nothing_under_a_cell() -> None:
 # endregion
 
 
+@mark.usefixtures("qapp")  # the pool relay needs an application
 def test_a_walk_that_answers_after_its_dock_is_gone_reports_into_nothing(
     mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:

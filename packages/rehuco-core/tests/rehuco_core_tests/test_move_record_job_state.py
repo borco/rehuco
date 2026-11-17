@@ -1,5 +1,5 @@
-"""Tests for the move job (#339) as the queue and a saved queue see it: what it answers before a start, each end saved
-by its root, and the host the app lends it.
+"""Tests for the move job (#339) as the queue and a saved queue see it: what it answers before a start, and each end
+saved by its root.
 
 Split from :mod:`test_move_record_job`, whose fixtures and helpers are imported by name.
 """
@@ -17,7 +17,6 @@ from rehuco_core import (
     MoveMode,
     MovePhase,
     MoveRecordJob,
-    RecordMoveHosting,
 )
 
 from rehuco_core_tests.test_move_record_job import (  # noqa: F401  # pylint: disable=unused-import
@@ -232,49 +231,6 @@ def test_a_state_restores_every_choice(roots: dict[UUID, Path], host: MagicMock)
     assert (restored.create_if_missing, restored.remove_empty_folders) == (True, True)
     assert (restored.algorithm, restored.excluded_patterns) == ("sha256", ("*.tmp",))
     assert restored.label == "Move - Intro"
-
-
-# endregion
-
-
-# region the host
-def test_with_no_host_installed_a_step_runs_here() -> None:
-    """The stand-in maps no root, knows of no save, and runs a step at once, after its checkpoint.
-
-    **Test steps:**
-
-    * ask a hosting with nothing installed
-    * check each answer, and that the checkpoint ran before the step
-    """
-    hosting = RecordMoveHosting()
-    calls: list[str] = []
-
-    hosting.run_step(lambda: calls.append("step"), lambda: calls.append("checkpoint"))
-
-    assert hosting.root_folder(SOURCE_ROOT) is None
-    assert not hosting.save_pending(Path("/r/info.rehu"))
-    assert calls == ["checkpoint", "step"]
-
-
-def test_an_installed_host_answers_for_every_move(host: MagicMock, roots: dict[UUID, Path]) -> None:
-    """Once installed, the app's host answers; taking it back restores the stand-in.
-
-    **Test steps:**
-
-    * install a host, ask each question, run a step; then take it back
-    * check the host answered and ran the step, and the stand-in answers again
-    """
-    hosting = RecordMoveHosting()
-    hosting.install(host)
-    step = MagicMock()
-
-    assert hosting.root_folder(SOURCE_ROOT) == roots[SOURCE_ROOT]
-    assert not hosting.save_pending(Path("/r/info.rehu"))
-    hosting.run_step(step, MagicMock())
-    hosting.install(None)
-
-    step.assert_called_once()
-    assert hosting.root_folder(SOURCE_ROOT) is None
 
 
 # endregion

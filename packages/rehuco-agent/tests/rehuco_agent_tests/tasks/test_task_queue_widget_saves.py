@@ -592,25 +592,23 @@ def test_the_sweeps_leave_a_failed_save_alone(widget: TaskQueueWidget, rig: Rig,
 
 
 def test_clear_all_leaves_every_pending_save_alone(widget: TaskQueueWidget, rig: Rig, saves: None) -> None:
-    """Clear All empties the queue but of its saves not landed: those are neither cancelled nor removed, and no Drop
-    is asked of the owner.
+    """Clear All removes the finished rows but the saves not landed: those are neither cancelled nor removed, and no
+    Drop is asked of the owner.
 
     **Test steps:**
 
     * script every kind of row
     * trigger Clear All
-    * verify the engine was asked to cancel only the unfinished jobs that are no save and to remove every row but the
-      failed, waiting and queued saves, and nothing was handed to the owner
+    * verify the engine was asked to cancel nothing and to remove every finished row but the failed save, and nothing
+      was handed to the owner
     """
     del saves
     asked = emitted(widget.discard_saves_requested)
 
     ui_of(widget).clear_all_action.trigger()  # type: ignore[attr-defined]
 
-    assert [made.args[0] for made in rig.queue.cancel.call_args_list] == rig.serials("paused", "blocker")
-    rig.queue.remove.assert_called_once_with(
-        *rig.serials("plain", "landed save", "dropped save", "plain failed", "paused", "blocker")
-    )
+    rig.queue.cancel.assert_not_called()
+    rig.queue.remove.assert_called_once_with(*rig.serials("plain", "landed save", "dropped save", "plain failed"))
     assert not asked
 
 

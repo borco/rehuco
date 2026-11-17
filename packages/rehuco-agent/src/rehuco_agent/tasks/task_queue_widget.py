@@ -35,6 +35,7 @@ from ..dock_maximize import attach_maximize_handler
 from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.logs_settings import shared_logs_settings
+from .partial_copy_question import GiveUp, PartialCopyQuestion
 from .pending_saves_filter import PendingSavesFilter, is_pending_save
 from .task_info_delegate import TaskInfoDelegate
 from .task_queue_model import INFO_COLUMN, LABEL_COLUMN, STARTS_OVER_HINT, STATE_COLUMN, TaskQueueModel
@@ -172,6 +173,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         super().__init__(parent)
         self.__queue: Final = queue
         self.__model: Final = TaskQueueModel(queue, self)
+        self.__partial_copies: Final = PartialCopyQuestion(queue, self)
 
         # the generated form is set up on a plain panel rather than on `self`: this is a QMainWindow now,
         # whose central widget is the nested CDockManager, so a layout laid directly on it would have
@@ -574,7 +576,11 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         self.__update_resume(statuses)
         ui.cancel_action.setEnabled(bool(states - FINISHED_JOB_STATES))
         ui.retry_action.setEnabled(bool(states) and states <= RETRIABLE_STATES)
-        ui.clear_action.setEnabled(bool(statuses))
+        # an unfinished job leaves by Cancel, which asks what it asks (#634); a save not landed goes to its owner
+        ui.clear_action.setEnabled(
+            bool(statuses)
+            and all(status.state in FINISHED_JOB_STATES or is_pending_save(status) for status in statuses)
+        )
         movable = bool(states) and states <= MOVABLE_JOB_STATES
         for action in (ui.move_to_top_action, ui.move_up_action, ui.move_down_action, ui.move_to_bottom_action):
             action.setEnabled(movable)
@@ -671,7 +677,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
 
     def __cancel_selection(self) -> None:
         serials = self.__without_pending_saves(self.__selected_serials())
-        if not serials:
+        if not serials or self.__partial_copies.ask(GiveUp.CANCEL, serials):
             return
         count = len(serials)
         question = f"Cancel {count} jobs?" if count > 1 else "Cancel this job?"
@@ -686,8 +692,14 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
             self.__queue.retry(serial)
 
     def __clear_selection(self) -> None:
-        serials = self.__without_pending_saves(self.__selected_serials())
-        if serials:
+        self.__remove(self.__without_pending_saves(self.__selected_serials()))
+
+    def __remove(self, serials: list[int]) -> None:
+        """Remove finished rows -- asking first, when a job among them left a partial copy, whether it goes too (#634).
+
+        :param serials: the rows.
+        """
+        if serials and not self.__partial_copies.ask(GiveUp.CLEAR, serials):
             self.__queue.remove(*serials)
 
     def __without_pending_saves(self, serials: list[int]) -> list[int]:
@@ -711,22 +723,14 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
 
         :param states: which finished states to drop.
         """
-        serials = [
-            status.serial for status in self.__queue.jobs() if status.state in states and not is_pending_save(status)
-        ]
-        if serials:
-            self.__queue.remove(*serials)
+        self.__remove(
+            [status.serial for status in self.__queue.jobs() if status.state in states and not is_pending_save(status)]
+        )
 
     def __clear_all(self) -> None:
-        """Cancel whatever is unfinished, then remove everything -- but the saves that have not landed: each still
-        holds edits, and is dropped only by asking for it ([[sync#unlanded-save]], #497)."""
-        statuses = [status for status in self.__queue.jobs() if not is_pending_save(status)]
-        for status in statuses:
-            if status.state not in FINISHED_JOB_STATES:
-                self.__queue.cancel(status.serial)
-        serials = [status.serial for status in statuses]
-        if serials:
-            self.__queue.remove(*serials)
+        """Remove every finished row -- but the saves that have not landed: each still holds edits, and is dropped only
+        by asking for it ([[sync#unlanded-save]], #497). An unfinished job stays: it leaves by Cancel (#634)."""
+        self.__clear_in(set(FINISHED_JOB_STATES))
 
     def __inspect_selection(self) -> None:
         """Ask the owner to show the one selected save (#497)."""
