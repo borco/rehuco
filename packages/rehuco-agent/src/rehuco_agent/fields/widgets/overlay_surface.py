@@ -272,10 +272,14 @@ class OverlaySurface(QWidget):
         Everything genuinely *elsewhere* is left alone: another document, the app's own chrome, a
         settings dialog. None of those is on this document's containment line.
 
+        **A view not on screen takes nothing back** -- one whose document's tab is behind another's is not hidden
+        itself, only not visible, so ``isHidden`` would let it through. It then became the app's focus widget while off
+        screen, and closing its document crashed the next layout pass, in Qt's lookup of the focus object (#631).
+
         :param old: the widget losing focus.
         :param now: the widget receiving focus, or ``None`` when nothing holds it.
         """
-        if self.__host is None or self.isHidden():
+        if self.__host is None or not self.isVisible():
             return
         if now is None:
             if old is self or (old is not None and self.isAncestorOf(old)):
