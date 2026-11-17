@@ -426,14 +426,29 @@ The system chooses *how* to perform a move/rename rather than assuming:
   on the job's thread — before it, comparing the files no checksum covers and copying again what changed; after it, a
   kept *cleanup* phase removing the rest, so a quit in between still removes it. A source found changed is compared
   again; a reader that does not let go in time, a save not landed, a lock held elsewhere make the move wait, not fail.
+- **An end that goes away makes the move wait, not fail** (#634). Whatever a phase fails with — an I/O error, or a
+  check that could not read what it checked — each end is asked whether it answers, through its root's folder and
+  the 0.3 s connection attempt ([[mounts-and-storage#offline-mounts]]), never a `stat`. One that does not makes the
+  move wait in the queue as a save does, for as long, its row naming the end; its phase and its copy are kept, and
+  the retry goes on from the first file not yet whole. The cleanup asks the source before it removes and again
+  after, whatever the removal reported: a share that is off reads as *nothing there*, which a removal takes for
+  *already gone*. A rename whose check afterwards could not read its share waits in that check, and makes it again.
+  A failure with both ends answering is what it says: a refusal of the disk (access denied, disk full) fails, a
+  verdict refuses. The check before every start lets a record whose share does not answer be tried, so the wait
+  carries on by itself.
 - **The document stays editable** while its move runs, and the record may be renamed: the copy holds its record and
   every file as tracked locations, so its reads follow the rename.
 - A **cancel** removes what the copy wrote and the folders it made, and nothing that was there before, for as long as
   the source is whole — whether the job runs or sits paused, when the queue tells it so
-  ([[appendices.task-queue#kept]]). **So does a refusal**: a copy that did not match its record, a source that did
-  not verify or changed under the copy — nothing unverified is left at the destination. A copy stopped by anything
-  else (the share gone, a pause, a quit) is kept, to resume from. What the copy wrote is kept relative to the folder
-  the record lands in, so it is still found after the destination root is mapped elsewhere.
+  ([[appendices.task-queue#kept]]). **The Tasks dock asks first** (#634): Cancel offers removing the partial copy
+  (the default) or keeping it, for a Retry to go on from; clearing a failed or cancelled move that still holds one
+  asks the same, since a copy left behind blocks a new move to the same place. A copy whose destination does not
+  answer is never removed through it: the question says it stays, for the owner to remove by hand. A retried move
+  starts over from its source check with its copy kept, and is asked about there too.
+  **A refusal always takes the copy back**: a copy that did not match its record, a source that did not verify or
+  changed under the copy — nothing unverified is left at the destination. A copy stopped by anything else (an end
+  gone, a pause, a quit, a failure) is kept, to resume from. What the copy wrote is kept relative to the folder the
+  record lands in, so it is still found after the destination root is mapped elsewhere.
 - **Once the source stopped being a record, the cleanup always runs.** The copy verified, so a cancel past that
   point takes nothing back: a job given up on in its cleanup phase finishes removing the source instead.
 - **A record holding a symbolic link or a junction is not copied.** A copy neither follows a link nor carries one,

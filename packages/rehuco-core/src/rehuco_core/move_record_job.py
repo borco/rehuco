@@ -20,11 +20,20 @@ is lost by guessing wrong.
 
 A rename runs *source* (when its setting asks), the rename itself, then *target* (the same setting).
 
-**A cancel takes the copy back** while the original is whole -- phases 2 to 4 -- whether the job is running or not:
+**An end that goes away makes the move wait, not fail** (#634): whatever a phase fails with -- an I/O error, or a
+check that could not read what it checked -- the source and the destination are asked whether they answer
+(:func:`~borco_core.presence_of`, a 0.3 s connection attempt, never a ``stat`` that blocks 21 s), and one that does
+not makes the move wait as a save does, its phase and copy kept, to go on from the first file not yet whole. A
+failure with both ends answering is what it says: a refusal of the disk fails, a verdict refuses.
+
+**A cancel takes the copy back** while the original is whole -- phases 2 to 4, and phase 1 of a retried move,
+which starts over with its copy kept -- whether the job is running or not:
 the queue never runs a paused job it cancels or removes, so it tells the job (:meth:`MoveRecordJob.abandon`), which
-removes its copy from a thread of its own. **So does a move that is refused**: a copy that did not match its record,
-an original that changed under it, a link found in the record -- nothing unverified is left at the destination. A
-copy stopped by anything else (a share that went away, a pause, a quit) is kept, to resume from.
+removes its copy from a thread of its own. Whoever cancels may ask for the copy to be kept instead
+(:class:`~rehuco_core.tasks.PartialOutputJob`); and a copy whose destination does not answer is left, said in the
+log, never removed through a dead share. **A move that is refused always takes it back**: a copy that did not match
+its record, an original that changed under it, a link found in the record -- nothing unverified is left at the
+destination. A copy stopped by anything else (an end gone, a pause, a quit, a failure) is kept, to resume from.
 
 **Once the original stopped being a record the cleanup always runs**: the copy verified, so a cancel no longer takes
 anything back -- one given up on in its cleanup phase finishes removing the original instead.
@@ -32,9 +41,10 @@ anything back -- one given up on in its cleanup phase finishes removing the orig
 **Job state names each end by its root** -- the root's id and the path under it -- so a queued move survives a restart
 and a remapped drive. A record under no root is named by its absolute path, since it has no root to be named by.
 
-**The host** (:class:`RecordMoveHost`) is what the app lends a job: where this machine finds a root, whether a save of
-the record is still on its way, and the thread a rename runs on. The app installs one at startup
-(:data:`DEFAULT_RECORD_MOVE_HOST`); without one a step runs where the job does.
+**The host** (:class:`~rehuco_core.record_move_host.RecordMoveHost`) is what the app lends a job: where this machine
+finds a root, whether a save of the record is still on its way, and the thread a rename runs on. The app installs one
+at startup (:data:`~rehuco_core.record_move_host.DEFAULT_RECORD_MOVE_HOST`); without one a step runs where the job
+does.
 """
 
 import logging
@@ -43,14 +53,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
-from typing import Any, Final, Protocol, cast
+from typing import Any, Final, cast
 from uuid import UUID
+
+from borco_core import Presence, device_of, presence_of
 
 from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM
 from .checksum_reporting import checksum_report_is_clean, checksum_report_summary
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
 from .record_file_lock import RecordFileLock, RecordLockedError
+from .record_move_host import DEFAULT_RECORD_MOVE_HOST, RecordMoveHost
 from .rehu_checksums import verify_checksums
 from .rehu_rename import is_cross_device, remove_empty_parents
 from .relocation import Relocation
@@ -61,6 +74,7 @@ from .rename_coordination import (
     ResourceLocation,
 )
 from .resource_scoping import is_directory_scoped, resource_name
+from .save_record_job import OFFLINE_RETRY_SECONDS
 from .tasks import (
     DEFAULT_TASK_JOB_REGISTRY,
     PROGRESS_UNIT_BYTES,
@@ -92,6 +106,10 @@ LOCK_HELD_RETRY: Final = 5.0
 
 READERS_BUSY_RETRY: Final = 2.0
 """How long a move waits before asking again the readers that did not let go of its record in time, in seconds."""
+
+SOURCE_SIDE: Final = "source"
+DESTINATION_SIDE: Final = "destination"
+"""A move's two ends, as a waiting row names the one that does not answer."""
 
 CLEANUP_FILES_KEY: Final = "files"
 CLEANUP_FOLDERS_KEY: Final = "folders"
@@ -153,6 +171,11 @@ class MovePhase(StrEnum):
     """Nothing is left to do."""
 
 
+COPYING_PHASES: Final = frozenset({MovePhase.SOURCE, MovePhase.MOVE, MovePhase.TARGET, MovePhase.FINISH})
+"""The phases a copy's files can be at the destination while the original is whole: what a cancel takes back. The
+source check is one of them for a retried move, which starts over from it with its copy kept."""
+
+
 @dataclass(frozen=True, slots=True)
 class MoveCleanup:
     """What is left of an original once it stopped being a record, kept so a quit before it is all removed still
@@ -200,83 +223,6 @@ class MoveCleanup:
         if not all(isinstance(path, str) for path in [*files, *folders]) or not isinstance(root, str | None):
             raise ValueError("A saved move's cleanup names something that is not a path.")
         return cls(tuple(files), tuple(folders), left, root)
-
-
-class RecordMoveHost(Protocol):
-    """What the app lends a move: this machine's roots, its saves, and the thread a rename runs on."""
-
-    def root_folder(self, root_id: UUID) -> Path | None:
-        """Where this machine finds a root.
-
-        :param root_id: the root.
-        :returns: its folder, or ``None`` when this machine does not map it.
-        """
-
-    def save_pending(self, rehu_path: Path) -> bool:  # pyright: ignore[reportReturnType]
-        """Whether a save of a record has not landed yet -- a move removing the original waits for it. Asked inside a
-        step :meth:`run_step` runs, on the host's thread.
-
-        :param rehu_path: the record's ``.rehu`` file.
-        :returns: whether one is queued or running.
-        """
-
-    def run_step(self, step: Callable[[], object], checkpoint: Callable[[], None]) -> None:
-        """Run ``step`` where a rename runs, and return once it has.
-
-        :param step: what to run; what it raises leaves through here.
-        :param checkpoint: called while waiting for ``step`` to start; what it raises abandons ``step``, which then
-            never runs.
-        """
-
-
-class RecordMoveHosting:
-    """The process-wide :class:`RecordMoveHost`: the one the app installed, or a stand-in answering from this thread.
-
-    Process-wide for the reason :data:`~rehuco_core.DEFAULT_RENAME_COORDINATOR` is: a move restored from a saved queue
-    is built with no window to be handed anything.
-    """
-
-    def __init__(self) -> None:
-        self.__host: RecordMoveHost | None = None
-
-    def install(self, host: RecordMoveHost | None) -> None:
-        """Lend moves the app's host, or take it back.
-
-        :param host: the host; ``None`` to go back to the stand-in.
-        """
-        self.__host = host
-
-    def root_folder(self, root_id: UUID) -> Path | None:
-        """See :meth:`RecordMoveHost.root_folder`; with no host installed, no root is mapped.
-
-        :param root_id: the root.
-        :returns: its folder, or ``None``.
-        """
-        return None if self.__host is None else self.__host.root_folder(root_id)
-
-    def save_pending(self, rehu_path: Path) -> bool:
-        """See :meth:`RecordMoveHost.save_pending`; with no host installed, none is.
-
-        :param rehu_path: the record's ``.rehu`` file.
-        :returns: whether one is queued or running.
-        """
-        return self.__host is not None and self.__host.save_pending(rehu_path)
-
-    def run_step(self, step: Callable[[], object], checkpoint: Callable[[], None]) -> None:
-        """See :meth:`RecordMoveHost.run_step`; with no host installed, ``step`` runs here.
-
-        :param step: what to run.
-        :param checkpoint: called first.
-        """
-        if self.__host is None:
-            checkpoint()
-            step()
-            return
-        self.__host.run_step(step, checkpoint)
-
-
-DEFAULT_RECORD_MOVE_HOST: Final = RecordMoveHosting()
-"""The host every move asks unless a test hands it another."""
 
 
 # a move's members are what it was asked and where it has got; grouping them would put a second shape between the
@@ -355,6 +301,7 @@ class MoveRecordJob(TaskJobBase):
         self.__outcome: JobOutcome | None = None
         self.__state_lock: Final = threading.Lock()
         self.__cancel_asked = False
+        self.__keep_partial = False
         self.__working: Final = threading.Lock()
         """Held by a run, and by an idle cancel's undo, so the two never work on the copy at once."""
         self.label = label if label is not None else self.__derived_label()
@@ -381,8 +328,40 @@ class MoveRecordJob(TaskJobBase):
         root = self.__host.root_folder(self.destination_root)
         return None if root is None else root.joinpath(*self.into.parts)
 
+    @property
+    def partial(self) -> Path | None:
+        """Where a copy's files are while the original is whole and the copy is not taken back: its folder for a
+        folder record, the folder its files are in for a file record; ``None`` otherwise. Reads no file."""
+        path, destination = self.source, self.destination
+        if not self.__holds_a_copy() or path is None or destination is None:
+            return None
+        return destination / self.new_name if is_directory_scoped(path) else destination
+
+    def __holds_a_copy(self) -> bool:
+        """Whether a copy wrote or made anything it can still take back: the original is whole."""
+        return (
+            self.mode is MoveMode.COPY
+            and self.phase in COPYING_PHASES
+            and bool(self.journal.written or self.journal.made)
+        )
+
+    def keep_partial(self, keep: bool) -> None:
+        """Say whether a cancel leaves the copy where it is rather than taking it back; a refusal takes it back
+        regardless.
+
+        :param keep: ``True`` to leave it.
+        """
+        with self.__state_lock:
+            self.__keep_partial = keep
+
+    def discard_partial(self) -> None:
+        """Take the copy back on a thread of its own: this job failed or was cancelled with its copy kept, and its row
+        is being cleared."""
+        threading.Thread(target=self.__undo_copy, name="move-undo", daemon=True).start()
+
     def validate(self) -> str | None:
-        """Say whether this move can still start: a stat of the record and a look at the roots.
+        """Say whether this move can still start: whether the record is there, and a look at the roots. A record whose
+        share or drive does not answer may start, so its run can wait for it.
 
         :returns: ``None`` when it can, else why not.
         """
@@ -391,7 +370,7 @@ class MoveRecordJob(TaskJobBase):
             if self.__unresolved is not None:
                 return "The record's root is not mapped on this machine."
             return "This task has no record."
-        if self.phase is not MovePhase.DONE and not path.exists():
+        if self.phase is not MovePhase.DONE and presence_of(path) is Presence.GONE:
             return f"The record no longer exists: {path}"
         if self.destination is None:
             return "The root this record moves to is not mapped on this machine."
@@ -403,6 +382,7 @@ class MoveRecordJob(TaskJobBase):
         super().reset()
         with self.__state_lock:
             self.__cancel_asked = False
+            self.__keep_partial = False
         self.__outcome = None
         if self.phase not in (MovePhase.CLEANUP, MovePhase.DONE):
             self.phase = MovePhase.SOURCE
@@ -420,13 +400,20 @@ class MoveRecordJob(TaskJobBase):
         threading.Thread(target=self.__give_up, name="move-undo", daemon=True).start()
 
     def __give_up(self) -> None:
-        """What a job given up on while idle still owes: its copy taken back while the original is whole, the
-        original's leftovers removed once it is not."""
+        """What a job given up on while idle still owes: its copy taken back while the original is whole, unless it
+        was asked to be kept; the original's leftovers removed once it is not, as far as its share lets them."""
         if self.phase is not MovePhase.CLEANUP:
-            self.__undo_copy()
+            with self.__state_lock:
+                keep = self.__keep_partial
+            if not keep:
+                self.__undo_copy()
             return
         with self.__working:
-            self.__clean_up()
+            try:
+                self.__clean_up()
+            except JobWaiting as waiting:
+                LOG.warning("%s: given up on; what is left of the original stays. %s", self.label, waiting.reason)
+                return
             self.phase = MovePhase.DONE
 
     def resume(self) -> bool:
@@ -446,27 +433,35 @@ class MoveRecordJob(TaskJobBase):
         """Move the record, phase by phase, from the phase it was left in.
 
         :param control: the engine's face to this job.
-        :raises JobWaiting: a save of the record has not landed, another process holds its lock, or a reader did not
-            let go of it in time.
-        :raises VerifiedCopyError: the record cannot be checked or holds a link, the original did not verify, or the
-            copy did not; a copy's files are removed on the way out.
-        :raises JobCancelled: cancelled; a copy's files are removed on the way out.
-        :raises OSError: a file could not be read, written, renamed or removed.
+        :raises JobWaiting: an end of the move does not answer, a save of the record has not landed, another process
+            holds its lock, or a reader did not let go of it in time.
+        :raises VerifiedCopyError: with both ends answering, the record cannot be checked or holds a link, the original
+            did not verify, or the copy did not; a copy's files are removed on the way out.
+        :raises JobCancelled: cancelled; a copy's files are removed on the way out, unless asked to be kept.
+        :raises OSError: with both ends answering, a file could not be read, written, renamed or removed.
         """
         refused = False
         try:
             with self.__working:
                 while self.phase is not MovePhase.DONE:
-                    self.__run_phase(control)
+                    try:
+                        self.__run_phase(control)
+                    except OSError as error:
+                        # a check that could not read a dead share is no verdict: asked before it counts as one
+                        self.__wait_if_offline(error)
+                        if self.__renamed_and_refused(error):
+                            # the record is at its new place whatever the check said: a retry never renames it again
+                            self.phase = MovePhase.DONE
+                        raise
         except VerifiedCopyError:
             # the copy was refused, or the record cannot be moved at all: nothing unverified stays at the destination
             refused = True
             raise
         finally:
             with self.__state_lock:
-                cancelled = self.__cancel_asked
+                cancelled, keep = self.__cancel_asked, self.__keep_partial
             # however the run ended: a cancel that arrived while it was already unwinding for a pause is still a cancel
-            if cancelled or refused:
+            if refused or (cancelled and not keep):
                 self.__undo_copy()
 
     def __run_phase(self, control: JobControl) -> None:
@@ -576,11 +571,20 @@ class MoveRecordJob(TaskJobBase):
             checkpoint=self.checkpoint,
         )
         LOG.info("%s: after the rename: %s", self.label, checksum_report_summary(report))
-        self.phase = MovePhase.DONE
         if not checksum_report_is_clean(report):
+            # the phase is left to the run: a check that could not read a dead share is waited for and made again
             raise VerifiedCopyError(
                 f"The record was moved, but did not verify there ({checksum_report_summary(report)})."
             )
+        self.phase = MovePhase.DONE
+
+    def __renamed_and_refused(self, error: OSError) -> bool:
+        """Whether ``error`` is the check after a rename refusing the record, both ends answering.
+
+        :param error: what a phase failed with.
+        :returns: whether the move is over, the record renamed.
+        """
+        return self.mode is MoveMode.RENAME and self.phase is MovePhase.TARGET and isinstance(error, VerifiedCopyError)
 
     def __finish(self) -> None:
         """Bring the copy level with the original, here; then, on the host's thread, make the original stop being a
@@ -630,10 +634,18 @@ class MoveRecordJob(TaskJobBase):
             self.__trust.forget(path)
 
     def __clean_up(self) -> None:
-        """Remove what is left of the original, and the folders it left empty; say what would not go."""
+        """Remove what is left of the original, and the folders it left empty; say what would not go.
+
+        The source is asked whether it answers before and after: a share that is off reads as *nothing there*
+        (error 53 on Windows is a ``FileNotFoundError``), which the removal takes for *already gone*.
+
+        :raises JobWaiting: the source does not answer; the cleanup is kept, to be run again.
+        """
         cleanup = cast(MoveCleanup, self.cleanup)
         destination = self.__destination()
+        self.__wait_for_source()
         left = remove_leftovers(cleanup.files, cleanup.folders)
+        self.__wait_for_source()
         self.__remove_left(Path(cleanup.left), None if cleanup.root is None else Path(cleanup.root))
         self.cleanup = None
         if left:
@@ -649,11 +661,7 @@ class MoveRecordJob(TaskJobBase):
         Runs at the end of a cancelled or refused run, or on a thread of its own for a job given up on while idle.
         """
         with self.__working:
-            if self.mode is not MoveMode.COPY or self.phase not in (
-                MovePhase.MOVE,
-                MovePhase.TARGET,
-                MovePhase.FINISH,
-            ):
+            if not self.__holds_a_copy():
                 return
             path, destination = self.source, self.destination
             if path is None or destination is None:
@@ -661,9 +669,77 @@ class MoveRecordJob(TaskJobBase):
                     "%s: a root is not mapped here, so the cancelled move's copy was left in place.", self.label
                 )
                 return
+            if self.__offline_end((DESTINATION_SIDE,)) is not None:
+                # kept, so whoever clears the row later can still have it removed
+                LOG.warning(
+                    "%s: the destination does not answer, so the copy in %s was left in place.", self.label, destination
+                )
+                return
             for line in self.__copy(destination).remove_copy(self.journal):
                 LOG.warning("Could not remove %s from a cancelled move's copy.", line)
             self.journal = CopyJournal()
+
+    def __wait_if_offline(self, error: OSError) -> None:
+        """Make a failure a wait when an end of the move does not answer.
+
+        :param error: what a phase failed with.
+        :raises JobWaiting: an end does not answer; with both answering, nothing is raised.
+        """
+        offline = self.__offline_end((SOURCE_SIDE, DESTINATION_SIDE))
+        if offline is not None:
+            raise self.__waiting(*offline, error) from error
+
+    def __wait_for_source(self) -> None:
+        """Wait when the source does not answer.
+
+        :raises JobWaiting: it does not.
+        """
+        offline = self.__offline_end((SOURCE_SIDE,))
+        if offline is not None:
+            raise self.__waiting(*offline, None)
+
+    def __offline_end(self, sides: tuple[str, ...]) -> tuple[str, Path] | None:
+        """The first end among ``sides`` whose share or drive does not answer, asked of its root's folder -- which the
+        move itself never takes away.
+
+        :param sides: :data:`SOURCE_SIDE`, :data:`DESTINATION_SIDE`, or both.
+        :returns: the end and the folder asked, or ``None`` when every one asked answers or none could be asked.
+        """
+        for side, folder in self.__ends():
+            if side in sides and presence_of(folder) is Presence.OFFLINE:
+                return side, folder
+        return None
+
+    def __ends(self) -> list[tuple[str, Path]]:
+        """Each end of the move by the folder it is asked through: a root's folder, or for a record under no root the
+        folder its own entry is in. Once the original stopped being a record its place is the cleanup's, since the
+        record itself is followed to the copy.
+
+        :returns: each end this machine can name.
+        """
+        if self.cleanup is not None:
+            source: Path | None = Path(self.cleanup.root if self.cleanup.root is not None else self.cleanup.left)
+        elif (source := self.__source_root_folder()) is None and (path := self.source) is not None:
+            source = self.__left_folder(path)
+        destination = None if self.destination_root is None else self.__host.root_folder(self.destination_root)
+        ends = ((SOURCE_SIDE, source), (DESTINATION_SIDE, destination))
+        return [(side, folder) for side, folder in ends if folder is not None]
+
+    @staticmethod
+    def __waiting(side: str, folder: Path, error: OSError | None) -> JobWaiting:
+        """The wait for an end that does not answer, named by its server or its drive.
+
+        :param side: the end.
+        :param folder: the folder it was asked through.
+        :param error: what the phase failed with, said after; left out for a check's refusal, whose sentence would
+            claim a verdict it could not reach, and for none.
+        :returns: the wait to raise.
+        """
+        device = device_of(folder)
+        reason = f"Waiting for the {side}: {device.host or device.root} does not answer."
+        if error is not None and not isinstance(error, VerifiedCopyError):
+            reason = f"{reason} ({error})"
+        return JobWaiting(reason, OFFLINE_RETRY_SECONDS)
 
     def __remove_left(self, folder: Path, root: Path | None) -> None:
         """Remove the folders the record left while empty, up to its root, when that is asked for.

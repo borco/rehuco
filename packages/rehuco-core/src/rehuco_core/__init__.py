@@ -169,14 +169,11 @@ from .migrations import (
     migrate_rehuco_data,
 )
 from .move_record_job import (
-    DEFAULT_RECORD_MOVE_HOST,
     RECORD_MOVE_KIND,
     MoveCleanup,
     MoveMode,
     MovePhase,
     MoveRecordJob,
-    RecordMoveHost,
-    RecordMoveHosting,
 )
 from .natural_sort import natural_path_sort_key, natural_sort_key
 from .path_keys import path_key
@@ -213,6 +210,7 @@ from .record_file_lock import (
     locked_record,
 )
 from .record_merge import merge_write
+from .record_move_host import DEFAULT_RECORD_MOVE_HOST, RecordMoveHost, RecordMoveHosting
 from .record_versions import (
     ABSENT,
     FieldPath,
@@ -468,6 +466,7 @@ from .tasks import (
     JobState,
     JobStatus,
     JobWaiting,
+    PartialOutputJob,
     PersistableTaskJob,
     ReportingTaskJob,
     StopRequest,
@@ -805,6 +804,7 @@ __all__ = [
     "PROGRESS_UNIT_RESOURCES",
     "PRUNE_REASONS",
     "PUBLIC_USERNAME",
+    "PartialOutputJob",
     "PartialRenameError",
     "PersistableTaskJob",
     "Placement",

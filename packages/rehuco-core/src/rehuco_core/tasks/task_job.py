@@ -419,6 +419,30 @@ class AbandonableTaskJob(TaskJob, Protocol):
         """
 
 
+@runtime_checkable
+class PartialOutputJob(TaskJob, Protocol):
+    """A job whose stop part-way leaves output somewhere the user may want back or gone -- a move's partial copy
+    (#634) -- so whoever gives it up asks which first.
+
+    Separate from :class:`AbandonableTaskJob` for the reason that one is separate: a job with no such output is
+    unchanged. The engine never calls it; a surface that cancels or clears a row does.
+    """
+
+    @property
+    def partial(self) -> Path | None:
+        """Where the partial output lies, as last known; ``None`` when there is none. Reads no file."""
+
+    def keep_partial(self, keep: bool) -> None:
+        """Say whether a cancel, running or not, leaves the partial output in place instead of removing it.
+
+        :param keep: ``True`` to leave it.
+        """
+
+    def discard_partial(self) -> None:
+        """Remove the partial output of a job that will not run again -- a failed or cancelled row being cleared --
+        on a thread of its own; returns at once."""
+
+
 # Fifteen, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
 # it has got and in what, what went wrong or what it waits for, what has been asked of it, what stopping it would
 # cost, whether it will still be here tomorrow, whom it takes turns with, and what kind of job it is. The last seven
