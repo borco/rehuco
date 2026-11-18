@@ -11,6 +11,7 @@ from pytest import mark, param
 from rehuco_core import (
     DEFAULT_PLUGIN_REGISTRY,
     KNOWN_PLACEHOLDERS,
+    UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE,
     LocationPattern,
     Placement,
     RecordNaming,
@@ -235,7 +236,8 @@ def test_a_template_that_does_not_parse_forbids_the_root_with_its_problem() -> N
     answer = destination(root({"*": "{series}/{title}"}), naming(title="Intro"), ())
 
     assert isinstance(answer, Refusal)
-    assert answer.reason.startswith("Tutorials's layout for a tutorial cannot be used: This names a placeholder")
+    problem = UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name="series")
+    assert answer.reason == f"Tutorials's layout for a tutorial cannot be used: {problem}"
 
 
 @mark.parametrize(

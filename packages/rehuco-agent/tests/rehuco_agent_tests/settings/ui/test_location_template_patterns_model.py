@@ -13,7 +13,7 @@ from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.location_templates_settings import NAME_SUGGESTION_PATTERNS
 from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_COLUMN, LocationTemplatePatternsModel
-from rehuco_core import BLANK_PATTERN_PROBLEM, KNOWN_PLACEHOLDERS, UNKNOWN_PLACEHOLDER_PROBLEM
+from rehuco_core import BLANK_PATTERN_PROBLEM, KNOWN_PLACEHOLDERS, UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE
 
 FIRST = "{title}"
 SECOND = "{publisher} - {title}"
@@ -312,7 +312,7 @@ def test_a_cell_naming_an_unknown_placeholder_explains_and_colours_itself(
     model.setData(model.index(0, PATTERN_COLUMN), "{title} ({series})")
     index = model.index(0, PATTERN_COLUMN)
 
-    assert model.data(index, Qt.ItemDataRole.ToolTipRole) == UNKNOWN_PLACEHOLDER_PROBLEM
+    assert model.data(index, Qt.ItemDataRole.ToolTipRole) == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name="series")
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is not None
 
 
@@ -328,7 +328,7 @@ def test_a_wider_placeholder_set_accepts_what_the_default_one_flags(model: Locat
     """
     model.setData(model.index(0, PATTERN_COLUMN), "{title} ({count})")
     assert model.known_placeholders == KNOWN_PLACEHOLDERS
-    assert model.invalid_reason(0) == UNKNOWN_PLACEHOLDER_PROBLEM
+    assert model.invalid_reason(0) == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name="count")
 
     model.known_placeholders = KNOWN_PLACEHOLDERS | {"count"}
 

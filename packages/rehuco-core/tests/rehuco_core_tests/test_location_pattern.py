@@ -11,7 +11,7 @@ from rehuco_core import (
     PLACEHOLDERS,
     PLUGIN_PLACEHOLDERS,
     STRAY_GROUP_MARKER_PROBLEM,
-    UNKNOWN_PLACEHOLDER_PROBLEM,
+    UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE,
     LocationPattern,
     known_placeholders_for,
     location_pattern_is_valid,
@@ -53,14 +53,21 @@ def test_a_malformed_placeholder_is_refused(pattern: str) -> None:
 
 
 @mark.parametrize(
-    "pattern",
-    ["{} - {title}", "{0} - {title}", "{title} ({series})", "{{{series}}}"],
-    ids=["blank", "positional", "unknown", "unknown-in-group"],
+    ("pattern", "name"),
+    [
+        ("{} - {title}", ""),
+        ("{0} - {title}", "0"),
+        ("{title} ({series})", "series"),
+        ("{{{series}}}", "series"),
+        ("{title}{{ [{year]}}}", "year]"),
+    ],
+    ids=["blank", "positional", "unknown", "unknown-in-group", "swapped-bracket"],
 )
-def test_a_placeholder_outside_the_known_four_is_refused(pattern: str) -> None:
+def test_a_placeholder_outside_the_known_four_is_refused_by_name(pattern: str, name: str) -> None:
     """A placeholder outside the four known fields is refused, not silently interpolated as empty --
-    inside a group as much as outside one."""
-    assert location_pattern_problem(pattern) == UNKNOWN_PLACEHOLDER_PROBLEM
+    inside a group as much as outside one -- and the problem names it as written, so a slip like a ``]`` typed
+    inside the braces is seen."""
+    assert location_pattern_problem(pattern) == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name=name)
 
 
 @mark.parametrize("pattern", ["{title}{{ - }}", "{title}{{}}"], ids=["text-only", "empty"])
@@ -110,7 +117,7 @@ def test_count_is_refused_by_default_but_accepted_when_declared() -> None:
     * check ``{count}`` against the default (base-four) known placeholders
     * check it again against a set that includes ``count``
     """
-    assert location_pattern_problem("{title} ({count})") == UNKNOWN_PLACEHOLDER_PROBLEM
+    assert location_pattern_problem("{title} ({count})") == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name="count")
     assert location_pattern_problem("{title} ({count})", KNOWN_PLACEHOLDERS | {"count"}) == ""
     assert location_pattern_is_valid("{title} ({count})", KNOWN_PLACEHOLDERS | {"count"}) is True
 
