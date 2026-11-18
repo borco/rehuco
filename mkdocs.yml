@@ -110,12 +110,14 @@ nav:
       - Packaging & Deployment: specs/packaging-deployment.md
       - Field Schema: specs/field-schema.md
       - Reference Images: specs/reference-images.md
+      - Assets: specs/assets.md
       - Diagrams:
           - Overview: specs/diagrams/README.md
           - "Activity: Open a Path": specs/diagrams/activity-open-document.md
           - "Component: Containment": specs/diagrams/component-decomposition.md
           - "Sequence: Open a Path": specs/diagrams/sequence-open-document.md
       - Appendices:
+          - Assets: specs/appendices/assets.md
           - Briefcase Packaging: specs/appendices/briefcase-packaging.md
           - Code Conventions: specs/appendices/code-conventions.md
           - Continuous Integration: specs/appendices/continuous-integration.md

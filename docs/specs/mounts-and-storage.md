@@ -471,3 +471,72 @@ outside every root), which has no root to be named by and is recorded by its abs
 
 A file record's checksum entries are its files' own names, so renaming it — in place, by a move, or into its copy —
 renames its entries with its files (#339); a folder record's are relative to its folder and never change.
+
+## §9.14 Prefix buckets: many small records in one root
+
+[[[mounts-and-storage#buckets]]]
+
+- [#680: feat(core): {bucket}, {site} and {site_id} placeholders, with prefix buckets](https://github.com/borco/rehuco/issues/680)
+- [#681: feat: a rebalance job for prefix buckets](https://github.com/borco/rehuco/issues/681)
+
+**Not built.** A store library ([[assets]]) is thousands of file records, each a `.rehu` and a few screenshots, with
+no folder of its own. Left flat that is tens of thousands of files in one directory, which every file manager and
+every share handles badly. So a layout ([[mounts-and-storage#rehuroot]]) may spread them over **buckets named by the
+start of the record's name, one character more per level**:
+
+```text
+fab/
+  0/
+    00/
+    01/
+      01a/
+      01b/
+  a/
+    a0/
+    a1/
+```
+
+- **A folder holds records until it passes the limit, then it splits.** Each record moves into the child folder named
+  by one more character of its own name: those in `a/` into `a/a0/`, `a/a1/` and so on.
+- **The rule is the same at every level**, the layout's own folder included. A small library stays flat, and only the
+  crowded prefixes grow deeper.
+- **A record's place follows from its name and the folders that exist**: the deepest existing folder whose name starts
+  the record's. Nothing is looked up and nothing is stored about where a record went.
+- **Names compare case-folded**, as root folders do. A record whose name is shorter than a folder's prefix stays in
+  the parent.
+- **The limit is a setting**, 200 by default and **never under 50**: below that the tree deepens without any folder
+  becoming easier to read.
+
+**It is three placeholders in the Locations grammar**, not a second placement system: `{bucket}`, which renders as the
+bucket path for the record's name; `{site}`, the primary source's site; and `{site_id}`, that source's id
+([[assets#site-id]]). A library root's layout is then `{"asset": ["{site}/{bucket}/{site_id}"]}`, and any type may use
+`{bucket}`.
+
+**Naming a record by its store id is what makes buckets cheap.** An id never collides, where two items of one
+publisher can share a title; it never changes, so correcting a title moves nothing; and an id made of hex digits
+splits every level into sixteen even parts. A layout that names records by title still works: a rename then moves the
+record's few files, possibly into another bucket, which is an ordinary rename. Nobody browses a library root by
+folder; the browser dock is how a record is found.
+
+### §9.14.1 Rebalancing is a job
+
+[[[mounts-and-storage#bucket-rebalance]]]
+
+Changing the limit leaves the tree wrong for the new value, so the change enqueues a **rebalance job** for each root
+with a bucketed layout; it can also be started by hand from the Roots view.
+
+- **Limit lowered** (1000 to 50): every folder over the limit is split, and its children again, until none is.
+- **Limit raised** (50 to 1000): child folders are folded back into their parent wherever the whole subtree fits under
+  the limit.
+- **The cache's paths are updated with each move**, as a record's move updates them.
+- **Splitting happens as records arrive; folding happens only here.** A folder near the limit would otherwise split
+  and fold with every record added and removed.
+
+**A rebalance and a library scan never move files at the same time.** Both run on one chain of the task queue
+([[appendices.task-queue#serial]]), so a rebalance enqueued during a scan runs when the scan ends. To have it sooner
+the user pauses the scan: a paused job has returned ([[appendices.task-queue#cursor]]), so the rebalance runs, and the
+scan carries on after it.
+
+**The scan therefore reads the limit, and the folders, before every record it creates**, never once at its start: the
+limit may have changed while it ran or sat paused, and the tree may have been rebuilt under it. It keeps neither in
+its captured state.

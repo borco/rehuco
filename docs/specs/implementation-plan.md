@@ -233,7 +233,9 @@ asks whether the automatic head fit is good enough to be worth a stage.
 - **LLM URL extraction** — [[acquisition-tooling#llm-url-extract]], a fallback for hosts no scraper
   matches. Deferred until a real run of unmatched hosts says it's worth a model; a user-written scraper
   covers the gap meanwhile.
-- **3D objects, a dedup review UI, an access-rule grammar, web for non-tutorial types.**
+- **A dedup review UI, an access-rule grammar, web for non-tutorial types.** 3D objects left this list: they are the
+  `asset` type ([[assets]]), cut into 0.5.0 with the library wizard ([[acquisition-tooling#library-wizard]]) and prefix
+  buckets ([[mounts-and-storage#buckets]]).
 - **Auto-update** — the installers themselves landed (#206,
   [[appendices.briefcase-packaging#status]]): Briefcase-built installers with declarative file
   association/icon/AUMID. MSIX packaging and self-update against a public release oracle still wait on

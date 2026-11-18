@@ -643,3 +643,144 @@ Migration ([[acquisition-tooling#tc-to-rehu]]) landed in LocalEdit8 and LocalEdi
 The HTML→Markdown drop ([[acquisition-tooling#drag-drop-aids]]) is that family's tracer: the cheapest of the three, and
 the one that proves the drop seam the other two build on. None of [[acquisition-tooling#overview]] blocks the
 local-viewer or tablet-watching milestones.
+
+## §15.5 The library wizard: a store account, scanned into records
+
+[[[acquisition-tooling#library-wizard]]]
+
+- [#682: feat: the library scan job base](https://github.com/borco/rehuco/issues/682)
+- [#683: feat(agent): the scraper wizard protocol and its registry](https://github.com/borco/rehuco/issues/683)
+- [#684: feat(agent): the Fab library scan](https://github.com/borco/rehuco/issues/684)
+- [#685: feat(agent): the library wizard dialog](https://github.com/borco/rehuco/issues/685)
+- [#686: spike: what Fab's library and listings return to a logged-in session](https://github.com/borco/rehuco/issues/686)
+- [#687: feat: a tool that adds a Fab results page's free listings to the library](https://github.com/borco/rehuco/issues/687)
+
+**Not built.** A scrape ([[acquisition-tooling#url-extract]]) fills the one document that is open and never creates a
+record. This is the other direction: **read what a store account owns and write one record per item**, new ones added
+and known ones brought up to date. It is what the *account-side import of what the user owns* in
+[[appendices.open-questions#still-open]] asked for, designed for asset stores ([[assets]]) first and for Udemy by the
+same means.
+
+### §15.5.1 One dialog, and a protocol with three members
+
+[[[acquisition-tooling#library-wizard-protocol]]]
+
+**One dialog serves every site.** What a site adds is a *scraper wizard*, registered as scrapers are
+([[acquisition-tooling#scraper-registry]]), and the protocol it satisfies is deliberately three members:
+
+- **`key`**: a stable string that identifies the wizard, in settings and in a saved queue.
+- **`label`**: what the user picks it by.
+- **`create_job(root)`**: the scan of that site into that root, as a job for the task queue.
+
+**Nothing else is exposed.** How a site lists a library, in what order, and how it tells a challenge page from a
+logged-out one are the job's own business, as [[appendices.task-queue#job-responsibility]] already rules. In
+particular the protocol has **no `pause`, `resume` or saved-state members of its own**: the job is a
+`PersistableTaskJob`, and that protocol already has `pause()`, `resume()` and the `capture_state()`/`restore_state()`
+pair ([[appendices.task-queue#lifetime]]). A second set on the wizard would be the same contract written twice. It has
+no *ask the user* member either: a scan that needs someone stops and says why
+([[acquisition-tooling#library-scan-stops]]), which is one path for every site and no dialog written per site.
+
+The dialog is one page:
+
+- **Site**: a drop-down of the registered scraper wizards.
+- **Root**: a drop-down of the catalog's roots; the one chosen receives the records. Each entry is drawn on two lines,
+  the root's label and, greyed beneath it, its location. A root whose layouts admit no `asset`
+  ([[mounts-and-storage#rehuroot]]) is listed disabled, with the reason as its tooltip.
+- **Login** opens the persona browser, unautomated, so the user can sign in ([[acquisition-tooling#browser-persona]]).
+- **Start** enqueues the job and closes the dialog. It is disabled while the persona browser is open, since a profile
+  serves one browser at a time, and until a site and a root are chosen.
+
+**The root last used is remembered per scraper wizard**, in the settings, and preselected when that site is next
+chosen.
+
+### §15.5.2 The scan job
+
+[[[acquisition-tooling#library-scan-job]]]
+
+**It runs on the app-wide task queue**, unlike a scrape ([[acquisition-tooling#scrape-job]]): it is hours of
+serialized work a user wants to see, pause and find again after a restart, which is exactly what that section says the
+queue is right for.
+
+- **Oldest acquisition first.** The job asks the store for the library sorted by acquisition time, ascending, as
+  TutCatalog's Udemy import did. The order is then stable for good: whatever is acquired later lands after everything
+  already read.
+- **A new item** is written straight to disk, its `.rehu` and its screenshots, and entered in the cache. No document
+  is opened.
+- **Its licence text is saved with it**, as the record's `.rehuterms` ([[assets#licences]]): each distinct
+  `license_url` is read once per run. A known item's saved text is never touched by a scan.
+- **A known item**, found by its source's `site_id` ([[assets#site-id]]), has its scraped fields brought up to date
+  and nothing else touched.
+- **A scan does not overwrite an edit.** The block keeps, under `scraped`, the values the last scan wrote. A field is
+  updated only while it still holds what the scan last wrote there; one the user has changed since is left alone, and
+  its new scraped value is recorded for the next comparison.
+- **Every item is logged**, in the job's own log scope ([[appendices.logging#scopes]]): one line with its title, the
+  URL read, and whether the record was added, updated or left as it was. **Both are links.** The URL opens the page in
+  the user's browser; the title opens the record in the documents dock, as clicking it in the browser dock does.
+- **It is slow on purpose**: a pause of a few seconds, drawn at random, between pages. A library is read once, and a
+  store that starts challenging the persona costs more than the time saved.
+- **A full rescan is a separate choice** on the dialog. It starts from the oldest item again, which is the only way to
+  notice a changed listing or one that has left the account ([[assets#online-only]]).
+
+**The records are the cursor.** On every entry to `run()`, a first run included, the job asks the cache how far this
+site's records in this root already reach: the newest `acquired` among them where the store states the time, and
+otherwise the set of `site_id`s, skipped as the listing is walked. Nothing has to be written per item for the scan to
+know where it stands, which is what [[appendices.task-queue#lifetime]] requires (*written on structural change, never
+on progress*) and why a crash, a kill and a power cut cost the same as a pause. The state the job captures holds only
+what the records cannot say: the site, the root, and whether this is a full rescan and how far it got.
+
+### §15.5.3 Three ways to stop, one way back
+
+[[[acquisition-tooling#library-scan-stops]]]
+
+- **The user pauses it**, from the Tasks dock.
+- **The app closes.** The exit sequence pauses every job and waits briefly ([[appendices.task-queue#teardown]]), so
+  the scan must unwind at once: **its checkpoints sit inside the wait for a page, not between items**, and a pause
+  seen there abandons the item in hand. That item is read again on resume, so **a close costs at most one item**. A
+  half-written record is never left: the `.rehu` and its screenshots are written under temporary names and renamed
+  into place only when the item is whole.
+- **Something goes wrong.** What happens next depends on who can fix it:
+  - **Nobody needs to**: the network is down, the share holding the root is not answering. The job raises `JobWaiting`
+    and the queue tries again by itself ([[appendices.task-queue#waiting]]).
+  - **The user can, in the browser**: a challenge page, a login that has expired. The run ends paused with the reason
+    as the row's message, and the persona browser is shown at the page that stopped it.
+  - **The user can, elsewhere**: the disk is full, the root's layout no longer admits the record. The run ends paused
+    with the reason and no browser.
+
+**Resume re-enters `run()`**, as it does for every job ([[appendices.task-queue#cursor]]), and the first thing a
+re-entered scan does is **look again at what stopped it**. Gone, it carries on from where the records end. Still
+there, it ends paused again, showing the browser or the message as before. There is no separate *retry* and no state
+that says *the user claims to have fixed it*.
+
+A pause the job takes itself, carrying a reason, is the one thing here the engine may not have yet: `JobWaiting`
+carries one, a pause asked from outside does not need one. If it is missing it is added to the engine, not worked
+around in the job.
+
+### §15.5.4 Free listings: a tool beside the scan
+
+[[[acquisition-tooling#free-listings]]]
+
+**Not built, and not part of the app.** A scan records what an account owns; it never adds to it. Adding is a script,
+`tools/shopping_fab.py`, for the one case worth automating: a publisher's free listings, which cost nothing to own
+and hours to click through.
+
+- **It is given a results page**, any Fab address with its filters in it: a category, a search, a publisher, free
+  items only. A publisher is named by the address Fab gives it, never by a name typed in, since names are not unique.
+- **Run with no address, it opens the persona, undriven**, and waits as long as it takes, until its window is closed
+  or Ctrl+C, with no summary: that is for signing in and for the store's own content preferences, where *Show
+  products in My Library* is switched off so a results page lists only what is not owned yet.
+- **Each listing is opened and judged by its own page**: already saved, skipped; *Add to My Library* offered, clicked
+  and waited on until the page says it is saved; anything else, left alone. **It never buys.**
+- **The results page is the queue.** The listings it shows are taken as they are, without reading the page to its end;
+  after them the page is loaded again, and what was added has left it, so the next ones have moved up. A listing that
+  could not be added stays on the page, so it is remembered for the run and not opened twice; the page is scrolled
+  only when everything it shows has been tried. The run ends when nothing untried is left.
+- **Nothing is kept between runs.** The store says what is owned, so a run stopped anywhere is started again.
+- **It is as slow as the scan and stops where the scan stops**: a random pause between listings, and the first
+  challenge page ends the run. So do three additions in a row that the store never confirmed, since the page has then
+  changed under the script.
+- **Ctrl+C is a clean stop.** The listing in hand is abandoned, the browser is closed, and the run ends as any other.
+- **Every end prints a summary**, whether nothing was left, the user stopped it or the store did: how many listings
+  were added, how many were already owned, and each one that failed, **its address on a line of its own** with what
+  went wrong, for looking at by hand. What to do about a kind of failure is decided then, not guessed at now.
+
+The next library scan finds what it added, at the end of the listing, as it finds anything acquired since the last.

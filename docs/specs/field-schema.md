@@ -513,7 +513,8 @@ Fields, and the purpose each serves:
   same ballpark, so 200 MB stored vs a 500 MB–1 GB candidate reads clearly as higher quality.
 - `current_size` — disk currently used by this copy.
 
-There is **no `advertised_size`**: sites publish duration, not tutorial size. The comparison
+There is **no `advertised_size`** on a tutorial or a reference-image pack: sites publish duration, not tutorial size. The
+`asset` block has one, because stores do publish a download size ([[assets#block]]). The comparison
 against an alternative source is done at decision time against `original_size`; the candidate's
 size is never stored.
 
