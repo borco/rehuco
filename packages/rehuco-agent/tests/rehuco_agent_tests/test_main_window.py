@@ -727,7 +727,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
 
     locations_item = items[titles.index("Locations")]
     location_child_titles = [locations_item.child(row).text() for row in range(locations_item.rowCount())]
-    assert location_child_titles == ["Collections", "Reference Images", "Root Layout Templates", "Tutorials"]
+    assert location_child_titles == ["Assets", "Collections", "Reference Images", "Root Layout Templates", "Tutorials"]
 
     roots_item = items[titles.index("Roots")]
     assert [roots_item.child(row).text() for row in range(roots_item.rowCount())] == [
@@ -763,7 +763,14 @@ def test_a_plugin_this_build_does_not_ship_still_gets_its_own_locations_page(
     locations_item = items[titles.index("Locations")]
     location_child_titles = [locations_item.child(row).text() for row in range(locations_item.rowCount())]
 
-    assert location_child_titles == ["Collections", "Daz3Ds", "Reference Images", "Root Layout Templates", "Tutorials"]
+    assert location_child_titles == [
+        "Assets",
+        "Collections",
+        "Daz3Ds",
+        "Reference Images",
+        "Root Layout Templates",
+        "Tutorials",
+    ]
 
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]

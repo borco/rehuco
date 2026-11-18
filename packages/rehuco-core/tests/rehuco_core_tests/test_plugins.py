@@ -297,7 +297,7 @@ def test_the_default_registry_ships_the_builtin_plugins() -> None:
     * verify the shipped keys are claimed, and neither ``core`` nor ``daz3d`` is
     """
     assert tuple(DEFAULT_PLUGIN_REGISTRY) == BUILTIN_PLUGINS
-    assert [spec.key for spec in DEFAULT_PLUGIN_REGISTRY] == ["tutorial", "reference_images", "collection"]
+    assert [spec.key for spec in DEFAULT_PLUGIN_REGISTRY] == ["tutorial", "reference_images", "collection", "asset"]
     assert "core" not in DEFAULT_PLUGIN_REGISTRY
     assert "daz3d" not in DEFAULT_PLUGIN_REGISTRY
 

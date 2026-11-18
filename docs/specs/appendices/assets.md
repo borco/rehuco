@@ -72,3 +72,22 @@ for the buyer only if they can show they acquired under it and nothing since rep
   acquired under may be the one that still applies, so it is not the tool's to overwrite.
 - **The step before downloading is a refresh.** *Refresh Licence* ([[assets#licences]]) shows whether the terms changed
   since the saved text, and the owner decides whether to replace it.
+
+## What Fab's AI tags mean
+
+[[[appendices.assets#ai-tags]]]
+
+Fab's EULA (§16(l), read 2026-11-18 from `/i/eula/fab_eula`) has exactly two provisions on AI, and defines both
+through tags on the listing. The library scan writes them as `advertised_tags`, prefixed as every tag it makes from a
+store field is ([[assets#block]]).
+
+- **NoAI**, written as `ai-forbidden` (the listing's `isAiForbidden`). Under a **Standard License**, NoAI content may not be used in datasets
+  used by generative AI programs, in developing such programs, or as training input to them (also §6(vii)). Programs
+  that only operate on the original content, classify it, or arrange existing content without making new content are
+  outside that definition, so using AI tools on the file is not what the tag forbids.
+- **What binds is the tag "at the time of your Transaction".** The scan reads today's listing, so a tag added or
+  dropped since the item was got shows the listing's present state, not the terms it was got under.
+- **On a Creative Commons item the CC licence governs**; the clause is the Standard License's.
+- **CreatedWithAI**, written as `ai-generated` (the listing's `isAiGenerated`). A disclosure, not a restriction: Fab requires sellers to tag
+  content a material part of which was made with generative AI. Upscaling or content-aware fill does not count.
+- **`isAiRestricted`** sits on the listing's seller (`user`), not on the item, and is not licence data.

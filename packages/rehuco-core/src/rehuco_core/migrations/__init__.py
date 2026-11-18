@@ -59,8 +59,8 @@ class MigrationTarget(Protocol):
 
 BLOCK_TARGETS: Final[dict[str, MigrationTarget]] = {
     # Keyed by each plugin's stable **main key** -- referenced by name, so the migration layer depends on
-    # plugins and never the reverse. A key with no entry (collection, an uninstalled type, a stray block)
-    # has an empty chain: head 0, nothing to run.
+    # plugins and never the reverse. A key with no entry (collection, asset, an uninstalled type, a stray
+    # block) has an empty chain: head 0, nothing to run.
     "tutorial": tutorial,
     "reference_images": reference_images,
 }

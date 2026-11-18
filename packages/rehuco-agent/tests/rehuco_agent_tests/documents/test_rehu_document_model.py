@@ -3805,7 +3805,7 @@ def test_available_types_unions_installed_mains_with_the_documents_own_block_key
     document.data["audiopack"] = {"bpm": 120}
     model = RehuDocumentModel(document)
 
-    assert model.available_types() == ["tutorial", "reference_images", "collection", "audiopack"]
+    assert model.available_types() == ["tutorial", "reference_images", "collection", "asset", "audiopack"]
 
 
 def test_reverting_a_type_switch_rebuilds_the_composition_without_re_switching(mocker: MockerFixture) -> None:

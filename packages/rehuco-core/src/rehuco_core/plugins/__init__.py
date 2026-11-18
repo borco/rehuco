@@ -21,6 +21,9 @@ plugin knows nothing about how its block was laid out in an older build.
 
 from .constants import DEFAULT_CURRENT_USERNAME, DEFAULT_UNKNOWN_USERNAME, PUBLIC_USERNAME, USERS_KEY
 from .plugin_registry import (
+    ASSET_FIELD_NAMES,
+    ASSET_KINDS,
+    ASSET_PLUGIN,
     BUILTIN_PLUGINS,
     COLLECTION_PLUGIN,
     CORE_FIELD_NAMES,
@@ -37,6 +40,9 @@ from .plugin_registry import (
 from .plugin_spec import PluginSpec
 
 __all__ = [
+    "ASSET_FIELD_NAMES",
+    "ASSET_KINDS",
+    "ASSET_PLUGIN",
     "BUILTIN_PLUGINS",
     "COLLECTION_PLUGIN",
     "CORE_FIELD_NAMES",

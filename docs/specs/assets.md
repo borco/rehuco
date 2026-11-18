@@ -15,10 +15,11 @@
 - [#679: feat(agent): Open in Web Browser on the browser's selection](https://github.com/borco/rehuco/issues/679)
 - [#688: feat(agent): the licence subdock, Refresh Licence, and the sidecar's path in Copy as JSON](https://github.com/borco/rehuco/issues/688)
 
-**None of this is built.** It is the design for a fourth resource type, `asset`: something acquired from a store to be
-used in other work, such as a 3D model, a texture set, an animation pack, an audio pack, a Blender add-on or an Unreal
-plugin. It answers the *3D objects as a resource category* question [[appendices.open-questions#still-open]] left
-open.
+**Only the block is built** (#674): `asset` is a declared type whose fields are read and checked as §19.1 says; no
+editor, cache column, sidecar or scan uses it yet. The rest is the design for this fourth resource type: something
+acquired from a store to be used in other work, such as a 3D model, a texture set, an animation pack, an audio pack, a
+Blender add-on or an Unreal plugin. It answers the *3D objects as a resource category* question
+[[appendices.open-questions#still-open]] left open.
 
 - **What it is for.** A store library of a few thousand items, most of them never downloaded, that has to answer three
   questions fast: *what do I own*, *can I use it in this project* (format, engine version, licence) and *where is it*.
@@ -45,20 +46,13 @@ block does ([[plugins#plugin-blocks]]).
 | `license_url` | string | scan | where the store states the terms for this item |
 | `formats` | string list | scan | file formats delivered: `fbx`, `glb`, `blend`, `uasset` |
 | `compatibility` | map, string to string | scan | what it works with and in which versions: `{"blender": ">=4,<5", "unreal": "5.1-5.6"}` |
-| `platform` | string list | scan | operating systems it is limited to; empty means any |
 | `source_updated` | partial-precision date | scan | when the store last changed the item |
 | `advertised_version` | string | scan | the version the store offers |
 | `current_version` | string | by hand, or an install manager | the version of the local files |
 | `advertised_size` | size (bytes) | scan | the download size the store states |
-| `ai_generated` | boolean | scan | the store says the item was generated with AI |
-| `ai_usage_allowed` | boolean | scan | the store says the item may be used with AI |
-| `age_rating` | string | scan | the store's own label |
 | `triangles` | integer | measured | triangle count of the heaviest mesh at full detail |
-| `rigged` | boolean | measured | the item carries a skeleton |
-| `lods` | boolean | measured | the item carries levels of detail |
 | `texture_size` | integer | measured | longest side, in pixels, of its largest texture |
 | `acquired` | partial-precision date | scan | when the account got it, where the store says |
-| `requires`, `provides` | list of `{name, url}` | scan, or by hand | what the item needs, and what it supplies to others |
 
 - **Reused from the core, not repeated in the table:** `description`, `released` (the store's publication date),
   `authors`, the tag lists, the screenshots, and the measured size pair ([[field-schema#duration-size]]).
@@ -82,15 +76,36 @@ block does ([[plugins#plugin-blocks]]).
   vocabulary. The cache gives it a link table of its own, as tags have.
 - **What the store calls its categories goes into `advertised_tags` untouched**, as every scraped tag does
   ([[acquisition-tooling#scraper-protocols]]).
+- **What the scan makes from a store's field, rather than copies from its tag list, is a tag too, always prefixed
+  by what it is**, because a store's own tags describe what is depicted and a bare word collides with them (a
+  *mature* wolf, a *windows* prop). As tags, two spellings of one label merge the way any tag does, where fields
+  would each need a merge of their own. The separator is `-`, never `:`, which the search line reads as a field
+  token. From Fab:
+  - `rating-mature` where the listing is `isMature`;
+  - `platform-<name>`, lower-cased, for each of an Unreal format's `targetPlatforms` (`platform-windows`,
+    `platform-mac`); none means any;
+  - `ai-forbidden` where the listing is `isAiForbidden`, Fab's *NoAI* mark: no generative-AI datasets, development
+    or training under a Standard License, as the item was tagged when it was got. It does not bar using AI tools on
+    the file ([[appendices.assets#ai-tags]]);
+  - `ai-generated` where the listing is `isAiGenerated`, Fab's *CreatedWithAI* mark.
+- **A delisted item**, written without its listing, carries none of these.
+- **A rig and levels of detail are the user's tags** (`extra_tags`). Fab states them per format and mostly leaves
+  them empty, so the scan writes nothing for them.
+- **What an item needs or supplies is not here.** No Fab listing states it; Daz3D's products do, and its design adds
+  `requires` / `provides` when it is made ([[assets#install]]).
 
 ### §19.1.1 `kind`
 
 [[[assets#kind]]]
 
-One value from a closed list: `model`, `pack`, `character`, `animation`, `material`, `texture`, `hdri`, `audio`,
-`vfx`, `plugin`, `tool`, `template`, `unknown`.
+One value from a closed list: `model`, `pack`, `character`, `animation`, `material`, `texture`, `decal`, `brush`,
+`hdri`, `audio`, `vfx`, `plugin`, `tool`, `template`, `unknown`.
 
 - A `pack` is many models sold as one item: an environment, a kit, a prop set.
+- A `decal` is a texture projected onto a surface: cracks, stains, road markings. A `brush` is a sculpting or painting
+  brush, or an alpha. Fab lists both as categories of their own.
+- A missing `kind` reads as not known. The kind filter still finds such a record both as `unknown` and as an empty
+  kind, so the unsorted items are one filter away whichever way they came to be.
 - A MetaHuman is a `character`. A Blender add-on or an Unreal code plugin is a `plugin`; a standalone program is a
   `tool`; a sample project is a `template`.
 - **`unknown` is a real value, not a missing one.** A scan that cannot classify an item writes `unknown`, so the items
@@ -185,8 +200,8 @@ of that is rehuco's to drive.
 - **A site may bring its own install manager later.** Daz3D is the first, and the per-user, per-machine `installed`
   field [[data-model]] reserves for it belongs to that manager's block, as does `current_version` when a manager sets
   it. A store that turns out to be worth the same treatment gets the same shape.
-- **Daz3D is therefore `asset` plus a manager**: its `sku` is a `site_id`, and its `requires`/`provides` are the
-  fields above. It is not a second type with a second set of columns.
+- **Daz3D is therefore `asset` plus a manager**: its `sku` is a `site_id`, and the `requires`/`provides` its
+  products state are fields its design adds to this block. It is not a second type with a second set of columns.
 
 ## §19.4 What adding the type touches
 
@@ -196,8 +211,9 @@ The first type added since the original three, so the places that enumerate type
 adds the next.
 
 - **`rehuco-core`:** the field tuples and `BUILTIN_PLUGINS` in `plugins/plugin_registry.py`, and the exports beside
-  it; `BLOCK_TARGETS` and a migrations subpackage for the block; the per-key value rules in `rehu_locks.py`; the typed
-  getters on `rehu_document.py`; `TYPE_FIELD_COLUMNS`, the column DDL and a schema step in `rehudb.py` and
+  it; `BLOCK_TARGETS` and a migrations subpackage once the block's shape first changes (`asset` has neither yet: a
+  block with no chain is version 0); the per-key value rules in `rehu_locks.py`, checked only where the type
+  declares the key; the typed getters on `rehu_document.py`; `TYPE_FIELD_COLUMNS`, the column DDL and a schema step in `rehudb.py` and
   `migrations/rehudb/`, with the formats link table; `rehudb_scan.py`, which fills them; `PLUGIN_PLACEHOLDERS` in
   `location_pattern.py`; and, for a type with a sidecar of its own as this one has ([[assets#licences]]), whatever
   enumerates a record's files.
@@ -210,7 +226,7 @@ adds the next.
 
 [[[assets#deferral]]]
 
-- **Measuring** `triangles`, `rigged`, `lods` and `texture_size` from downloaded files. Until then they are typed in.
+- **Measuring** `triangles` and `texture_size` from downloaded files. Until then they are typed in.
 - **Install managers**, Daz3D's included ([[assets#install]]).
 - **Licences as something to browse.** A branch of the Tag Browser ([[plugins#tag-browser]]) listing the licence ids
   in use, and a document per licence, wait until someone wants more than the filter.
