@@ -703,11 +703,18 @@ queue is right for.
 
 - **Oldest acquisition first.** The job asks the store for the library sorted by acquisition time, ascending, as
   TutCatalog's Udemy import did. The order is then stable for good: whatever is acquired later lands after everything
-  already read.
+  already read. **Fab does it** (#686): `/i/library/search?sort_by=createdAt&source=acquired`, a page of 24 whatever
+  `count` asks, each entry carrying the entitlement's `createdAt` to the microsecond. The sort is by the millisecond,
+  with the entitlement's id as the tie-break (31 groups of two or three share one in 4,250 entries), so within a
+  millisecond the microsecond order differs from the page order.
 - **A new item** is written straight to disk, its `.rehu` and its screenshots, and entered in the cache. No document
   is opened.
-- **Its licence text is saved with it**, as the record's `.rehuterms` ([[assets#licences]]): each distinct
-  `license_url` is read once per run. A known item's saved text is never touched by a scan.
+- **Its licence text is saved with it**, as the record's `.rehuterms` ([[assets#licences]]): each distinct licence is
+  read once per run, keyed by the store's licence **path** (Fab: `license/cc/cc-by`), not by `license_url`, since one
+  licence arrives under different URLs and the URL may be empty. A known item's saved text is never touched by a scan.
+- **An item whose public page is gone** (Fab: `isActiveInLive` false, its listing a 404; 102 of 4,250) is still in the
+  account, so it is written from the library entry alone, its unknown fields left empty and `online` left true, and
+  **its source URL is the library link** (`/library/assets/<entitlement id>`) instead of the dead public one.
 - **A known item**, found by its source's `site_id` ([[assets#site-id]]), has its scraped fields brought up to date
   and nothing else touched.
 - **A scan does not overwrite an edit.** The block keeps, under `scraped`, the values the last scan wrote. A field is
@@ -723,7 +730,9 @@ queue is right for.
 
 **The records are the cursor.** On every entry to `run()`, a first run included, the job asks the cache how far this
 site's records in this root already reach: the newest `acquired` among them where the store states the time, and
-otherwise the set of `site_id`s, skipped as the listing is walked. Nothing has to be written per item for the scan to
+otherwise the set of `site_id`s, skipped as the listing is walked. **Fab states the time**, so its cursor is the newest
+`acquired` and the ids of the records sharing that millisecond (the listing's own cursor is `[millisecond, entitlement
+id]`, opaque to the job and never built by it). Nothing has to be written per item for the scan to
 know where it stands, which is what [[appendices.task-queue#lifetime]] requires (*written on structural change, never
 on progress*) and why a crash, a kill and a power cut cost the same as a pause. The state the job captures holds only
 what the records cannot say: the site, the root, and whether this is a full rescan and how far it got.
