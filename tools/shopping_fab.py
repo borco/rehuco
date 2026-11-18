@@ -18,6 +18,25 @@ itself says what is owned, so a run stopped at any point is simply started again
 It reads like a person, a few seconds between pages, and stops at the first Cloudflare challenge. Ctrl+C stops it
 cleanly. Every end prints how many listings were added and the address of each one that failed. Needs geckodriver and
 Firefox; the persona profile must not be open in another Firefox.
+
+Tips:
+
+* **One run can cover every category.** The address is only a results page, so a search page takes the same filters
+  as a category page does::
+
+      https://www.fab.com/search?sellers=<seller id>&sellers=<seller id>&is_free=1
+
+  The seller ids are in the address of a publisher's own page and of a category page filtered to that publisher.
+  Open the address in a browser first: it should list the free items of those sellers across categories.
+* **It is safe to stop and start again at any point.** An added listing leaves the results page, so a restart, or a
+  narrower address (one category, one seller), picks up only what is missing.
+* **It takes days for a big list**: about 15 to 20 seconds a listing, so roughly 21,000 listings is four days of
+  running. Start with the narrower address of what is wanted first.
+* **A challenge page ends the run.** Run with no address, pass the challenge by hand in the persona, close its window,
+  and start the address run again.
+* **Two things to try only if the pace is the problem**, not done yet: a shorter pause between listings
+  (:data:`PAUSE_SECONDS`; it also makes the session look less like a person), and adding from a results card, if the
+  card has its own *Add to My Library*, instead of opening each listing.
 """
 
 import argparse
