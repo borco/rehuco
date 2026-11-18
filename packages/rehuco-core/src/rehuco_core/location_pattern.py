@@ -39,7 +39,9 @@ MALFORMED_PATTERN_PROBLEM: Final = (
     "This does not parse as a format string: a { or } is unbalanced, or a placeholder carries a "
     "format spec or conversion, which a name never needs."
 )
-UNKNOWN_PLACEHOLDER_PROBLEM: Final = "This names a placeholder this type's patterns do not accept."
+UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE: Final = "{{{name}}} is not a placeholder this type's patterns accept."
+"""The problem for a placeholder outside the type's set, ``{name}`` the first such placeholder as written -- named, so
+a slip like ``{year]}`` is seen for what it is."""
 EMPTY_GROUP_PROBLEM: Final = "A {{ ... }} group must name at least one placeholder, or it could never be left out."
 STRAY_GROUP_MARKER_PROBLEM: Final = (
     "A {{ is not closed, a }} is not opened, or one {{ ... }} group sits inside another."
@@ -167,8 +169,9 @@ class LocationPattern:
         if any(spec or conversion for _, _, spec, conversion in fields):
             return MALFORMED_PATTERN_PROBLEM
         names = tuple(name for _, name, _, _ in fields if name is not None)
-        if any(name not in self.__known_placeholders for name in names):
-            return UNKNOWN_PLACEHOLDER_PROBLEM
+        unknown = next((name for name in names if name not in self.__known_placeholders), None)
+        if unknown is not None:
+            return UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name=unknown)
         if optional and not names:
             return EMPTY_GROUP_PROBLEM
         self.__placeholders.append(names)

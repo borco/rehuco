@@ -20,7 +20,7 @@ from rehuco_agent.settings.ui.location_template_patterns_model import PATTERN_CO
 from rehuco_agent.settings.ui.location_templates_page import LocationTemplatesPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
-from rehuco_core import UNKNOWN_PLACEHOLDER_PROBLEM, ReplacementRule
+from rehuco_core import UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE, ReplacementRule
 
 # region Sample settings backend
 # Mirrors test_screenshot_patterns_settings.py's FakeSettings -- kept as a separate copy rather than a
@@ -252,7 +252,7 @@ def test_a_tutorial_page_hides_the_count_sample_row_and_refuses_the_placeholder(
     model = model_of(page)
     model.setData(model.index(0, PATTERN_COLUMN), "{title} ({count})")
 
-    assert model.invalid_reason(0) == UNKNOWN_PLACEHOLDER_PROBLEM
+    assert model.invalid_reason(0) == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name="count")
 
 
 def test_a_reference_images_page_shows_the_count_sample_row_and_accepts_the_placeholder(qtbot: QtBot) -> None:
@@ -736,7 +736,7 @@ def test_the_try_it_preview_leaves_out_a_pattern_naming_an_unknown_placeholder(
     editor_of(page).values = ("{title}", "{title} ({series})")
 
     assert try_it_text(page) == "Sample Title"
-    assert model_of(page).invalid_reason(1) == UNKNOWN_PLACEHOLDER_PROBLEM
+    assert model_of(page).invalid_reason(1) == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name="series")
 
 
 def test_the_try_it_preview_falls_back_to_the_shipped_set_when_no_row_is_valid(page: LocationTemplatesPage) -> None:
