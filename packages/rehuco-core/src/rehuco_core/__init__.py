@@ -178,6 +178,9 @@ from .move_record_job import (
 from .natural_sort import natural_path_sort_key, natural_sort_key
 from .path_keys import path_key
 from .plugins import (
+    ASSET_FIELD_NAMES,
+    ASSET_KINDS,
+    ASSET_PLUGIN,
     BUILTIN_PLUGINS,
     COLLECTION_PLUGIN,
     CORE_FIELD_NAMES,
@@ -607,6 +610,9 @@ __all__ = [
     "ANY_TYPE",
     "APP_FOLDER_NAME",
     "ARCHIVE_EXTENSIONS",
+    "ASSET_FIELD_NAMES",
+    "ASSET_KINDS",
+    "ASSET_PLUGIN",
     "AUDIO_EXTENSIONS",
     "AbandonableTaskJob",
     "AppFolders",

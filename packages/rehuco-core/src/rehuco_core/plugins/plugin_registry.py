@@ -83,6 +83,49 @@ at all, since the value that leaked as `720` in tc4 now has nowhere to land.
 There is no ``original_count`` third: the durations split three ways because a tutorial shrinks as it is
 watched, while a reference pack does not lose images ([[field-schema#duration-size]])."""
 
+ASSET_FIELD_NAMES: Final = (
+    "kind",
+    "license",
+    "license_url",
+    "formats",
+    "compatibility",
+    "source_updated",
+    "advertised_version",
+    "current_version",
+    "advertised_size",
+    "triangles",
+    "texture_size",
+    "acquired",
+)
+"""The **Asset-only** tier ([[assets#block]]): what an item bought from a store is, the licence it came under, the
+formats and versions it works with, and what the store says of it. Every one is optional, and a missing one means
+*not known* -- never a zero.
+
+The core's fields are reused rather than repeated: ``released`` is the store's publication date, ``description``,
+``authors`` and the tag lists are the core's, and the measured size pair is too. A store's free-text labels (an age
+rating, the platforms an item is limited to, what it says about AI) and what a model carries (a rig, levels of
+detail) arrive as tags, not here, so they merge as tags do ([[assets#block]])."""
+
+ASSET_KINDS: Final = (
+    "model",
+    "pack",
+    "character",
+    "animation",
+    "material",
+    "texture",
+    "decal",
+    "brush",
+    "hdri",
+    "audio",
+    "vfx",
+    "plugin",
+    "tool",
+    "template",
+    "unknown",
+)
+"""The closed list an asset's ``kind`` is one of ([[assets#kind]]), in the order an editor offers them. ``unknown`` is a
+real value -- what a scan writes when it cannot classify an item -- not the absent one."""
+
 CORE_PLUGIN: Final = PluginSpec((CORE_BLOCK_KEY,), field_names=CORE_FIELD_NAMES)
 """The common core's own identity ([[data-model#rehu-format]]) -- descriptive only, **never registered**.
 
@@ -125,7 +168,16 @@ that does carry a ``collection:`` block round-trips as a block rather than as a 
 color: Teal 600. Which fields the type eventually gains is deferred until a real collection is in hand
 ([[field-schema#deferred-items]]); an empty declaration is the honest statement of that, not a stub."""
 
-BUILTIN_PLUGINS: Final = (TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN, COLLECTION_PLUGIN)
+ASSET_PLUGIN: Final = PluginSpec(
+    ("asset", "Asset"),
+    field_names=("rating", "online", "favorite", "collections", *ASSET_FIELD_NAMES),
+)
+"""The asset type ([[assets#block]]): something acquired from a store to be used in other work. Takes ``rating``,
+``favorite``, ``online`` and ``collections`` (a store bundle is a collection) from the shared resource fields and
+leaves ``complete``, ``keep`` and ``learning_paths`` out -- they describe content being studied, and an asset is
+not. Declares no badge color yet, so its badge takes the theme's selection colors ([[plugins#badge-colors]])."""
+
+BUILTIN_PLUGINS: Final = (TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN, COLLECTION_PLUGIN, ASSET_PLUGIN)
 """The declarations this build ships. Deliberately **excludes** :data:`~rehuco_core.CORE_PLUGIN`: the core
 block is protected by :data:`~rehuco_core.RESERVED_KEYS` unconditionally, not by occupying a registry slot
 -- registering it would fail the very check that protects it.

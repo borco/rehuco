@@ -47,7 +47,7 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 
 | `.tc` key | tc4 label | rehuco field | type | group | shape | disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `type` | — | `core.type` | enum | common | tutorial / reference_images / collection | keep — selects resource type / plugin; tc4's capitalized spellings are aliases and normalize on write ([[plugins#core-vs-plugin]]) |
+| `type` | — | `core.type` | enum | common | tutorial / reference_images / collection / asset | keep — selects resource type / plugin; tc4's capitalized spellings are aliases and normalize on write ([[plugins#core-vs-plugin]]) |
 | `title` | Title | `sources[].title` | text | common | record + primary¹ | keep — see [[field-schema#sources]] |
 | `publisher` | Publisher | `sources[].publisher` | text | common | record¹ | keep — see [[field-schema#sources]] |
 | `url` | Homepage | `sources[].url` | URL | common | record¹ | keep — see [[field-schema#sources]] |
@@ -62,14 +62,14 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 | `original_size` | Original size | `original_size` | size (bytes) | common | scalar | keep — see [[field-schema#duration-size]]; empty for Collection |
 | `current_size` | Current size | `current_size` | size (bytes) | common | scalar | keep — see [[field-schema#duration-size]]; empty for Collection |
 | `complete` | Complete | `complete` | bool | Tutorial, RefImages | scalar | keep — "all files present"; default `true` |
-| `online` | Online | `online` | bool | Tutorial, RefImages | scalar | keep — "source still available online" ([[field-schema#online-flag]]) |
-| `rating` | Rating | `rating` | rating (int) | Tutorial, RefImages | scalar | keep — **per-user**; may be negative |
+| `online` | Online | `online` | bool | Tutorial, RefImages, Asset | scalar | keep — "source still available online" ([[field-schema#online-flag]]) |
+| `rating` | Rating | `rating` | rating (int) | Tutorial, RefImages, Asset | scalar | keep — **per-user**; may be negative |
 | `viewed` | Viewed | `viewed` | bool | Tutorial | scalar | keep — **per-user**; Tutorial-only since #195 ([[field-schema#boolean-flags]]) |
 | `todo` | To Do | `todo` | bool | Tutorial | scalar | keep — **per-user**; Tutorial-only since #195 ([[field-schema#boolean-flags]]) |
 | `keep` | Keep | `keep` | bool | Tutorial, RefImages | scalar | keep — **per-user** |
-| — | *(new)* | `favorite` | bool | Tutorial, RefImages | scalar | **new** — **per-user**; separate UI ([[field-schema#boolean-flags]]) |
-| `collection` | Collection | `collections[].title` | text | Tutorial, RefImages | record³ | keep — see [[field-schema#sources]] |
-| `collection_index` | Index | `collections[].index` | int | Tutorial, RefImages | record³ | keep — see [[field-schema#sources]] |
+| — | *(new)* | `favorite` | bool | Tutorial, RefImages, Asset | scalar | **new** — **per-user**; separate UI ([[field-schema#boolean-flags]]) |
+| `collection` | Collection | `collections[].title` | text | Tutorial, RefImages, Asset | record³ | keep — see [[field-schema#sources]] |
+| `collection_index` | Index | `collections[].index` | int | Tutorial, RefImages, Asset | record³ | keep — see [[field-schema#sources]] |
 | `learning_paths` | Learning Paths | `learning_paths[].title` (+ `.index`) | record | Tutorial, RefImages | multi, user-defined⁴ | keep — see [[field-schema#sources]] |
 | `duration` | Duration | `original_duration` (+ `current_duration`, `advertised_duration`) | duration (seconds) | Tutorial | scalar | keep, split — see [[field-schema#duration-size]] |
 | `level` | Level | `level` | multi-choice | Tutorial | multi | keep — beginner / intermediate / advanced / any |

@@ -52,13 +52,16 @@ from .plugins import (
 from .record_versions import metadata_text
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
 from .rehu_locks import (
+    OPTIONAL_ASSET_SCALAR_KEYS,
     OPTIONAL_INT_BLOCK_KEYS,
     OPTIONAL_INT_CORE_KEYS,
     OPTIONAL_INT_USER_KEYS,
     OPTIONAL_STR_BLOCK_KEYS,
     OPTIONAL_STR_CORE_KEYS,
+    asset_kind,
     coerced_str,
     coerced_str_list,
+    coerced_str_map,
     invalid_field_reasons,
     is_author_entry,
     newer_block_format_reason,
@@ -921,7 +924,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             reasons.append(block_reason)
         reasons.extend(
             invalid_field_reasons(
-                self.core, self.active_block, self.__active_user_map(self.__username), self.primary_source
+                self.core,
+                self.active_block,
+                self.__active_user_map(self.__username),
+                self.primary_source,
+                self.__plugins.field_names(self.active_block_key),
             )
         )
         return reasons
@@ -1924,6 +1931,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         block = self.__stored_active_block()
         if isinstance(block, dict):
             self.__drop_null_keys(block, (*OPTIONAL_INT_BLOCK_KEYS, *OPTIONAL_STR_BLOCK_KEYS))
+            # an asset scalar only where the type declares it: another type's ``kind`` is not this build's to drop
+            declared = self.__plugins.field_names(self.active_block_key)
+            self.__drop_null_keys(block, [key for key in OPTIONAL_ASSET_SCALAR_KEYS if key in declared])
             users = block.get(USERS_KEY)
             user = users.get(self.__username) if isinstance(users, dict) else None
             if isinstance(user, dict):
@@ -2130,6 +2140,119 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     @advertised_count.setter
     def advertised_count(self, value: str | None) -> None:
         self.__set_active_or_remove("advertised_count", value)
+
+    @property
+    def kind(self) -> str | None:
+        """What an asset is, one of :data:`~rehuco_core.ASSET_KINDS` ([[assets#kind]]); a shared field on the active
+        plugin block. ``None`` when absent or JSON ``null`` -- not known, which is not the stored ``unknown`` a scan
+        writes; a present value outside the list reads ``None`` and locks."""
+        return asset_kind(self.active_field("kind"))
+
+    @kind.setter
+    def kind(self, value: str | None) -> None:
+        self.__set_active_or_remove("kind", value)
+
+    @property
+    def license(self) -> str | None:
+        """An asset's licence short id, such as ``fab-standard`` ([[assets#licences]]); a shared field on the active
+        plugin block. ``None`` when absent or JSON ``null``; a present non-string reads ``None`` and locks."""
+        return optional_str(self.active_field("license"))
+
+    @license.setter
+    def license(self, value: str | None) -> None:
+        self.__set_active_or_remove("license", value)
+
+    @property
+    def formats(self) -> list[str]:
+        """The file formats an asset is delivered in, such as ``fbx`` or ``blend`` ([[assets#block]]); a shared field
+        on the active plugin block. Empty when absent, with :attr:`advertised_tags`' skip-and-lock reading."""
+        return coerced_str_list(self.active_field("formats"))
+
+    @formats.setter
+    def formats(self, value: list[str]) -> None:
+        self.set_active_field("formats", list(value))
+
+    @property
+    def compatibility(self) -> dict[str, str]:
+        """What an asset works with, and in which versions, such as ``{"blender": ">=4,<5"}`` ([[assets#block]]); a
+        shared field on the active plugin block. Empty when absent; a value that is not a string is skipped and
+        locks."""
+        return coerced_str_map(self.active_field("compatibility"))
+
+    @compatibility.setter
+    def compatibility(self, value: Mapping[str, str]) -> None:
+        self.set_active_field("compatibility", dict(value))
+
+    @property
+    def source_updated(self) -> str | None:
+        """The partial-precision date the store last changed an asset ([[assets#block]]) -- not :attr:`updated`,
+        which is the record's own. ``None`` when absent or JSON ``null``; a present non-string reads ``None`` and
+        locks."""
+        return optional_str(self.active_field("source_updated"))
+
+    @source_updated.setter
+    def source_updated(self, value: str | None) -> None:
+        self.__set_active_or_remove("source_updated", value)
+
+    @property
+    def advertised_version(self) -> str | None:
+        """The version the store offers ([[assets#block]]); ``None`` when absent or JSON ``null``; a present
+        non-string reads ``None`` and locks."""
+        return optional_str(self.active_field("advertised_version"))
+
+    @advertised_version.setter
+    def advertised_version(self, value: str | None) -> None:
+        self.__set_active_or_remove("advertised_version", value)
+
+    @property
+    def current_version(self) -> str | None:
+        """The version of the local files ([[assets#block]]); ``None`` when absent or JSON ``null``; a present
+        non-string reads ``None`` and locks."""
+        return optional_str(self.active_field("current_version"))
+
+    @current_version.setter
+    def current_version(self, value: str | None) -> None:
+        self.__set_active_or_remove("current_version", value)
+
+    @property
+    def advertised_size(self) -> int | None:
+        """The download size, in bytes, the store states ([[assets#block]]); ``None`` when absent or JSON ``null`` --
+        absent is not ``0``; a present non-int reads ``None`` and locks."""
+        return optional_int(self.active_field("advertised_size"))
+
+    @advertised_size.setter
+    def advertised_size(self, value: int | None) -> None:
+        self.__set_active_or_remove("advertised_size", value)
+
+    @property
+    def triangles(self) -> int | None:
+        """The triangle count of an asset's heaviest mesh at full detail ([[assets#block]]), measured, never scraped;
+        ``None`` when absent or JSON ``null``; a present non-int reads ``None`` and locks."""
+        return optional_int(self.active_field("triangles"))
+
+    @triangles.setter
+    def triangles(self, value: int | None) -> None:
+        self.__set_active_or_remove("triangles", value)
+
+    @property
+    def texture_size(self) -> int | None:
+        """The longest side, in pixels, of an asset's largest texture ([[assets#block]]), measured, never scraped;
+        ``None`` when absent or JSON ``null``; a present non-int reads ``None`` and locks."""
+        return optional_int(self.active_field("texture_size"))
+
+    @texture_size.setter
+    def texture_size(self, value: int | None) -> None:
+        self.__set_active_or_remove("texture_size", value)
+
+    @property
+    def acquired(self) -> str | None:
+        """The partial-precision date the account got an asset, where the store says ([[assets#block]]); ``None``
+        when absent or JSON ``null``; a present non-string reads ``None`` and locks."""
+        return optional_str(self.active_field("acquired"))
+
+    @acquired.setter
+    def acquired(self, value: str | None) -> None:
+        self.__set_active_or_remove("acquired", value)
 
     @property
     def rating(self) -> int | None:

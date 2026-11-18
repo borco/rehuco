@@ -18,11 +18,12 @@ value and the validity verdict are the same computation, so one home keeps the g
 document's null-normalization walk.
 """
 
+from collections.abc import Collection
 from typing import Any, Final
 
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import current_block_version
-from .plugins import PluginRegistry
+from .plugins import ASSET_KINDS, PluginRegistry
 
 OPTIONAL_INT_CORE_KEYS: Final = ("original_size", "current_size")
 """Common-core optional integer scalars ([[field-schema#deferred-items]]): absent (or JSON ``null``)
@@ -48,6 +49,41 @@ OPTIONAL_STR_BLOCK_KEYS: Final = ("advertised_count",)
 ``advertised_count`` is a **string** where its measured counterpart ``current_count`` is an integer: the
 pack's own claim may be open-ended (``500+``), and a listing saying "500+ images" claims less than one
 saying "500", so storing it as a number would silently strengthen it ([[field-schema#field-types]])."""
+
+OPTIONAL_INT_ASSET_KEYS: Final = ("advertised_size", "triangles", "texture_size")
+"""An asset block's optional integer scalars ([[assets#block]]), same absent/malformed contract as
+:data:`OPTIONAL_INT_CORE_KEYS`. Like every asset roster here, checked only on a block whose type declares the key
+(:func:`invalid_asset_reasons`): the names are common words, and another type's ``kind`` or ``formats`` is not this
+rule's to judge."""
+
+OPTIONAL_TEXT_ASSET_KEYS: Final = ("license", "license_url", "advertised_version", "current_version")
+"""An asset block's optional free-text scalars ([[assets#block]]): absent (or JSON ``null``) reads as ``None``; a
+present non-string reads as ``None`` and locks."""
+
+OPTIONAL_DATE_ASSET_KEYS: Final = ("source_updated", "acquired")
+"""An asset block's optional partial-precision dates ([[assets#block]]): when the store last changed the item, and
+when the account got it. Strings, as ``released`` is, with the same absent/malformed contract."""
+
+ASSET_KIND_KEY: Final = "kind"
+"""The asset block's one closed-list field ([[assets#kind]]): absent (or JSON ``null``) reads as ``None``; a present
+value outside :data:`~rehuco_core.ASSET_KINDS` reads as ``None`` **and** locks."""
+
+OPTIONAL_ASSET_SCALAR_KEYS: Final = (
+    *OPTIONAL_INT_ASSET_KEYS,
+    *OPTIONAL_TEXT_ASSET_KEYS,
+    *OPTIONAL_DATE_ASSET_KEYS,
+    ASSET_KIND_KEY,
+)
+"""Every asset scalar a JSON ``null`` stands for *absent* under: the roster the document's null-normalization walks,
+on a block whose type declares the key."""
+
+STR_LIST_ASSET_KEYS: Final = ("formats",)
+"""An asset block's plain-string lists ([[assets#block]]), read and locked by the rule :data:`STR_LIST_CORE_KEYS`
+follows."""
+
+STR_MAP_ASSET_KEYS: Final = ("compatibility",)
+"""An asset block's string-to-string maps ([[assets#block]]): absent reads as ``{}``; a non-object, or an object
+with any value that is not a string, reads as its string entries alone and locks."""
 
 REQUIRED_STR_CORE_KEYS: Final = ("id", "description", "created", "updated")
 """Common-core **required** string fields ([[field-schema#field-types]]): absent reads as ``""``; a
@@ -133,6 +169,24 @@ def coerced_str_list(value: Any) -> list[str]:
     return [entry for entry in value if isinstance(entry, str)] if isinstance(value, list) else []
 
 
+def coerced_str_map(value: Any) -> dict[str, str]:
+    """One string-to-string map's read value ([[assets#block]]): the stored object's entries whose value is a string,
+    or ``{}`` when the key is absent or holds a non-object.
+
+    The map sibling of :func:`coerced_str_list`, and the same rule: an entry it cannot read is skipped rather than
+    stringified, and skipping locks the document, so the original stays recoverable by hand."""
+    if not isinstance(value, dict):
+        return {}
+    return {key: entry for key, entry in value.items() if isinstance(entry, str)}
+
+
+def asset_kind(value: Any) -> str | None:
+    """An asset ``kind``'s read value ([[assets#kind]]): the stored string when it is one of
+    :data:`~rehuco_core.ASSET_KINDS`, else ``None`` -- absent, JSON ``null`` and a value outside the list alike; only
+    the last also locks (:func:`invalid_asset_reasons`)."""
+    return value if isinstance(value, str) and value in ASSET_KINDS else None
+
+
 def is_author_record(entry: Any) -> bool:
     """Whether ``entry`` is a valid author record: a dict with a string ``name`` ([[field-schema#authors]])."""
     return isinstance(entry, dict) and isinstance(entry.get("name"), str)
@@ -186,6 +240,7 @@ def invalid_field_reasons(
     active_block: dict[str, Any],
     active_user_map: dict[str, Any],
     primary_source: dict[str, Any] | None,
+    declared: Collection[str] = (),
 ) -> list[LockReason]:
     """The :attr:`~LockReasonKind.INVALID_FIELD` reasons for owned fields present-but-uncoercible
     ([[data-model#write-integrity]]).
@@ -215,6 +270,8 @@ def invalid_field_reasons(
     :param active_user_map: this document's own per-user submap, as stored.
     :param primary_source: the resolved primary source ([[field-schema#sources]]), whose strings the
         title/publisher/url getters read; ``None`` when the document has no source at all.
+    :param declared: the field names the active type declares, which gate the asset rules
+        (:func:`invalid_asset_reasons`).
     :returns: the invalid-field reasons, in a stable order.
     """
     reasons: list[LockReason] = []
@@ -229,6 +286,7 @@ def invalid_field_reasons(
         reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_SOURCES_MESSAGE))
     reasons.extend(invalid_string_reasons(core, primary_source))
     reasons.extend(invalid_scalar_reasons(core, active_block, active_user_map))
+    reasons.extend(invalid_asset_reasons(active_block, declared))
     return reasons
 
 
@@ -309,3 +367,50 @@ def invalid_scalar_reasons(
 def invalid_scalar_message(key: str, expected: str) -> str:
     """The :attr:`~LockReasonKind.INVALID_FIELD` message for a present-but-malformed optional scalar."""
     return f"{key}: present but not {expected} ([[field-schema#deferred-items]])."
+
+
+def invalid_asset_reasons(active_block: dict[str, Any], declared: Collection[str]) -> list[LockReason]:
+    """One :attr:`~LockReasonKind.INVALID_FIELD` per asset field of the active block that is present but not what
+    its getter reads ([[assets#block]]).
+
+    The same rule as :func:`invalid_scalar_reasons` and :func:`invalid_string_reasons`: a value the getter must read
+    past locks, so an edit cannot save the coerced ``None`` or the shortened list or map over the
+    malformed-but-recoverable original ([[data-model#write-integrity]]). A scalar of JSON ``null`` is already
+    normalized to absent; a ``null`` list or map locks, as a ``null`` tag list does.
+
+    **Only a key the active type declares is checked.** ``kind``, ``license`` and ``formats`` are common words, and a
+    block of another type, or of one no plugin here claims, may carry them with a meaning of its own: nothing reads
+    them through these getters there, so nothing could save a coerced value over them.
+
+    :param active_block: the active plugin block's fields.
+    :param declared: the field names the active type declares.
+    :returns: the reasons: the integers, the text, the dates, ``kind``, the lists, then the maps, in key order.
+    """
+    reasons: list[LockReason] = []
+
+    def refuse(key: str, expected: str) -> None:
+        """Add the reason naming ``key`` and what its value should have been."""
+        reasons.append(LockReason(LockReasonKind.INVALID_FIELD, invalid_asset_message(key, expected)))
+
+    present = {key: value for key, value in active_block.items() if key in declared and value is not None}
+    for key in OPTIONAL_INT_ASSET_KEYS:
+        if key in present and optional_int(present[key]) is None:
+            refuse(key, "a whole number")
+    for keys, expected in ((OPTIONAL_TEXT_ASSET_KEYS, "a string"), (OPTIONAL_DATE_ASSET_KEYS, "a date string")):
+        for key in keys:
+            if key in present and not isinstance(present[key], str):
+                refuse(key, expected)
+    if ASSET_KIND_KEY in present and asset_kind(present[ASSET_KIND_KEY]) is None:
+        refuse(ASSET_KIND_KEY, "one of the asset kinds")
+    for key in STR_LIST_ASSET_KEYS:
+        if key in active_block and key in declared and coerced_str_list(active_block[key]) != active_block[key]:
+            refuse(key, "a list of strings")
+    for key in STR_MAP_ASSET_KEYS:
+        if key in active_block and key in declared and coerced_str_map(active_block[key]) != active_block[key]:
+            refuse(key, "a map of strings")
+    return reasons
+
+
+def invalid_asset_message(key: str, expected: str) -> str:
+    """The :attr:`~LockReasonKind.INVALID_FIELD` message for a present-but-malformed asset block value."""
+    return f"{key}: present but not {expected} ([[assets#block]])."

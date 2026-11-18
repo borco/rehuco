@@ -71,8 +71,10 @@ recording where you stopped in a video never rewrites the file everyone edits. A
 these files existed still carries its users' state inside; its next save moves it out.
 
 **Resource types are plugins.** A plugin declares an ordered list of keys: the first is its real name,
-the rest are old spellings accepted on read and rewritten on save. Three are built in — `tutorial`,
-`reference_images`, `collection` — each declaring a badge color for its type chip. A `type` naming a
+the rest are old spellings accepted on read and rewritten on save. Four are built in — `tutorial`,
+`reference_images`, `collection` and `asset`. The first three declare a badge color for their type chip; `asset`
+declares none yet, and the editor doesn't yet show its own fields, though a file's are read and checked like any
+other type's. A `type` naming a
 plugin that isn't installed still opens: the common fields render normally and the unknown block is
 shown as-is, because a missing plugin must never cost you access to a file.
 
