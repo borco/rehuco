@@ -1,0 +1,211 @@
+# §19. Assets: Store Libraries as Records
+
+[[[assets]]]
+
+## Overview
+
+[[[assets#overview]]]
+
+- [#673: docs: the asset type, the library wizard and prefix buckets](https://github.com/borco/rehuco/issues/673)
+- [#674: feat(core): declare the asset type and its block](https://github.com/borco/rehuco/issues/674)
+- [#675: feat(core): a source's site_id, and finding a record by site and id](https://github.com/borco/rehuco/issues/675)
+- [#676: feat(core): asset columns and a formats link table in the cache](https://github.com/borco/rehuco/issues/676)
+- [#677: feat(core): the .rehuterms licence sidecar](https://github.com/borco/rehuco/issues/677)
+- [#678: feat(agent): asset fields in the editor, the browser and the settings](https://github.com/borco/rehuco/issues/678)
+- [#679: feat(agent): Open in Web Browser on the browser's selection](https://github.com/borco/rehuco/issues/679)
+- [#688: feat(agent): the licence subdock, Refresh Licence, and the sidecar's path in Copy as JSON](https://github.com/borco/rehuco/issues/688)
+
+**None of this is built.** It is the design for a fourth resource type, `asset`: something acquired from a store to be
+used in other work, such as a 3D model, a texture set, an animation pack, an audio pack, a Blender add-on or an Unreal
+plugin. It answers the *3D objects as a resource category* question [[appendices.open-questions#still-open]] left
+open.
+
+- **What it is for.** A store library of a few thousand items, most of them never downloaded, that has to answer three
+  questions fast: *what do I own*, *can I use it in this project* (format, engine version, licence) and *where is it*.
+- **A record is mostly metadata.** One `.rehu` and a few screenshots per item; the files themselves arrive later, for
+  the few items actually used ([[assets#online-only]]).
+- **Records are created by a scan of the store account**, not by hand: the library wizard
+  ([[acquisition-tooling#library-wizard]]) reads what the account owns and writes one record per item.
+- **A library is thousands of small files in one root**, so such a root spreads them over prefix buckets
+  ([[mounts-and-storage#buckets]]).
+- **Daz3D is the same type with more on it** ([[assets#install]]), not a type beside it.
+
+## §19.1 The `asset` block
+
+[[[assets#block]]]
+
+**Every field is optional, and a missing field means *not known*.** A plugin has no triangle count and a scan of a
+store page measures nothing; neither is an error, and neither writes a zero. The block follows the rules every plugin
+block does ([[plugins#plugin-blocks]]).
+
+| Key | Value type | Filled by | Meaning |
+| --- | --- | --- | --- |
+| `kind` | one of [[assets#kind]] | scan, or by hand | what the item is; `unknown` until something says |
+| `license` | string | scan | a licence's short id ([[assets#licences]]): `fab-standard`, `cc-by-4.0`, `fab-ue-only` |
+| `license_url` | string | scan | where the store states the terms for this item |
+| `formats` | string list | scan | file formats delivered: `fbx`, `glb`, `blend`, `uasset` |
+| `compatibility` | map, string to string | scan | what it works with and in which versions: `{"blender": ">=4,<5", "unreal": "5.1-5.6"}` |
+| `platform` | string list | scan | operating systems it is limited to; empty means any |
+| `source_updated` | partial-precision date | scan | when the store last changed the item |
+| `advertised_version` | string | scan | the version the store offers |
+| `current_version` | string | by hand, or an install manager | the version of the local files |
+| `advertised_size` | size (bytes) | scan | the download size the store states |
+| `ai_generated` | boolean | scan | the store says the item was generated with AI |
+| `ai_usage_allowed` | boolean | scan | the store says the item may be used with AI |
+| `age_rating` | string | scan | the store's own label |
+| `triangles` | integer | measured | triangle count of the heaviest mesh at full detail |
+| `rigged` | boolean | measured | the item carries a skeleton |
+| `lods` | boolean | measured | the item carries levels of detail |
+| `texture_size` | integer | measured | longest side, in pixels, of its largest texture |
+| `acquired` | partial-precision date | scan | when the account got it, where the store says |
+| `requires`, `provides` | list of `{name, url}` | scan, or by hand | what the item needs, and what it supplies to others |
+
+- **Reused from the core, not repeated in the table:** `description`, `released` (the store's publication date),
+  `authors`, the tag lists, the screenshots, and the measured size pair ([[field-schema#duration-size]]).
+- **Taken from the set tutorials and reference images share:** `rating`, `favorite`, `online` ([[assets#online-only]])
+  and `collections` (a store bundle is a collection). `complete`, `keep` and `learning_paths` are left out: they
+  describe content being studied, and an asset is not.
+- **`source_updated` is not `updated`.** The core's `updated` is when the *record* was last edited
+  ([[field-schema#resource-types]]); a store changing its item is a fact about the item.
+- **`advertised_size` exists here and nowhere else.** [[field-schema#duration-size]] has none because no site
+  publishes a tutorial's size. Stores do publish an asset's, and for a record with no files it is the only size there
+  is: it is what a download is planned with.
+- **The version pair is the size pair's shape:** what the store offers beside what is on disk. An item whose two
+  versions differ has an update waiting.
+- **The measured fields are filled after a download**, by hand until something measures them. No store publishes them
+  reliably, so the scan never guesses. `triangles` is the heaviest single mesh because a pack's total says nothing
+  about what one object costs to draw.
+- **`acquired` is never asked for.** Where the store shows the date the scan records it; where it does not, the field
+  stays empty. It sorts the library, and beside the date a licence was read ([[assets#licences]]) it says how far the
+  saved terms are from the day the item was got.
+- **`formats` is a field, not tags**, because it is the filter used most and the tag lists are the store's own
+  vocabulary. The cache gives it a link table of its own, as tags have.
+- **What the store calls its categories goes into `advertised_tags` untouched**, as every scraped tag does
+  ([[acquisition-tooling#scraper-protocols]]).
+
+### §19.1.1 `kind`
+
+[[[assets#kind]]]
+
+One value from a closed list: `model`, `pack`, `character`, `animation`, `material`, `texture`, `hdri`, `audio`,
+`vfx`, `plugin`, `tool`, `template`, `unknown`.
+
+- A `pack` is many models sold as one item: an environment, a kit, a prop set.
+- A MetaHuman is a `character`. A Blender add-on or an Unreal code plugin is a `plugin`; a standalone program is a
+  `tool`; a sample project is a `template`.
+- **`unknown` is a real value, not a missing one.** A scan that cannot classify an item writes `unknown`, so the items
+  nobody has sorted are one filter away. It is the one field of the block that is never left empty.
+- A site's scan maps the store's own listing type to a kind where the store states one, and writes `unknown`
+  otherwise. It does not infer a kind from a title.
+
+### §19.1.2 A record keeps its licence text
+
+[[[assets#licences]]]
+
+The terms are what decides whether an item can ship, and they are the store's to change or to take down. So **a
+record keeps the text itself, in a sidecar beside it**: `<stem>.rehuterms`, one per record, never shared between
+records. `license` in the block stays the short id a library is filtered by, and `license_url` where the store states
+the terms.
+
+- **The file is a YAML header and the terms as Markdown.** The header holds `title`, `url` (where the text was read)
+  and `read`, the date it was read: a store's terms change, and a saved text is only as good as its date.
+- **It belongs to the record as its screenshots and its `.rehuser` do.** A rename, a move, a delete and the checksum
+  manifest carry it, and a record moved by hand takes it along with the rest of its files. A root that is offline
+  takes nothing from another root's records, and a store that has gone leaves every text where it was.
+- **The scan writes it with a new record** ([[acquisition-tooling#library-scan-job]]), reading each distinct
+  `license_url` once per run. The text is therefore the terms on the day of the scan, which for an item got years
+  earlier is not the day it was got; `acquired` beside `read` shows the gap, and nothing recovers the older text.
+- **A file with no `url` is terms written for that item alone.** It is typed in, and nothing ever refreshes it.
+- **It is read and edited in a subdock of its own**, as the description is, since the text can be long.
+- **Nothing reads a licence from the net when a record is opened.** A saved text changes only through *Refresh
+  Licence*, on the browser dock's selection: each distinct URL among the selected records is read once and compared
+  with what each record holds.
+- **A refresh never replaces a text unasked.** A record with none gets one. Where the terms differ, the user is shown
+  the licence, both dates and how many records hold the older text, and it is replaced only on a yes. The text an item
+  was got under may be the one that still applies to it, so it is not the tool's to overwrite.
+- **A restriction is a different licence, never a note.** Content a store limits to one engine gets an id of its own
+  (`fab-ue-only`) so the limit is a filter, not a sentence in a description.
+- ***Copy as JSON* names the file.** Each asset that has one carries its sidecar's path, so whatever reads the
+  selection can read the terms.
+
+Why the text is kept, and when a licence binds the buyer, is [[appendices.assets#acquisition]].
+
+A few thousand copies of two or three texts is the price, and it is paid on purpose: one shared copy per root, a
+cache, or a licence record of its own each leave some record without its terms the day a root is offline, a file is
+moved by hand, or a store is gone.
+
+### §19.1.3 A source carries the store's id
+
+[[[assets#site-id]]]
+
+`sources[]` ([[field-schema#sources]]) gains one optional key, **`site_id`**: the store's own identifier for the item,
+a listing id or a SKU. It is a core field because any type's source can have one, though only the library scan needs
+it.
+
+- **It is the match key for a rescan.** A store renames items and serves one item under several URLs; the id is the
+  one thing that stays.
+- **The cache indexes `(site, site_id)`**, where the site is the scraper's `site_name`
+  ([[acquisition-tooling#scraper-registry]]), so finding the record for a listing is one lookup and never a walk.
+- **An item owned on two stores is one record with two sources**, each with its own id, as a tutorial sold on two
+  platforms already is.
+
+## §19.2 A record without its files
+
+[[[assets#online-only]]]
+
+**Most asset records hold no content, and that needs no field.** The measured `current_size` already says it: empty or
+zero means nothing is local, a value means the files are there. This is the reading [[field-schema#online-flag]]
+already gives a tutorial kept as a `.rehu`, its screenshots and a URL, and it closes the *online-only and mixed
+local/online resources* question for this type.
+
+- **`online`** keeps its meaning: the item can still be had from its source. A rescan that no longer finds an item in
+  the account sets it false and changes nothing else; **a scan never deletes a record**.
+- **Downloading is not this type's business.** Files reach a record's place by whatever means the store offers; the
+  next size measurement finds them.
+
+## §19.3 Using an asset, and installing one
+
+[[[assets#install]]]
+
+**There is no install action for assets in general**, because there is no one thing to do: a store's launcher adds its
+packs to a project, a Blender add-on installs through Blender, and a loose model goes through whatever import pipeline
+the project has. Unlike Daz3D ([[plugins#daz3d-plugin]]), where installing is registering with one application, none
+of that is rehuco's to drive.
+
+- **What the browser offers instead is *Open in Web Browser*** on the selected records, beside *Copy as Path* and
+  *Copy as JSON*: each record's primary source URL, opened in the user's everyday browser. From there the store's own
+  page does the rest.
+- **A site may bring its own install manager later.** Daz3D is the first, and the per-user, per-machine `installed`
+  field [[data-model]] reserves for it belongs to that manager's block, as does `current_version` when a manager sets
+  it. A store that turns out to be worth the same treatment gets the same shape.
+- **Daz3D is therefore `asset` plus a manager**: its `sku` is a `site_id`, and its `requires`/`provides` are the
+  fields above. It is not a second type with a second set of columns.
+
+## §19.4 What adding the type touches
+
+[[[assets#new-type-touches]]]
+
+The first type added since the original three, so the places that enumerate types are listed once, here, for whoever
+adds the next.
+
+- **`rehuco-core`:** the field tuples and `BUILTIN_PLUGINS` in `plugins/plugin_registry.py`, and the exports beside
+  it; `BLOCK_TARGETS` and a migrations subpackage for the block; the per-key value rules in `rehu_locks.py`; the typed
+  getters on `rehu_document.py`; `TYPE_FIELD_COLUMNS`, the column DDL and a schema step in `rehudb.py` and
+  `migrations/rehudb/`, with the formats link table; `rehudb_scan.py`, which fills them; `PLUGIN_PLACEHOLDERS` in
+  `location_pattern.py`; and, for a type with a sidecar of its own as this one has ([[assets#licences]]), whatever
+  enumerates a record's files.
+- **`rehuco-agent`:** the field-to-widget map in `documents/document_fields.py`; `TYPE_DOCK_NAMES`; the browser's
+  columns and presets; the root layouts editor; the per-type settings pages and location templates; `type_label`;
+  `SCRAPED_FIELD_NAMES` and the scrape result schema.
+- **Specs:** the badge table in [[plugins#badge-colors]] and the mapping table in [[field-schema#resource-types]].
+
+## §19.5 Deferral
+
+[[[assets#deferral]]]
+
+- **Measuring** `triangles`, `rigged`, `lods` and `texture_size` from downloaded files. Until then they are typed in.
+- **Install managers**, Daz3D's included ([[assets#install]]).
+- **Licences as something to browse.** A branch of the Tag Browser ([[plugins#tag-browser]]) listing the licence ids
+  in use, and a document per licence, wait until someone wants more than the filter.
+- **Any store beyond the first.** The wizard's protocol ([[acquisition-tooling#library-wizard]]) is what a second one
+  is written against; none is designed here.

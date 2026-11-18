@@ -143,10 +143,12 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
 - **Export/import mechanics** — the rules are decided (keep UUID, strip sidecars, `.lock` and `.borrow`,
   [[discovery-trust-access#cross-swarm-sharing]]); the concrete export shape and the import-side UUID-collision handling
   aren't designed.
-- **Online-only and mixed local/online resources** — needs schema representation; not detailed.
+- **Online-only and mixed local/online resources** — answered for assets by the measured size ([[assets#online-only]]); not
+  detailed for the other types.
 - **Udemy integration** — registered courses are hard to track. A Udemy page scraper is a built-in of
-  [[acquisition-tooling#scraper-registry]]; an account-side import of *what the user owns* is not discussed.
-- **3D objects as a resource category** — mentioned alongside Daz3D but not mapped to a plugin design.
+  [[acquisition-tooling#scraper-registry]]; an account-side import of *what the user owns* is
+  designed as the library wizard ([[acquisition-tooling#library-wizard]]), not built.
+- **3D objects as a resource category** — designed as the `asset` type ([[assets]]), which Daz3D extends; not built.
 - **Shared timed-presentation capability** — identified as worth extracting ([[plugins#shared-capability]]) but not
   designed.
 - **Drawing comparison/critique pipeline** — exploratory ([[plugins#refimages-plugin]]); needs prototyping before being
