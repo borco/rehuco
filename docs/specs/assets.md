@@ -76,7 +76,7 @@ block does ([[plugins#plugin-blocks]]).
   reliably, so the scan never guesses. `triangles` is the heaviest single mesh because a pack's total says nothing
   about what one object costs to draw.
 - **`acquired` is never asked for.** Where the store shows the date the scan records it; where it does not, the field
-  stays empty. It sorts the library, and beside the date a licence was read ([[assets#licences]]) it says how far the
+  stays empty. Fab states it for every owned item (the entitlement's `createdAt`). It sorts the library, and beside the date a licence was read ([[assets#licences]]) it says how far the
   saved terms are from the day the item was got.
 - **`formats` is a field, not tags**, because it is the filter used most and the tag lists are the store's own
   vocabulary. The cache gives it a link table of its own, as tags have.
@@ -115,6 +115,13 @@ the terms.
 - **The scan writes it with a new record** ([[acquisition-tooling#library-scan-job]]), reading each distinct
   `license_url` once per run. The text is therefore the terms on the day of the scan, which for an item got years
   earlier is not the day it was got; `acquired` beside `read` shows the gap, and nothing recovers the older text.
+- **What Fab gives** (#686): each owned item names its licence(s) as a `group` (`name`, `slug`, `url`) and a `path`
+  (`license/standard/reference-plus-source`, `license/cc/cc-by`, `license/legacy/uem`). **The `path` is the stable
+  identifier** and the short id is derived from it; the label is not (*Creative Commons* and *Creative Commons
+  Attribution (CC BY 4.0)* are both `license/cc/cc-by`, and their URLs differ: a generic index page, and the licence's
+  own page). *Standard License* links to `/eula`, whose full text is public JSON at `/i/eula/fab_eula`; the CC pages
+  read logged out; *UE Marketplace* has no URL, so its record has a `license` and no text. An item may hold several
+  licences (a Personal and a UEFN *reference only* tier; 241 of 4,250), and three delisted items hold none.
 - **A file with no `url` is terms written for that item alone.** It is typed in, and nothing ever refreshes it.
 - **It is read and edited in a subdock of its own**, as the description is, since the text can be long.
 - **Nothing reads a licence from the net when a record is opened.** A saved text changes only through *Refresh
