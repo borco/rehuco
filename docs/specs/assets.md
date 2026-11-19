@@ -122,11 +122,17 @@ record keeps the text itself, in a sidecar beside it**: `<stem>.rehuterms`, one 
 records. `license` in the block stays the short id a library is filtered by, and `license_url` where the store states
 the terms.
 
-- **The file is a YAML header and the terms as Markdown.** The header holds `title`, `url` (where the text was read)
-  and `read`, the date it was read: a store's terms change, and a saved text is only as good as its date.
-- **It belongs to the record as its screenshots and its `.rehuser` do.** A rename, a move, a delete and the checksum
-  manifest carry it, and a record moved by hand takes it along with the rest of its files. A root that is offline
-  takes nothing from another root's records, and a store that has gone leaves every text where it was.
+- **The file is a YAML header and the terms as Markdown.** The header, between `---` lines, holds `title`, `url`
+  (where the text was read) and `read`, the date it was read: a store's terms change, and a saved text is only as good
+  as its date. A file with no `url` has no `url` key. It is read and written by `rehuco_core.license_terms`, an atomic
+  write as a `.rehu` gets, under the record's own lock, and a file that cannot be read is refused, never taken for
+  empty terms.
+- **It is bookkeeping, not content.** Named by its suffix alone, `<stem>.rehuterms` is left out of a record's content,
+  size and checksums as a screenshot and a `.rehuser` are, so a scan writing it or a refresh replacing it never makes a
+  checksum stale, and a move never refuses a record for it. The Files list shows it as the record's *license*.
+- **It belongs to the record as its screenshots and its `.rehuser` do.** A rename, a move and a delete carry it, and a
+  record moved by hand takes it along with the rest of its files. A root that is offline takes nothing from another
+  root's records, and a store that has gone leaves every text where it was.
 - **The scan writes it with a new record** ([[acquisition-tooling#library-scan-job]]), reading each distinct
   `license_url` once per run. The text is therefore the terms on the day of the scan, which for an item got years
   earlier is not the day it was got; `acquired` beside `read` shows the gap, and nothing recovers the older text.

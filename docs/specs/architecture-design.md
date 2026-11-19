@@ -7,8 +7,8 @@
 [[[architecture-design#overview]]]
 
 *rehuco — a personal catalog for tutorials, references, and creative assets, shared from one place.* (The name is the
-stem of the file formats it owns: `.rehu`, `.rehuco`, `.rehudb`, `.rehuser`. Successor to TutCatalog, generalized
-beyond tutorials.)
+stem of the file formats it owns: `.rehu`, `.rehuco`, `.rehudb`, `.rehuser`, `.rehuterms`. Successor to TutCatalog,
+generalized beyond tutorials.)
 
 This file holds the high-level overview ([[architecture-design#problem]]–[[architecture-design#components]]). The rest
 of the design lives in topic files alongside it; see [README.md](README.md) for the **document map** that says which
