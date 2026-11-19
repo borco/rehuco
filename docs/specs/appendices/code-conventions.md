@@ -74,6 +74,9 @@ itself is written.
   recognizes (`checkbox`, `toolbar`) doesn't need splitting; a compound default that isn't a
   real single word (`centralwidget`, `statusbar`, `menubar`) becomes `central_widget`,
   `status_bar`, `menu_bar`.
+- **A new list or tree looks like the others** (#572): `RowBandDelegate`, `BandTreeView`, `allColumnsShowFocus` off, a
+  header when it has columns, `QtAdsTitleBarActionVisibility` where title-bar actions hide. Seed its tests with every
+  record shape: a standalone `.rehu`'s content key is the extension alone (`.mp4`), its name the file's stem.
 
 ### Command surfaces
 
@@ -147,6 +150,9 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   `gc.freeze()`.
 - First users: the task queue's worker ([[appendices.task-queue#teardown]], daemon for the same reason) and
   `borco_core.PresenceScan` (#464).
+- **The queue never calls an idle job it cancels or removes**: one that left something behind has `abandon()`
+  (`AbandonableTaskJob`, #339). A rename through the barrier runs on the GUI thread, since the player's listener is a
+  widget: a job hands it over by `RecordMoveHost.run_step`, holding no lock while it waits.
 
 ### Qt and PySide behaviour
 
@@ -210,6 +216,26 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
   eats Esc and shadows `setFocus`. A floating QtAds container ignores close — quit on an accepted close (#507).
 - **Glyphs**: the Phosphor fonts name their glyphs `uniXXXX` only — render a codepoint to check it (#505: `\ue30c` is
   the magnifier).
+- **Layout and sizing**: a `QSplitter` takes its maximum from its children; `heightForWidth` is expanded to the minimum
+  (release it before measuring) and is -1 with no text; a framed `QLabel` indents unless `indent` is 0; PySide has no
+  `QWIDGETSIZE_MAX`. A hidden widget's grid row drops its spacing, a visible empty wrapper keeps it; a field on two
+  viewer tabs returns a row per tab from `make_viewer_rows` (#620).
+- **Views and editors**: a second view over listed rows gets no reset; two `ScintillaEdit`s share a document by
+  `setDocPointer` (#575). A combo item greyed by `ForegroundRole` stays pickable (#618). `ItemListEditor` takes a
+  `delegate=`, since a column delegate set later misses its `closeEditor`; a class promoted in a `.ui` needs its own
+  module, or the `_ui` import is circular; a settings frame's compound control is a `ValueControl` (#578).
+- **Ownership**: a Qt-made object held in an attribute (`addWidget`'s, `addSeparator`'s action) is made in Python
+  instead (4ad99fa, #630); one Qt replaces (`QColumnView`'s preview column) is looked up each time (#570). Focus given
+  to an off-screen widget crashed Qt once its document closed (#631). A child of a background tab is not hidden, only
+  not visible, so "on screen" is `isVisible()`.
+- **Painting**: `ElidedLabel` re-sets its tooltip on every resize, so pass `tooltip=` (#639). A `QLabel` pixmap does
+  not follow the palette: build it from `recolored_svg_icon`, and redraw on `PaletteChange` and `EnabledChange`
+  (#649).
+- **The QtAds stub** `typings/PySide6QtAds/__init__.pyi` lists only the methods the code calls: one pyright calls
+  unknown is added there (#624).
+- **Images beyond Qt** (#650): the PySide wheels read no HEIC or AVIF, so `image_source` routes both to Pillow
+  (`pi-heif` for HEIC, never `pillow-heif`, whose x265 is GPL). No HEIC encoder ships, so tests patch `Image.open`;
+  AVIF tests use real bytes.
 
 ## 3. Markdown
 
@@ -249,3 +275,28 @@ Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line le
 Each test's docstring ends with a `**Test steps:**` bullet list spelling out the steps and checks, so intent
 is readable without tracing the code — a project convention, not a pytest feature. The test stack and
 how to drive it are covered in [[appendices.testing#qa-gate]].
+
+## 5. Design rules
+
+[[[appendices.code-conventions#design-rules]]]
+
+Rules that came out of fixing a bug and hold beyond it, until a spec page takes them.
+
+- **Verifying a record is plan (cache) → check (pool) → apply (cache)** (#487), dropping a finding something
+  overtook; a check that must see a rename is asked once `rename_location` returns, never from a `moved` slot (#566).
+- **Restored state waits for what it needs, and is saved again unchanged until applied** (#576).
+- **A save compares one shape on both sides, judged against the file** (#416).
+- **A write inside the rename barrier waits less than a rename waits for holders** (#512; 2 s).
+- **A dialog's remembered checkbox saves however it closes** (#542).
+- **A scan's flag is replaced by that root's next scan, never only added to** (#498).
+- **What crosses from a library's threads carries the epoch of its source** (#319), dropped on arrival behind a
+  change.
+- **An optimistic overlay is let go by the write that carried it** (#571). **A queue that replaces by key keeps the
+  replaced item's place.** **Waiting on a write that may be replaced** listens for the model's signal, never the
+  write's own callback (#573).
+- **An editor is disabled while what it shows is not safe to edit** (#573).
+- **A value that belongs to the file is read once per file** (#574), never re-read on a model signal.
+- **A choice that outlives one video is kept by meaning, not by id** (#618).
+- **Cached rows go only when the user removes their root** (#577): an offline or unreadable root keeps them, greyed.
+- **A click and the row that previews it read one function** (#649: `plan_move`), never two copies of the rule.
+- **Read the firewall through its rules** (#418): `Get-NetFirewallRule | Get-NetFirewallPortFilter`.

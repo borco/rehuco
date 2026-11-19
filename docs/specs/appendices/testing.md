@@ -154,6 +154,11 @@ when qa runs on macOS/Linux:
   (`not-callable`): call it in a helper with one reasoned pragma.
 - **pylint refuses `bar` as a name** (#392, #376), and **a name-mangled call through another instance reads as
   unused** (#400).
+- **Astroid cannot type some values** (#649): `E1101`, `E1102` or `W0632` on a `Mock`'s recorded call, a signal
+  blocker's or a dict of docks' value, a property read as its signal, an unpacked tuple, a `QLabel.pixmap()` read off
+  a mangled attribute. Take `next(iter(...))`, an index or an annotated local; else a per-line disable.
+- **Pyright drops an `is not None` narrowing inside a nested function** (#620): bind locals first. A test's `**state`
+  splat into a dataclass wants `dict[str, Any]` (#649).
 
 ## 5. Coverage of platform-specific code
 
@@ -227,6 +232,12 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   `-p no:xdist --timeout=20` (#512).
 - **A parallel `cov` failure is rarely the newest diff.** Re-run on master, reproduce deterministically, and fix a race
   with a gate job occupying the worker ([[appendices.testing#races]]), never a longer wait.
+- **`ruff check` first** (#613, #577): the gate stops at its first red step. **`make qa` runs past ten minutes**, so
+  run it in the background and wait on its log for `rated at` (pylint's last line) or `Error [0-9]` (#638); Git Bash
+  has no `pgrep`. Two runs at once void each other's coverage (#319).
+- **Run the gate from a `C:\` working directory** (#647): from VS Code's lowercase `c:\`, four `test_app.py`
+  `test_run_*` tests fail. PowerShell's `*>` writes the log as UTF-16, where a `grep` for `rated at` finds nothing;
+  its `2>&1` makes a clean run exit 1 on pytest-benchmark's stderr warning, so the log decides (#674).
 
 ## 8. Probing the real app
 
@@ -260,6 +271,26 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   conftest mocks `Path.stat`) builds `MainWindow` over temporary settings folders, `toggleView(True)` on the dock,
   `QTest` clicks, and `panel.grab().save(...)` for the owner to see. A new dialog gets a scratchpad demo before it is
   wired (#416, #498).
+- **Probe recipes**: a restart is `set_settings_dir(<scratch>)` before any app import, one process to quit and another
+  to check (#576); a catalog goes through `RootCatalog` alone, its cache by
+  `CatalogCache.open(rehudb_path(cache_folder(), id))` (#577); a player is found by `QApplication.allWidgets()`, and
+  maximized its stage has left the view (#613). Close a probe window by `WM_CLOSE`; never kill VLC or the agent by
+  name. A native surface needs a screen grab; offscreen draws no video.
+- **A crash from a real session** (#630): copy its records and `document-session.json` into a scratch folder, repoint
+  the paths and drop the catalog; a `QObject` event filter on the application names the event a change happened in.
+  **Is a crash new?** Run master from a detached worktree over a copy of `.local_settings` and repeat the clicks
+  (#631).
+- **Check what is shown**: a label against real data (#592); a drawn thing rendered and looked at, at
+  `QT_SCALE_FACTOR=1.25` too, **and on a dark theme** (an authored SVG is `#1f1f1f`: recolour it, #649); a new bar
+  widget interactive like its neighbours (#618); a picture's frame read off the picture, not the log (`testsrc2`'s
+  burned-in time, #613); a load probed with saved progress, not at 0; a patched binary read back whole (#628).
+- **A theory is measured before it is built on** (#574), in the app's own setup (#618); three fixes on one symptom
+  mean stop and measure. A mocked `Catalog` hid that `record_paths` skips a root's own folder: run a new cache lookup
+  once against a copy of a real `.rehudb` (#645). Both watch backends report a rename out of the root as a delete
+  (#645). A layout question is settled by an offscreen probe of each variant's geometry (#649: a width-capped widget in
+  a `QHBoxLayout` is centred in its share; a heavy stretch on it plus a trailing spacer left-aligns it).
+- **Where a run went**: `.local_settings\rehuco-agent.log` for a VS Code run, `%LOCALAPPDATA%\rehuco\` otherwise. Every
+  run logs `starting` and `exited with code`; Windows' Application log (ids 1000–1002) holds crashes and hangs.
 
 ## 9. Races and background work
 
@@ -295,6 +326,21 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   `sendPostedEvents(None, DeferredDelete)`.
 - **Gating a lightbox decode** (#479): gate `ArchiveImageSource.load` only when `max_height is not None` (the main
   image loads on the GUI thread); clear `QPixmapCache` per test; monkeypatch `roots_lightbox.ThumbnailLoader`.
+- **A test handing answers out in call order races a pool of two threads** (#573): wait for the held answer to have
+  started, and prove it by forcing the bad order in a throwaway test. A partial branch only some test order reaches is
+  covered directly (#618). A race may not show outside the running app (#613). A parametrize id printing a set differs
+  between xdist workers (hash seed): sort it (#647). A test posting through `PoolRelay` takes `qapp`: new test files
+  reshuffle the workers and expose one leaning on a neighbour's (#634).
+- **A hang is read with stacks, before anyone ends it**: `uv run --with py-spy py-spy dump --pid <pid> [--locals]`,
+  then `cdb -p <pid> -pvr -c "~*k 30; qd"` (`C:\Program Files\Windows Kits\10\Debuggers\x64`):
+  `QBasicMutex::lockInternal` on one side, `PyGILState_Ensure` on another. A worker's collection freeing a live
+  `QObject` deadlocks ([[appendices.testing#cycle-diagnostic]]); `gc.DEBUG_SAVEALL` and `gc.callbacks` in a plugin
+  name the objects. A stall is not a deadlock; the mechanisms found so far are in [[appendices.qt#proving]].
+- **A crash with no Python frame** (#631): faulthandler writes into `.local_settings\primary.run`; the native stack
+  comes from `cdb -hd -o -G -c "sxn ibp; sxd eh; sxe -c \"~.kn 50; q\" av; g" <venv python> <probe>` with Windows
+  paths. Without `-hd` the debug heap hid the use-after-free in every run. Retry a crash's variants until one is
+  deterministic (6 of 8, then 6 of 6 with the next document already read). `shiboken6.dump` on 6.11.1 faults beside
+  an invalid wrapper, not on a freed one (#657).
 
 ## 10. Driving Qt offscreen
 
@@ -391,6 +437,29 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   and an agent test that saves for real takes `real_path_stat`.
 - **Coverage globs**: `*` stops at `/`, use `**`; check one with `coverage.files.globs_to_regex` (#508).
 - **Parallel `--cov` runs need a `COVERAGE_FILE` each** (#414), and one per agent working at once.
+- **Fakes follow the real thing**: a signal added to `DocumentSubDocks` goes on `sub_docks_stub.py` (#580, #576); one
+  added to `RehuDocumentModel` breaks autospecced fakes that connect to it (#573); a second external tool breaks tests
+  assuming one (#318); a shared descriptor's tests use an instance of their own (#319); a fake library answers what
+  the real one does (#618); a `Catalog` method or parameter goes on `test_catalog_docks.py`'s `hold` and
+  `mock_catalog` (#577); a new `Path` call in the renamer needs its mock in `test_rehu_rename.py` (#629); a patched job
+  class cannot be enqueued: `wraps=` the real one.
+- **`conftest.py` is near its size cap**: a new fixture goes in a sibling module imported by name
+  (`tool_isolation.py`, `root_layout_templates_isolation.py`, #620, #637). A callable handed over at construction
+  misses a test's later patch: defer the lookup with a lambda (#579).
+- **Roots tests** (#638): one whose edit commits takes the `saves` fixture, or the unsaved warning's `QMessageBox`
+  blocks the run; an editor's `.model` is a `QAbstractItemModel` to pyright, so narrow it by `isinstance`; a reader
+  split off a shared helper leaves the other's failure branches untested. A cache schema step breaks old-version tests
+  that reconcile before it: they write the version-1 root columns through `MemoryDatabase.insert_roots` (#577).
+- **A widget a row used to be leaves tests reading its private attributes** (#649: `ElidedLabel`, now inside
+  `MarkedLabel`): grep `_Class__attr` first.
+- **A dock test builds its model already read; the app opens a placeholder first** (#316): test what is keyed on the
+  record's type through `create_pending` → `load_pending`, and check the running app (#576). A shown dock gets no
+  toggle when a record loads: react to `reloaded` (#317).
+- **Paths across platforms**: a posix check does not guard a Windows join (`..\x` has no `..` in its
+  `PurePosixPath` parts, #576). `Path ==` folds case on Windows: compare spellings with `str()` (#629). A test passing
+  only where the disk folds case is caught by CI's macOS and Ubuntu legs. A local-time test gives the code a zone and
+  expects a literal: expecting `astimezone()`'s own answer passes on a UTC runner with the conversion gone (#623).
+- **A fresh worktree needs `make uis qrcs`** before its tests import (#529).
 
 ## 13. Proving a test
 
