@@ -112,6 +112,8 @@ but that user's other device.
 - **Private is not secret.** A sidecar's permissions are the share's; the split isolates writes, not readers.
 - **Read-only media** take no sidecar beside the record; that user's state goes on the retained copy
   ([[mounts-and-storage#durable-retention]]).
+- **`<stem>.rehuterms` is a record's license text** ([[assets#licences]]): a YAML header and Markdown, one per record,
+  carried by a rename and a move as the sidecars are, and bookkeeping like them, never checksummed.
 
 ## §4.4 Resource scoping: directory-scoped vs. file-scoped
 

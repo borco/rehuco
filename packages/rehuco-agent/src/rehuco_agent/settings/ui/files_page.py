@@ -10,6 +10,7 @@ from rehuco_core import (
     CHECKSUM_MANIFEST_EXTENSIONS,
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
+    LICENSE_SIDECAR_SUFFIX,
     REHU_SUFFIX,
     USER_SIDECAR_SUFFIX,
 )
@@ -159,7 +160,7 @@ class FilesPage(QWidget):
         )
 
     def __structural_summary(self) -> str:
-        """Describe the five structural exclusions, written from the constants rather than restated.
+        """Describe the six structural exclusions, written from the constants rather than restated.
 
         :returns: one line per exclusion, naming the record-derived shape and what it is.
         """
@@ -171,6 +172,7 @@ class FilesPage(QWidget):
                 f"{RECORD_PLACEHOLDER}NN with {screenshots} — its screenshots",
                 f"{RECORD_PLACEHOLDER} with {manifests} — its checksum manifest",
                 f"{RECORD_PLACEHOLDER}.user-<name>{USER_SIDECAR_SUFFIX} — each user's own state for it",
+                f"{RECORD_PLACEHOLDER}{LICENSE_SIDECAR_SUFFIX} — the license it was got under",
                 f"anything ending in {BACKUP_SUFFIX} — the backups a conversion keeps",
             ]
         )
