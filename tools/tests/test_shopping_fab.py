@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from pytest import mark
+from pytest import CaptureFixture, mark
 
 from tools.shopping_fab import (
     ADDED,
@@ -18,6 +18,7 @@ from tools.shopping_fab import (
     browsers_on,
     listing_ids,
     profile_in_use,
+    remove_profile,
 )
 
 # region Fixtures / helpers
@@ -146,6 +147,65 @@ def test_a_lock_file_held_unshared_marks_the_profile_in_use(tmp_path: Path) -> N
         ctypes.windll.kernel32.CloseHandle(handle)
 
     assert not profile_in_use(tmp_path)
+
+
+# endregion
+
+
+# region remove_profile
+
+
+def test_remove_profile_deletes_the_folder_and_says_so(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    """
+    Test steps:
+    1. Make a persona folder holding a file and a subfolder, and a lock file nobody holds
+    2. Remove it
+    3. Assert the folder is gone, the status is 0, and the message names the folder
+    """
+    persona = tmp_path / "persona"
+    (persona / "storage").mkdir(parents=True)
+    (persona / "cookies.sqlite").touch()
+    (persona / PROFILE_LOCK).touch()
+
+    assert remove_profile(persona) == 0
+
+    assert not persona.exists()
+    assert capsys.readouterr().out == f"Deleted the profile at {persona}.\n"
+
+
+def test_remove_profile_with_no_folder_deletes_nothing(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    """
+    Test steps:
+    1. Remove a persona whose folder does not exist
+    2. Assert the status is 0 and the message says nothing was deleted
+    """
+    persona = tmp_path / "persona"
+
+    assert remove_profile(persona) == 0
+
+    assert capsys.readouterr().out == f"There is no profile at {persona}; nothing was deleted.\n"
+
+
+@mark.skipif(sys.platform != "win32", reason="the Windows lock is the one this reads")
+def test_remove_profile_leaves_a_persona_open_in_firefox(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    """
+    Test steps:
+    1. Make a persona folder and hold its lock file as a running Firefox does
+    2. Remove it
+    3. Assert the status is 1, the folder and its files are still there, and the message says to close it first
+    """
+    persona = tmp_path / "persona"
+    persona.mkdir()
+    (persona / "cookies.sqlite").touch()
+    handle = hold_unshared(persona / PROFILE_LOCK)
+    try:
+        assert remove_profile(persona) == 1
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+    assert (persona / "cookies.sqlite").exists()
+    out = capsys.readouterr().out
+    assert out == f"The profile at {persona} is open in a Firefox; close it first. Nothing was deleted.\n"
 
 
 # endregion

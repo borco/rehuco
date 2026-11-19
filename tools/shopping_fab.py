@@ -2,8 +2,13 @@
 
 Usage::
 
-    python -I tools/shopping_fab.py
-    python -I tools/shopping_fab.py URL
+    python -I tools/shopping_fab.py [--profile PROFILE]
+    python -I tools/shopping_fab.py [--profile PROFILE] URL
+    python -I tools/shopping_fab.py [--profile PROFILE] --remove-profile
+
+``PROFILE`` is the persona's Firefox profile folder, by default :data:`DEFAULT_PROFILE`: one kept for this tool, never
+an everyday browser's. ``--remove-profile`` deletes that folder, logins and all, and exits; the next run starts a fresh,
+logged-out one.
 
 With no address it opens the persona Firefox on Fab, undriven, and waits until its window is closed: sign in there,
 and set *Content preferences > Show products in My Library* off so a results page lists only what is not owned yet.
@@ -43,6 +48,7 @@ import argparse
 import json
 import random
 import re
+import shutil
 import subprocess  # nosec B404 -- starts geckodriver and Firefox, both named below
 import sys
 import time
@@ -51,8 +57,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-DEFAULT_PROFILE: Final = Path("C:/Users/iborc/Developer/__GAME_DEVELOPMENT/.selenium-persona/claude")
-"""The persona's Firefox profile, the one the earlier Fab scans logged in with."""
+DEFAULT_PROFILE: Final = Path(__file__).resolve().parent.parent / ".local_settings" / "persona" / "shopping_fab"
+"""The persona's Firefox profile: in the checkout's git-ignored ``.local_settings``, beside the dev agent's own
+``persona/firefox``. Created, empty, on first use."""
 
 FIREFOX: Final = Path("C:/Program Files/Mozilla Firefox/firefox.exe")
 """The browser :func:`login` starts by itself; a run goes through geckodriver, which finds it alone."""
@@ -179,6 +186,23 @@ def profile_in_use(profile: Path) -> bool:
         return False
     except PermissionError:
         return True
+
+
+def remove_profile(profile: Path) -> int:
+    """Delete a persona's profile folder and say what was deleted.
+
+    :param profile: the profile's folder.
+    :returns: the process's exit status: 1 when a Firefox is running on it, which is left alone, else 0.
+    """
+    if profile_in_use(profile):
+        print(f"The profile at {profile} is open in a Firefox; close it first. Nothing was deleted.")
+        return 1
+    if not profile.exists():
+        print(f"There is no profile at {profile}; nothing was deleted.")
+        return 0
+    shutil.rmtree(profile)
+    print(f"Deleted the profile at {profile}.")
+    return 0
 
 
 def browsers_on(profile: Path, processes: object) -> list[int]:
@@ -433,8 +457,12 @@ def main() -> int:  # pragma: no cover -- a live Firefox, tried by hand
     """
     parser = argparse.ArgumentParser(description="Add a Fab results page's free listings to the library.")
     parser.add_argument("url", nargs="?", help="a Fab results page; without one, the persona opens for signing in")
-    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE, help="the persona's Firefox profile")
+    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE, help="the persona's Firefox profile folder")
+    parser.add_argument("--remove-profile", action="store_true", help="delete the persona's profile folder and exit")
     arguments = parser.parse_args()
+    if arguments.remove_profile:
+        return remove_profile(arguments.profile)
+    arguments.profile.mkdir(parents=True, exist_ok=True)
     if arguments.url is None:
         return login(arguments.profile)
     tally = Tally()
