@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Final
 from unittest.mock import Mock
 
+from borco_pyside.widgets.elided_label import ElidedLabel
 from PySide6.QtCore import QModelIndex, QPoint
 from PySide6.QtWidgets import QTreeView
 from pytest import fixture, mark
@@ -569,3 +570,46 @@ def test_the_current_video_asked_for_before_the_rows_are_listed_is_shown_once_th
     qtbot.waitUntil(lambda: view.tree.rowCount(index_named(view, "a")) == 1, timeout=TIMEOUT)
 
     assert scroll.call_count == 1
+
+
+def test_the_totals_line_says_what_is_watched_and_what_is_left(
+    view: VideoTreeView, model: RehuDocumentModel, qtbot: QtBot
+) -> None:
+    """**Test steps:**
+
+    * show a tutorial whose videos have no known length and verify the line's tooltip says how many
+    * record progress with a length for one video and verify the line reads its watched and remaining time
+    * make every video known and verify the count of unknown lengths goes from the tooltip
+    """
+    label = view.findChild(ElidedLabel, "totals_label")
+    assert isinstance(label, ElidedLabel)
+
+    assert label.isVisible()
+    assert label.text() == "0:00 / -0:00"  # nothing has a length yet
+    assert label.toolTip().endswith("counted in neither: 4.")
+
+    model.record_progress("a.mp4", 605.0, 7200.0)
+    qtbot.waitUntil(lambda: label.text() == "10:05 / -1:49:55", timeout=TIMEOUT)
+    assert label.toolTip() == (
+        "Watched 10:05 of the tutorial, 1:49:55 remaining. Videos of unknown length, counted in neither: 3."
+    )
+
+    for key in ("01 Basics/b.mp4", "01 Basics/c.mp4", "02 More/d.mp4"):
+        model.record_progress(key, 0.0, 3600.0)
+    qtbot.waitUntil(lambda: label.text() == "10:05 / -4:49:55", timeout=TIMEOUT)
+    assert label.toolTip() == "Watched 10:05 of the tutorial, 4:49:55 remaining."
+
+
+def test_the_totals_line_is_hidden_for_a_document_with_no_videos(qtbot: QtBot, events: ResourceEvents) -> None:
+    """**Test steps:**
+
+    * show a view over a collection
+    * verify the totals line is not shown
+    """
+    view = VideoTreeView(RehuDocumentModel(RehuDocument({"type": "Collection", "sources": []})), resource_events=events)
+    qtbot.addWidget(view)
+    view.show()
+
+    label = view.findChild(ElidedLabel, "totals_label")
+    assert isinstance(label, ElidedLabel)
+    assert not label.isVisible()

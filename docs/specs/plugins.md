@@ -1441,6 +1441,13 @@ a rebuild, keeping the closed rows and the selected video, for a change in the r
 file's name without the extension. Missing videos are listed in their folder as the Files dock lists them, in italic,
 with their notes beneath them.
 
+**A line under the tree** (#694) reads the whole tutorial's watched and remaining time as a player's clock does,
+`3:20:15 / -5:05:40` (owner), with the seconds every other time in the player shows (one formatter, `clock_text`),
+short enough for the narrow `T` panel. Its tooltip says the same in words. The sums are the folder rows' own (the `""` entry of `watch_totals`), redrawn with every
+refresh of the model, so it follows the progress the player writes. A video of unknown length is in neither time, and
+the tooltip says how many there are. It shows nothing while the videos on disk are not known or there are none. The
+view is one, so the player's `T` panel carries the line too.
+
 **A video's bookmarks are its children**, sorted by time ([[field-schema#video-notes]]): one row per line of its note
 that carries a time, with the markup taken off — `- [12:34](rehuco-video:…#t=754) the smudge trick` reads
 `12:34 the smudge trick`. The note is the user's to edit and may be in any order, so the tree sorts what it finds; a

@@ -7,10 +7,11 @@ from enum import StrEnum
 from typing import Any, Final, override
 
 from borco_pyside.core import ConnectionList
-from PySide6.QtCore import QAbstractItemModel, QModelIndex, QObject, QPersistentModelIndex, Qt
+from PySide6.QtCore import QAbstractItemModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
 from PySide6.QtGui import QFont
 from rehuco_core import (
     NoteLine,
+    WatchTotals,
     content_path,
     is_valid_content_key,
     missing_progress_keys,
@@ -115,6 +116,9 @@ class VideoTreeModel(QAbstractItemModel):
     :param parent: optional Qt parent.
     """
 
+    totals_changed = Signal()
+    """Emitted after every :meth:`refresh`, whether the rows were redrawn or rebuilt: :attr:`totals` is read again."""
+
     def __init__(self, model: RehuDocumentModel, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__model: Final = model
@@ -187,11 +191,20 @@ class VideoTreeModel(QAbstractItemModel):
         self.__progress = self.__snapshot()
         if rebuilt.signature() == self.__root.signature():
             self.__redraw(self.__root)
-            return
-        self.beginResetModel()
-        self.__root = rebuilt
-        self.__videos = self.__collect(rebuilt)
-        self.endResetModel()
+        else:
+            self.beginResetModel()
+            self.__root = rebuilt
+            self.__videos = self.__collect(rebuilt)
+            self.endResetModel()
+        self.totals_changed.emit()
+
+    @property
+    def totals(self) -> WatchTotals | None:
+        """What the user has watched of the whole tutorial, as of the last :meth:`refresh`.
+
+        :returns: the sums, or ``None`` while the videos on disk are not known.
+        """
+        return self.__progress.totals[""] if self.__progress is not None else None
 
     def __snapshot(self) -> FilesProgress | None:
         """The user's watching as of now.

@@ -29,6 +29,7 @@ from rehuco_agent.documents.video_tree_model import (
     VideoTreeModel,
 )
 from rehuco_agent.glyphs import FAVORITE_GLYPH
+from rehuco_core import WatchTotals
 
 from .video_tree_support import KEYS, fixture_model  # noqa: F401  # pylint: disable=unused-import
 
@@ -389,3 +390,25 @@ def test_a_standalone_records_video_reads_as_the_records_name(tmp_path: Path, qt
 
     assert rows(tree) == ["My Tutorial"]
     assert tree.index_of_video(".mp4").data(KEY_ROLE) == ".mp4"
+
+
+def test_the_totals_follow_the_progress_and_are_unknown_until_the_videos_are(
+    model: RehuDocumentModel, qtbot: QtBot
+) -> None:
+    """**Test steps:**
+
+    * make the tree without the videos and verify it has no totals
+    * give it the videos, record progress with a length for one, and verify the signal and the sums
+    * give it ``None`` again and verify the totals go
+    """
+    tree = VideoTreeModel(model, model)
+    assert tree.totals is None
+
+    with qtbot.waitSignal(tree.totals_changed):
+        tree.set_videos(KEYS)
+    with qtbot.waitSignal(tree.totals_changed):
+        model.record_progress("a.mp4", 600.0, 7200.0)
+    assert tree.totals == WatchTotals(watched=600.0, length=7200.0, unknown_length=3, files=4)
+
+    tree.set_videos(None)
+    assert tree.totals is None

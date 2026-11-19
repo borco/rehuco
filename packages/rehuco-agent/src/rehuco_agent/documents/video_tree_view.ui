@@ -48,9 +48,21 @@
      </property>
     </widget>
    </item>
+   <item>
+    <widget class="ElidedLabel" name="totals_label">
+     <property name="margin">
+      <number>4</number>
+     </property>
+    </widget>
+   </item>
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>ElidedLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets.elided_label</header>
+  </customwidget>
   <customwidget>
    <class>BandTreeView</class>
    <extends>QTreeView</extends>
