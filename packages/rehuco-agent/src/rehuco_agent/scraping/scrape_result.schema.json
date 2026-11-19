@@ -13,6 +13,7 @@
         "title": { "type": "string" },
         "publisher": { "type": "string" },
         "url": { "type": "string" },
+        "site_id": { "type": "string", "minLength": 1 },
         "authors": {
           "type": "array",
           "items": {
