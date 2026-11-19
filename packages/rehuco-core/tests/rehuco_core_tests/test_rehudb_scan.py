@@ -196,6 +196,34 @@ def test_every_sources_publisher_is_kept_the_primarys_first(tree: FakeTree) -> N
     assert record.publishers == ("First", "Second")
 
 
+def test_every_sources_store_id_is_kept_with_its_publisher_the_primarys_first(tree: FakeTree) -> None:
+    """``site_ids`` pairs each source's publisher with its store id, primary first, each pair once (#675).
+
+    **Test steps:**
+
+    * write a record whose sources carry ids: the flagged primary second, one without a publisher, one repeated, one
+      with no id, one whose id is not a string, an empty one, and an entry that is not a source
+    * scan it
+    * verify the pairs, the primary's first, a missing publisher read as an empty site, the rest skipped
+    """
+    content = payload()
+    content["core"]["sources"] = [
+        {"publisher": "Udemy", "site_id": "u-9"},
+        {"publisher": "Fab", "site_id": "f-1", "primary": True},
+        {"site_id": "x-3"},
+        {"publisher": "Udemy", "site_id": "u-9"},
+        {"publisher": "ArtStation"},
+        {"publisher": "Bad", "site_id": 7},
+        {"publisher": "Empty", "site_id": ""},
+        "not a source",
+    ]
+    tree.file("foo.rehu", content)
+
+    (record,) = scan().records
+
+    assert record.site_ids == (("Fab", "f-1"), ("Udemy", "u-9"), ("", "x-3"))
+
+
 def test_a_tutorial_is_read_with_its_durations_and_level(tree: FakeTree) -> None:
     """A tutorial's own fields reach its record; a reference pack's do not (#399)."""
     content = payload("Donut", type="tutorial")

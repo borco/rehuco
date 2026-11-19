@@ -42,6 +42,12 @@ OPTIONAL_STR_CORE_KEYS: Final = ("released",)
 """Common-core optional string scalars: absent (or JSON ``null``) reads as ``None``; a present
 non-string is malformed -> ``None`` and locks ([[field-schema#deferred-items]])."""
 
+OPTIONAL_STR_SOURCE_KEYS: Final = ("site_id",)
+"""The **primary** source's optional string scalars ([[field-schema#sources]], [[assets#site-id]]), same
+absent/malformed contract as :data:`OPTIONAL_STR_CORE_KEYS`. Only the primary entry is checked, as for
+:data:`REQUIRED_STR_SOURCE_KEYS`: a non-primary source's ``site_id`` reaches no getter, and every save carries it
+verbatim."""
+
 OPTIONAL_STR_BLOCK_KEYS: Final = ("advertised_count",)
 """The active plugin block's shared optional string scalars, same absent/malformed contract as
 :data:`OPTIONAL_STR_CORE_KEYS`.
@@ -285,7 +291,7 @@ def invalid_field_reasons(
     if "sources" in core and not isinstance(core["sources"], list):
         reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_SOURCES_MESSAGE))
     reasons.extend(invalid_string_reasons(core, primary_source))
-    reasons.extend(invalid_scalar_reasons(core, active_block, active_user_map))
+    reasons.extend(invalid_scalar_reasons(core, active_block, active_user_map, primary_source))
     reasons.extend(invalid_asset_reasons(active_block, declared))
     return reasons
 
@@ -323,7 +329,10 @@ def invalid_string_message(key: str, expected: str) -> str:
 
 
 def invalid_scalar_reasons(
-    core: dict[str, Any], active_block: dict[str, Any], active_user_map: dict[str, Any]
+    core: dict[str, Any],
+    active_block: dict[str, Any],
+    active_user_map: dict[str, Any],
+    primary_source: dict[str, Any] | None,
 ) -> list[LockReason]:
     """One :attr:`~LockReasonKind.INVALID_FIELD` per optional scalar that is **present but malformed**
     ([[field-schema#deferred-items]], the #92 ``authors`` precedent extended to the scalars).
@@ -336,8 +345,9 @@ def invalid_scalar_reasons(
     :param core: the core block's fields.
     :param active_block: the active plugin block's fields.
     :param active_user_map: this document's own per-user submap, as stored.
+    :param primary_source: the resolved primary source, or ``None`` when there is none.
     :returns: the invalid-scalar reasons, the integers first (core before shared-block before per-user)
-        then the strings (core before shared-block), in key order.
+        then the strings (core before primary source before shared-block), in key order.
     """
     reasons: list[LockReason] = []
     int_sources = (
@@ -354,6 +364,7 @@ def invalid_scalar_reasons(
     # malformed ``advertised_count`` are wrong in different ways and the message says which
     str_sources = (
         (core, OPTIONAL_STR_CORE_KEYS, "a date string"),
+        (primary_source or {}, OPTIONAL_STR_SOURCE_KEYS, "a string"),
         (active_block, OPTIONAL_STR_BLOCK_KEYS, "a count string"),
     )
     for block, keys, expected in str_sources:

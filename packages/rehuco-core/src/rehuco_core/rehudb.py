@@ -117,6 +117,8 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     :param authors: author names, in order.
     :param tags: advertised then extra tags, in order.
     :param publishers: every source's publisher, primary first.
+    :param site_ids: ``(site, site_id)`` for every source that names its store's id for the item, primary first, the
+        site being that source's publisher ([[assets#site-id]]).
     :param advertised_duration: the claimed running time in seconds, or ``None``; type-specific, like the five below
         -- filled only where the record's type declares the field (:func:`catalog_type_fields`).
     :param original_duration: the complete download's measured running time in seconds, or ``None``.
@@ -147,6 +149,7 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     authors: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
     publishers: tuple[str, ...] = ()
+    site_ids: tuple[tuple[str, str], ...] = ()
     advertised_duration: int | None = None
     original_duration: int | None = None
     current_duration: int | None = None
@@ -396,6 +399,10 @@ KEY_RANGE_END: Final = "\U0010ffff"
 """Appended to a key prefix to bound the range of keys that start with it: the highest code point, whose UTF-8
 sorts after every other character's, so ``prefix <= key < prefix + KEY_RANGE_END`` is an indexed prefix match --
 where ``LIKE`` would need its wildcards escaped and ``substr`` would read every row of the root."""
+
+SITE_ID_CLAUSE: Final = "r.id IN (SELECT s.resource_id FROM resource_sources s WHERE s.site = ? AND s.site_id = ?)"
+"""The records one of whose sources names a store id on a site ([[assets#site-id]]) -- two parameters, the site and
+the id: driven from the ``(site, site_id)`` index, never probed once per resource."""
 
 SUBTREE_CLAUSE: Final = "(path_key = ? OR (path_key >= ? AND path_key < ?))"
 """A path and everything beneath it, by key -- three parameters: the path's own key, then the bounds of the keys
@@ -890,41 +897,81 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             parameter, so the set is meant to be small.
         :returns: the rows.
         """
-        where, parameters = self.__where(query if query is not None else CatalogQuery(), ids)
+        return self.__rows_where(*self.__where(query if query is not None else CatalogQuery(), ids))
+
+    def __rows_where(self, where: str, parameters: tuple[object, ...]) -> list[CatalogRow]:
+        """The rows a condition over ``resources r`` joined to ``roots`` matches, in root order and then by path.
+
+        :param where: the condition, built from fixed fragments only.
+        :param parameters: its parameters, one per placeholder.
+        :returns: the rows.
+        """
         # the value tables and the rows read in one snapshot: a write committing between them would leave rows
         # without their names (#528)
         with self.__read():
             values = {table: self.__values(table, join, where, parameters) for table, join in JOINS}
+            site_ids = self.__site_ids(where, parameters)
             cursor = self.__connection.execute(
                 f"SELECT r.id, r.root_id, roots.label, r.scanned_at, {SELECTED_COLUMNS} "  # nosec  # B608: fixed names
                 f"FROM resources r JOIN roots ON roots.id = r.root_id WHERE {where} "
                 "ORDER BY roots.position, r.path_key",
                 parameters,
             )
-            rows: list[CatalogRow] = []
-            # one UUID per root, shared by its rows: a reader keeping every row (#455) has the collector track each
-            # (#500)
-            root_uuids: dict[str, UUID] = {}
-            for resource_id, root_id, root_label, scanned_at, *fields in cursor:
-                root_uuid = root_uuids.get(root_id)
-                if root_uuid is None:
-                    root_uuid = root_uuids[root_id] = UUID(root_id)
-                rows.append(
-                    CatalogRow(
-                        resource_id, root_uuid, root_label, self.__record_read(resource_id, fields, values), scanned_at
-                    )
-                )
+            return self.__rows_read(cursor, values, site_ids)
+
+    @classmethod
+    def __rows_read(
+        cls,
+        cursor: sqlite3.Cursor,
+        values: dict[str, dict[int, tuple[str, ...]]],
+        site_ids: dict[int, tuple[tuple[str, str], ...]],
+    ) -> list[CatalogRow]:
+        """The rows a :meth:`rows` statement reads, each with its names and its sources' ids.
+
+        :param cursor: the statement, its columns the id, the root's id and label, when scanned, then
+            :data:`RESOURCE_COLUMNS`.
+        :param values: each value table's names, by resource id (:meth:`__values`).
+        :param site_ids: the sources' ids, by resource id (:meth:`__site_ids`).
+        :returns: the rows, in the statement's order.
+        """
+        rows: list[CatalogRow] = []
+        # one UUID per root, shared by its rows: a reader keeping every row (#455) has the collector track each (#500)
+        root_uuids: dict[str, UUID] = {}
+        for resource_id, root_id, root_label, scanned_at, *fields in cursor:
+            root_uuid = root_uuids.get(root_id)
+            if root_uuid is None:
+                root_uuid = root_uuids[root_id] = UUID(root_id)
+            record = cls.__record_read(resource_id, fields, values, site_ids.get(resource_id, ()))
+            rows.append(CatalogRow(resource_id, root_uuid, root_label, record, scanned_at))
         return rows
+
+    def find_by_site_id(self, site: str, site_id: str, root_id: UUID | None = None) -> list[CatalogRow]:
+        """The records one of whose sources names ``site_id`` on ``site`` ([[assets#site-id]]): one indexed lookup,
+        which is how a library rescan finds the record for a store listing again.
+
+        :param site: the source's site -- its publisher, the scraper's ``site_name`` -- matched ignoring ASCII case.
+        :param site_id: the store's own id for the item, matched exactly.
+        :param root_id: when given, only records under this root.
+        :returns: the rows, in :meth:`rows`' order; empty when none matches.
+        """
+        if root_id is None:
+            return self.__rows_where(SITE_ID_CLAUSE, (site, site_id))
+        return self.__rows_where(f"{SITE_ID_CLAUSE} AND r.root_id = ?", (site, site_id, str(root_id)))
 
     @classmethod
     def __record_read(
-        cls, resource_id: int, fields: Sequence[object], values: dict[str, dict[int, tuple[str, ...]]]
+        cls,
+        resource_id: int,
+        fields: Sequence[object],
+        values: dict[str, dict[int, tuple[str, ...]]],
+        site_ids: tuple[tuple[str, str], ...],
     ) -> CatalogRecord:
-        """One row's record, from its :data:`RESOURCE_COLUMNS` and the value tables' names.
+        """One row's record, from its :data:`RESOURCE_COLUMNS`, the value tables' names and its sources' ids.
 
         :param resource_id: the row's id.
         :param fields: its columns, in :data:`RESOURCE_COLUMNS` order.
         :param values: each value table's names, by resource id (:meth:`__values`).
+        :param site_ids: its ``(site, site_id)`` pairs, in order (:meth:`__site_ids`).
         :returns: the record.
         """
         columns_read: dict[str, Any] = dict(zip(RESOURCE_COLUMNS, fields, strict=True))
@@ -935,6 +982,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             authors=values["authors"].get(resource_id, ()),
             tags=values["tags"].get(resource_id, ()),
             publishers=values["publishers"].get(resource_id, ()),
+            site_ids=site_ids,
         )
 
     # endregion
@@ -1169,6 +1217,11 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         ).fetchone()
         for (table, join), names_of in zip(JOINS, (record.authors, record.tags, record.publishers), strict=True):
             CatalogCache.__write_values(connection, table, join, resource_id, names_of)
+        connection.execute("DELETE FROM resource_sources WHERE resource_id = ?", (resource_id,))
+        connection.executemany(
+            "INSERT INTO resource_sources (resource_id, position, site, site_id) VALUES (?, ?, ?, ?)",
+            ((resource_id, position, site, site_id) for position, (site, site_id) in enumerate(record.site_ids)),
+        )
         return resource_id
 
     @staticmethod
@@ -1403,5 +1456,21 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         for resource_id, name in cursor:
             names.setdefault(resource_id, []).append(name)
         return {resource_id: tuple(found) for resource_id, found in names.items()}
+
+    def __site_ids(self, where: str, parameters: Sequence[object]) -> dict[int, tuple[tuple[str, str], ...]]:
+        """Every matching resource's ``(site, site_id)`` pairs, in each resource's own order.
+
+        :returns: the pairs, keyed by resource id; a resource with none is absent.
+        """
+        cursor = self.__connection.execute(
+            "SELECT s.resource_id, s.site, s.site_id FROM resource_sources s "
+            f"WHERE s.resource_id IN (SELECT r.id FROM resources r JOIN roots ON roots.id = r.root_id WHERE {where}) "
+            "ORDER BY s.resource_id, s.position",  # nosec  # B608: fixed fragments, values are parameters
+            parameters,
+        )
+        pairs: dict[int, list[tuple[str, str]]] = {}
+        for resource_id, site, site_id in cursor:
+            pairs.setdefault(resource_id, []).append((site, site_id))
+        return {resource_id: tuple(found) for resource_id, found in pairs.items()}
 
     # endregion

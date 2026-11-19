@@ -233,6 +233,36 @@ def add_root_file_v8(connection: sqlite3.Connection) -> None:
     connection.execute("ALTER TABLE roots ADD COLUMN root_file TEXT")
 
 
+V9_STATEMENTS: Final = (
+    """
+    CREATE TABLE resource_sources (
+        resource_id INTEGER NOT NULL REFERENCES resources (id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        site TEXT NOT NULL COLLATE NOCASE,
+        site_id TEXT NOT NULL,
+        PRIMARY KEY (resource_id, position)
+    )
+    """,
+    "CREATE INDEX resource_sources_site ON resource_sources (site, site_id)",
+    "UPDATE resources SET mtime_ns = 0, content_hash = ''",
+)
+"""Version 9's statements -- frozen, like :data:`V1_STATEMENTS`."""
+
+
+def add_source_ids_v9(connection: sqlite3.Connection) -> None:
+    """8 -> 9: each source's store id, with the source's site, so the record for a store listing is found by one
+    indexed lookup (#675, [[assets#site-id]]).
+
+    A row per source that has a ``site_id``, its site being the source's ``publisher``, compared ignoring ASCII case
+    as the publishers table is. As in version 3, nothing on disk says a row written before this step lacks them, so
+    its stat signature is cleared and the next scan reads it again.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    for statement in V9_STATEMENTS:
+        connection.execute(statement)
+
+
 CHAIN: Final[SchemaChain] = (
     (1, create_schema_v1),
     (2, add_join_spellings_v2),
@@ -242,6 +272,7 @@ CHAIN: Final[SchemaChain] = (
     (6, add_cache_meta_v6),
     (7, add_file_identity_v7),
     (8, add_root_file_v8),
+    (9, add_source_ids_v9),
 )
 """This target's ordered ``(target, step)`` chain."""
 

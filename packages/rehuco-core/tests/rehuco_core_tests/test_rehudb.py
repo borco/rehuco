@@ -27,6 +27,7 @@ from rehuco_core import (
     CatalogField,
     CatalogQuery,
     CatalogRecord,
+    CatalogRow,
     MappedRoot,
     RecordKind,
     RecordSignature,
@@ -157,6 +158,32 @@ def nesting(*paths: Path) -> RehucoFile:
 def record(path: str, **fields: Any) -> CatalogRecord:
     """A ``.rehu`` record at ``path`` with the given fields and a content hash."""
     return CatalogRecord(path, RecordKind.REHU, content_hash="0", **fields)
+
+
+def upgraded_one_record(memory: Callable[[], MemoryDatabase], mocker: MockerFixture, version: int) -> CatalogRow:
+    """Build a cache at ``version`` holding one scanned ``.rehu`` titled ``T``, then reopen it with the full chain.
+
+    :param memory: where the database comes from.
+    :param mocker: pytest-mock fixture.
+    :param version: the schema version the cache is built at.
+    :returns: the one row the upgraded cache reads, its stamp already checked to be current.
+    """
+    database = memory()
+    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
+    mocker.patch.object(Path, "mkdir", autospec=True)
+    rehuco, first, _ = two_roots()
+    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:version]):
+        database.insert_roots(mapped(rehuco))
+        database.keeper.execute(
+            "INSERT INTO resources (root_id, path, path_key, kind, title, mtime_ns, size, content_hash, scanned_at) "
+            "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'T', 42, 7, 'abc', 0)",
+            (str(first.root_id),),
+        )
+    with CatalogCache.open(CACHE_PATH) as upgraded:
+        assert upgraded.schema_version == CURRENT_VERSION
+        rows = upgraded.rows()
+    assert len(rows) == 1
+    return rows[0]
 
 
 def ids(cache: CatalogCache) -> dict[str, int]:
@@ -550,6 +577,7 @@ def test_every_field_of_a_record_round_trips(cache: CatalogCache) -> None:
         authors=("Zed", "Ann"),
         tags=("b", "a"),
         publishers=("P", "Q"),
+        site_ids=(("P", "b2"), ("Q", "a1")),
         advertised_duration=3600,
         original_duration=3500,
         current_duration=1200,
@@ -737,23 +765,7 @@ def test_a_version_3_cache_upgrades_with_no_format_version_and_stale(
     * reopen it with the full chain
     * verify the stamp is current, the row is still there with no format version, and its signature is cleared
     """
-    database = memory()
-    mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
-    mocker.patch.object(Path, "mkdir", autospec=True)
-    rehuco, first, _ = two_roots()
-    with CatalogCache.open(CACHE_PATH, chain=CHAIN[:3]):
-        database.insert_roots(mapped(rehuco))
-        database.keeper.execute(
-            "INSERT INTO resources (root_id, path, path_key, kind, title, mtime_ns, size, content_hash, scanned_at) "
-            "VALUES (?, 'a/info.rehu', 'a/info.rehu', 'rehu', 'T', 42, 7, 'abc', 0)",
-            (str(first.root_id),),
-        )
-
-    with CatalogCache.open(CACHE_PATH) as upgraded:
-        assert upgraded.schema_version == CURRENT_VERSION
-        rows = upgraded.rows()
-    assert len(rows) == 1
-    row = rows[0]
+    row = upgraded_one_record(memory, mocker, 3)
     assert (row.record.title, row.record.format_version) == ("T", None)
     assert (row.record.mtime_ns, row.record.content_hash) == (0, "")
 
@@ -1338,7 +1350,7 @@ def test_a_token_on_its_own_reads_resources_through_an_index_never_a_scan(
         if "FROM resources r" in statement
     }
 
-    assert len(plans) == 4  # the rows and the three value tables
+    assert len(plans) == 5  # the rows, the three value tables and the sources' ids
     assert not [step for steps in plans.values() for step in steps if re.fullmatch(r"SCAN r( .*)?", step)]
 
 

@@ -41,8 +41,8 @@ from uuid import UUID
 import xxhash
 
 from .rehu_catalog import CatalogCheckpoint, CatalogScanner
-from .rehu_document import RehuDocument, author_name
-from .rehu_locks import coerced_str_list
+from .rehu_document import SITE_ID_KEY, RehuDocument, author_name
+from .rehu_locks import coerced_str, coerced_str_list
 from .rehu_parse_limits import oversized_file_reason
 from .rehudb import (
     CatalogRecord,
@@ -300,6 +300,7 @@ class CatalogRecordReader:  # pylint: disable=too-few-public-methods
             authors=tuple(name for name in (author_name(entry) for entry in document.authors) if name),
             tags=(*document.advertised_tags, *document.extra_tags),
             publishers=CatalogRecordReader.__publishers(document),
+            site_ids=CatalogRecordReader.__site_ids(document),
             content_hash=content_hash,
             # a .tc has no version of its own: its document says only what it was upgraded to in memory
             format_version=None if kind is RecordKind.TC else document.on_disk_format_version,
@@ -326,3 +327,14 @@ class CatalogRecordReader:  # pylint: disable=too-few-public-methods
         """Every source's publisher, the primary's first, each named once."""
         names = (source.get("publisher") for source in document.source_records if isinstance(source, dict))
         return tuple(dict.fromkeys(name for name in names if isinstance(name, str) and name))
+
+    @staticmethod
+    def __site_ids(document: RehuDocument) -> tuple[tuple[str, str], ...]:
+        """Every source's ``(site, site_id)`` where it names a store id, the primary's first, each pair once; the site
+        is the source's publisher, empty when it names none ([[assets#site-id]])."""
+        pairs = (
+            (coerced_str(source.get("publisher")), source.get(SITE_ID_KEY))
+            for source in document.source_records
+            if isinstance(source, dict)
+        )
+        return tuple(dict.fromkeys((site, site_id) for site, site_id in pairs if isinstance(site_id, str) and site_id))
