@@ -51,6 +51,7 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 | `title` | Title | `sources[].title` | text | common | record + primary¹ | keep — see [[field-schema#sources]] |
 | `publisher` | Publisher | `sources[].publisher` | text | common | record¹ | keep — see [[field-schema#sources]] |
 | `url` | Homepage | `sources[].url` | URL | common | record¹ | keep — see [[field-schema#sources]] |
+| — | *(none in tc4)* | `sources[].site_id` | text | common | record¹, optional | **new** — the store's id for the item ([[assets#site-id]]) |
 | `author` | Authors | `authors` | text list | common | multi | keep, rename to `authors`; stays separate²; entries string or `{name, url}` ([[field-schema#authors]]) |
 | `released` | Released | `released` | date | common | partial-precision | keep — Y / Y-M / Y-M-D; content publication date |
 | — | *(none in tc4)* | `created` | datetime | common | scalar | **new** — record created; seed from file timestamp on import |
@@ -76,7 +77,7 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 | — | *(none in tc4)* | `current_count` | int | ReferenceImages | scalar | **new** — empty on import (not from `duration`), filled by scanning ([[field-schema#deferred-items]]); spelled `images_count` until [#198](https://github.com/borco/rehuco/issues/198), renamed on load by the block chain's v4 step |
 | — | *(none in tc4)* | `advertised_count` | count claim (text) | ReferenceImages | scalar | **new** — what the pack claims of itself; text, so an open-ended `500+` stays weaker than `500` ([[field-schema#field-types]]) |
 
-¹ `sources` is a list; each item is `{ title, publisher, url, primary? }`. The item with
+¹ `sources` is a list; each item is `{ title, publisher, url, site_id?, primary? }`. The item with
 `primary: true` (or the first item if none is flagged) is canonical — its **title** is the
 display title and the basis for folder/file-name suggestions ([[field-schema#sources]]).
 ² **`authors` stays one shared list**, not per-source — a differing author set signals a
@@ -245,7 +246,7 @@ platform under slightly different names and links ([[data-model#rehu-format]]). 
 
 ```yaml
 sources:
-  - { title, publisher, url, primary: true }
+  - { title, publisher, url, site_id, primary: true }
   - { title, publisher, url }
 ```
 
@@ -262,6 +263,8 @@ sources:
   entry's own values, empty or not. The permissive rule above still governs reading a file.
 - **A scrape fills the primary's missing URL** — with or without a publisher — and never adds a URL a source
   already has (compared after trimming); any other new URL is appended below.
+- **`site_id` is optional**: the store's own id for the item ([[assets#site-id]]). A scrape that reports one writes it
+  on the source its URL lands on, only when that source names none; the cards do not show it and keep it on edit.
 - **A repeated URL is a duplicate, and is only ever shown.** The 2nd, 3rd, … row carrying the same non-empty
   URL is flagged for the editor; nothing is deleted, merged or reordered automatically, a file holding
   duplicates opens clean, and a save writes what is there. An empty URL is never a duplicate.

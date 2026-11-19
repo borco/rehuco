@@ -390,6 +390,47 @@ def test_a_scraped_url_field_equal_to_the_dropped_url_adds_no_second_source(
     assert len(doc_model.sources) == 1
 
 
+def test_a_scraped_site_id_lands_on_the_canonical_source(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A store id the scraper reports goes onto the source of the canonical ``url`` it came with, not onto the page
+    dropped, and is no field write (#675, [[assets#site-id]]).
+
+    **Test steps:**
+
+    * scrape a page whose result carries a canonical ``url`` and a ``site_id``, into a source-less document
+    * verify the canonical source holds the id and the dropped page's source does not
+    """
+    doc_model = sourceless_model()
+    canonical_url = "https://www.artstation.com/marketplace/p/aBcDe/example-product-tutorial"
+    result = ScrapeResult(fields={"url": canonical_url, "site_id": "aBcDe"}, description=None, images=())
+    doc_actions = actions(doc_model, FakeScraper(publisher="ArtStation", result=result), image_downloads)
+
+    resolve(qtbot, doc_actions, drop())
+
+    assert [(source["url"], source.get("site_id")) for source in doc_model.sources] == [
+        (canonical_url, "aBcDe"),
+        (URL, None),
+    ]
+
+
+def test_a_scraped_site_id_without_a_canonical_url_lands_on_the_dropped_page(
+    qtbot: QtBot, image_downloads: ImageDownloads
+) -> None:
+    """With no canonical ``url``, the reported id goes onto the source of the page dropped (#675).
+
+    **Test steps:**
+
+    * scrape a page whose result carries only a ``site_id``, into a source-less document
+    * verify its one source is the dropped page, holding the id
+    """
+    doc_model = sourceless_model()
+    result = ScrapeResult(fields={"site_id": "u-9"}, description=None, images=())
+    doc_actions = actions(doc_model, FakeScraper(publisher="Udemy", result=result), image_downloads)
+
+    resolve(qtbot, doc_actions, drop())
+
+    assert [(source["url"], source.get("site_id")) for source in doc_model.sources] == [(URL, "u-9")]
+
+
 def test_a_drop_carrying_a_fragment_is_scraped_without_a_fetch(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """A selection drop's `text/html` is handed to the scraper as the page itself; nothing is fetched
     ([[acquisition-tooling#drag-drop-aids]], #272)."""

@@ -74,6 +74,7 @@ SCRAPED_FIELD_NAMES: Final = (
     "title",
     "publisher",
     "url",
+    "site_id",
     "authors",
     "released",
     "description",
@@ -88,6 +89,9 @@ into JSON; the values the app computes from the local files (`original_size`, `c
 measured durations, `current_count`) and the user's own state (`hidden_images`, `extra_tags`, the
 boolean flags, `rating`, `learning_paths`, the `.rehu` timestamps) come from elsewhere and have no page to
 be read from, so :data:`SCRAPE_RESULT_SCHEMA` rejects them rather than accept a guess.
+
+``site_id`` is the store's own id for the item ([[assets#site-id]]): like ``url``, it lands on the scraped page's
+source rather than in a field of its own.
 
 ``description`` here names the *field* (a resource's own free-text notes an editor might also carry, kept
 distinct from :attr:`ScrapeResult.description`, the scrape's own Markdown write-up) -- a scraper is free to

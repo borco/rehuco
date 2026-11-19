@@ -28,6 +28,19 @@ def test_to_json_from_mapping_round_trips() -> None:
     assert ScrapeResult.from_mapping(result.to_json()) == result
 
 
+def test_a_site_id_is_accepted() -> None:
+    """A scraper may report the store's own id for the item (#675, [[assets#site-id]]).
+
+    **Test steps:**
+
+    * build a result from a mapping carrying a ``site_id``
+    * verify it is kept as given
+    """
+    result = ScrapeResult.from_mapping({"fields": {"site_id": "aBcDe"}})
+
+    assert result.fields == {"site_id": "aBcDe"}
+
+
 def test_from_mapping_defaults_description_and_images_when_absent() -> None:
     """A minimal mapping with only `fields` -- what a bare-bones user script can return -- is accepted."""
     result = ScrapeResult.from_mapping({"fields": {"title": "T"}})
@@ -87,6 +100,8 @@ def test_an_integral_float_where_an_integer_belongs_is_read_as_that_integer() ->
         param({"fields": {"advertised_tags": ["a", 1]}}, "fields.advertised_tags[1]", id="number-in-tag-list"),
         param({"fields": {"current_size": 5}}, "fields", id="unknown-field-key"),
         param({"fields": {"advertised_duration": True}}, "fields.advertised_duration", id="bool-is-not-an-int"),
+        param({"fields": {"site_id": 7}}, "fields.site_id", id="non-string-site-id"),
+        param({"fields": {"site_id": ""}}, "fields.site_id", id="empty-site-id"),
     ],
 )
 def test_each_malformed_field_is_rejected_with_its_path(mapping: dict[str, Any], expected_path_fragment: str) -> None:

@@ -58,6 +58,7 @@ from .rehu_locks import (
     OPTIONAL_INT_USER_KEYS,
     OPTIONAL_STR_BLOCK_KEYS,
     OPTIONAL_STR_CORE_KEYS,
+    OPTIONAL_STR_SOURCE_KEYS,
     asset_kind,
     coerced_str,
     coerced_str_list,
@@ -89,6 +90,10 @@ LOG: Final = logging.getLogger(__name__)
 
 PRIMARY_KEY: Final = "primary"
 """Marker key on the canonical entry in ``sources`` ([[field-schema#sources]])."""
+
+SITE_ID_KEY: Final = "site_id"
+"""A ``sources`` entry's optional store id for the item ([[assets#site-id]]): a listing id or a SKU, the match key a
+library rescan finds the record by."""
 
 # One ``authors`` entry ([[field-schema#authors]]): a plain name string, or a ``{"name", "url"}``
 # record carrying an author-page URL. The record form is canonical only when it has a URL to carry --
@@ -1253,6 +1258,23 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def url(self, value: str) -> None:
         self.__primary_source_or_create()["url"] = value
 
+    @property
+    def site_id(self) -> str | None:
+        """The primary source's ``site_id``, the store's own id for the item ([[assets#site-id]]); ``None`` if there
+        is no source, it has none, or it is present but not a string (which locks,
+        :func:`~rehuco_core.rehu_locks.invalid_scalar_reasons`)."""
+        primary = self.primary_source
+        return optional_str(primary.get(SITE_ID_KEY)) if primary else None
+
+    @site_id.setter
+    def site_id(self, value: str | None) -> None:
+        if value is not None:
+            self.__primary_source_or_create()[SITE_ID_KEY] = value
+            return
+        primary = self.primary_source
+        if primary is not None:
+            primary.pop(SITE_ID_KEY, None)
+
     def __primary_source_or_create(self) -> dict[str, Any]:
         """Return the mutable primary source, appending a new flagged entry to ``sources`` if none exists.
 
@@ -1908,13 +1930,17 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         The absent-on-disk ↔ ``None``-in-code mapping's read half: ``null`` is *accepted* on disk but **is**
         the in-memory ``None``, and ``None`` is never written -- so a loaded ``null`` normalizes to absent
         here, matching what a cleared scalar leaves and letting :meth:`save` round-trip a ``null`` file to
-        one without the key. Only the reserved ``core`` block and the **active** block's own scalars (its
-        shared fields and *this* user's ``rating``) are touched: an inactive block or another user's submap
-        is foreign payload, carried verbatim ([[plugins#plugin-blocks]], [[field-schema#per-user-shared]]).
+        one without the key. Only the reserved ``core`` block (the primary source's ``site_id`` included) and the
+        **active** block's own scalars (its shared fields and *this* user's ``rating``) are touched: an inactive
+        block or another user's submap is foreign payload, carried verbatim ([[plugins#plugin-blocks]],
+        [[field-schema#per-user-shared]]).
         """
         core = self.__data.get(CORE_BLOCK_KEY)
         if isinstance(core, dict):
             self.__drop_null_keys(core, (*OPTIONAL_INT_CORE_KEYS, *OPTIONAL_STR_CORE_KEYS))
+        primary = self.primary_source
+        if primary is not None:
+            self.__drop_null_keys(primary, OPTIONAL_STR_SOURCE_KEYS)
         self.__normalize_active_block_scalars()
 
     def __normalize_active_block_scalars(self) -> None:

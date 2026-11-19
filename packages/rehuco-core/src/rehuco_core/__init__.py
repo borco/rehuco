@@ -271,6 +271,7 @@ from .rehu_content_files import (
 )
 from .rehu_content_images import ContentImageEntry, enumerate_content_images, list_archive_images
 from .rehu_document import (
+    SITE_ID_KEY,
     AuthorEntry,
     PluginBlock,
     RehuDocument,
@@ -886,6 +887,7 @@ __all__ = [
     "SCREENSHOT_NAME_PATTERNS",
     "SCREENSHOT_STEM_PATTERN",
     "SET_ASIDE_FILE_NAME",
+    "SITE_ID_KEY",
     "STRAY_GROUP_MARKER_PROBLEM",
     "SaveOutcome",
     "SavePayload",

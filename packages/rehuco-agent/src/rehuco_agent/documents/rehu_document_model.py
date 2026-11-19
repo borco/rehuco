@@ -22,6 +22,7 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_CURRENT_USERNAME,
     FORMAT_VERSION_KEY,
+    SITE_ID_KEY,
     TUTORIAL_PLUGIN,
     USERS_KEY,
     AuthorEntry,
@@ -2364,7 +2365,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.unknown_fields_changed.emit()
             self.dirty = True
 
-    def add_source(self, publisher: str, url: str) -> None:
+    def add_source(self, publisher: str, url: str, site_id: str | None = None) -> None:
         """Add a scraped page as a source ([[field-schema#sources]], #272), never a duplicate of one
         already there by ``url``.
 
@@ -2377,11 +2378,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         earlier drop or a `.tc` migration. The primary is filled through the
         `~RehuDocumentModel.url`/`~RehuDocumentModel.publisher` properties, so dirty tracking and the Save
         Preview refresh exactly as an edit through those fields already does; the other writes go through
-        :attr:`sources`.
+        :attr:`sources`. A ``site_id`` follows the publisher's rule: it fills the source this ``url`` lands on
+        only when that source names none ([[assets#site-id]]).
 
         :param publisher: the scraper's publisher -- fills the matching or primary source's own empty
             ``publisher``, and seeds a new entry's.
         :param url: the scraped page's URL.
+        :param site_id: the store's own id for the item, when the scraper reported one.
         """
         url = url.strip()
         sources = self.sources
@@ -2393,20 +2396,21 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             ),
             None,
         )
-        if match is not None:
-            if sources[match].get("publisher"):
-                return
-            if match == 0:
-                self.publisher = publisher
-            else:
-                self.sources = [*sources[:match], {**sources[match], "publisher": publisher}, *sources[match + 1 :]]
+        if match is None and self.url.strip():
+            added = {"title": self.title, "publisher": publisher, "url": url}
+            self.sources = [*sources, {**added, SITE_ID_KEY: site_id} if site_id else added]
             return
-        if not self.url.strip():
+        if match is None:
             self.url = url
+            match = 0
+        if match == 0:
             if not self.publisher:
                 self.publisher = publisher
-            return
-        self.sources = [*sources, {"title": self.title, "publisher": publisher, "url": url}]
+        elif not sources[match].get("publisher"):
+            self.sources = [*sources[:match], {**sources[match], "publisher": publisher}, *sources[match + 1 :]]
+        sources = self.sources
+        if site_id and not sources[match].get(SITE_ID_KEY):
+            self.sources = [*sources[:match], {**sources[match], SITE_ID_KEY: site_id}, *sources[match + 1 :]]
 
     def rescan_images(self) -> None:
         """Send this resource's ``<stem>NN`` set back to the directory (#73).
