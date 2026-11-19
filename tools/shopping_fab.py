@@ -57,6 +57,45 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
+# region Waits -- every pause and time limit the tool has, in seconds unless the name says otherwise
+
+PAUSE_SECONDS: Final = (1.0, 5.0)
+"""The wait between two listings, drawn at random from this range so the pace reads like a person's. Most of the time a
+listing takes is this pause."""
+
+POLL_SECONDS: Final = 1.5
+"""The pause between two looks at a page that is still rendering: once after going to any page, then between the
+side-panel checks of :data:`RENDER_POLLS` and between the scrolls of a results page."""
+
+RENDER_POLLS: Final = 20
+"""How many looks, :data:`POLL_SECONDS` apart, a listing's side panel gets to show its state: about 30 seconds. It is
+waited on twice, after opening the listing and after clicking *Add to My Library*; running out the first time reports
+the listing as not offered, the second time as never confirmed."""
+
+STABLE_ROUNDS: Final = 8
+"""A results page is done once this many looks in a row, :data:`POLL_SECONDS` apart and each after a scroll, found no
+further listing: about 12 seconds of nothing new."""
+
+MAX_SCROLLS: Final = 400
+"""The most looks one load of a results page gets, :data:`POLL_SECONDS` apart: about 10 minutes. It only bounds a page
+that keeps changing without showing anything untried; :data:`STABLE_ROUNDS` ends a normal one long before."""
+
+COMMAND_TIMEOUT_SECONDS: Final = 120
+"""How long one WebDriver command may take before it fails with :class:`OSError`. Going to a page waits for the page to
+load, so this is also the limit on a page that never finishes loading."""
+
+DRIVER_START_SECONDS: Final = 2.0
+"""How long geckodriver is given to start listening before the browser session is asked of it."""
+
+LOCK_POLL_SECONDS: Final = 1.0
+"""How often the profile's lock is checked while the login window is waited on: for the browser to take the profile,
+for its window to close, and for it to close after a Ctrl+C. The login wait itself has no limit; Ctrl+C ends it."""
+
+CLOSE_GRACE_SECONDS: Final = 10.0
+"""How long a browser asked to close, after a Ctrl+C in the login wait, is given before it is stopped by force."""
+
+# endregion
+
 DEFAULT_PROFILE: Final = Path(__file__).resolve().parent.parent / ".local_settings" / "persona" / "shopping_fab"
 """The persona's Firefox profile: in the checkout's git-ignored ``.local_settings``, beside the dev agent's own
 ``persona/firefox``. Created, empty, on first use."""
@@ -68,16 +107,11 @@ PROFILE_LOCK: Final = "parent.lock"
 """The file a running Firefox holds open, unshared, in its profile: it is how :func:`login` knows the window has closed.
 On Windows ``firefox.exe`` starts the browser and exits at once, so waiting on the process returns too early."""
 
-LOCK_POLL_SECONDS: Final = 1.0
-
 FIREFOX_PROCESSES: Final = (
     "Get-CimInstance Win32_Process -Filter \"Name='firefox.exe'\""
     " | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress"
 )
 """The PowerShell that lists each running Firefox process with its command line, as JSON."""
-
-CLOSE_GRACE_SECONDS: Final = 10.0
-"""How long a browser asked to close is given before it is stopped by force."""
 
 FAB_URL: Final = "https://www.fab.com/"
 LISTING_URL: Final = "https://www.fab.com/listings/{}"
@@ -116,19 +150,6 @@ ADDED: Final = "added"
 OWNED: Final = "owned"
 NOT_OFFERED: Final = "Add to My Library is not offered"
 UNCONFIRMED: Final = "clicked, never shown as saved"
-
-RENDER_POLLS: Final = 20
-"""How many times a page is asked whether it has rendered, :data:`POLL_SECONDS` apart."""
-
-POLL_SECONDS: Final = 1.5
-
-STABLE_ROUNDS: Final = 8
-"""A results page has nothing more to show once this many looks in a row found no further listing."""
-
-MAX_SCROLLS: Final = 400
-
-PAUSE_SECONDS: Final = (6.0, 12.0)
-"""The range the wait between two listings is drawn from."""
 
 MAX_BROKEN: Final = 3
 """Listings in a row that broke (never confirmed, or an error) before the run gives up: the page has changed."""
@@ -304,7 +325,7 @@ class Browser:  # pragma: no cover -- a live Firefox, tried by hand
             stderr=subprocess.DEVNULL,
             creationflags=own_group,
         )
-        time.sleep(2)
+        time.sleep(DRIVER_START_SECONDS)
         try:
             options = {"args": ["-profile", str(profile)]}
             capabilities = {"alwaysMatch": {"browserName": "firefox", "moz:firefoxOptions": options}}
@@ -328,7 +349,8 @@ class Browser:  # pragma: no cover -- a live Firefox, tried by hand
             data=None if body is None else json.dumps(body).encode(),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=120) as response:  # nosec B310 -- localhost, http by constant
+        # B310 is safe here: the address is localhost, and its http scheme a constant.
+        with urllib.request.urlopen(request, timeout=COMMAND_TIMEOUT_SECONDS) as response:  # nosec B310
             return json.loads(response.read())["value"]
 
     def open(self, url: str) -> None:
