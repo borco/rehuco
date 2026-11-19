@@ -768,25 +768,32 @@ around in the job.
 
 [[[acquisition-tooling#free-listings]]]
 
-**Not built, and not part of the app.** A scan records what an account owns; it never adds to it. Adding is a script,
+**Not part of the app.** A scan records what an account owns; it never adds to it. Adding is a script,
 `tools/shopping_fab.py`, for the one case worth automating: a publisher's free listings, which cost nothing to own
 and hours to click through.
 
+- **It runs on a persona of its own**, a Firefox profile in the checkout's git-ignored `.local_settings`, never the
+  app's persona or an everyday browser's; another can be named, and the tool can delete its persona to start
+  logged out.
 - **It is given a results page**, any Fab address with its filters in it: a category, a search, a publisher, free
   items only. A publisher is named by the address Fab gives it, never by a name typed in, since names are not unique.
 - **Run with no address, it opens the persona, undriven**, and waits as long as it takes, until its window is closed
   or Ctrl+C, with no summary: that is for signing in and for the store's own content preferences, where *Show
   products in My Library* is switched off so a results page lists only what is not owned yet.
-- **Each listing is opened and judged by its own page**: already saved, skipped; *Add to My Library* offered, clicked
-  and waited on until the page says it is saved; anything else, left alone. **It never buys.**
+- **Each listing is added from its card on the results page**, never by opening the listing. The store puts *Add to My
+  Library* on a card only while the pointer is over it, so the browser's own pointer is moved onto the card first;
+  the button is clicked and the card waited on until it says *Saved in My Library*. A card already saying so is
+  skipped; one that shows no button is left alone. **It never buys.**
 - **The results page is the queue.** The listings it shows are taken as they are, without reading the page to its end;
   after them the page is loaded again, and what was added has left it, so the next ones have moved up. A listing that
-  could not be added stays on the page, so it is remembered for the run and not opened twice; the page is scrolled
+  could not be added stays on the page, so it is remembered for the run and not tried twice; the page is scrolled
   only when everything it shows has been tried. The run ends when nothing untried is left.
 - **Nothing is kept between runs.** The store says what is owned, so a run stopped anywhere is started again.
-- **It is as slow as the scan and stops where the scan stops**: a random pause between listings, and the first
-  challenge page ends the run. So do three additions in a row that the store never confirmed, since the page has then
-  changed under the script.
+- **It keeps a person's pace and stops where the scan stops**: a random pause of a few seconds between listings, about
+  a thousand an hour, and the first challenge page ends the run. So do three additions in a row that the store never
+  confirmed, since the page has then changed under the script.
+- **Each listing prints a line** with its place in the run, the listings added per hour so far and its address; a
+  debug option adds how long each step took, which is how the pace is judged and tuned.
 - **Ctrl+C is a clean stop.** The listing in hand is abandoned, the browser is closed, and the run ends as any other.
 - **Every end prints a summary**, whether nothing was left, the user stopped it or the store did: how many listings
   were added, how many were already owned, and each one that failed, **its address on a line of its own** with what

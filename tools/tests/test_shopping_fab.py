@@ -5,7 +5,8 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from pytest import mark
+from pytest import CaptureFixture, mark
+from pytest_mock import MockerFixture
 
 from tools.shopping_fab import (
     ADDED,
@@ -14,10 +15,13 @@ from tools.shopping_fab import (
     OWNED,
     PROFILE_LOCK,
     UNCONFIRMED,
+    Laps,
     Tally,
     browsers_on,
     listing_ids,
     profile_in_use,
+    progress_line,
+    remove_profile,
 )
 
 # region Fixtures / helpers
@@ -108,6 +112,62 @@ def test_tally_of_a_run_that_did_nothing_lists_no_address() -> None:
 # endregion
 
 
+# region Laps
+
+
+def test_laps_time_each_step_from_the_one_before(mocker: MockerFixture) -> None:
+    """
+    Test steps:
+    1. Start laps at 10 s on the clock, and end three steps at 12.5 s, 12.75 s and 16 s
+    2. Assert the line gives each step its own seconds, from the previous step or the start, in the order they ended
+    """
+    mocker.patch("tools.shopping_fab.time.monotonic", side_effect=[10.0, 12.5, 12.75, 16.0])
+    laps = Laps()
+
+    laps.lap("load")
+    laps.lap("panel")
+    laps.lap("pause")
+
+    assert laps.line() == "load  2.50s  panel  0.25s  pause  3.25s"
+
+
+# endregion
+
+
+# region progress_line
+
+
+def test_progress_line_aligns_speed_index_and_address_and_names_a_result_other_than_added() -> None:
+    """
+    Test steps:
+    1. Make the line of an early added listing, of a late added one, and of an owned one
+    2. Assert the speed is added listings per hour over the run, to two decimals, and each column starts at the same
+       place on every line
+    3. Assert an added listing's line ends at its address and an owned one's names its result after it
+    """
+    early = progress_line(added=1, elapsed=400.0, index=7, listing=FIRST, result=ADDED)
+    late = progress_line(added=1234, elapsed=3600.0, index=21000, listing=SECOND, result=ADDED)
+    owned = progress_line(added=1234, elapsed=3600.0, index=21001, listing=FIRST, result=OWNED)
+
+    assert early == f"    7     9.00/h  {LISTING_URL.format(FIRST)}"
+    assert late == f"21000  1234.00/h  {LISTING_URL.format(SECOND)}"
+    assert owned == f"21001  1234.00/h  {LISTING_URL.format(FIRST)}  ({OWNED})"
+
+
+def test_progress_line_before_any_time_has_passed_shows_no_speed() -> None:
+    """
+    Test steps:
+    1. Make the line of a listing at the very start of the run, no time elapsed
+    2. Assert the speed shows as zero rather than failing
+    """
+    line = progress_line(added=0, elapsed=0.0, index=1, listing=FIRST, result=NOT_OFFERED)
+
+    assert line.startswith("    1     0.00/h  ")
+
+
+# endregion
+
+
 # region profile_in_use
 
 
@@ -146,6 +206,65 @@ def test_a_lock_file_held_unshared_marks_the_profile_in_use(tmp_path: Path) -> N
         ctypes.windll.kernel32.CloseHandle(handle)
 
     assert not profile_in_use(tmp_path)
+
+
+# endregion
+
+
+# region remove_profile
+
+
+def test_remove_profile_deletes_the_folder_and_says_so(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    """
+    Test steps:
+    1. Make a persona folder holding a file and a subfolder, and a lock file nobody holds
+    2. Remove it
+    3. Assert the folder is gone, the status is 0, and the message names the folder
+    """
+    persona = tmp_path / "persona"
+    (persona / "storage").mkdir(parents=True)
+    (persona / "cookies.sqlite").touch()
+    (persona / PROFILE_LOCK).touch()
+
+    assert remove_profile(persona) == 0
+
+    assert not persona.exists()
+    assert capsys.readouterr().out == f"Deleted the profile at {persona}.\n"
+
+
+def test_remove_profile_with_no_folder_deletes_nothing(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    """
+    Test steps:
+    1. Remove a persona whose folder does not exist
+    2. Assert the status is 0 and the message says nothing was deleted
+    """
+    persona = tmp_path / "persona"
+
+    assert remove_profile(persona) == 0
+
+    assert capsys.readouterr().out == f"There is no profile at {persona}; nothing was deleted.\n"
+
+
+@mark.skipif(sys.platform != "win32", reason="the Windows lock is the one this reads")
+def test_remove_profile_leaves_a_persona_open_in_firefox(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
+    """
+    Test steps:
+    1. Make a persona folder and hold its lock file as a running Firefox does
+    2. Remove it
+    3. Assert the status is 1, the folder and its files are still there, and the message says to close it first
+    """
+    persona = tmp_path / "persona"
+    persona.mkdir()
+    (persona / "cookies.sqlite").touch()
+    handle = hold_unshared(persona / PROFILE_LOCK)
+    try:
+        assert remove_profile(persona) == 1
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+    assert (persona / "cookies.sqlite").exists()
+    out = capsys.readouterr().out
+    assert out == f"The profile at {persona} is open in a Firefox; close it first. Nothing was deleted.\n"
 
 
 # endregion

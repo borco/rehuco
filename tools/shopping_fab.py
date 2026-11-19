@@ -2,20 +2,25 @@
 
 Usage::
 
-    python -I tools/shopping_fab.py
-    python -I tools/shopping_fab.py URL
+    python -I tools/shopping_fab.py [--profile PROFILE]
+    python -I tools/shopping_fab.py [--profile PROFILE] [--debug] URL
+    python -I tools/shopping_fab.py [--profile PROFILE] --remove-profile
+
+``PROFILE`` is the persona's Firefox profile folder, by default :data:`DEFAULT_PROFILE`: one kept for this tool, never
+an everyday browser's. ``--remove-profile`` deletes that folder, logins and all, and exits; the next run starts a fresh,
+logged-out one. ``--debug`` prints, under each listing's line, how long each of its steps took.
 
 With no address it opens the persona Firefox on Fab, undriven, and waits until its window is closed: sign in there,
 and set *Content preferences > Show products in My Library* off so a results page lists only what is not owned yet.
 Fab keeps both in the profile.
 
 ``URL`` is any Fab results page with its filters in the address: a category, a search, a publisher. The page is the
-queue ([[acquisition-tooling#free-listings]]): the listings it shows are opened one by one, then the page is loaded
-again, and what was added has left it. A listing already in the library is skipped, one offering *Add to My Library*
-is added, and anything else is left alone and reported -- the tool never buys. Nothing is kept between runs: Fab
-itself says what is owned, so a run stopped at any point is simply started again.
+queue ([[acquisition-tooling#free-listings]]): each listing it shows is added from its card there, through the card's
+own *Add to My Library* button, without opening the listing; then the page is loaded again, and what was added has
+left it. A card without that button is left alone and reported -- the tool never buys. Nothing is kept between runs:
+Fab itself says what is owned, so a run stopped at any point is simply started again.
 
-It reads like a person, a few seconds between pages, and stops at the first Cloudflare challenge. Ctrl+C stops it
+It reads like a person, a few seconds between listings, and stops at the first Cloudflare challenge. Ctrl+C stops it
 cleanly. Every end prints how many listings were added and the address of each one that failed. Needs geckodriver and
 Firefox; the persona profile must not be open in another Firefox.
 
@@ -30,19 +35,19 @@ Tips:
   Open the address in a browser first: it should list the free items of those sellers across categories.
 * **It is safe to stop and start again at any point.** An added listing leaves the results page, so a restart, or a
   narrower address (one category, one seller), picks up only what is missing.
-* **It takes days for a big list**: about 15 to 20 seconds a listing, so roughly 21,000 listings is four days of
-  running. Start with the narrower address of what is wanted first.
+* **Depending on the size of the list, it can take days to complete.** Start with the narrower address of what is
+  wanted first.
 * **A challenge page ends the run.** Run with no address, pass the challenge by hand in the persona, close its window,
   and start the address run again.
-* **Two things to try only if the pace is the problem**, not done yet: a shorter pause between listings
-  (:data:`PAUSE_SECONDS`; it also makes the session look less like a person), and adding from a results card, if the
-  card has its own *Add to My Library*, instead of opening each listing.
+* **If the pace is the problem**, shorten the pause between listings (:data:`PAUSE_SECONDS`); it also makes the
+  session look less like a person.
 """
 
 import argparse
 import json
 import random
 import re
+import shutil
 import subprocess  # nosec B404 -- starts geckodriver and Firefox, both named below
 import sys
 import time
@@ -51,8 +56,56 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-DEFAULT_PROFILE: Final = Path("C:/Users/iborc/Developer/__GAME_DEVELOPMENT/.selenium-persona/claude")
-"""The persona's Firefox profile, the one the earlier Fab scans logged in with."""
+# region Waits -- every pause and time limit the tool has, in seconds unless the name says otherwise
+
+PAUSE_SECONDS: Final = (1.0, 5.0)
+"""The wait between two listings, drawn at random from this range so the pace reads like a person's. Most of the time a
+listing takes is this pause."""
+
+CARD_POLL_SECONDS: Final = 0.25
+"""The pause between two looks at a card: while its *Add to My Library* appears under the pointer, and after it was
+clicked. A look runs a script in the page and asks nothing of Fab, so looking often costs no requests; it only stops a
+change that has arrived from waiting long to be seen."""
+
+HOVER_TIMEOUT_SECONDS: Final = 3.0
+"""How long a card under the pointer gets to show its *Add to My Library*, looked at every :data:`CARD_POLL_SECONDS`,
+before the listing is reported as not offered."""
+
+CONFIRM_TIMEOUT_SECONDS: Final = 30.0
+"""How long a clicked card gets to say *Saved in My Library*, looked at every :data:`CARD_POLL_SECONDS`, before the
+listing is reported as never confirmed."""
+
+POLL_SECONDS: Final = 1.5
+"""The pause between two looks at a results page: before the first, and after each scroll, so the listings the scroll
+asks Fab for have time to arrive."""
+
+STABLE_ROUNDS: Final = 8
+"""A results page is done once this many looks in a row, :data:`POLL_SECONDS` apart and each after a scroll, found no
+further listing: about 12 seconds of nothing new."""
+
+MAX_SCROLLS: Final = 400
+"""The most looks one load of a results page gets, :data:`POLL_SECONDS` apart: about 10 minutes. It only bounds a page
+that keeps changing without showing anything untried; :data:`STABLE_ROUNDS` ends a normal one long before."""
+
+COMMAND_TIMEOUT_SECONDS: Final = 120
+"""How long one WebDriver command may take before it fails with :class:`OSError`. Going to a page waits for the page to
+load, so this is also the limit on a page that never finishes loading."""
+
+DRIVER_START_SECONDS: Final = 2.0
+"""How long geckodriver is given to start listening before the browser session is asked of it."""
+
+LOCK_POLL_SECONDS: Final = 1.0
+"""How often the profile's lock is checked while the login window is waited on: for the browser to take the profile,
+for its window to close, and for it to close after a Ctrl+C. The login wait itself has no limit; Ctrl+C ends it."""
+
+CLOSE_GRACE_SECONDS: Final = 10.0
+"""How long a browser asked to close, after a Ctrl+C in the login wait, is given before it is stopped by force."""
+
+# endregion
+
+DEFAULT_PROFILE: Final = Path(__file__).resolve().parent.parent / ".local_settings" / "persona" / "shopping_fab"
+"""The persona's Firefox profile: in the checkout's git-ignored ``.local_settings``, beside the dev agent's own
+``persona/firefox``. Created, empty, on first use."""
 
 FIREFOX: Final = Path("C:/Program Files/Mozilla Firefox/firefox.exe")
 """The browser :func:`login` starts by itself; a run goes through geckodriver, which finds it alone."""
@@ -61,16 +114,11 @@ PROFILE_LOCK: Final = "parent.lock"
 """The file a running Firefox holds open, unshared, in its profile: it is how :func:`login` knows the window has closed.
 On Windows ``firefox.exe`` starts the browser and exits at once, so waiting on the process returns too early."""
 
-LOCK_POLL_SECONDS: Final = 1.0
-
 FIREFOX_PROCESSES: Final = (
     "Get-CimInstance Win32_Process -Filter \"Name='firefox.exe'\""
     " | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress"
 )
 """The PowerShell that lists each running Firefox process with its command line, as JSON."""
-
-CLOSE_GRACE_SECONDS: Final = 10.0
-"""How long a browser asked to close is given before it is stopped by force."""
 
 FAB_URL: Final = "https://www.fab.com/"
 LISTING_URL: Final = "https://www.fab.com/listings/{}"
@@ -78,6 +126,9 @@ LISTING_URL: Final = "https://www.fab.com/listings/{}"
 PORT: Final = 4446
 """Where geckodriver listens; the earlier scan script uses the port below it."""
 
+DRIVER_HOST: Final = "127.0.0.1"
+"""Where geckodriver is reached. Not ``localhost``: on Windows that is tried first as IPv6, which geckodriver does not
+listen on, and every command then waited about 2 seconds for the fall-back to IPv4."""
 CHALLENGE_TITLE: Final = "Just a moment..."
 """The title of Cloudflare's challenge page."""
 
@@ -87,44 +138,60 @@ LISTING_LINKS_SCRIPT: Final = """return Array.from(document.querySelectorAll('a[
 
 SCROLL_SCRIPT: Final = "window.scrollTo(0, document.body.scrollHeight);"
 
-STATE_SCRIPT: Final = """
-const side = document.querySelector('main aside');
-if (!side) return '';
-const heading = Array.from(side.querySelectorAll('h2'), h => h.textContent.trim());
-if (heading.includes('Saved in My Library')) return 'owned';
-const labels = Array.from(side.querySelectorAll('.fabkit-Button-label'), s => s.textContent.trim());
-if (labels.includes('Add to My Library')) return 'free';
-return labels.length ? 'other' : '';
+CARD_SCRIPT: Final = """
+const id = arguments[0];
+const link = document.querySelector(`a[href="/listings/${id}"]`);
+if (!link) return null;
+let card = link;
+while (card.parentElement && Array.from(card.parentElement.querySelectorAll('a[href*="/listings/"]'))
+        .every(a => a.getAttribute('href').includes(id))) {
+    card = card.parentElement;
+}
+card.scrollIntoView({block: 'center'});
+return card;
 """
-"""What a listing's side panel offers: ``owned``, ``free`` (it can be added), ``other``, or empty while it renders."""
+"""A listing's card on the results page, scrolled into view, given the listing's id; ``null`` when it is not on the
+page. The card is the widest element around the listing's link that holds no other listing's link."""
 
-ADD_SCRIPT: Final = """
-const side = document.querySelector('main aside');
-const label = Array.from(side.querySelectorAll('.fabkit-Button-label'))
-    .find(s => s.textContent.trim() === 'Add to My Library');
-label.closest('button').click();
+CARD_STATE_SCRIPT: Final = """
+const [card, click] = arguments;
+if (!card.isConnected) return 'gone';
+const saved = 'Saved in My Library';
+if (card.textContent.includes(saved) || card.querySelector(`[aria-label="${saved}"], [title="${saved}"]`)) {
+    return 'saved';
+}
+const button = card.querySelector('button[aria-label="Add to My Library"]');
+if (!button) return 'none';
+if (click) button.click();
+return 'free';
 """
+"""What a card offers, given the card and whether to click: ``saved`` once it says *Saved in My Library*, ``free``
+while it has an *Add to My Library* button (clicked when asked), ``none`` when it has neither, ``gone`` when it has
+left the page. Fab puts the button on a card only while the pointer is over it."""
+
+CARD_SAVED: Final = "saved"
+CARD_FREE: Final = "free"
+CARD_NONE: Final = "none"
+CARD_GONE: Final = "gone"
 
 ADDED: Final = "added"
 OWNED: Final = "owned"
-NOT_OFFERED: Final = "Add to My Library is not offered"
-UNCONFIRMED: Final = "clicked, never shown as saved"
-
-RENDER_POLLS: Final = 20
-"""How many times a page is asked whether it has rendered, :data:`POLL_SECONDS` apart."""
-
-POLL_SECONDS: Final = 1.5
-
-STABLE_ROUNDS: Final = 8
-"""A results page has nothing more to show once this many looks in a row found no further listing."""
-
-MAX_SCROLLS: Final = 400
-
-PAUSE_SECONDS: Final = (6.0, 12.0)
-"""The range the wait between two listings is drawn from."""
+NOT_OFFERED: Final = "no Add to My Library on its card"
+LEFT_THE_PAGE: Final = "its card left the results page before it was clicked"
+UNCONFIRMED: Final = "clicked, never shown as added"
 
 MAX_BROKEN: Final = 3
 """Listings in a row that broke (never confirmed, or an error) before the run gives up: the page has changed."""
+
+SECONDS_PER_HOUR: Final = 3600
+
+PROGRESS_INDENT: Final = 18
+"""How far a ``--debug`` line is indented: to where the address starts on the :func:`progress_line` above it."""
+
+PAGE_LOAD_STRATEGY: Final = "eager"
+"""When going to a page returns: once its document is parsed, not after every image, font and script has loaded too.
+The results page's cards are waited on by themselves (:data:`POLL_SECONDS`), so nothing later on the page is
+needed."""
 
 INTERRUPTED: Final = 130
 """The exit status of a run stopped with Ctrl+C."""
@@ -179,6 +246,64 @@ def profile_in_use(profile: Path) -> bool:
         return False
     except PermissionError:
         return True
+
+
+def progress_line(added: int, elapsed: float, index: int, listing: str, result: str) -> str:
+    """The line printed after one listing: the listing's place in the run, the average speed in listings added per
+    hour, and its address, in aligned columns.
+
+    :param added: how many listings the run has added so far.
+    :param elapsed: the seconds since the run started.
+    :param index: the listing's place in the run, from 1.
+    :param listing: the listing's id.
+    :param result: :data:`ADDED`, :data:`OWNED`, or what went wrong; anything but :data:`ADDED` follows the address.
+    :returns: the line, without its newline.
+    """
+    speed = added / elapsed * SECONDS_PER_HOUR if elapsed > 0 else 0.0
+    line = f"{index:5d}  {speed:7.2f}/h  {LISTING_URL.format(listing)}"
+    return line if result == ADDED else f"{line}  ({result})"
+
+
+class Laps:
+    """The time each step of one piece of work took, for ``--debug``: each lap runs from the previous one, or from when
+    the laps were started."""
+
+    def __init__(self) -> None:
+        self.__last = time.monotonic()
+        self.__laps: Final[list[tuple[str, float]]] = []
+
+    def lap(self, name: str) -> None:
+        """End a step.
+
+        :param name: the step's name.
+        """
+        now = time.monotonic()
+        self.__laps.append((name, now - self.__last))
+        self.__last = now
+
+    def line(self) -> str:
+        """The steps on one line, each with its seconds, in the order they ended.
+
+        :returns: the line, without its newline.
+        """
+        return "  ".join(f"{name} {seconds:5.2f}s" for name, seconds in self.__laps)
+
+
+def remove_profile(profile: Path) -> int:
+    """Delete a persona's profile folder and say what was deleted.
+
+    :param profile: the profile's folder.
+    :returns: the process's exit status: 1 when a Firefox is running on it, which is left alone, else 0.
+    """
+    if profile_in_use(profile):
+        print(f"The profile at {profile} is open in a Firefox; close it first. Nothing was deleted.")
+        return 1
+    if not profile.exists():
+        print(f"There is no profile at {profile}; nothing was deleted.")
+        return 0
+    shutil.rmtree(profile)
+    print(f"Deleted the profile at {profile}.")
+    return 0
 
 
 def browsers_on(profile: Path, processes: object) -> list[int]:
@@ -280,10 +405,16 @@ class Browser:  # pragma: no cover -- a live Firefox, tried by hand
             stderr=subprocess.DEVNULL,
             creationflags=own_group,
         )
-        time.sleep(2)
+        time.sleep(DRIVER_START_SECONDS)
         try:
             options = {"args": ["-profile", str(profile)]}
-            capabilities = {"alwaysMatch": {"browserName": "firefox", "moz:firefoxOptions": options}}
+            capabilities = {
+                "alwaysMatch": {
+                    "browserName": "firefox",
+                    "moz:firefoxOptions": options,
+                    "pageLoadStrategy": PAGE_LOAD_STRATEGY,
+                }
+            }
             self.__session: Final[str] = self.__call("POST", "/session", {"capabilities": capabilities})["sessionId"]
         except BaseException:
             self.__driver.terminate()
@@ -299,12 +430,13 @@ class Browser:  # pragma: no cover -- a live Firefox, tried by hand
         :raises OSError: geckodriver did not answer, or refused the command.
         """
         request = urllib.request.Request(
-            f"http://localhost:{PORT}{path}",
+            f"http://{DRIVER_HOST}:{PORT}{path}",
             method=method,
             data=None if body is None else json.dumps(body).encode(),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=120) as response:  # nosec B310 -- localhost, http by constant
+        # B310 is safe here: the address is this machine's, and its http scheme a constant.
+        with urllib.request.urlopen(request, timeout=COMMAND_TIMEOUT_SECONDS) as response:  # nosec B310
             return json.loads(response.read())["value"]
 
     def open(self, url: str) -> None:
@@ -314,19 +446,29 @@ class Browser:  # pragma: no cover -- a live Firefox, tried by hand
         :raises Challenge: Cloudflare's challenge page came back instead.
         :raises OSError: geckodriver did not answer, or refused the command.
         """
-        self.__call("POST", f"/session/{self.__session}/url", {"url": url})
-        time.sleep(POLL_SECONDS)
+        self.__call("POST", f"/session/{self.__session}/url", {"url": url})  # returns once its document is ready
         if self.run("return document.title") == CHALLENGE_TITLE:
             raise Challenge(url)
 
-    def run(self, script: str) -> Any:
+    def run(self, script: str, *args: object) -> Any:
         """Run a script in the page.
 
         :param script: the script, returning its value.
+        :param args: what the script reads as ``arguments``.
         :returns: what it returned.
         :raises OSError: geckodriver did not answer, or refused the command.
         """
-        return self.__call("POST", f"/session/{self.__session}/execute/sync", {"script": script, "args": []})
+        return self.__call("POST", f"/session/{self.__session}/execute/sync", {"script": script, "args": list(args)})
+
+    def hover(self, element: object) -> None:
+        """Move the browser's own pointer onto the middle of an element, as a person's mouse would.
+
+        :param element: the element, as a script returned it.
+        :raises OSError: geckodriver did not answer, or refused the command.
+        """
+        move = {"type": "pointerMove", "duration": 0, "origin": element, "x": 0, "y": 0}
+        pointer = {"type": "pointer", "id": "mouse", "parameters": {"pointerType": "mouse"}, "actions": [move]}
+        self.__call("POST", f"/session/{self.__session}/actions", {"actions": [pointer]})
 
     def close(self) -> None:
         """End the session, which closes the browser, and stop geckodriver."""
@@ -339,13 +481,13 @@ class Browser:  # pragma: no cover -- a live Firefox, tried by hand
 
 
 def untried_listings(browser: Browser, url: str, tried: set[str]) -> list[str]:  # pragma: no cover -- a live Firefox
-    """Load the results page and take the listings it shows that this run has not opened.
+    """Load the results page and take the listings it shows that this run has not tried.
 
     The page is scrolled only when everything it shows has been tried already.
 
     :param browser: the browser.
     :param url: the results page.
-    :param tried: the listings this run has opened.
+    :param tried: the listings this run has tried.
     :returns: the untried listings' ids, in page order; empty when the page has no more.
     :raises Challenge: Cloudflare's challenge page came back instead.
     """
@@ -365,64 +507,87 @@ def untried_listings(browser: Browser, url: str, tried: set[str]) -> list[str]: 
     return []
 
 
-def wait_for_state(browser: Browser, wanted: frozenset[str]) -> str:  # pragma: no cover -- a live Firefox
-    """Wait until a listing's side panel shows one of the states asked for.
-
-    :param browser: the browser, on a listing.
-    :param wanted: the states to wait for.
-    :returns: the state reached, or the last one seen when none of them came.
-    """
-    state = ""
-    for _ in range(RENDER_POLLS):
-        state = browser.run(STATE_SCRIPT)
-        if state in wanted:
-            break
-        time.sleep(POLL_SECONDS)
-    return state
-
-
 def add_listing(browser: Browser, listing: str) -> str:  # pragma: no cover -- a live Firefox, tried by hand
-    """Add one listing to the library if Fab offers it.
+    """Add one listing to the library from its card on the results page, if the card offers it.
 
-    :param browser: the browser.
+    The pointer is moved onto the card, which is what makes Fab put *Add to My Library* on it; the button is clicked,
+    and the add counts as confirmed once the card says *Saved in My Library*.
+
+    :param browser: the browser, on the results page.
     :param listing: the listing's id.
     :returns: :data:`ADDED`, :data:`OWNED`, or what went wrong.
-    :raises Challenge: Cloudflare's challenge page came back instead.
     """
     try:
-        browser.open(LISTING_URL.format(listing))
-        state = wait_for_state(browser, frozenset({"owned", "free", "other"}))
-        if state == "owned":
+        card = browser.run(CARD_SCRIPT, listing)
+        if card is None:
+            return LEFT_THE_PAGE
+        browser.hover(card)
+        state = wait_for_card(browser, card, HOVER_TIMEOUT_SECONDS, frozenset({CARD_FREE, CARD_SAVED, CARD_GONE}))
+        if state == CARD_SAVED:
             return OWNED
-        if state != "free":
+        if state == CARD_GONE:
+            return LEFT_THE_PAGE
+        if state != CARD_FREE:
             return NOT_OFFERED
-        browser.run(ADD_SCRIPT)
-        return ADDED if wait_for_state(browser, frozenset({"owned"})) == "owned" else UNCONFIRMED
+        browser.run(CARD_STATE_SCRIPT, card, True)
+        saved = wait_for_card(browser, card, CONFIRM_TIMEOUT_SECONDS, frozenset({CARD_SAVED})) == CARD_SAVED
+        return ADDED if saved else UNCONFIRMED
     except OSError as error:
         return f"error: {error}"
 
 
-def shop(browser: Browser, url: str, tally: Tally) -> None:  # pragma: no cover -- a live Firefox, tried by hand
+def wait_for_card(  # pragma: no cover -- a live Firefox, tried by hand
+    browser: Browser, card: object, timeout: float, wanted: frozenset[str]
+) -> str:
+    """Look at a card every :data:`CARD_POLL_SECONDS` until it is in one of the states asked for.
+
+    :param browser: the browser, on the results page.
+    :param card: the card, as :data:`CARD_SCRIPT` returned it.
+    :param timeout: how long to look, in seconds.
+    :param wanted: the states to wait for.
+    :returns: the state reached, or the last one seen when none of them came in time.
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        state = browser.run(CARD_STATE_SCRIPT, card, False)
+        if state in wanted or time.monotonic() >= deadline:
+            return state
+        time.sleep(CARD_POLL_SECONDS)
+
+
+def shop(browser: Browser, url: str, tally: Tally, debug: bool) -> None:  # pragma: no cover -- a live Firefox
     """Add what a results page shows, loading it again until it shows nothing untried.
 
     :param browser: the browser.
     :param url: the results page.
     :param tally: where each listing's result is counted.
+    :param debug: also print how long each step took, under the line of the results page or listing it belongs to.
     :raises Challenge: Cloudflare's challenge page came back instead.
     """
     tried: set[str] = set()
     broken = 0
+    started = time.monotonic()
+    laps = Laps()
     while ids := untried_listings(browser, url, tried):
+        laps.lap("results")
+        if debug:
+            print(f"{'':{PROGRESS_INDENT}}{laps.line()}", flush=True)
         for listing in ids:
+            laps = Laps()
             tried.add(listing)
             result = add_listing(browser, listing)
+            laps.lap("add")
             tally.record(listing, result)
-            print(f"{len(tried)} {result}: {LISTING_URL.format(listing)}", flush=True)
+            print(progress_line(tally.added, time.monotonic() - started, len(tried), listing, result), flush=True)
             broken = broken + 1 if result not in (ADDED, OWNED, NOT_OFFERED) else 0
             if broken == MAX_BROKEN:
                 print(f"{MAX_BROKEN} listings in a row broke; stopping.")
                 return
             time.sleep(random.uniform(*PAUSE_SECONDS))  # nosec B311 -- a pause, not a secret
+            laps.lap("pause")
+            if debug:
+                print(f"{'':{PROGRESS_INDENT}}{laps.line()}", flush=True)
+        laps = Laps()
     print("Nothing left on the page to try.")
 
 
@@ -433,15 +598,20 @@ def main() -> int:  # pragma: no cover -- a live Firefox, tried by hand
     """
     parser = argparse.ArgumentParser(description="Add a Fab results page's free listings to the library.")
     parser.add_argument("url", nargs="?", help="a Fab results page; without one, the persona opens for signing in")
-    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE, help="the persona's Firefox profile")
+    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE, help="the persona's Firefox profile folder")
+    parser.add_argument("--remove-profile", action="store_true", help="delete the persona's profile folder and exit")
+    parser.add_argument("--debug", action="store_true", help="also print how long each step of each listing took")
     arguments = parser.parse_args()
+    if arguments.remove_profile:
+        return remove_profile(arguments.profile)
+    arguments.profile.mkdir(parents=True, exist_ok=True)
     if arguments.url is None:
         return login(arguments.profile)
     tally = Tally()
     status = 0
     browser = Browser(arguments.profile)
     try:
-        shop(browser, arguments.url, tally)
+        shop(browser, arguments.url, tally, arguments.debug)
     except Challenge as challenge:
         print(f"Cloudflare challenge at {challenge}; stopping. Run with no address, pass it by hand, and start again.")
         status = 1
