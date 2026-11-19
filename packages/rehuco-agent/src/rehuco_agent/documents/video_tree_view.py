@@ -17,6 +17,7 @@ from rehuco_core.access import KeyRelocation, ResourceKey
 from ..resource_events import ResourceEvents
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.videos_settings import shared_videos_settings
+from .clock_text import clock_text
 from .latest_runner import LatestRunner
 from .rehu_document_model import RehuDocumentModel
 from .video_row_actions import VideoRowActions
@@ -118,10 +119,7 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         view.selectionModel().selectionChanged.connect(self.__update_actions)
         view.expanded.connect(self.__on_expanded)
         view.collapsed.connect(self.__on_collapsed)
-        # a redraw in place changes what the ticks say: a video viewed to its end, a star set from the Files dock
-        self.__tree.dataChanged.connect(self.__update_actions)
-        self.__tree.modelAboutToBeReset.connect(self.__on_about_to_reset)
-        self.__tree.modelReset.connect(self.__on_reset)
+        self.__follow_tree()
         model.path_changed.connect(self.refresh)  # type: ignore[attr-defined]
         model.active_block_changed.connect(self.refresh)
         self.__events.moved.connect(self.__on_moved)
@@ -131,7 +129,16 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         if tree is not None:
             # rows listed before this view was made reset nothing here: opened as a reset opens them
             self.__on_reset()
+        self.__show_totals()
         self.__update_actions()
+
+    def __follow_tree(self) -> None:
+        """Follow the rows' model: what its redraws and rebuilds change here."""
+        # a redraw in place changes what the ticks say: a video viewed to its end, a star set from the Files dock
+        self.__tree.dataChanged.connect(self.__update_actions)
+        self.__tree.totals_changed.connect(self.__show_totals)
+        self.__tree.modelAboutToBeReset.connect(self.__on_about_to_reset)
+        self.__tree.modelReset.connect(self.__on_reset)
 
     def detach(self) -> None:
         """Stop following the document and the app's change feed, before this view is destroyed."""
@@ -359,6 +366,21 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         finally:
             self.__restoring = False
         view.scrollTo(index, QAbstractItemView.ScrollHint.EnsureVisible)
+
+    def __show_totals(self) -> None:
+        """Say how much of the tutorial is watched and how much is left, under the tree, as a player's clock does
+        (``3:20:15 / -5:05:40``, owner); nothing while the videos are not known or there are none."""
+        label = self.__ui.totals_label
+        totals = self.__tree.totals
+        if totals is None or not totals.files:
+            label.setVisible(False)
+            return
+        watched, remaining = clock_text(round(totals.watched * 1000)), clock_text(round(totals.remaining * 1000))
+        tooltip = f"Watched {watched} of the tutorial, {remaining} remaining."
+        if totals.unknown_length:
+            tooltip += f" Videos of unknown length, counted in neither: {totals.unknown_length}."
+        label.set_text(f"{watched} / -{remaining}", tooltip=tooltip)
+        label.setVisible(True)
 
     def __on_about_to_reset(self) -> None:
         """Note the selected video before the reset clears the selection."""
