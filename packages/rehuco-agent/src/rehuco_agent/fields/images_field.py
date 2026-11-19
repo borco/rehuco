@@ -43,11 +43,11 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     them here as well. Given an ``image_organizer`` it also **rearranges** the set (#72): moving or
     deleting a screenshot renames files, since a resource's screenshot order is its numbering -- so
     those edits land on disk immediately rather than waiting for a Save, and the strip is sent back
-    to the directory afterwards. A double-click in it asks the owner for a **curating** viewer over
+    to the directory afterward. A double-click in it asks the owner for a **curating** viewer over
     every row (`ImageCurator`, #370), whose keys the editor carries out.
 
     **Lock-aware** (`LockAware`, #292): a locked document -- a legacy ``.tc`` above all -- leaves this
-    editor *shown* and only its editing controls greyed, so the resource whose conversion is being
+    editor *shown* and only its editing controls grayed, so the resource whose conversion is being
     considered can be looked at first. The owner leaves the images tab enabled and hands the lock here
     instead of disabling the surface wholesale.
 

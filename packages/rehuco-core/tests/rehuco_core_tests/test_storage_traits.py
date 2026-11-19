@@ -1,7 +1,7 @@
 """Tests for the storage trait a reader consults before it decides whether to let go (#241).
 
 Both answers are exercised on every platform by forcing ``sys.platform``, because the trait is what
-every job's behaviour hangs off: a wrong answer on the platform the suite does not happen to be
+every job's behavior hangs off: a wrong answer on the platform the suite does not happen to be
 running on would be invisible until someone ran the app there.
 """
 

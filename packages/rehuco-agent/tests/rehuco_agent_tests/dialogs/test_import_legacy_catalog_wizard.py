@@ -349,14 +349,14 @@ def test_browsing_sets_the_root_and_enables_next(mocker: MockerFixture, wizard: 
     assert pages(wizard).next_button.isEnabled()
 
 
-def test_cancelling_the_browse_dialog_leaves_the_root_unset(
+def test_canceling_the_browse_dialog_leaves_the_root_unset(
     mocker: MockerFixture, wizard: ImportLegacyCatalogWizard
 ) -> None:
-    """Cancelling the folder chooser sets nothing.
+    """Canceling the folder chooser sets nothing.
 
     **Test steps:**
 
-    * mock the folder chooser to return nothing (cancelled)
+    * mock the folder chooser to return nothing (canceled)
     * click Browse
     * verify the root is still unset
     """
@@ -432,7 +432,7 @@ def test_the_scan_step_produces_the_plan_without_touching_any_file(
     mock_unlink.assert_not_called()
 
 
-def test_cancelling_mid_scan_returns_to_the_root_step(
+def test_canceling_mid_scan_returns_to_the_root_step(
     mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard
 ) -> None:
     """Cancel during the scan stops it and returns the wizard to step 1.
@@ -723,7 +723,7 @@ def test_a_blocked_row_checked_by_the_user_is_enqueued_with_overwrite(
 def test_cancel_mid_import_leaves_every_resource_converted_or_untouched(
     mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard
 ) -> None:
-    """Cancelling stops every job still waiting its turn outright; the one already running finishes on
+    """Canceling stops every job still waiting its turn outright; the one already running finishes on
     its own -- never a resource left half-converted (#192's whole safety argument).
 
     **Test steps:**
@@ -754,8 +754,8 @@ def test_cancel_mid_import_leaves_every_resource_converted_or_untouched(
     assert convert.call_count == 1
     by_path = {row.path: row for row in wizard.model.rows()}
     assert by_path[CLEAN_A.tc_path].outcome == "converted"
-    assert by_path[CLEAN_B.tc_path].outcome == "cancelled"
-    assert by_path[third.tc_path].outcome == "cancelled"
+    assert by_path[CLEAN_B.tc_path].outcome == "canceled"
+    assert by_path[third.tc_path].outcome == "canceled"
 
 
 # endregion
@@ -836,15 +836,15 @@ def test_the_result_summary_says_the_checks_outlive_the_wizard(
     assert "2 content check(s) were queued" in pages(wizard).result.ui.summary_label.text()
 
 
-def test_cancelling_an_import_cancels_the_checks_it_queued(
+def test_canceling_an_import_cancels_the_checks_it_queued(
     mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard, queue: TaskQueue
 ) -> None:
-    """Stopping an import means stopping the hashing too, or it reads the library for hours afterwards.
+    """Stopping an import means stopping the hashing too, or it reads the library for hours afterward.
 
     **Test steps:**
 
     * block the first conversion, tick the option, import two resources, then cancel mid-run
-    * verify no check ever ran and every one of them is cancelled
+    * verify no check ever ran and every one of them is canceled
     """
     mocker.patch.object(Path, "exists", autospec=True, return_value=True)
     verify = mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport())
@@ -870,7 +870,7 @@ def test_cancelling_an_import_cancels_the_checks_it_queued(
     serials = {status.serial for status in queue.jobs() if not str(status.label).startswith("Import")}
     assert len(serials) == 2
     qtbot.waitUntil(
-        lambda: all(status.state is JobState.CANCELLED for status in queue.jobs() if status.serial in serials),
+        lambda: all(status.state is JobState.CANCELED for status in queue.jobs() if status.serial in serials),
         timeout=TIMEOUT,
     )
 
@@ -1105,7 +1105,7 @@ def test_the_report_carries_a_failure_s_message_beside_its_outcome(
 def test_save_with_no_chosen_path_writes_nothing(
     mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard
 ) -> None:
-    """Cancelling the save file chooser writes nothing.
+    """Canceling the save file chooser writes nothing.
 
     **Test steps:**
 

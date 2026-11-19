@@ -93,7 +93,7 @@ class ChecksumTrust:
         """Start tracking in the file at ``path`` -- or stop, with ``None``.
 
         The file is read now. **A file that cannot be read costs its trust and nothing else**: missing,
-        unparseable, stamped by a newer build or shaped wrongly, it is logged and read as empty, which
+        unparsable, stamped by a newer build or shaped wrongly, it is logged and read as empty, which
         fails safe -- every location reads unverified until verified again.
 
         :param path: the trust file; its directory need not exist until the first save.

@@ -107,8 +107,8 @@ def test_a_rename_with_no_readers_runs_straight_through(coordinator: RenameCoord
 def test_a_rename_waits_for_a_holder_to_let_go(coordinator: RenameCoordinator, filesystem: Any) -> None:
     """A reader holding a handle keeps the rename waiting, and releasing lets it through.
 
-    The measured behaviour this whole module exists for: the rename does not fail and does not force
-    anything, it waits for an acknowledgement that arrives one chunk later.
+    The measured behavior this whole module exists for: the rename does not fail and does not force
+    anything, it waits for an acknowledgment that arrives one chunk later.
 
     **Test steps:**
 

@@ -53,7 +53,7 @@ class LinkDropPassFilter(QObject):
     """Hands a link dropped on a text edit to the widget behind it, leaving any other drop to the edit.
 
     A `QLineEdit` accepts drops by default and inserts a dropped link's characters, so it would swallow a link
-    meant for the Main Editor dock's scrape. A drop that `UrlDrop.parse` recognises is therefore ignored here,
+    meant for the Main Editor dock's scrape. A drop that `UrlDrop.parse` recognizes is therefore ignored here,
     which has Qt offer it to the nearest ancestor that accepts drops; every other drop, a title or a publisher's
     name among them, is the edit's own to insert.
 
@@ -96,7 +96,7 @@ class SourceCardContent(QWidget):
     field, nor a key a later version adds.
 
     **Flagged, never refused.** A source with an address or a publisher but no title, and an address that is
-    not an http(s) one, are painted in the warning colour with the reason as a tooltip; the value is kept
+    not an http(s) one, are painted in the warning color with the reason as a tooltip; the value is kept
     either way. A card holding nothing yet is not flagged -- it is just started.
 
     **The top card is the primary**, but nothing on the card says so: the captions stay plain, so dragging a
@@ -120,7 +120,7 @@ class SourceCardContent(QWidget):
     """Why an untitled source that says something else is flagged."""
 
     WARNING_STYLESHEET: Final = f'QLineEdit[warning="true"] {{ color: {WARNING_COLOR}; }}'
-    """Paints an edit's text in the warning colour while its source is flagged for it."""
+    """Paints an edit's text in the warning color while its source is flagged for it."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

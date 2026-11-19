@@ -123,7 +123,7 @@ class ImageDownloads(QObject):  # pylint: disable=too-many-instance-attributes
         submitted from -- see :meth:`__begin_batch` for where a batch starts."""
 
         self.__detached = False
-        """Set by :meth:`detach`: an outcome landing afterwards is dropped."""
+        """Set by :meth:`detach`: an outcome landing afterward is dropped."""
 
         self.__downloads: Final = ImageDownloadJob.Relay(self)
         """Where every download this object runs reports, built once for its lifetime rather than one

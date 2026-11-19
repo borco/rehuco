@@ -114,7 +114,7 @@ $(INSTALLER_DIR)/banner.bmp: $(ICON_DIR)/rehuco-agent.png
 		-alpha remove BMP3:$@
 
 # The docs site can't read outside docs_dir, so copy favicon + logo in. Real file targets give
-# the newer-than behaviour for free: make re-copies only when the design/icons source changed.
+# the newer-than behavior for free: make re-copies only when the design/icons source changed.
 # mkdir -p because these two are the only things in that directory and both are gitignored, so a
 # fresh checkout does not have it -- git tracks files, not directories.
 $(DOCS_IMAGES)/favicon.svg: $(ICON_DIR)/favicon.svg

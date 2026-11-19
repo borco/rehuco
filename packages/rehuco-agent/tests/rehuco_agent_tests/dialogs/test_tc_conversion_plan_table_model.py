@@ -411,7 +411,7 @@ def test_setdata_on_the_wrong_column_or_role_changes_nothing() -> None:
 
 
 def test_outcome_column_shows_a_non_failure_outcome_plainly() -> None:
-    """A ``"converted"``/``"cancelled"``/``"skipped"`` outcome shows as itself, with no message to append.
+    """A ``"converted"``/``"canceled"``/``"skipped"`` outcome shows as itself, with no message to append.
 
     **Test steps:**
 

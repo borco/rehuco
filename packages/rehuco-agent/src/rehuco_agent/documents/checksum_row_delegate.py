@@ -60,18 +60,18 @@ class ChecksumRowDelegate(QStyledItemDelegate):
             if column == STATUS_COLUMN:
                 path = CHECKSUM_STATE_ICONS.get(row.checksum_state)
                 if path is not None:
-                    self.__icons.icon(path, pen_color).paint(painter, ChecksumRowDelegate.__centred(option.rect))
+                    self.__icons.icon(path, pen_color).paint(painter, ChecksumRowDelegate.__centered(option.rect))
                 return
             ChecksumRowDelegate.__paint_text(painter, option.rect, str(index.data() or ""))
         finally:
             painter.restore()
 
     def __paint_background(self, painter: QPainter, option: QStyleOptionViewItem) -> QColor:
-        """Fill the cell and decide the colour its content is drawn in.
+        """Fill the cell and decide the color its content is drawn in.
 
         :param painter: the painter to draw with.
         :param option: the item's rect, palette and state.
-        :returns: the colour the glyph and the text are drawn in.
+        :returns: the color the glyph and the text are drawn in.
         """
         selected = QStyle.StateFlag.State_Selected in option.state
         if selected:
@@ -89,7 +89,7 @@ class ChecksumRowDelegate(QStyledItemDelegate):
     # every delegate/table pair in this module already is, rather than a shared base neither needs
     # pylint: disable=duplicate-code
     @staticmethod
-    def __centred(cell: QRect) -> QRect:
+    def __centered(cell: QRect) -> QRect:
         """A glyph-sized rect in the middle of ``cell``.
 
         What the Status column needs and the base delegate cannot give it: with no text to be placed
@@ -109,8 +109,8 @@ class ChecksumRowDelegate(QStyledItemDelegate):
 
         Drawn with the painter directly rather than handed to the style, the same reason
         :class:`~rehuco_agent.documents.files_row_delegate.FilesRowDelegate` does: the style picks its
-        own selected-text colour from the active/inactive distinction, which would leave an unfocused
-        selected row reading its highlight in one colour and its text in another.
+        own selected-text color from the active/inactive distinction, which would leave an unfocused
+        selected row reading its highlight in one color and its text in another.
 
         :param painter: the painter to draw with.
         :param cell: the rect to draw in.

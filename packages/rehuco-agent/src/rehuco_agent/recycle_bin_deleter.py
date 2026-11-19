@@ -39,7 +39,7 @@ def configured_deleter() -> Deleter:
     """The `~rehuco_core.Deleter` any in-window delete or discard resolves to absent an explicit
     override, per the **Move deleted files to the Recycle Bin, if possible** setting (#291, #298, #312).
 
-    Read live rather than cached, so a page Saved after a caller last asked is still honoured; this is
+    Read live rather than cached, so a page Saved after a caller last asked is still honored; this is
     the shared accessor every caller (the images dock, convert, both discard surfaces) was lifted onto
     instead of each re-reading the setting its own way.
 

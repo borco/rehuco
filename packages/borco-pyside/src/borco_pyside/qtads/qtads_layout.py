@@ -124,7 +124,7 @@ class QtAdsLayout:
         """Walk the manager's layout into a tree.
 
         Capture with any maximize undone (`QtAdsMaximizeHandler.unmaximized`): a maximized area's
-        neighbours are hidden, and their sizes would be saved as zero.
+        neighbors are hidden, and their sizes would be saved as zero.
 
         :param dock_state: returns a dock's content state to store in its entry, or ``None``.
         :returns: the JSON-able tree, restorable by :meth:`restore`.

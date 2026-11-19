@@ -29,7 +29,7 @@ from .task_job import (
     DISK_CHAIN,
     FINISHED_JOB_STATES,
     AbandonableTaskJob,
-    JobCancelled,
+    JobCanceled,
     JobPaused,
     JobScope,
     JobState,
@@ -100,11 +100,11 @@ class TaskQueue:
     Python stack held open on a job's behalf.
 
     **Jobs leave only when told to** ([[appendices.task-queue#kept]]). Nothing sweeps: a failed or
-    cancelled job is kept because it is usually retryable. :meth:`remove` is the only way out.
+    canceled job is kept because it is usually retryable. :meth:`remove` is the only way out.
 
     Every observable change reaches :class:`~rehuco_core.tasks.TaskQueueListener`, called under this
     queue's own lock so that a row model is never told about a change out of order. The lock is
-    re-entrant, so a listener that calls back in (a dock cancelling a job as it sees it fail) is safe;
+    re-entrant, so a listener that calls back in (a dock canceling a job as it sees it fail) is safe;
     a listener that blocks is not, and the protocol says so.
 
     > A job's :meth:`~rehuco_core.tasks.TaskJob.pause`, ``cancel`` and ``resume`` are likewise called
@@ -205,7 +205,7 @@ class TaskQueue:
         def unfinished(self) -> bool:
             """Whether this job still has somewhere to go.
 
-            :returns: ``True`` unless it is done, failed or cancelled -- a paused job is unfinished.
+            :returns: ``True`` unless it is done, failed or canceled -- a paused job is unfinished.
             """
             return self.state not in FINISHED_JOB_STATES
 
@@ -401,7 +401,7 @@ class TaskQueue:
         **One pause concept, not two** ([[appendices.task-queue#pause-concept]]): this is
         :meth:`pause_job` applied to all of them, not a separate queue-wide flag that dispatch
         consults. Idempotent, and a job that never looks at its request runs to completion regardless
-        -- pausing is a request the jobs honor, exactly as cancelling is.
+        -- pausing is a request the jobs honor, exactly as canceling is.
 
         A :attr:`~rehuco_core.tasks.JobState.WAITING` job is left waiting (#497): its wait is the job's own, and
         quitting pauses everything before the queue is written, so a save waiting for its share would otherwise
@@ -419,7 +419,7 @@ class TaskQueue:
 
         Deliberately narrower than :meth:`resume_job`: this is the inverse of :meth:`pause` and
         touches only jobs whose pending request is a pause. A cancel is never retracted in bulk --
-        pressing Resume over a multi-selection to un-cancel something the user cancelled earlier would
+        pressing Resume over a multi-selection to un-cancel something the user canceled earlier would
         be a surprise, and pointing at that one row with :meth:`resume_job` is how it is asked for. A
         :attr:`~rehuco_core.tasks.JobState.WAITING` job is left waiting for the same reason: its wait was not
         asked for, so it is not this one's to end.
@@ -486,14 +486,14 @@ class TaskQueue:
     def cancel(self, serial: int) -> None:
         """Ask the job with ``serial`` to stop for good.
 
-        A queued or paused job is cancelled outright and never runs again -- and is told so, when it asked to be
+        A queued or paused job is canceled outright and never runs again -- and is told so, when it asked to be
         (:class:`~rehuco_core.tasks.AbandonableTaskJob`), to take back what an earlier run left. The running one is
         *told*, and stops wherever its work divides; what it undoes on the way is its own business. The
         request replaces any pause already asked for.
 
         A job that never looks at its request cannot be interrupted and is reported
         :attr:`~rehuco_core.tasks.JobState.DONE` when it returns: the request was never acted on, the
-        work genuinely finished, and calling that *cancelled* would report an intention rather than an
+        work genuinely finished, and calling that *canceled* would report an intention rather than an
         outcome. The request is kept on the status either way, so nothing about it is lost.
 
         A finished job, and a serial belonging to nothing, are both no-ops.
@@ -535,7 +535,7 @@ class TaskQueue:
     def remove(self, *serials: int) -> None:
         """Drop the named jobs from the queue.
 
-        **The only way out** ([[appendices.task-queue#kept]]). Nothing is swept: a failed or cancelled
+        **The only way out** ([[appendices.task-queue#kept]]). Nothing is swept: a failed or canceled
         job is kept until someone says otherwise, because it is usually :meth:`retry`-able and
         dropping it silently would throw away the thing worth acting on.
 
@@ -577,7 +577,7 @@ class TaskQueue:
         ([[acquisition-tooling#convert-mechanics]]) rather than trust the caller not to ask twice.
 
         What a persistable job would be written down as is re-read here, so that a queue saved
-        afterwards never restores it to the very cursor Retry has just thrown away.
+        afterward never restores it to the very cursor Retry has just thrown away.
 
         A job that has not finished is a no-op: retrying something still running or still waiting has
         no meaning, and interpreting it as a restart would throw away work nobody asked to lose.
@@ -610,7 +610,7 @@ class TaskQueue:
         """Write down every job that can be written down ([[appendices.task-queue#lifetime]]).
 
         **Everything persistable, including the finished ones.** Since jobs leave only when removed
-        ([[appendices.task-queue#kept]]), dropping the done, failed and cancelled ones at quit would be
+        ([[appendices.task-queue#kept]]), dropping the done, failed and canceled ones at quit would be
         exactly the implicit removal that rule exists to prevent -- and it would take the retryable
         failures with it. A job that is not a :class:`~rehuco_core.tasks.PersistableTaskJob` is
         skipped; its row said so all along, through
@@ -647,7 +647,7 @@ class TaskQueue:
         """Bring a saved queue back, in the order it was saved in.
 
         **Unfinished jobs come back held and finished ones keep their state**, so a restarted app comes
-        up with nothing running while a job added afterwards starts immediately -- eligibility is
+        up with nothing running while a job added afterward starts immediately -- eligibility is
         per-job, and nothing restored is eligible. ``unfinished_state`` is the seam a *resume tasks on
         restart* setting turns; filtering *which* items come back at all is the caller's, which is why
         this takes a list it hands over rather than a file it opens.
@@ -717,7 +717,7 @@ class TaskQueue:
         Terminal: a queue that has been shut down accepts no more work. **It stops the engine, not the work**: a
         queued, paused or waiting job keeps its state, so what the exit sequence wrote down -- *pause, wait, save* --
         stays true whoever is listening, and a save waiting for its share comes back waiting (#497). A job still
-        running, one that ignored the pause, is asked to pause again rather than cancelled, so it keeps whatever it
+        running, one that ignored the pause, is asked to pause again rather than canceled, so it keeps whatever it
         needs to carry on.
 
         Every worker is a **daemon** thread, so a job that ignores its checkpoints can never hold the
@@ -1044,7 +1044,7 @@ class TaskQueue:
                 entry.due = None
                 entry.message = None
             if request is StopRequest.CANCEL:
-                entry.state = JobState.CANCELLED
+                entry.state = JobState.CANCELED
                 changed = True
                 self.__abandon(entry)
             elif entry.state in (JobState.QUEUED, JobState.WAITING):
@@ -1057,7 +1057,7 @@ class TaskQueue:
     def __abandon(entry: TaskQueue.Entry) -> None:
         """Tell a job given up on while it was not running, if it asked to be told (#339); what it raises is logged.
 
-        :param entry: the job cancelled or removed.
+        :param entry: the job canceled or removed.
         """
         if not isinstance(entry.job, AbandonableTaskJob):
             return
@@ -1246,18 +1246,18 @@ class TaskQueue:
                 with self.__watching_paused():
                     if state is JobState.PAUSED:
                         if entry.stop_requested is StopRequest.CANCEL:
-                            state = JobState.CANCELLED
+                            state = JobState.CANCELED
                         elif entry.resume_requested:
                             state = JobState.QUEUED
                             entry.stop_requested = None
                     elif state is JobState.WAITING:
                         if entry.stop_requested is StopRequest.CANCEL:
-                            state, message = JobState.CANCELLED, None
+                            state, message = JobState.CANCELED, None
                         elif entry.stop_requested is StopRequest.PAUSE:
                             state, message = JobState.PAUSED, None
                         else:
                             entry.due = monotonic() + retry_after
-                    if state in (JobState.PAUSED, JobState.CANCELLED, JobState.WAITING):
+                    if state in (JobState.PAUSED, JobState.CANCELED, JobState.WAITING):
                         entry.stop_requested = None
                     entry.resume_requested = False
                     entry.state = state
@@ -1291,7 +1291,7 @@ class TaskQueue:
 
         Runs **inside the job's captured context**, which is why the failure is logged here rather than
         by the caller: a record written after the context was left would land under nothing, and the
-        one place a failed job's detail is meant to be readable afterwards is the log.
+        one place a failed job's detail is meant to be readable afterward is the log.
 
         **Opens the job's own scope**, nested inside whatever the caller's context already has open
         ([[appendices.task-queue#scopes]]): every record this job logs, including the failure line
@@ -1315,9 +1315,9 @@ class TaskQueue:
         with LogScope.open(JobScope(entry.serial)):
             try:
                 entry.job.run(control)
-            except JobCancelled:
-                LOG.debug("Task cancelled: %s", entry.label)
-                return JobState.CANCELLED, None, 0.0
+            except JobCanceled:
+                LOG.debug("Task canceled: %s", entry.label)
+                return JobState.CANCELED, None, 0.0
             except JobPaused:
                 LOG.debug("Task paused: %s", entry.label)
                 return JobState.PAUSED, None, 0.0

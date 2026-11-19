@@ -151,7 +151,7 @@
         <item>
          <widget class="ColorSwatchButton" name="lightbox_backdrop_button">
           <property name="toolTip">
-           <string>The colour painted behind a maximized image. Applying it recolours every open viewer.</string>
+           <string>The color painted behind a maximized image. Applying it recolors every open viewer.</string>
           </property>
           <property name="text">
            <string>#1e1e1e</string>

@@ -1,4 +1,4 @@
-"""Tests for the roots this machine does not map, as the Roots view's model shows them (#514): a greyed row in the
+"""Tests for the roots this machine does not map, as the Roots view's model shows them (#514): a grayed row in the
 file's order with one row saying so, never listed, and moving, renaming and mapping still work on it.
 
 The folders of the mapped roots are real, under ``tmp_path``; an unmapped root has none, which is the point.
@@ -34,16 +34,16 @@ def unmapped(label: str = "away") -> RehucoRoot:
     return RehucoRoot(uuid4(), label, LOCATION)
 
 
-def test_an_unmapped_root_is_a_greyed_row_in_the_files_order_with_one_row_saying_so(
+def test_an_unmapped_root_is_a_grayed_row_in_the_files_order_with_one_row_saying_so(
     qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
 ) -> None:
-    """The roots are shown as the file orders them, a root this machine does not map among them, drawn greyed with a
+    """The roots are shown as the file orders them, a root this machine does not map among them, drawn grayed with a
     single child row that says why it is empty.
 
     **Test steps:**
 
     * show a mapped root, an unmapped one, and another mapped one
-    * verify the order, the unmapped row's greyed role and glyph, its path line and tooltip (its location), and its one
+    * verify the order, the unmapped row's grayed role and glyph, its path line and tooltip (its location), and its one
       child row
     """
     (tmp_path / "a").mkdir()
@@ -56,15 +56,15 @@ def test_an_unmapped_root_is_a_greyed_row_in_the_files_order_with_one_row_saying
 
     assert names(model) == ["a", "away", "c"]
     row = model.index(1, 0)
-    assert row.data(RootsFolderModel.GREYED_ROLE) is True
-    assert model.index(0, 0).data(RootsFolderModel.GREYED_ROLE) is False
+    assert row.data(RootsFolderModel.GRAYED_ROLE) is True
+    assert model.index(0, 0).data(RootsFolderModel.GRAYED_ROLE) is False
     assert row.data(RootsFolderModel.ICON_PATH_ROLE) == ROOT_STORAGE_ICONS[RootStorage.LOCAL]
     assert row.data(RootsFolderModel.PATH_ROLE) == LOCATION
     assert row.data(Qt.ItemDataRole.ToolTipRole) == LOCATION
     assert row.data(Qt.ItemDataRole.FontRole) is None
     assert names(model, row) == [NOT_MAPPED_ROW]
     assert model.node_kind(model.index(0, 0, row)) is RootsNodeKind.UNREACHABLE
-    assert model.index(0, 0, row).data(RootsFolderModel.GREYED_ROLE) is True
+    assert model.index(0, 0, row).data(RootsFolderModel.GRAYED_ROLE) is True
 
 
 def test_an_unmapped_root_is_never_listed(
@@ -151,7 +151,7 @@ def test_a_root_that_gains_or_loses_its_mapping_changes_what_it_shows(
 
     assert names(model, model.index(0, 0)) == ["file.txt"]
     assert model.index(0, 0).data(RootsFolderModel.ICON_PATH_ROLE) == ROOT_STORAGE_ICONS[RootStorage.NETWORK]
-    assert model.index(0, 0).data(RootsFolderModel.GREYED_ROLE) is False
+    assert model.index(0, 0).data(RootsFolderModel.GRAYED_ROLE) is False
 
     model.set_roots([away], RootFolderLister([]))
 
@@ -159,14 +159,14 @@ def test_a_root_that_gains_or_loses_its_mapping_changes_what_it_shows(
     assert model.listing_state(model.index(0, 0)) is NodeListing.UNLISTED
 
 
-def test_relabelling_an_unmapped_root_renames_its_row_and_lists_nothing(
+def test_relabeling_an_unmapped_root_renames_its_row_and_lists_nothing(
     qtbot: QtBot, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
     """The row follows the file's label, and nothing is listed for it: its folder, none, did not change.
 
     **Test steps:**
 
-    * show an unmapped root, then the same root relabelled
+    * show an unmapped root, then the same root relabeled
     * verify the row's name, one change said, and no listing started
     """
     start = mocker.spy(RootFolderLoader, "start")

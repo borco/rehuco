@@ -10,7 +10,7 @@ whole library's worth of them runs while a reader watches, and there is no versi
 
 **Not safely interruptible, and it does not resume.** The one call divides no further: the record is
 written atomically and the rename follows it, so a stop asked of a *running* one has no effect until it
-returns on its own, and a **queued** one is cancelled outright and never starts
+returns on its own, and a **queued** one is canceled outright and never starts
 ([[appendices.task-queue#job-responsibility]]).
 
 **Not tracked through a** :class:`~rehuco_core.RenameCoordinator` (#241), for the reason

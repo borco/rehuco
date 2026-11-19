@@ -22,7 +22,7 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - **Saves as jobs**: `SaveRecordJob`, a persistable task-queue save that waits out an offline share or a held lock and
   keeps a conflict for its caller (#497, #564).
 - **Task queue**: jobs run one per `chain`, chains in parallel (`ChainRegistry`, `DISK_CHAIN`); a job raising
-  `JobWaiting` waits and retries (`JobState.WAITING`); `AbandonableTaskJob` cleans up when cancelled (#563, #497, #339).
+  `JobWaiting` waits and retries (`JobState.WAITING`); `AbandonableTaskJob` cleans up when canceled (#563, #497, #339).
 - **File notifier** (`rehuco_core.notify`): `FileNotifier` watches each root -- `watchdog` locally, its own SMB
   session on a share, polling as the floor -- and publishes what changed on a `ChangeFeed` (#511).
 - **Catalog**: `Catalog` reads and maintains a `.rehudb`; `CatalogSnapshot` filters its rows in memory as the cache
@@ -52,7 +52,7 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   unchanged), and writing `None` removes a key instead of storing `null` (#513).
 - **`updated`** moves only when a save changes the record's metadata, not on a per-user change (#416, #648).
 - **Task queue**: `JobStatus.error` is `JobStatus.message` (old queue files still read); `shutdown()` leaves every job
-  as it stands instead of cancelling it (#497, #564).
+  as it stands instead of canceling it (#497, #564).
 - **Catalog scans**: `CatalogCache.apply_root_scan` takes `identities` and reports `RootScanEffects` (#498).
 - **Dependencies**: adds `watchdog`, `smbprotocol`, `anyascii`, `pathvalidate` and `python-vlc`.
 
@@ -218,7 +218,7 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 - Switching a document's type normalizes the block being activated.
 - `created` is stamped when a `.rehu` is first written.
 - `.rehu`/`.tc` parsing enforces size, depth and entry-count limits.
-- An unparseable legacy duration no longer imports as `0`.
+- An unparsable legacy duration no longer imports as `0`.
 - `info.tc` is treated as directory-scoped, like `info.rehu`.
 
 ## [0.1.0] - 2026-07-29

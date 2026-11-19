@@ -86,7 +86,7 @@ class FilesRowDelegate(QStyledItemDelegate):
     reader may not act on answers :data:`~PySide6.QtCore.Qt.ItemFlag.NoItemFlags`
     (:meth:`~rehuco_agent.documents.files_rows.FilesTableModel.flags`, #266), and the palette's
     *disabled* group is what draws it. The group is read from the **index's own flags** rather than from
-    whichever group the incoming palette happens to be set to, so the colour is a property of the row
+    whichever group the incoming palette happens to be set to, so the color is a property of the row
     rather than of who called.
 
     **A video's row ends with what has been watched** (#316): its percentage; a folder's, its
@@ -120,13 +120,13 @@ class FilesRowDelegate(QStyledItemDelegate):
             if column == CHECKSUM_COLUMN:
                 path = CHECKSUM_STATE_ICONS.get(row.checksum_state)
                 if path is not None:
-                    self.__icons.icon(path, pen_color).paint(painter, FilesRowDelegate.__centred(option.rect))
+                    self.__icons.icon(path, pen_color).paint(painter, FilesRowDelegate.__centered(option.rect))
                 return
             cell = option.rect
             if column == NAME_COLUMN:
-                # centred in the row, then moved to its left edge -- the same vertical placement the
+                # centered in the row, then moved to its left edge -- the same vertical placement the
                 # checksum glyph gets, so the two columns' glyphs sit on one line
-                glyph = FilesRowDelegate.__centred(cell)
+                glyph = FilesRowDelegate.__centered(cell)
                 glyph.moveLeft(cell.left() + TEXT_PADDING)
                 path = PARENT_ICON_RESOURCE if row.is_parent else FILE_TYPE_ICONS[row.file_type]
                 self.__icons.icon(path, pen_color).paint(painter, glyph)
@@ -143,7 +143,7 @@ class FilesRowDelegate(QStyledItemDelegate):
     def __paint_progress(painter: QPainter, option: QStyleOptionViewItem, cell: QRect, progress: RowProgress) -> QRect:
         """Draw what a row ends with at the right of its Name cell: its percentage, in the room reserved for the widest.
 
-        :param painter: the painter to draw with, its pen already the row's colour.
+        :param painter: the painter to draw with, its pen already the row's color.
         :param option: the item's option, for its font.
         :param cell: what is left of the Name cell once the glyph is placed.
         :param progress: what the row says of watching.
@@ -156,12 +156,12 @@ class FilesRowDelegate(QStyledItemDelegate):
         return cell.adjusted(0, 0, percent.left() - ICON_TEXT_GAP - cell.right() + TEXT_PADDING, 0)
 
     def __paint_background(self, painter: QPainter, option: QStyleOptionViewItem, index: ModelIndex) -> QColor:
-        """Fill the cell and decide the colour its content is drawn in.
+        """Fill the cell and decide the color its content is drawn in.
 
         :param painter: the painter to draw with.
         :param option: the item's rect, palette and state.
         :param index: the cell, for its row's flags.
-        :returns: the colour the glyph and the text are drawn in.
+        :returns: the color the glyph and the text are drawn in.
         """
         selected = QStyle.StateFlag.State_Selected in option.state
         if selected:
@@ -178,7 +178,7 @@ class FilesRowDelegate(QStyledItemDelegate):
         return color
 
     @staticmethod
-    def __centred(cell: QRect) -> QRect:
+    def __centered(cell: QRect) -> QRect:
         """A glyph-sized rect in the middle of ``cell``.
 
         What the checksum column needs and the base delegate cannot give it: with no text to be placed
@@ -198,13 +198,13 @@ class FilesRowDelegate(QStyledItemDelegate):
 
         Drawn with the painter directly rather than handed to the style, for the reason
         :meth:`~rehuco_agent.tasks.task_row_delegate.TaskRowDelegate.paint_text` gives: the style picks
-        its own selected-text colour from the active/inactive distinction, which would leave an
-        unfocused selected row reading its highlight in one colour and its text in another.
+        its own selected-text color from the active/inactive distinction, which would leave an
+        unfocused selected row reading its highlight in one color and its text in another.
 
         :param painter: the painter to draw with.
         :param cell: the rect to draw in.
         :param text: the text to draw.
-        :param alignment: how to place it horizontally; vertically it is always centred.
+        :param alignment: how to place it horizontally; vertically it is always centered.
         """
         rect = cell.adjusted(TEXT_PADDING, 0, -TEXT_PADDING, 0)
         elided = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, rect.width())

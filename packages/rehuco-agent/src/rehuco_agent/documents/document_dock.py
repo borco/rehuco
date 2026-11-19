@@ -133,7 +133,7 @@ class DocumentDock(QtAds.CDockWidget):
         Every connection this dock made to the old model is cut before its widget tears down the old
         document's sub-docks and builds the new one's (:meth:`DocumentWidget.show_model`); the title, the
         key :attr:`key_moved` reports from, and every connection are then taken from ``model``. The caller
-        holds ``model`` and lets go of the old one, and adopts a layout afterwards.
+        holds ``model`` and lets go of the old one, and adopts a layout afterward.
 
         :param model: the document to show.
         """

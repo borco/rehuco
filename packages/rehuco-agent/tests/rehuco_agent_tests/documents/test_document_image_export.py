@@ -1,6 +1,6 @@
 """Tests for how a document hands its one image exporter to everything that takes an image out of the app (#485).
 
-The exporter's own behaviour is covered with the widgets that use it; these cover the wiring only the document owns:
+The exporter's own behavior is covered with the widgets that use it; these cover the wiring only the document owns:
 the viewer a document opens stages under the document's id, the Content Images grid is built holding the document's
 exporter, and a type switch that rebuilds the form hands it over again.
 """

@@ -178,7 +178,7 @@ def test_a_never_saved_document_says_so_and_reads_nothing(
 def test_an_unreachable_resource_says_so_rather_than_drawing_an_empty_table(
     qtbot: QtBot, view: ChecksumView, rows: Any
 ) -> None:
-    """An away mount is not an empty resource, and every action is greyed on it (#245, #244).
+    """An away mount is not an empty resource, and every action is grayed on it (#245, #244).
 
     **Test steps:**
 

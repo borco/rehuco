@@ -466,7 +466,7 @@ def test_with_no_roots_nothing_is_watched(
 
 
 def test_stop_lets_every_watch_go_and_watches_nothing_after(notifiers: MagicMock, qtbot: QtBot) -> None:
-    """Stopping the watch stops each notifier, and following afterwards starts none.
+    """Stopping the watch stops each notifier, and following afterward starts none.
 
     **Test steps:**
 

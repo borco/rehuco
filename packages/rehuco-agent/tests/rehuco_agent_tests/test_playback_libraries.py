@@ -293,7 +293,7 @@ def test_the_record_is_one_per_process(libraries: PlaybackLibraries) -> None:
 def test_the_outcome_is_logged_once_the_log_is_running(
     libraries: PlaybackLibraries, load: Mock, tmp_path: Path, caplog: LogCaptureFixture, fake_tool_locator: Any
 ) -> None:
-    """Start-up runs before the log does, so the outcome is written afterwards.
+    """Start-up runs before the log does, so the outcome is written afterward.
 
     **Test steps:**
 

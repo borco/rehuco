@@ -20,7 +20,7 @@ def resync_line_edit[T](
 
     :param line_edit: the line edit to resync.
     :param value: the value it should reflect.
-    :param parse: parses the line edit's text back into a value, or ``None`` if unparseable.
+    :param parse: parses the line edit's text back into a value, or ``None`` if unparsable.
     :param format_value: renders ``value`` as display text.
     """
     if parse(line_edit.text()) != value:
@@ -37,12 +37,12 @@ def write_through_or_none[T](
     meant "leave untouched", which collides with a caller whose *target* value is legitimately
     ``None``.
 
-    Also toggles ``line_edit``'s ``warning`` dynamic property: set for non-blank, unparseable text,
+    Also toggles ``line_edit``'s ``warning`` dynamic property: set for non-blank, unparsable text,
     clear otherwise.
 
     :param line_edit: the line edit whose ``warning`` dynamic property is toggled.
     :param text: the line edit's current text.
-    :param parse: parses non-blank text into a value, or ``None`` if unparseable (mid-typing).
+    :param parse: parses non-blank text into a value, or ``None`` if unparsable (mid-typing).
     :param write: called with the value to write through -- ``None`` for blank text, else the parsed
         value.
     """

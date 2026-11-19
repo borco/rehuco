@@ -123,7 +123,7 @@ class SteppedReader:
         :param chunks: how many chunks to allow.
         """
         # cleared *before* releasing, so the flag a caller waits on next is the one this step's chunk
-        # sets rather than the one still standing from the last; clearing afterwards would race the
+        # sets rather than the one still standing from the last; clearing afterward would race the
         # reader and could wipe a park that had already happened
         self.parked.clear()
         for _ in range(chunks):
@@ -302,7 +302,7 @@ def test_abandoning_the_reader_closes_the_handle_and_releases_the_hold(
     **Test steps:**
 
     * take one chunk, then close the generator
-    * check the handle closed, and a rename afterwards runs straight through
+    * check the handle closed, and a rename afterward runs straight through
     """
     reader = read_content_chunks(coordinator.track(CONTENT), coordinator, CHUNK)
     next(reader)

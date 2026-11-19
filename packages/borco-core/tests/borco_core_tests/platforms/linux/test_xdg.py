@@ -46,7 +46,7 @@ def test_data_home_defaults_below_the_home_directory(fake_home: None) -> None:
     assert xdg.data_home() == HOME / xdg.DEFAULT_DATA_HOME
 
 
-def test_data_home_honours_the_override(fake_home: None, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_data_home_honors_the_override(fake_home: None, monkeypatch: pytest.MonkeyPatch) -> None:
     """A set ``XDG_DATA_HOME`` replaces the default entirely.
 
     **Test steps:**

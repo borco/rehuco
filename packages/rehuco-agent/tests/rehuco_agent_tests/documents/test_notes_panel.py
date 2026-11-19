@@ -378,7 +378,7 @@ def test_a_note_found_by_the_rename_search_replaces_nothing_the_user_typed(
         (f"{LATE}\nsaid late", f"{BOOKMARK_LINE}\n{LATE}\nsaid late"),
     ],
 )
-def test_add_note_puts_the_bookmark_beside_its_neighbours_in_time(
+def test_add_note_puts_the_bookmark_beside_its_neighbors_in_time(
     panel: NotesPanel, existing: str, expected: str
 ) -> None:
     """The bookmarks already there are anchors, whatever order the user left them in (#573).

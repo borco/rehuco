@@ -33,7 +33,7 @@ def is_conversion_backup(filename: str) -> bool:
     (:mod:`rehuco_core.rehu_content_files`), keeping a resource's backups out of the content they are
     backups *of* (#253). A bulk import retains them by default
     ([[acquisition-tooling#convert-mechanics]]), so counting them would put each converted resource's own
-    ``info.tc.orig`` in its first checksum baseline, and discarding the backups afterwards -- the
+    ``info.tc.orig`` in its first checksum baseline, and discarding the backups afterward -- the
     encouraged cleanup step -- would then report a missing file for every resource in the catalog.
 
     **Any ``.orig`` sibling**, never one matched against a record's stem, for the reason the module

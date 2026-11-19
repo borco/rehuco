@@ -71,13 +71,13 @@ def test_a_job_with_the_method_is_one_and_a_plain_job_is_not() -> None:
 
 
 @mark.usefixtures("busy")
-def test_a_queued_job_cancelled_is_told(queue: TaskQueue) -> None:
-    """A job cancelled before it ever ran is told, once.
+def test_a_queued_job_canceled_is_told(queue: TaskQueue) -> None:
+    """A job canceled before it ever ran is told, once.
 
     **Test steps:**
 
     * enqueue a job behind a running one, and cancel it
-    * check it was told once and reads cancelled
+    * check it was told once and reads canceled
     """
     job = LeavingJob()
     serial = queue.enqueue(job)
@@ -85,11 +85,11 @@ def test_a_queued_job_cancelled_is_told(queue: TaskQueue) -> None:
     queue.cancel(serial)
 
     assert job.abandoned == 1
-    assert queue.jobs()[-1].state is JobState.CANCELLED
+    assert queue.jobs()[-1].state is JobState.CANCELED
 
 
-def test_a_paused_job_cancelled_is_told(queue: TaskQueue, listener: RecordingListener) -> None:
-    """A job paused part-way and then cancelled never runs again, so it is told to take back what it left.
+def test_a_paused_job_canceled_is_told(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A job paused part-way and then canceled never runs again, so it is told to take back what it left.
 
     **Test steps:**
 
@@ -108,7 +108,7 @@ def test_a_paused_job_cancelled_is_told(queue: TaskQueue, listener: RecordingLis
     assert job.abandoned == 1
 
 
-def test_a_running_job_cancelled_is_not_told(queue: TaskQueue, listener: RecordingListener) -> None:
+def test_a_running_job_canceled_is_not_told(queue: TaskQueue, listener: RecordingListener) -> None:
     """The running job hears its cancel through ``cancel``, and undoes what it must on its own way out.
 
     **Test steps:**
@@ -123,13 +123,13 @@ def test_a_running_job_cancelled_is_not_told(queue: TaskQueue, listener: Recordi
     queue.cancel(serial)
     job.release.set()
 
-    assert wait_for_state(listener, serial, JobState.CANCELLED)
+    assert wait_for_state(listener, serial, JobState.CANCELED)
     assert job.abandoned == 0
 
 
 @mark.usefixtures("busy")
 def test_an_unfinished_job_removed_is_told_and_a_finished_one_is_not(queue: TaskQueue) -> None:
-    """Removing a row gives up on a job that had not finished; a cancelled one was told already.
+    """Removing a row gives up on a job that had not finished; a canceled one was told already.
 
     **Test steps:**
 
@@ -153,12 +153,12 @@ def test_a_job_that_cannot_take_anything_back_is_logged(queue: TaskQueue, caplog
     **Test steps:**
 
     * enqueue a job whose ``abandon`` raises behind a running one, and cancel it
-    * check it reads cancelled and the failure was logged
+    * check it reads canceled and the failure was logged
     """
     serial = queue.enqueue(LeavingJob(fails=True))
 
     with caplog.at_level(logging.ERROR):
         queue.cancel(serial)
 
-    assert queue.jobs()[-1].state is JobState.CANCELLED
+    assert queue.jobs()[-1].state is JobState.CANCELED
     assert "could not take back what it left" in caplog.text

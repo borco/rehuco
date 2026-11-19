@@ -17,7 +17,7 @@ The corners are then rebuilt geometrically, as an anti-aliased quarter-disc of
 --radius. The radius is a property of the compositor and the display scaling
 (8 physical pixels at 100%), not of the window's dimensions, so it does not
 scale with the image. Only pixels the arc leaves partly uncovered are touched:
-each takes the window's own colour beside that corner at an alpha equal to its
+each takes the window's own color beside that corner at an alpha equal to its
 coverage, and everything the arc covers fully is left exactly as captured --
 so a scrollbar or an icon sitting close to a corner survives.
 
@@ -62,7 +62,7 @@ def coverage(dx: int, dy: int, radius: int) -> float:
 
     :param dx: distance in pixels from the corner, along the image's width.
     :param dy: distance in pixels from the corner, along the image's height.
-    :param radius: the corner radius, and so the arc's centre at ``(radius, radius)``.
+    :param radius: the corner radius, and so the arc's center at ``(radius, radius)``.
     :returns: covered fraction, 0.0 (outside the window) to 1.0 (wholly inside it).
     """
     inside = 0
@@ -85,17 +85,17 @@ def round_corners(image: QImage, radius: int) -> None:
     for corner_x, corner_y in ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1)):
         x_step = 1 if corner_x == 0 else -1
         y_step = 1 if corner_y == 0 else -1
-        # Sampled per corner rather than once for the whole window: the colour a fringe pixel
-        # should fade out of is the window's own colour right there, and the four corners of a
-        # window are rarely the same colour.
-        colour = image.pixelColor(corner_x + radius * x_step, corner_y + radius * y_step)
+        # Sampled per corner rather than once for the whole window: the color a fringe pixel
+        # should fade out of is the window's own color right there, and the four corners of a
+        # window are rarely the same color.
+        color = image.pixelColor(corner_x + radius * x_step, corner_y + radius * y_step)
         for dx in range(radius):
             for dy in range(radius):
                 covered = coverage(dx, dy, radius)
                 if covered == 1.0:
                     continue
-                colour.setAlpha(round(255 * covered))
-                image.setPixelColor(corner_x + dx * x_step, corner_y + dy * y_step, colour)
+                color.setAlpha(round(255 * covered))
+                image.setPixelColor(corner_x + dx * x_step, corner_y + dy * y_step, color)
 
 
 def clean(path: Path, radius: int, overwrite: bool) -> None:

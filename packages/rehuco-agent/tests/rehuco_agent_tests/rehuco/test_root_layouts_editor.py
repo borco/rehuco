@@ -190,13 +190,13 @@ def test_a_star_row_of_the_library_is_not_offered_a_second_time(qtbot: QtBot, ed
 
 
 def test_a_template_invalid_for_its_type_is_flagged_and_still_saved_as_typed(editor: RootLayoutsEditor) -> None:
-    """A template the type cannot use is coloured with the reason as its tooltip, and kept (#637).
+    """A template the type cannot use is colored with the reason as its tooltip, and kept (#637).
 
     **Test steps:**
 
     * set layouts of a typo for ``tutorial``, of ``{count}`` for ``*``, of ``{count}`` for ``reference_images``, and
       of ``*`` for another type
-    * verify the first two have a warning colour and a reason, the last two have neither
+    * verify the first two have a warning color and a reason, the last two have neither
     * verify all four are read back as typed
     """
     layouts, _ = tables(editor)
@@ -227,7 +227,7 @@ def test_the_fallbacks_are_one_fixed_row_per_placeholder_and_only_what_is_filled
     * verify only the authors fallback is read back, and that an empty cell leaves it out again
     """
     _, fallbacks = tables(editor)
-    editor.set_values({}, {"authors": "Unknown", "colour": "Red"})
+    editor.set_values({}, {"authors": "Unknown", "color": "Red"})
     model = fallbacks.model
 
     assert [model.index(row, KEY_COLUMN).data() for row in range(model.rowCount())] == list(PLACEHOLDERS)

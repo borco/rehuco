@@ -13,7 +13,7 @@
  *
  * At runtime this exe:
  *   1. Declares the AUMID (must happen before any window is created)
- *   2. Initialises CPython using the workspace venv Python path baked in by CMake (config.h)
+ *   2. Initializes CPython using the workspace venv Python path baked in by CMake (config.h)
  *   3. Makes the editable install visible via an explicit site.addsitedir() on the venv's
  *      site-packages (see ENTRY_SCRIPT_FMT's comment -- venv auto-activation was not reliable
  *      here) and forwards argv, then calls rehuco_agent.__main__:main() in-process -- so
@@ -80,7 +80,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * install before the first Python call below triggers the load. */
     SetDllDirectoryW(PYTHON_DLL_DIR);
 
-    /* 3. Initialise Python. config.executable is set so sys.executable reports the venv
+    /* 3. Initialize Python. config.executable is set so sys.executable reports the venv
      *    python correctly; actual package visibility comes from the explicit
      *    site.addsitedir() call in the entry script below (see its comment for why). */
     PyConfig config;

@@ -151,7 +151,7 @@ class AddRootsDialog(QDialog):
         """Ask for a new preset. The one modal behind *New layout…*, so a test replaces it per instance.
 
         :param taken: the presets' names, which the new one may not take.
-        :returns: the preset, or ``None`` if the dialog was cancelled.
+        :returns: the preset, or ``None`` if the dialog was canceled.
         """
         dialog = NewLayoutDialog(taken, self)
         try:

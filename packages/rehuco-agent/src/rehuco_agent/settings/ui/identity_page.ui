@@ -67,7 +67,7 @@
       <item row="3" column="0" colspan="2">
        <widget class="QLabel" name="note_label">
         <property name="text">
-         <string>Your own edits are filed under the current user; per-user state imported from a .tc file is filed under the unknown user. Documents already open keep the names they were opened with; a change applies to documents opened afterwards.</string>
+         <string>Your own edits are filed under the current user; per-user state imported from a .tc file is filed under the unknown user. Documents already open keep the names they were opened with; a change applies to documents opened afterward.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

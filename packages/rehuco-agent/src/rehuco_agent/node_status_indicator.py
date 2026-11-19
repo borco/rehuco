@@ -20,11 +20,11 @@ DETAIL_TEXTS: Final = {
 
 
 class NodeStatusIndicator(QLabel):
-    """A permanent status bar label: *Local Node: Running*, or *Local Node: Stopped* greyed out.
+    """A permanent status bar label: *Local Node: Running*, or *Local Node: Stopped* grayed out.
 
     Two words only, since the bar is read at a glance; the tooltip carries the state in full, the pid
-    included. Greyed through ``setEnabled(False)``, so the palette's own disabled text colour does it in
-    both themes rather than a colour of this widget's own.
+    included. Grayed through ``setEnabled(False)``, so the palette's own disabled text color does it in
+    both themes rather than a color of this widget's own.
 
     :param host: the node host whose state this follows.
     :param parent: optional Qt parent.

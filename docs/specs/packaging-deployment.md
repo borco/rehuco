@@ -238,18 +238,18 @@ Concrete consequence for **docking**:
   fallback — constraining how QML is used (non-detachable docks, reduced QML footprint) — is held in reserve, **not**
   needed, and switching to KDDockWidgets stays foreclosed regardless.
 
-**Every new dependency has its licence checked before it is added**, in its PyPI metadata (`License-Expression`, the
-`License ::` classifiers) or, when those are empty, its repository's licence file:
+**Every new dependency has its license checked before it is added**, in its PyPI metadata (`License-Expression`, the
+`License ::` classifiers) or, when those are empty, its repository's license file:
 
 - **A runtime dependency** of a package that ships (the `dependencies` of `rehuco-core`, `rehuco-node`,
   `rehuco-agent`, `borco-core`, `borco-pyside`) is permissive (MIT, BSD, Apache-2.0, ISC, PSF, MIT-CMU) or LGPL,
-  which the app links without taking its terms. **GPL and AGPL are refused**, and so is a library with no licence
+  which the app links without taking its terms. **GPL and AGPL are refused**, and so is a library with no license
   stated.
 - **A tool used only to develop or build** (the `dev`, `packaging` and `appimage` groups) may be GPL, since it is never
   distributed with the app: `pylint` (GPL-2.0+) and `python-appimage` (GPL-3.0+) are.
-- The comment above a dependency in its `pyproject.toml` names its licence, as its neighbours' do.
+- The comment above a dependency in its `pyproject.toml` names its license, as its neighbors' do.
 
-Unidecode (GPL-2.0+) is how this was learnt: it came in with the rename suggestions (#25) unchecked, and was found
+Unidecode (GPL-2.0+) is how this was learned: it came in with the rename suggestions (#25) unchecked, and was found
 when #577 moved it into `rehuco-core`; `anyascii` (ISC) replaced it. An audit of every direct dependency on 2026-11-07
 found no other GPL among the runtime ones. Transitive dependencies (`smbprotocol`'s `pyspnego` and `cryptography`,
 `selenium`'s, `requests`'s) were not part of it.
@@ -359,7 +359,7 @@ turn out to buy nothing ([[appendices.briefcase-packaging#linux-backends]], Brie
    one job if it cannot read a catalog on an SMB mount ([[mounts-and-storage#offline-mounts]]) or if a file-manager
    launch lands outside the running instance's `QLocalServer` ([[nodes#single-instance]]). Each also has an independent
    disqualifier: **Snap has no Briefcase backend at all** (its module is a one-line placeholder), and Flatpak's
-   freedesktop 25.08 runtime provides Python 3.13, below the agent's `>=3.14` floor. The portal behaviour itself was
+   freedesktop 25.08 runtime provides Python 3.13, below the agent's `>=3.14` floor. The portal behavior itself was
    **not** tested hands-on — there is no Linux desktop here to test on — but each candidate is refused by a verified
    fact of its own, so the untested risk never has to carry the decision.
 2. **Briefcase's AppImage backend is out** — the format is fine, the bundler is not. `linuxdeploy` re-processes

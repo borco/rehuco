@@ -305,8 +305,8 @@ def test_showing_a_hidden_dock_makes_it_current(manager: QtAds.CDockManager) -> 
 def test_hiding_the_current_dock_clears_current(manager: QtAds.CDockManager) -> None:
     """Hiding the current dock clears current-ness (no tracked dock holds real focus here).
 
-    Following focus to a real neighbour is ``QApplication.focusChanged``'s job -- Qt moves keyboard
-    focus to a neighbour synchronously when a *focused* dock hides, and that re-selects it before
+    Following focus to a real neighbor is ``QApplication.focusChanged``'s job -- Qt moves keyboard
+    focus to a neighbor synchronously when a *focused* dock hides, and that re-selects it before
     this even runs (see :func:`test_focus_moving_into_a_tracked_dock_makes_it_current`). Here the
     current dock was only tracked, never given real focus, so hiding it leaves nothing focused and
     the tracker clears rather than fabricating a current dock.
@@ -523,10 +523,10 @@ def test_state_restore_keeps_a_lone_docks_tab_click_selecting_it(manager: QtAds.
     assert tracker.current_dock is lone
 
 
-def test_construction_pins_the_colour_scheme_to_the_current_palette(
+def test_construction_pins_the_color_scheme_to_the_current_palette(
     manager: QtAds.CDockManager, mocker: MockerFixture
 ) -> None:
-    """The tracker pins the manager's colour-scheme mode instead of leaving QtAds' ``FollowPalette``.
+    """The tracker pins the manager's color-scheme mode instead of leaving QtAds' ``FollowPalette``.
 
     Pinning is what stops QtAds reloading (and so *replacing*) the manager's stylesheet on a palette
     change, which would drop the tracker's appended rules -- see
@@ -769,13 +769,13 @@ def test_focus_moving_outside_every_tracked_dock_is_ignored(manager: QtAds.CDock
     assert tracker.current_dock is dock
 
 
-def test_tracked_focus_dock_stylesheet_builds_qss_from_its_colours(manager: QtAds.CDockManager) -> None:
-    """The stylesheet builder emits the tracked-focus selectors with the given colours.
+def test_tracked_focus_dock_stylesheet_builds_qss_from_its_colors(manager: QtAds.CDockManager) -> None:
+    """The stylesheet builder emits the tracked-focus selectors with the given colors.
 
     **Test steps:**
 
-    * build a stylesheet with explicit colours
-    * verify it selects on the tracked-focus property and carries each colour
+    * build a stylesheet with explicit colors
+    * verify it selects on the tracked-focus property and carries each color
     """
     tracker = QtAdsFocusTracker(manager)
 
@@ -794,7 +794,7 @@ def test_tab_maximize_button_stylesheet_is_derived_from_the_close_buttons_rules(
     **Test steps:**
 
     * feed a close-button sheet in QtAds' shape, with a wrapped ``qproperty-icon`` value
-    * verify each block comes back under ``#tabMaximizeButton`` with its colours, no icon line, and
+    * verify each block comes back under ``#tabMaximizeButton`` with its colors, no icon line, and
       zero padding, and that an unrelated sheet yields nothing
     """
     sheet = """
@@ -822,7 +822,7 @@ def test_tab_maximize_button_stylesheet_is_derived_from_the_close_buttons_rules(
 
 def test_construction_appends_the_derived_maximize_button_rules(manager: QtAds.CDockManager) -> None:
     """The manager's own sheet carries QtAds' close-button rules, so the appended block carries their
-    maximize-button counterparts, recoloured on the current tab beside the close glyph.
+    maximize-button counterparts, recolored on the current tab beside the close glyph.
 
     **Test steps:**
 
@@ -1051,16 +1051,16 @@ def test_styling_a_dock_mid_teardown_is_swallowed(manager: QtAds.CDockManager, m
 
 def test_styling_a_current_dock_re_polishes_its_maximize_button(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
     """A tab's maximize button (a `QtAdsMaximizeHandler`'s, when present) is re-polished with the
-    tab's other children as current-ness moves, so the descendant colour rule takes on it -- and
+    tab's other children as current-ness moves, so the descendant color rule takes on it -- and
     lets go again, which an un-re-polished descendant would not (its rule only re-evaluates when it
     is polished itself).
 
     **Test steps:**
 
-    * add two docks under a tracker with an explicit label colour, and give the second's tab a
+    * add two docks under a tracker with an explicit label color, and give the second's tab a
       stand-in ``tabMaximizeButton``
     * make the second current, then the first again
-    * verify the stand-in's text colour took the label colour, then dropped it
+    * verify the stand-in's text color took the label color, then dropped it
     """
     tracker = QtAdsFocusTracker(manager, label="#123456")
     first = add_dock(manager, "first")

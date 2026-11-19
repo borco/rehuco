@@ -55,7 +55,7 @@ def sample(
 
 @fixture(name="palette")
 def fixture_palette() -> QPalette:
-    """A palette whose relevant roles are colours nothing else draws."""
+    """A palette whose relevant roles are colors nothing else draws."""
     palette = QPalette()
     palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, INK)
     palette.setColor(QPalette.ColorRole.Highlight, HIGHLIGHT)
@@ -65,7 +65,7 @@ def fixture_palette() -> QPalette:
 
 @fixture(name="delegate")
 def fixture_delegate(qapp: object) -> ChecksumRowDelegate:
-    """A delegate; takes ``qapp`` because recolouring an SVG needs a `QGuiApplication`.
+    """A delegate; takes ``qapp`` because recoloring an SVG needs a `QGuiApplication`.
 
     :param qapp: the Qt application fixture.
     :returns: the delegate.
@@ -109,11 +109,11 @@ def painted(
 
 
 def colors(image: QImage, rect: QRect | None = None) -> set[str]:
-    """Every colour drawn in an image, or in part of one.
+    """Every color drawn in an image, or in part of one.
 
     :param image: the painted image.
     :param rect: the part to read, or ``None`` for all of it.
-    :returns: the colours as ``#rrggbb`` names; an untouched pixel contributes nothing.
+    :returns: the colors as ``#rrggbb`` names; an untouched pixel contributes nothing.
     """
     area = rect or QRect(0, 0, image.width(), image.height())
     return {
@@ -216,12 +216,12 @@ def test_a_selected_row_is_filled_across_the_whole_cell(delegate: ChecksumRowDel
 def test_a_selected_rows_content_is_drawn_in_the_highlighted_pen(
     delegate: ChecksumRowDelegate, palette: QPalette, mocker: MockerFixture
 ) -> None:
-    """Filled and then drawn over, in the colour the palette pairs with that fill.
+    """Filled and then drawn over, in the color the palette pairs with that fill.
 
     **Test steps:**
 
     * paint a selected text cell, capturing the pen live at the moment text is drawn
-    * verify the pen was the highlighted-text colour, never the ordinary ink
+    * verify the pen was the highlighted-text color, never the ordinary ink
     """
     image = QImage(CELL.size(), QImage.Format.Format_ARGB32)
     image.fill(Qt.GlobalColor.transparent)
@@ -269,13 +269,13 @@ def test_an_unselected_row_fills_nothing(
 # region The Status glyph
 
 
-def test_the_status_glyph_is_centred_vertically(delegate: ChecksumRowDelegate, palette: QPalette) -> None:
+def test_the_status_glyph_is_centered_vertically(delegate: ChecksumRowDelegate, palette: QPalette) -> None:
     """What the base delegate could not do for a column with no text to place a decoration relative to.
 
     **Test steps:**
 
     * paint the Status cell
-    * verify what was drawn is centred in the cell's height, to within a pixel
+    * verify what was drawn is centered in the cell's height, to within a pixel
     """
     rows = ink_rows(painted(delegate, palette, sample(), STATUS_COLUMN))
 
@@ -283,14 +283,14 @@ def test_the_status_glyph_is_centred_vertically(delegate: ChecksumRowDelegate, p
     assert abs((rows[0] + rows[-1]) / 2 - (CELL.height() - 1) / 2) <= 1
 
 
-def test_the_status_glyph_is_centred_horizontally(delegate: ChecksumRowDelegate, palette: QPalette) -> None:
+def test_the_status_glyph_is_centered_horizontally(delegate: ChecksumRowDelegate, palette: QPalette) -> None:
     """Its column has no title and no text, so a left-aligned lone glyph would sit under the edge of
     the column beside it.
 
     **Test steps:**
 
     * paint the Status cell
-    * verify what was drawn is centred in the cell's width
+    * verify what was drawn is centered in the cell's width
     """
     columns = ink_columns(painted(delegate, palette, sample(), STATUS_COLUMN))
 

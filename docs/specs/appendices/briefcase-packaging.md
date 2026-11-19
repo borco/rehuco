@@ -202,7 +202,7 @@ embedded support package, PySide6 6.11.1. The first build produced a 215 MB `dis
 bundle — of which **437 MB was `PySide6-Addons`**, measured from its own wheel `RECORD`, and nothing
 here imports a single module of it. Dropping it (#211) took the very same build to **80.6 MB from a
 264 MB bundle** — a 62% cut, and by far the largest change to the artifact in this issue. All that
-survives of QtWebEngine is three `.pyi` stubs totalling 96 KB, since Essentials ships type stubs for
+survives of QtWebEngine is three `.pyi` stubs totaling 96 KB, since Essentials ships type stubs for
 the whole API surface; there is not one WebEngine DLL ([[packaging-deployment#channels]]).
 
 **The launcher owns the window's process — the #1 finding, now confirmed on a packaged build.**
@@ -298,7 +298,7 @@ unsatisfiable. Any dependency that drops Intel macOS wheels does the same thing.
 
 **Fix:** `universal_build = false` under `[tool.briefcase.app.<name>.macOS]` — the app becomes
 Apple-silicon-only. Briefcase's own error message suggests it. The alternative, pinning the app down
-to `cbor2` 5.x to suit the packager, gets the dependency direction backwards. Revisit only if Intel
+to `cbor2` 5.x to suit the packager, gets the dependency direction backward. Revisit only if Intel
 Macs become a target, which would mean holding every dependency to an x86_64-capable version.
 
 ### `std-nslog` version tracks the template, not an old pin
@@ -356,7 +356,7 @@ the spike's acceptance criteria passed:
 | Double-click delivers the path via `QFileOpenEvent`, not `argv` | `Application.event()` override (already in `rehuco_agent/app.py`) | ✓ |
 | Second double-click routes to the existing instance | macOS app-uniquing (primary) + `ApplicationSingleton`/`QLocalServer` (fallback) | ✓ |
 
-Two behaviours are worth keeping in mind for the production wiring:
+Two behaviors are worth keeping in mind for the production wiring:
 
 - **macOS's own app-uniquing — not `ApplicationSingleton` — routes a second Finder double-click.**
   LaunchServices sees the bundle is already running and delivers the second file as another

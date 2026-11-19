@@ -1,7 +1,7 @@
 """Read-only inspection views over a document's raw JSON (#111).
 
 Two surfaces, each a read-only, mouse-selectable, monospaced (#75) scroll of text -- **not** an editor
-(the raw-text repair editor for unparseable docks is separate, #103):
+(the raw-text repair editor for unparsable docks is separate, #103):
 
 - :class:`SavePreviewView` -- the model's *live* serialization, exactly what a Save would write to disk
   (reflecting unsaved edits and the in-memory format upgrade).
@@ -51,7 +51,7 @@ document moves none of these (#174). ``RehuDocumentModel.reloaded`` covers that 
 
 class SourceFileBanner(QWidget):
     """One file's banner: its collapse mark in a fixed column, then its name -- bold, in the palette's placeholder
-    colour, as a content-image group's banner is painted. A click toggles the file's section.
+    color, as a content-image group's banner is painted. A click toggles the file's section.
 
     :param name: the file's name.
     :param parent: optional Qt parent.

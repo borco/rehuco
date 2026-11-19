@@ -543,7 +543,7 @@ def test_the_strip_zip_folder_box_is_enabled_only_with_banners(page: ImagesDispl
 
 
 def test_a_staged_backdrop_makes_its_own_frame_dirty(page: ImagesDisplayPage) -> None:
-    """The swatch holds the colour itself, so the settings dialog's generic frame snapshot sees a
+    """The swatch holds the color itself, so the settings dialog's generic frame snapshot sees a
     backdrop change like any other -- which is what tints the frame and enables its Apply/Reset (#342).
 
     **Test steps:**
@@ -558,15 +558,15 @@ def test_a_staged_backdrop_makes_its_own_frame_dirty(page: ImagesDisplayPage) ->
     assert frame_filter.dirty_frames() == [backdrop_frame_of(page)]
 
 
-def test_resetting_the_backdrop_frame_restores_the_saved_colour(page: ImagesDisplayPage) -> None:
+def test_resetting_the_backdrop_frame_restores_the_saved_color(page: ImagesDisplayPage) -> None:
     """A frame's generic Reset writes the swatch back through ``set_settings_value``, the same path
     every other control's restore goes through (#342).
 
     **Test steps:**
 
-    * snapshot the page's frames (saved colour), stage a different one
+    * snapshot the page's frames (saved color), stage a different one
     * ``restore_saved`` the swatch's frame
-    * verify the swatch shows the saved colour again
+    * verify the swatch shows the saved color again
     """
     frame_filter = SettingsFrameFilter(page, "Display")
     saved = page.backdrop
@@ -579,16 +579,16 @@ def test_resetting_the_backdrop_frame_restores_the_saved_colour(page: ImagesDisp
 
 
 def test_the_backdrop_is_picked_staged_and_applied(page: ImagesDisplayPage, mocker: MockerFixture) -> None:
-    """The backdrop button opens the colour dialog on the staged colour, stages what it returns as
-    ``#rrggbb`` on its own face, and Apply pushes it into the shared settings; a cancelled dialog
+    """The backdrop button opens the color dialog on the staged color, stages what it returns as
+    ``#rrggbb`` on its own face, and Apply pushes it into the shared settings; a canceled dialog
     stages nothing (#221).
 
     **Test steps:**
 
-    * make the dialog return a colour, click the button, and verify the button shows it and the page
+    * make the dialog return a color, click the button, and verify the button shows it and the page
       is dirty
     * apply and verify the shared settings carry it
-    * make the dialog return an invalid colour (cancel), click again, and verify nothing changed
+    * make the dialog return an invalid color (cancel), click again, and verify nothing changed
     """
     button = page.findChild(QPushButton, "lightbox_backdrop_button")
     assert isinstance(button, QPushButton)

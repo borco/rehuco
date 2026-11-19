@@ -133,7 +133,7 @@ per-type pages -- the list above, *Try it* below. A row that does not parse or n
 and flagged** with its reason, and not offered; so is a `*` row, which the editor always offers already and so never
 offers twice. It ships empty. *Try it* is
 a sample record (title, publisher, authors, year, count) and, for each valid row, the path it gives it through the
-Location Replacements and the name sanitising as a root's destination does, or why it would offer no place (an empty
+Location Replacements and the name sanitizing as a root's destination does, or why it would offer no place (an empty
 placeholder with no fallback, a level that renders to nothing). Stored as a list under `root_layout_templates/templates`
 and the sample, a key per field, under `root_layout_try_it`. A root keeps the template text it was given: editing the
 library changes no root.
@@ -263,7 +263,7 @@ once, in one scrolling column, each page's contribution under its own title as a
 tree selection no longer names what you are looking at once several pages are shown together (#230).
 
 **The column takes blocks, not pages** (`SettingsBlockColumn`, `settings/ui/settings_block_column.py`).
-The block — a page's top-level labelled `QFrame`, the same unit the filter shows and hides — is the
+The block — a page's top-level labeled `QFrame`, the same unit the filter shows and hides — is the
 row here, and a page is simply the view that shows its own blocks when its own row is selected. Two
 things fall out of that which the alternative had to be patched into:
 
@@ -372,7 +372,7 @@ follow for a new staged-edit page:
 
 `FilesPage`'s excluded-patterns block adds a fourth step to that flow, because saving can *change* what it saved: blank and
 duplicate patterns are dropped, and an emptied list resolves back to the shipped defaults
-([[data-model#checksums]]). It therefore reloads itself from the saved set afterwards — a page still
+([[data-model#checksums]]). It therefore reloads itself from the saved set afterward — a page still
 showing what was typed would disagree with what every scan actually reads, which is the same
 one-predicate discipline the field locks follow. A page whose `save_changes()` normalizes owes the user
 the normalized result on screen.
@@ -420,14 +420,14 @@ One frame per external tool in `rehuco_core`'s registry ([[packaging-deployment#
 says what the tool is for in one line — which features need it and why it is not bundled are that line's tooltip (#592)
 — links to its install instructions on the docs site, and **lists every install found, one radio each**, best first,
 each with its folder, eliding at its start so the tail that tells two builds apart stays, and, in parentheses, its
-version and status — an unusable one greyed, with the reason, so the user sees why it is not used — then a last
+version and status — an unusable one grayed, with the reason, so the user sees why it is not used — then a last
 **Custom** row, a path with **Browse…**. The best install is chosen by default.
 
 **The stored value is one string.** Empty means *the best install found*, so a fresh install needs no Apply and a
 search that finds a newer build moves the choice with it; any other row stores its folder, which pins it; Custom
 stores the typed path. A stored folder no longer listed — uninstalled, on a share that is down, or browsed to — shows
 under Custom. **The Custom row carries the same parenthesis**, from inspecting its path, and a path holding nothing
-usable reads *not found* and is painted in the warning colour, so a choice that has gone is marked rather than dropped.
+usable reads *not found* and is painted in the warning color, so a choice that has gone is marked rather than dropped.
 **When nothing is found, Custom is the only row and is checked** — which is not an edit, the value being still empty,
 so the page is not dirty. A tool that resolves to nothing is *not set up*, and what needs it is disabled until it is.
 A candidate's verdict is its row's parenthesis and nowhere else: the line below the list shows only what no row can
@@ -489,7 +489,7 @@ block, so a platform's next block is one more controller and `.ui`, and the filt
   A control whose value the built-in types cannot express says so itself through the `ValueControl`
   protocol (`settings_value()`/`set_settings_value()`), and is read and written like any other —
   `ColorSwatchButton` (`settings/ui/color_swatch_button.py`), the lightbox backdrop swatch, is the
-  first: while the page kept that colour in an attribute beside a plain button, the frame never tinted
+  first: while the page kept that color in an attribute beside a plain button, the frame never tinted
   and its buttons never enabled (#342).
   `resync_baseline()` adopts the current values as the new clean state — the dialog calls it right
   after every `save_changes()`/`drop_changes()`, or `dirty_frames()` would keep comparing against the

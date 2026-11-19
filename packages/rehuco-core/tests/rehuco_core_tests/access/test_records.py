@@ -194,7 +194,7 @@ def test_a_missing_record_loads_as_a_locked_stub(tmp_path: Path, caplog: LogCapt
     assert f"Could not read {path}" in caplog.text
 
 
-def test_an_unparseable_record_loads_as_a_locked_stub_with_its_signature(tmp_path: Path) -> None:
+def test_an_unparsable_record_loads_as_a_locked_stub_with_its_signature(tmp_path: Path) -> None:
     """A file that is there but not a record is a stub locked as invalid; it could be stat'ed, so it has a
     signature.
 

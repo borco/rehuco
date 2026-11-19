@@ -162,7 +162,7 @@ class StringMapEditor(ItemListEditor):
         self.__delegate.set_value_choices(value_choices)
 
     def set_value_problem(self, value_problem: Callable[[str, str], str] | None) -> None:
-        """Flag a value the checker finds fault with, in colour and with the reason as a tooltip (#637); the value is
+        """Flag a value the checker finds fault with, in color and with the reason as a tooltip (#637); the value is
         still kept.
 
         :param value_problem: given a row's key and value, the reason it is unusable, or ``""``.

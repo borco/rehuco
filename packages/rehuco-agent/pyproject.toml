@@ -149,7 +149,7 @@ universal_build = false
 # is the only way to claim the extension -- a bundle's UTI and CFBundleDocumentTypes, with no
 # `--register` equivalent. On Windows it would add a second ProgID
 # (io.github.borco.rehuco-agent.rehu) covering .rehu alone, competing with the Rehuco.Document the
-# app registers for itself; the app's Registry page could never recognise it, and an MSI uninstall
+# app registers for itself; the app's Registry page could never recognize it, and an MSI uninstall
 # would strip one of the two ([[appendices.briefcase-packaging#windows]]). There, post_install.bat
 # calls the app's own --register instead, which covers .tc and the shell verbs as well.
 [tool.briefcase.app.rehuco-agent.macOS.document_type.rehu]

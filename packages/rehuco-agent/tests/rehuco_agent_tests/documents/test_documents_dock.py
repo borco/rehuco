@@ -454,13 +454,13 @@ def test_an_open_request_relays_from_a_document_widget(mocker: MockerFixture, qt
     dock = DocumentsDock()
     qtbot.addWidget(dock)
     widget = dock.open_document(FAKE_KEY)
-    neighbour = FAKE_PATH.parent / "other.rehu"
+    neighbor = FAKE_PATH.parent / "other.rehu"
 
     relayed: list[object] = []
     dock.open_requested.connect(relayed.append)
-    widget.record_activated.emit(neighbour)
+    widget.record_activated.emit(neighbor)
 
-    assert relayed == [neighbour]
+    assert relayed == [neighbor]
     assert len(dock.open_document_widgets()) == 1
 
 
@@ -856,13 +856,13 @@ def test_close_all_closes_clean_docks_first_then_shows_one_batch_dialog_for_the_
 ) -> None:
     """``close_all`` closes every clean document immediately -- before the batch dialog even
     appears -- and confirms only the dirty ones through it, mirroring ``MainWindow.closeEvent``;
-    cancelling the dialog leaves the (still open) dirty documents alone, but the already-closed
+    canceling the dialog leaves the (still open) dirty documents alone, but the already-closed
     clean one stays closed regardless (#96).
 
     **Test steps:**
 
     * open three documents, dirtying the first and third but leaving the second clean
-    * mock the batch dialog to report Cancelled
+    * mock the batch dialog to report Canceled
     * call ``close_all``
     * verify the dialog was built with only the dirty models, never asked for selections, the
       clean document closed anyway, and both dirty documents are still open
@@ -1406,7 +1406,7 @@ def test_restore_state_retracks_current_tab_after_area_recreation(mocker: Mocker
 
     A restore may move documents into areas it builds, orphaning any ``currentChanged`` connection made
     on the old ones -- which would leave :meth:`DocumentsDock.focused_document_path` stuck on whatever
-    was current before restore, never picking up a tab switch made afterwards (the reported regression:
+    was current before restore, never picking up a tab switch made afterward (the reported regression:
     the focused document was no longer updated in the saved session after a restart).
 
     **Test steps:**
@@ -2731,10 +2731,10 @@ def test_restore_session_restores_the_outer_dock_layout(mocker: MockerFixture, q
 
 @fixture
 def auto_hide_flags() -> Iterator[None]:
-    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterwards.
+    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterward.
 
     Not autouse: the flags are a `CDockManager` **static**, and leaving them on would decide the
-    behaviour of every later test in the session -- so only the test that needs the button QtAds only
+    behavior of every later test in the session -- so only the test that needs the button QtAds only
     creates under them asks for it.
     """
     previous = QtAds.CDockManager.autoHideConfigFlags()

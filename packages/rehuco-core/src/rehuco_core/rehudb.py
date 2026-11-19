@@ -16,7 +16,7 @@ another on the GUI thread, and WAL lets the two proceed together. Foreign keys a
 connection, because the cascade a root removal relies on is otherwise silently ignored.
 
 **Roots are keyed by their** ``.rehuco`` **id** (:attr:`~rehuco_core.MappedRoot.root_id`), never by path:
-relabelling, reordering or re-pointing a root updates its row in place (:meth:`CatalogCache.reconcile_roots`)
+relabeling, reordering or re-pointing a root updates its row in place (:meth:`CatalogCache.reconcile_roots`)
 and keeps its resources. A **root is wholly online or wholly offline** ([[mounts-and-storage#offline-mounts]]):
 one that would not list keeps its rows as they were (:meth:`CatalogCache.mark_root_unreachable`), while a scan of
 one that did replaces them (:meth:`CatalogCache.apply_root_scan`) -- a record no longer there is gone. A root whose
@@ -517,7 +517,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         return self.__connection
 
     def close(self) -> None:
-        """Close the connection; the cache is unusable afterwards."""
+        """Close the connection; the cache is unusable afterward."""
         self.__connection.close()
 
     def __enter__(self) -> Self:

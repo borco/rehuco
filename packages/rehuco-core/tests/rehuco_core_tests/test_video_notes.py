@@ -246,7 +246,7 @@ def test_a_malformed_or_absent_value_reads_as_empty(tmp_path: Path, stored: dict
 
 
 def test_a_malformed_entry_is_skipped_and_the_rest_still_read(tmp_path: Path) -> None:
-    """One bad entry does not hide its neighbours, and a write leaves it where it is.
+    """One bad entry does not hide its neighbors, and a write leaves it where it is.
 
     **Test steps:**
 

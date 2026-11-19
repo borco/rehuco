@@ -133,7 +133,7 @@ class ClaimHandover:  # pylint: disable=too-few-public-methods
 
         A covering resource that has no ``.checksum`` yet gets one holding exactly these entries: this is
         the record's first content, arriving with a claim rather than with a baseline, which is the whole
-        point -- and it is what makes a verify of that resource possible at all afterwards.
+        point -- and it is what makes a verify of that resource possible at all afterward.
 
         **Unless a legacy manifest is waiting to seed it** (#243). Seeding is one-way -- the manifest is
         read only where there is no ``.checksum`` -- so a record created here would spend that resource's

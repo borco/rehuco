@@ -226,7 +226,7 @@ def test_start_and_stop_go_to_the_scan(qtbot: QtBot, scan_class: Any) -> None:
 
 
 def test_the_scan_is_stopped_when_the_object_is_destroyed(qtbot: QtBot, scan_class: Any) -> None:
-    """A window torn down without a close must not be emitted into from a scan thread afterwards (#464).
+    """A window torn down without a close must not be emitted into from a scan thread afterward (#464).
 
     **Test steps:**
 

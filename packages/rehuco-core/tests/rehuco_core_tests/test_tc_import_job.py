@@ -563,19 +563,19 @@ def test_a_job_runs_on_the_queue_rather_than_the_caller_s_thread(mocker: MockerF
     assert status.source == TC_PATH
 
 
-def test_a_queued_job_is_cancelled_outright_rather_than_started(mocker: MockerFixture, present: None) -> None:
-    """Cancelling a job still waiting its turn drops it without ever calling `convert_tc` -- the whole
+def test_a_queued_job_is_canceled_outright_rather_than_started(mocker: MockerFixture, present: None) -> None:
+    """Canceling a job still waiting its turn drops it without ever calling `convert_tc` -- the whole
     of #192's "cancel stops after the current resource": nothing asks a running conversion to stop
     mid-file, only the ones still queued.
 
     **Test steps:**
 
     * hold a first job inside its conversion, enqueue a second behind it and cancel that one
-    * release the first and check only it converted, with the second reported cancelled
+    * release the first and check only it converted, with the second reported canceled
     """
     del present
     # Holding the first job is what leaves the second demonstrably *waiting its turn* when it is
-    # cancelled. `queue.pause()` cannot arrange it and used to be asked to: pausing is `pause_job`
+    # canceled. `queue.pause()` cannot arrange it and used to be asked to: pausing is `pause_job`
     # applied to the jobs already enqueued ([[appendices.task-queue#pause-concept]]), never a gate a
     # later enqueue passes through, so the lone job raced the cancel and a fast runner converted it
     # first -- green here, red on Windows.
@@ -583,7 +583,7 @@ def test_a_queued_job_is_cancelled_outright_rather_than_started(mocker: MockerFi
     release = Event()
 
     def hold_the_worker(*_args: Any, **_kwargs: Any) -> None:
-        """Park the worker inside the first conversion until the test has cancelled the second."""
+        """Park the worker inside the first conversion until the test has canceled the second."""
         running.set()
         assert release.wait(TIMEOUT)
 
@@ -602,8 +602,8 @@ def test_a_queued_job_is_cancelled_outright_rather_than_started(mocker: MockerFi
     finally:
         queue.shutdown()
 
-    assert status.state is JobState.CANCELLED
-    # the held job converted; the cancelled one never reached `convert_tc` at all
+    assert status.state is JobState.CANCELED
+    # the held job converted; the canceled one never reached `convert_tc` at all
     convert.assert_called_once()
     assert convert.call_args.args == (FILE_SCOPED_TC_PATH,)
 

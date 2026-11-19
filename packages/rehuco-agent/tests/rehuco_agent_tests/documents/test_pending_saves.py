@@ -414,9 +414,9 @@ def test_a_save_of_a_failed_row_hands_it_the_newer_data_then_retries_it(rig: Rig
     rig.queue.resume_job.assert_not_called()
 
 
-@mark.parametrize("state", [JobState.DONE, JobState.CANCELLED])
-def test_a_save_after_a_landed_or_cancelled_row_is_a_new_job(rig: Rig, parent: QWidget, state: JobState) -> None:
-    """A row that landed or was cancelled is history: the next Save is a job of its own, and the row the record keeps.
+@mark.parametrize("state", [JobState.DONE, JobState.CANCELED])
+def test_a_save_after_a_landed_or_canceled_row_is_a_new_job(rig: Rig, parent: QWidget, state: JobState) -> None:
+    """A row that landed or was canceled is history: the next Save is a job of its own, and the row the record keeps.
 
     **Test steps:**
 
@@ -718,13 +718,13 @@ def test_a_save_not_landed_is_the_record_s_pending_payload(rig: Rig, mocker: Moc
     assert rig.owner.pending_payload(KEY) is job.handed
 
 
-@mark.parametrize("state", [JobState.DONE, JobState.CANCELLED])
+@mark.parametrize("state", [JobState.DONE, JobState.CANCELED])
 def test_a_settled_save_is_no_pending_payload(rig: Rig, state: JobState) -> None:
     """A save that landed, or was dropped at a shutdown, is history: the record has no pending payload.
 
     **Test steps:**
 
-    * restore a landed or cancelled save row of the record, and build the owner
+    * restore a landed or canceled save row of the record, and build the owner
     * verify the record's pending payload is ``None``
     """
     rig.add_row(state)
@@ -804,7 +804,7 @@ def test_a_row_that_followed_a_rename_is_found_under_the_new_key(rig: Rig, paren
         (JobState.FAILED, None, "Save failed"),
         (JobState.RUNNING, None, ""),
         (JobState.DONE, None, ""),
-        (JobState.CANCELLED, None, ""),
+        (JobState.CANCELED, None, ""),
     ],
 )
 def test_the_banner_names_each_state_a_save_can_wait_in(state: JobState, message: str | None, text: str) -> None:

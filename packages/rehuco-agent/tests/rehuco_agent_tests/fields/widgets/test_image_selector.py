@@ -1,6 +1,6 @@
 """Tests for ImageSelector: the checkable screenshot list, its split, and rearranging on disk."""
 
-# one cohesive module: this is the curation editor's whole behaviour -- its rows, its preview, its
+# one cohesive module: this is the curation editor's whole behavior -- its rows, its preview, its
 # split and the renames behind its move/delete buttons -- and a scoped disable reads better than an
 # arbitrary file split (same precedent as test_rehu_document_model.py, [[appendices.code-conventions]])
 # pylint: disable=too-many-lines
@@ -149,7 +149,7 @@ class FakeResource:
         """Drop ``path`` and renumber the survivors (`ImageOrganizer`).
 
         Calls ``deleter.delete(path)`` when one is given, the same as the real organizer -- so a test
-        drives the no-bin behaviour (#301) through a real `~rehuco_core.Deleter` double rather than this
+        drives the no-bin behavior (#301) through a real `~rehuco_core.Deleter` double rather than this
         class special-casing it, exercising `delete_screenshot`'s actual `AskingDeleter` and the
         real `QMessageBox` prompt it shows.
 
@@ -183,7 +183,7 @@ class FakeResource:
 class NoOpDeleter:  # pylint: disable=too-few-public-methods
     """A harmless `~rehuco_core.Deleter` that does nothing -- this module's default stand-in for
     `configured_deleter`'s real chain (#301), so an ordinary delete never reaches the real Recycle
-    Bin machinery. A test exercising the no-bin behaviour overrides `fake_configured_deleter`'s
+    Bin machinery. A test exercising the no-bin behavior overrides `fake_configured_deleter`'s
     return value with :class:`RefusingDeleter` or :class:`LockedDeleter` instead."""
 
     def delete(self, path: Path) -> None:
@@ -214,7 +214,7 @@ def fake_configured_deleter(mocker: MockerFixture) -> Any:
     module never reaches the real Recycle Bin machinery.
 
     :param mocker: pytest-mock fixture.
-    :returns: the patched accessor -- a test exercising the no-bin behaviour sets ``.return_value`` to
+    :returns: the patched accessor -- a test exercising the no-bin behavior sets ``.return_value`` to
         :class:`RefusingDeleter` or :class:`LockedDeleter`.
     """
     return mocker.patch("rehuco_agent.fields.widgets.image_selector.configured_deleter", return_value=NoOpDeleter())
@@ -272,7 +272,7 @@ def action_enabled(selector: ImageSelector, text: str) -> bool:
     """Whether the button showing the named action is one a user could press.
 
     Read off the button rather than the action, because that is what a user sees: a column disabled
-    for a resource nothing can rearrange greys its buttons whatever their actions say.
+    for a resource nothing can rearrange grays its buttons whatever their actions say.
 
     :param selector: the selector under test.
     :param text: the action's text, e.g. ``"Convert"``.
@@ -1335,7 +1335,7 @@ def test_deleting_a_screenshot_closes_the_gap_after_it(confirm: Any, qtbot: QtBo
 def test_deleting_asks_first_and_declining_changes_nothing(confirm: Any, qtbot: QtBot) -> None:
     """A delete is confirmed before it happens, and declining leaves the resource alone (#72).
 
-    Unlike every other edit this editor makes, a delete unlinks a file and renumbers its neighbours
+    Unlike every other edit this editor makes, a delete unlinks a file and renumbers its neighbors
     -- neither half is something a document Revert can undo.
 
     **Test steps:**
@@ -1630,7 +1630,7 @@ def test_a_refused_rearrangement_keeps_the_row_and_rebuilds_from_disk(qtbot: QtB
     """A rename the disk refuses leaves the current row where it was, showing what is really there (#72).
 
     The core's rollback is best effort, so the directory -- not the rows that were on screen -- is the
-    only trustworthy account of the order afterwards.
+    only trustworthy account of the order afterward.
 
     **Test steps:**
 
@@ -1686,7 +1686,7 @@ def test_without_an_organizer_the_list_is_read_only(qtbot: QtBot) -> None:
 
 
 def test_the_action_columns_are_disabled_without_an_organizer(qtbot: QtBot) -> None:
-    """The buttons are greyed rather than hidden, so the editor does not change shape per resource (#72).
+    """The buttons are grayed rather than hidden, so the editor does not change shape per resource (#72).
 
     **Test steps:**
 
@@ -1876,7 +1876,7 @@ def test_unconverted_images_are_listed_after_the_numbered_set_and_start_checked(
 
 
 def test_an_unconverted_row_accepts_no_curation(qtbot: QtBot) -> None:
-    """An un-converted row is converted or deleted, nothing else: its check box greys (#370), while a
+    """An un-converted row is converted or deleted, nothing else: its check box grays (#370), while a
     hidden un-converted name it was seeded with is still what it shows.
 
     **Test steps:**
@@ -2224,9 +2224,9 @@ def double_click(qtbot: QtBot, view: QTreeView, index: QModelIndex) -> None:
     :param view: the list.
     :param index: the cell.
     """
-    centre = view.visualRect(index).center()
-    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
-    qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+    center = view.visualRect(index).center()
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
+    qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
 
 
 def test_double_clicking_a_row_asks_for_the_viewer_on_it(qtbot: QtBot) -> None:
@@ -2506,7 +2506,7 @@ def test_a_viewers_request_the_row_refuses_does_nothing(confirm: Any, qtbot: QtB
 def list_action(selector: ImageSelector, text: str) -> QAction:
     """The named action itself, as armed on the list -- what a keyboard shortcut fires.
 
-    Read off the action rather than its button, because a disabled column greys the button while
+    Read off the action rather than its button, because a disabled column grays the button while
     leaving the shortcut on the list alive: the two are different questions, and a read-only list has
     to answer both (#292).
 
@@ -2559,7 +2559,7 @@ def test_a_read_only_list_still_lists_its_rows_and_previews_the_selection(mocker
 
 
 def test_a_read_only_list_gives_up_its_check_boxes_and_nothing_else(qtbot: QtBot) -> None:
-    """Curation is an edit to the record, so the check column greys while the rest stays readable (#292).
+    """Curation is an edit to the record, so the check column grays while the rest stays readable (#292).
 
     Disabled as well as un-checkable: a check box that takes clicks and does nothing would be a
     worse answer than one that says it is not available.
@@ -2584,9 +2584,9 @@ def test_a_read_only_list_gives_up_its_check_boxes_and_nothing_else(qtbot: QtBot
 
 
 def test_a_read_only_list_disables_the_buttons_and_the_keys_behind_them(qtbot: QtBot) -> None:
-    """Every action that would rename a file greys, and its shortcut goes with it (#292).
+    """Every action that would rename a file grays, and its shortcut goes with it (#292).
 
-    The list itself stays enabled on a locked document, so a greyed button alone would leave Del and
+    The list itself stays enabled on a locked document, so a grayed button alone would leave Del and
     Ctrl+Up reaching the actions armed on it.
 
     **Test steps:**

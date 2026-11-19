@@ -28,7 +28,7 @@ class TasksSettings:
     clear_failed_on_restart: bool = field(default=False)
     """Drop every ``failed`` job read off the saved queue before it is restored.
 
-    **No equivalent for ``cancelled``.** A cancelled job was stopped on purpose and is the one most
+    **No equivalent for ``canceled``.** A canceled job was stopped on purpose and is the one most
     likely to be retried; *Clear all jobs* in the dock already covers a clean slate."""
 
     resume_on_restart: bool = field(default=False)

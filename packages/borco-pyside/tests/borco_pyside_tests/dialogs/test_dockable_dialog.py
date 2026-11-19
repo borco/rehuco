@@ -120,7 +120,7 @@ def test_place_floating_keeps_a_closed_placed_dock_closed(qtbot: QtBot, manager:
     """Floating a dock that is already placed and **closed** leaves it closed -- placement decides
     nothing about visibility.
 
-    Guards a QtAds behaviour, not a preference: ``addDockWidgetFloating`` reopens a closed dock it
+    Guards a QtAds behavior, not a preference: ``addDockWidgetFloating`` reopens a closed dock it
     moves ([[appendices.qt-ads#auto-hide-abandoned-float]]), so without the correction a caller that
     floats as a fallback *after* restoring visibility would pop the dialog open on a launch that had
     decided against it.
@@ -166,14 +166,14 @@ def test_place_floating_gives_a_re_placed_dock_a_usable_size(manager: QtAds.CDoc
     * call ``place_floating``
     * verify the floating container is at least as big as that content asked for
     """
-    neighbour = QtAds.CDockWidget(manager, "Neighbour")
-    neighbour.setObjectName("neighbour")
-    neighbour.setWidget(QLabel("neighbour"))
-    manager.addDockWidget(QtAds.CenterDockWidgetArea, neighbour)
+    neighbor = QtAds.CDockWidget(manager, "Neighbor")
+    neighbor.setObjectName("neighbor")
+    neighbor.setWidget(QLabel("neighbor"))
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, neighbor)
     content = QLabel("hello")
     content.setMinimumSize(420, 300)
     dialog = DockableDialog(manager, "some_dialog", "Some Dialog", content)
-    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog.dock, neighbour.dockAreaWidget())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog.dock, neighbor.dockAreaWidget())
 
     dialog.place_floating()
 

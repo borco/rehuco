@@ -69,7 +69,7 @@ class DurationEdit(QWidget):
     unrecognized leftover text silently ignored."""
 
     WARNING_STYLESHEET: Final = f'QLineEdit[warning="true"] {{ color: {WARNING_COLOR}; }}'
-    """Paints the line edit's text in the warning color while it holds non-blank, unparseable text."""
+    """Paints the line edit's text in the warning color while it holds non-blank, unparsable text."""
 
     value = SimpleProperty[int | None](None)
     """The current duration in whole seconds, or ``None`` when unmeasured; ``set_value`` is the
@@ -190,10 +190,10 @@ class DurationEdit(QWidget):
         once the line edit is emptied (e.g. by its clear action).
 
         A blank line edit is treated as an explicit reset, not "incomplete typing" -- distinct from
-        genuinely unparseable non-empty text (``"1h 3"``), which is left unwritten as before, so
+        genuinely unparsable non-empty text (``"1h 3"``), which is left unwritten as before, so
         mid-keystroke typing is never clobbered. Without this, clearing the line edit left the spin
         box (and ``value``) holding the old number, since :meth:`parse` itself treats blank text as
-        unparseable (``None``), not zero (confirmed empirically, #24).
+        unparsable (``None``), not zero (confirmed empirically, #24).
 
         :param text: the line edit's current text.
         """

@@ -12,7 +12,7 @@ class ApplicationPaletteChangeNotifier(QObject):
 
     Replaces connecting to ``QApplication.paletteChanged`` (deprecated since Qt 6.0) with handling
     ``QEvent.Type.ApplicationPaletteChange``. That event is the authoritative point at which a theme
-    switch's new colours are actually readable from the palette -- unlike
+    switch's new colors are actually readable from the palette -- unlike
     ``QStyleHints.colorSchemeChanged``, which can fire while the palette is still the pre-switch one.
 
     The event filter is installed on the application object, so it sees events for *every* object in

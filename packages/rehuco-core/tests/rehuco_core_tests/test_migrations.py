@@ -1038,7 +1038,7 @@ def test_v3_to_v4_leaves_a_block_without_the_old_key_alone() -> None:
     **Test steps:**
 
     * migrate a v3 block with neither key
-    * verify neither key exists afterwards and only the stamp moved
+    * verify neither key exists afterward and only the stamp moved
     """
     block: dict[str, Any] = {"format_version": 3, "complete": True}
 

@@ -60,7 +60,7 @@ def delete_removed(dock: QtAds.CDockWidget, qtbot: QtBot) -> None:
 # region remove_dock_widget tests
 def test_the_registry_keeps_a_renamed_dock_under_the_name_it_was_added_by(manager: QtAds.CDockManager) -> None:
     """QtAds never re-keys its dock registry, so a dock renamed after it was added is found under the old
-    name and not the new one -- the behaviour :func:`remove_dock_widget` exists for. Pinned so a QtAds that
+    name and not the new one -- the behavior :func:`remove_dock_widget` exists for. Pinned so a QtAds that
     starts re-keying shows up here.
 
     **Test steps:**

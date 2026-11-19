@@ -674,7 +674,7 @@ def test_the_totals_follow_each_change_as_a_fresh_count_of_the_same_rows_would(t
 
 
 def test_a_rename_respells_the_row_and_its_key(three: CatalogTableModel) -> None:
-    """A rebased path is what the row's key and path show afterwards.
+    """A rebased path is what the row's key and path show afterward.
 
     **Test steps:**
 

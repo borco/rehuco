@@ -70,7 +70,7 @@ def render_counts(status: JobStatus) -> str:
     """The bare numbers -- ``"3/4"``, or ``"3"`` with no total yet.
 
     What a unit nobody here recognizes falls back to: a job declaring one this build has never seen
-    still has honest figures, and showing them unlabelled is better than showing nothing and better
+    still has honest figures, and showing them unlabeled is better than showing nothing and better
     than inventing a name for them.
 
     :param status: the job to describe.

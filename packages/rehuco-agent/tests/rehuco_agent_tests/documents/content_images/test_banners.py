@@ -210,7 +210,7 @@ DIRECTORY_SCOPED: Final = [
 
 def test_only_the_archive_that_qualifies_is_stripped() -> None:
     """Redundancy is judged per archive: in a directory-scoped resource, the pack whose top folder
-    repeats its name loses it, the neighbour whose folder does not keeps its own (#367).
+    repeats its name loses it, the neighbor whose folder does not keeps its own (#367).
 
     **Test steps:**
 

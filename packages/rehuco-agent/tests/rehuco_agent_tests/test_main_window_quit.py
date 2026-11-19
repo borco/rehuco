@@ -49,7 +49,7 @@ def test_an_accepted_close_quits_the_app_even_with_floating_docks_still_up(
 
 
 def test_a_refused_close_does_not_quit(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A close the dirty-document guard refuses leaves the app running (#507 must not quit past a cancelled
+    """A close the dirty-document guard refuses leaves the app running (#507 must not quit past a canceled
     prompt).
 
     **Test steps:**

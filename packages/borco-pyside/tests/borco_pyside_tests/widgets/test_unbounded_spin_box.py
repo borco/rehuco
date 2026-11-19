@@ -303,7 +303,7 @@ def test_fixup(  # pylint: disable=too-many-arguments,too-many-positional-argume
     qtbot: QtBot, value: int, minimum: int | None, maximum: int | None, text: str, expected: str
 ) -> None:
     """``fixup`` boxes a syntactically valid but out-of-range number into range, or falls back to the
-    widget's current value for genuinely unparseable text.
+    widget's current value for genuinely unparsable text.
 
     **Test steps:**
 
@@ -349,7 +349,7 @@ def test_fixup_of_blank_text_is_blank_not_the_current_value(qtbot: QtBot) -> Non
 def test_typed_text_write_through(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     qtbot: QtBot, value: int, minimum: int | None, maximum: int | None, text: str, expected: int
 ) -> None:
-    """Typing into the line edit writes a parseable number through to ``value``, clamped into range if
+    """Typing into the line edit writes a parsable number through to ``value``, clamped into range if
     configured; text that doesn't parse yet (e.g. a bare ``-`` mid-typing a negative number) leaves
     ``value`` untouched.
 

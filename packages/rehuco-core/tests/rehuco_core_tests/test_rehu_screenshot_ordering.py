@@ -28,7 +28,7 @@ class Renames:
 
     The renumbering's whole contract is *which* renames it issues and *in what order* -- parking
     every mover before any of them claims a slot -- so recording the calls says more than inspecting
-    a directory afterwards would, and says it without one.
+    a directory afterward would, and says it without one.
     """
 
     def __init__(self) -> None:

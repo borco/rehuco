@@ -30,7 +30,7 @@ from .thumbnail_loader import ThumbnailLoader
 type ModelIndex = QModelIndex | QPersistentModelIndex
 
 PLACEHOLDER_ALPHA: Final = 40
-"""How faint the pending-thumbnail placeholder is: a hint of the palette's text colour over the backdrop,
+"""How faint the pending-thumbnail placeholder is: a hint of the palette's text color over the backdrop,
 enough to say "something is coming here" without competing with the thumbnails already up."""
 
 
@@ -111,7 +111,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
         """Paint the thumbnail or its placeholder, then the ring when it is the current image.
 
         The ring is the same odd-even-filled band `ImageStrip.ThumbnailLabel` paints, for the same
-        reasons: no centring and no joins, so every side is exactly :data:`THUMBNAIL_BORDER`.
+        reasons: no centering and no joins, so every side is exactly :data:`THUMBNAIL_BORDER`.
 
         :param painter: the painter.
         :param option: the style option -- its rect is the item's.
@@ -123,9 +123,9 @@ class ThumbnailDelegate(QStyledItemDelegate):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawPixmap(rect.topLeft(), pixmap)
         else:
-            colour = option.palette.color(QPalette.ColorRole.Text)
-            colour.setAlpha(PLACEHOLDER_ALPHA)
-            painter.fillRect(rect, colour)
+            color = option.palette.color(QPalette.ColorRole.Text)
+            color.setAlpha(PLACEHOLDER_ALPHA)
+            painter.fillRect(rect, color)
         if index.row() == self.__row.current_index:
             border = THUMBNAIL_BORDER
             ring = QPainterPath()
@@ -134,7 +134,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
             painter.fillPath(ring, option.palette.color(QPalette.ColorRole.Highlight))
 
 
-# one over the cap for the requester token (#479), which is the row's identity towards the loader
+# one over the cap for the requester token (#479), which is the row's identity toward the loader
 class ThumbnailRow(QListView):  # pylint: disable=too-many-instance-attributes
     """A fixed-height, horizontally flowing row of lazily decoded thumbnails (#221).
 

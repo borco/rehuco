@@ -14,7 +14,7 @@ is itself the deliberate act. This dock carries no toolbar of its own (#303): th
 already live one level up, always visible, and repeating them here would spend a row of height saying
 what is already on screen.
 
-**Every action is greyed while the resource is unreachable**, decided at the enumeration rather than
+**Every action is grayed while the resource is unreachable**, decided at the enumeration rather than
 from the rows: the record lives beside the files and shares their fate, so a mount that is away makes
 the ``.checksum`` as unreachable as the content it describes (#245). Showing an empty table over an
 offline mount would look exactly like a resource with no files, which is the one thing this must not
@@ -138,7 +138,7 @@ class ChecksumView(QWidget):
     def restore_state(self, state: bytes) -> None:
         """Restore the sort :meth:`save_state` encoded.
 
-        :param state: the blob; one Qt does not recognise leaves the sort as it is.
+        :param state: the blob; one Qt does not recognize leaves the sort as it is.
         """
         header = self.__ui.file_view.horizontalHeader()
         if header.restoreState(QByteArray(state)):

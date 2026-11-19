@@ -268,7 +268,7 @@ def test_scrape_page_skips_a_script_block_whose_graph_has_no_course_entry() -> N
         param("PT45M", 2700, id="minutes-only"),
         param("PT2H", 7200, id="hours-only"),
         param("PT30S", 30, id="seconds-only"),
-        param("garbage", None, id="unparseable-is-absent"),
+        param("garbage", None, id="unparsable-is-absent"),
         param("PT", None, id="no-token-recognized-is-absent"),
     ],
 )

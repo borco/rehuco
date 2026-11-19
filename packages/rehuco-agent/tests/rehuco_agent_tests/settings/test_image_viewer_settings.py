@@ -370,7 +370,7 @@ def test_save_then_load_round_trips_the_content_images_choices(settings: FakeSet
 
 
 def test_the_backdrop_round_trips_and_an_unpaintable_one_falls_back(settings: FakeSettings) -> None:
-    """The lightbox backdrop survives a restart as ``#rrggbb``; a stored value no colour can be made
+    """The lightbox backdrop survives a restart as ``#rrggbb``; a stored value no color can be made
     of -- a hand-edited ini -- loads as the default rather than raising (#221).
 
     **Test steps:**
@@ -386,7 +386,7 @@ def test_the_backdrop_round_trips_and_an_unpaintable_one_falls_back(settings: Fa
     assert restored.lightbox_backdrop == "#336699"
 
     settings.beginGroup(GROUP)
-    settings.setValue(LIGHTBOX_BACKDROP_KEY, "not a colour")
+    settings.setValue(LIGHTBOX_BACKDROP_KEY, "not a color")
     settings.endGroup()
     restored.load(settings)  # type: ignore[arg-type]
     assert restored.lightbox_backdrop == DEFAULT_LIGHTBOX_BACKDROP

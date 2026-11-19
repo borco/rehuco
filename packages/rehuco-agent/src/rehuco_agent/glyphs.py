@@ -42,7 +42,7 @@ plain-Unicode default with the Phosphor ``x`` to match the app's icon set."""
 TAB_MAXIMIZE_GLYPH: Final = Glyph("\ue0a2", "Phosphor-Bold")
 """Maximize toggle on each document/surface tab, beside :data:`TAB_CLOSE_GLYPH` (a
 `QtAdsMaximizeHandler`'s glyph, #341): Phosphor's ``arrows-out``, drawn as text the same way, so the
-tracker's stylesheet recolours both on the current tab. Swapped for :data:`TAB_RESTORE_GLYPH` while the
+tracker's stylesheet recolors both on the current tab. Swapped for :data:`TAB_RESTORE_GLYPH` while the
 tab is maximized."""
 
 TAB_RESTORE_GLYPH: Final = Glyph("\ue09a", "Phosphor-Bold")

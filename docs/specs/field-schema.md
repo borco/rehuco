@@ -273,7 +273,7 @@ sources:
   a card after it and `[x]` (on the Publisher row) deletes it; a card is moved by its grip or Ctrl+arrows, and
   the grip is hidden while there is a single source. Every source shows, always.
   A card whose trimmed URL a card above already has is tinted pink and stays until the user deletes it. An
-  empty title, or a non-empty URL that is not `http(s)`, is flagged in the warning colour with a tooltip and is
+  empty title, or a non-empty URL that is not `http(s)`, is flagged in the warning color with a tooltip and is
   **never refused**; a card may be started from its URL. A link dropped on a URL edit replaces its text.
   Editing merges into the source (keys the card does not show are kept; an emptied edit deletes its key).
 - **`authors` are not part of a source** — one shared list serves the resource. The same course
@@ -883,7 +883,7 @@ Field order, in the three groups the layout separates:
   SMB mount cannot freeze the window and a scan already running cannot be started again or half-applied.
   This is interim ownership: the task queue ([#201](https://github.com/borco/rehuco/issues/201)) and its
   dock ([#202](https://github.com/borco/rehuco/issues/202)) are where these belong, as jobs that can be
-  watched, paused, resumed, cancelled and reordered alongside the checksum runs
+  watched, paused, resumed, canceled and reordered alongside the checksum runs
   ([#204](https://github.com/borco/rehuco/issues/204)) — which also supersedes the single app-wide
   "the disk is busy" flag tc4 carried.
 - **`created` / `updated` seeding — resolved** — both seed from the `.tc` file's **mtime** on import (ctime is

@@ -61,8 +61,8 @@ def test_a_displayed_frame_is_a_copy_of_the_buffer_delivered_on_this_thread(
 
     **Test steps:**
 
-    * set up a 4x2 picture, write one colour into the buffer from another thread, and display from there
-    * verify the frame arrives on this thread with that colour, and that overwriting the buffer leaves it unchanged
+    * set up a 4x2 picture, write one color into the buffer from another thread, and display from there
+    * verify the frame arrives on this thread with that color, and that overwriting the buffer leaves it unchanged
     """
     sink = delete_at_teardown(VlcFrameSink())
     pitch, lines = sink.setup(4, 2)

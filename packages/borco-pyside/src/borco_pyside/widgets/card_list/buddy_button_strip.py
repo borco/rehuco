@@ -1,4 +1,4 @@
-"""Buttons outside a card's frame, each centred on a row of the content inside it."""
+"""Buttons outside a card's frame, each centered on a row of the content inside it."""
 
 from typing import Final, override
 
@@ -11,7 +11,7 @@ class BuddyButtonStrip(QObject):
     """A column of square tool buttons right of ``frame``, placed by hand on ``host``.
 
     No Qt layout aligns a widget with a row of *another* layout, so each button is positioned directly:
-    beside the frame's right edge, vertically centred on its **buddy** -- a widget inside the frame. A button
+    beside the frame's right edge, vertically centered on its **buddy** -- a widget inside the frame. A button
     keeps its natural height and is as wide as it is tall; it never takes its buddy's height. Positions are
     recomputed whenever the host is shown or resized, a buddy moves or resizes, or the content asks for a new
     layout. Buttons never take focus: the keyboard reaches their actions through their shortcuts.
@@ -45,10 +45,10 @@ class BuddyButtonStrip(QObject):
         return tuple(button for button, _ in self.__buttons)
 
     def add_button(self, action: QAction, buddy: QWidget) -> QToolButton:
-        """Add a button for ``action``, centred on ``buddy``.
+        """Add a button for ``action``, centered on ``buddy``.
 
         :param action: what the button triggers, and where its icon, text and tooltip come from.
-        :param buddy: the widget inside the frame the button is centred on.
+        :param buddy: the widget inside the frame the button is centered on.
         :returns: the new button.
         """
         button = QToolButton(self.__host)
@@ -102,11 +102,11 @@ class BuddyButtonStrip(QObject):
             button.setVisible(revealed)
 
     def reposition(self) -> None:
-        """Place every button beside the frame, centred on its buddy."""
+        """Place every button beside the frame, centered on its buddy."""
         left = self.__frame.geometry().right() + 1 + self.SPACING
         for button, buddy in self.__buttons:
-            centre = buddy.mapTo(self.__host, QPoint(0, buddy.height() // 2)).y()
-            button.move(left, centre - button.height() // 2)
+            center = buddy.mapTo(self.__host, QPoint(0, buddy.height() // 2)).y()
+            button.move(left, center - button.height() // 2)
 
     @override
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802  (Qt override)

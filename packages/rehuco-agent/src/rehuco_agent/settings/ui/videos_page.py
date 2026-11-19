@@ -200,7 +200,7 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
     def save_changes(self) -> None:
         """Push the staged choices into the shared settings object, persist them, and show the result.
 
-        The page reloads itself from the saved values afterwards rather than leaving them as typed:
+        The page reloads itself from the saved values afterward rather than leaving them as typed:
         normalization can change the extension list -- a blank or duplicated entry is dropped, ``MP4``
         becomes ``.mp4``, and emptying it restores the shipped formats -- and a page still showing what
         was typed would disagree with what the next scan measures.
@@ -321,7 +321,7 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __update_player_controls(self) -> None:
         """Offer VLC and the FFmpeg libraries only while they can be had, and say why when the staged choice cannot be
-        honoured, or when it waits for the next start.
+        honored, or when it waits for the next start.
 
         As :meth:`__update_probe_controls` does for FFmpeg: **disabled rather than hidden**, a selected one stays
         enabled, and the reason sits beside it -- the Files sub-dock plays in the app's own player meanwhile.

@@ -26,11 +26,11 @@ nothing, leaving *State* elided to a letter. A fixed width rather than a resize 
 
 
 class TaskStateDelegate(TaskRowDelegate):
-    """Paints :attr:`~.task_queue_model.STATE_COLUMN`: the status glyph, centred, over the row's
+    """Paints :attr:`~.task_queue_model.STATE_COLUMN`: the status glyph, centered, over the row's
     selection fill and state tint (:class:`~.task_row_delegate.TaskRowDelegate`, #251).
 
     **Icons, not words.** The column named eight readings in text -- six states plus *Pausing…* and
-    *Cancelling…* -- and each now has a glyph instead
+    *Canceling…* -- and each now has a glyph instead
     (:mod:`~rehuco_agent.tasks.task_status_icons`), which is what lets the column shrink to the width
     of its own header and gives the eye something to scan a long queue by. The sentence is not lost:
     it stays on the row's tooltip, which is also what an icon-only cell owes a reader who cannot tell
@@ -72,7 +72,7 @@ class TaskStateDelegate(TaskRowDelegate):
 
     @staticmethod
     def __icon_rect(option: QStyleOptionViewItem) -> QRect:
-        """Where the glyph goes: centred in the cell, never larger than it.
+        """Where the glyph goes: centered in the cell, never larger than it.
 
         :param option: the item's rect.
         :returns: the rect to draw the glyph in.
@@ -88,7 +88,7 @@ class TaskStateDelegate(TaskRowDelegate):
 
         The model still answers :attr:`~PySide6.QtCore.Qt.ItemDataRole.DisplayRole` with the state's
         sentence -- it is what the tooltip and any reader of the model see -- so the base's hint would
-        size this column for *Cancelling…*, text this delegate never draws.
+        size this column for *Canceling…*, text this delegate never draws.
         """
         del option, index
         return QSize(STATUS_ICON_SIZE, STATUS_ICON_SIZE)

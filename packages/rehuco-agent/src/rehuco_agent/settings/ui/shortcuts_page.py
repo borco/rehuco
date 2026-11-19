@@ -228,7 +228,7 @@ class ShortcutsPage(QWidget):
         if self.__filling or command is None:
             return
         if not self.__change(command, self.__model.keys_of(command.id), command.scopes[index]):
-            self.__show_selected()  # cancelled: put the combo back
+            self.__show_selected()  # canceled: put the combo back
 
     def __on_key_recorded(self, index: int, sequence: QKeySequence) -> None:
         """Replace the key at ``index`` with ``sequence``, or add it, asking first if that collides.
@@ -287,7 +287,7 @@ class ShortcutsPage(QWidget):
         :param command: the command to change.
         :param keys: its new keys.
         :param scope: its new scope.
-        :returns: whether the change was made; ``False`` when the user cancelled it.
+        :returns: whether the change was made; ``False`` when the user canceled it.
         """
         collisions = self.__model.collisions(command.id, keys, scope)
         if collisions and not self.confirm_reassign(collisions):

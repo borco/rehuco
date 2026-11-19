@@ -60,7 +60,7 @@ COLLAPSED_MARK: Final = "+"
 """What a banner is prefixed with: the mark says what a click on it does next."""
 
 BANNER_MARK_WIDTH: Final = 14
-"""The column the mark is centred in, in pixels. Fixed, and wider than either glyph: ``-`` is narrower
+"""The column the mark is centered in, in pixels. Fixed, and wider than either glyph: ``-`` is narrower
 than ``+``, and a label that started right after the mark would shift sideways on every toggle."""
 
 STATUS_LABEL_NAME: Final = "content_images_status"
@@ -68,7 +68,7 @@ STATUS_LABEL_NAME: Final = "content_images_status"
 
 PLACEHOLDER_ALPHA: Final = 28
 BROKEN_ALPHA: Final = 70
-"""How faint the placeholders are: a pending thumbnail is a hint of the text colour, a member that
+"""How faint the placeholders are: a pending thumbnail is a hint of the text color, a member that
 could not be decoded a stronger one, so a broken pack reads as broken rather than as still loading."""
 
 
@@ -454,7 +454,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
             return
         painter = QPainter(self.viewport())
         # a thumbnail is decoded for this screen's ratio and painted one device pixel per pixel; the
-        # hint covers the rare cell it does not match exactly, so that resample is not nearest-neighbour
+        # hint covers the rare cell it does not match exactly, so that resample is not nearest-neighbor
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         offset = self.verticalScrollBar().value()
         viewport_height = self.viewport().height()
@@ -552,7 +552,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
             self.reveal(shown[position])
 
     def __step_rows(self, delta: int) -> None:
-        """Select the image in the row ``delta`` rows away whose centre is nearest the selected one's,
+        """Select the image in the row ``delta`` rows away whose center is nearest the selected one's,
         or the first shown image with nothing selected; stops at the ends.
 
         :param delta: ``-1`` for the row above, ``1`` for the row below.
@@ -574,11 +574,11 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
             return
         rects = self.__layout.rects
         x, _, w, _ = rects[selected]
-        centre = x + w / 2
+        center = x + w / 2
         row = rows[target]
         nearest = min(
             range(row.first, row.last + 1),
-            key=lambda index: abs(rects[index][0] + rects[index][2] / 2 - centre),
+            key=lambda index: abs(rects[index][0] + rects[index][2] / 2 - center),
         )
         self.reveal(nearest)
 
@@ -740,8 +740,8 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         self.status_changed.emit(self.status_text())
 
     def __paint_banner(self, painter: QPainter, y: int, height: int, key: str) -> None:
-        """Paint one banner row: its mark centred in a fixed column, then its label, elided to what
-        is left of the width -- in the palette's placeholder colour, bold. Two columns, so the label
+        """Paint one banner row: its mark centered in a fixed column, then its label, elided to what
+        is left of the width -- in the palette's placeholder color, bold. Two columns, so the label
         stands still when the mark changes width on a toggle.
 
         :param painter: the painter.
@@ -789,7 +789,7 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
         ratio = self.devicePixelRatio()
         pixmap = self.__loader.request(self, self.__source, index, height, ratio)
         if pixmap is not None:
-            # fitted and centred, never stretched: the cell was packed from the header's aspect, and
+            # fitted and centered, never stretched: the cell was packed from the header's aspect, and
             # a thumbnail that disagrees with it (a header still unread, or a format whose stored size
             # differs from its shown one) must show its own proportions inside the cell. Sized in
             # logical pixels, which is what the pixmap's own ratio makes its device pixels into
@@ -798,10 +798,10 @@ class ContentImagesView(QAbstractScrollArea):  # pylint: disable=too-many-instan
             target.moveCenter(rect.center())
             painter.drawPixmap(target, pixmap)
         else:
-            colour = self.palette().color(QPalette.ColorRole.Text)
+            color = self.palette().color(QPalette.ColorRole.Text)
             failed = self.__loader.failed(self.__source.key(index), height, ratio)
-            colour.setAlpha(BROKEN_ALPHA if failed else PLACEHOLDER_ALPHA)
-            painter.fillRect(rect, colour)
+            color.setAlpha(BROKEN_ALPHA if failed else PLACEHOLDER_ALPHA)
+            painter.fillRect(rect, color)
         if index == self.__selected:
             # the same odd-even-filled ring the thumbnail row marks its current item with
             border = THUMBNAIL_BORDER

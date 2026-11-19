@@ -212,7 +212,7 @@ def test_starts_with_every_band_shown(widget: LogWidget) -> None:
 
 
 def test_actions_given_no_icon_keep_their_text_alone(widget: LogWidget) -> None:
-    """A widget built without icons still runs -- a labelled toolbar is a working toolbar.
+    """A widget built without icons still runs -- a labeled toolbar is a working toolbar.
 
     Which is why every :class:`LogWidgetIcons` field defaults to empty: adopting this widget must not
     require drawing six SVGs first.
@@ -396,7 +396,7 @@ def test_clearing_one_surface_leaves_another_and_the_replay_alone(
 
     * Attach two widgets to one bridge and log a record.
     * Clear the first.
-    * Assert the second still holds it, and a third attached afterwards is still replayed it.
+    * Assert the second still holds it, and a third attached afterward is still replayed it.
     """
     other = LogWidget()
     qtbot.addWidget(other)

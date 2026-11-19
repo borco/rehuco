@@ -95,7 +95,7 @@ Neither app had tag, author, learning-path or collection browsers beyond these:
 | --- | --- | --- |
 | Tag groups with a yes / no / ignore button per tag, as a query | v1 (`DTagQueryControl.qml`, fixed default tags) | **TBD** — rehuco filters by tag token only |
 | Publisher filter and `author:` text search | v1 | Built — `publishers:` and `authors:` tokens |
-| Coloured tag groups in a dock | v2 (display only; clicking applies no filter) | **TBD** |
+| Colored tag groups in a dock | v2 (display only; clicking applies no filter) | **TBD** |
 | Filter bookmarks and filter history | v2 (`dpd/filters/`) | **TBD** |
 
 ## 3. Worth importing into rehuco

@@ -317,7 +317,7 @@ def enumerate_catalog_resources(root: Path, *, checkpoint: CatalogCheckpoint | N
 
     :param root: the folder to walk.
     :param checkpoint: called once per directory before its listing, so a long walk over a mount can be
-        cancelled; whatever it raises is left to escape.
+        canceled; whatever it raises is left to escape.
     :returns: the records, sorted by path so an interrupted walk resumes over the same order it left,
         **and the directories that would not list**. An unreadable branch contributes nothing rather
         than raising, but it is named, so no caller has to mistake an offline mount for an empty

@@ -335,7 +335,7 @@ CELL_HEIGHT: Final = 24
 
 @fixture(name="delegate")
 def fixture_delegate(qapp: object) -> FilesRowDelegate:
-    """A delegate; takes ``qapp`` because recolouring an SVG needs a `QGuiApplication`.
+    """A delegate; takes ``qapp`` because recoloring an SVG needs a `QGuiApplication`.
 
     :param qapp: the Qt application fixture.
     :returns: the delegate.

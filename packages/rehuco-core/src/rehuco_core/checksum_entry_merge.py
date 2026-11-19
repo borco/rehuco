@@ -1,7 +1,7 @@
 """Merge a checksum run's entries into the record as it is on disk now (#512, [[sync#lock-file]]).
 
 A verify or a generate reads its ``.checksum`` when it starts, hashes for as long as the content takes, and writes the
-record once at the end. Whatever another writer put in the record meanwhile -- a claim moved in from a neighbour
+record once at the end. Whatever another writer put in the record meanwhile -- a claim moved in from a neighbor
 (#257), an entry forgotten (#244), another machine's run -- would be lost if the run wrote its own copy back whole. So
 the write happens under the record's lock, against the file re-read there, entry by entry, keyed by name:
 

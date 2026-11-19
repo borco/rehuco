@@ -66,7 +66,7 @@ class SourcesEditor(CardListEditor):
 
     @property
     def header_height(self) -> int:
-        """The height the row's label is centred against: the top of the first card down through its Title
+        """The height the row's label is centered against: the top of the first card down through its Title
         row, so the label sits level with that row whatever else the editor holds -- the `HeaderPinned`
         contract."""
         return 2 * Card.content_offset() + LineEdit().sizeHint().height()

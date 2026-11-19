@@ -91,12 +91,12 @@ def drop_link(editor: AuthorsListEditor, row: int, column: int, url: str) -> boo
     data = QMimeData()
     data.setUrls([QUrl(url)])
     viewport = editor.view.viewport()
-    centre = editor.view.visualRect(editor.model.index(row, column)).center()
+    center = editor.view.visualRect(editor.model.index(row, column)).center()
     action = Qt.DropAction.CopyAction
     buttons = Qt.MouseButton.LeftButton
     modifiers = Qt.KeyboardModifier.NoModifier
-    QApplication.sendEvent(viewport, QDragEnterEvent(centre, action, data, buttons, modifiers))
-    drop = QDropEvent(QPointF(centre), action, data, buttons, modifiers)
+    QApplication.sendEvent(viewport, QDragEnterEvent(center, action, data, buttons, modifiers))
+    drop = QDropEvent(QPointF(center), action, data, buttons, modifiers)
     QApplication.sendEvent(viewport, drop)
     return drop.isAccepted()
 
@@ -342,7 +342,7 @@ def test_tabbing_out_of_the_url_cell_abandons_the_row_and_opens_the_next_rows_na
 
 
 def test_escape_on_the_new_rows_first_editor_removes_it_at_once(shown: AuthorsListEditor) -> None:
-    """Cancelling the insert is not a way of leaving the row, it is undoing it.
+    """Canceling the insert is not a way of leaving the row, it is undoing it.
 
     **Test steps:**
 
@@ -382,7 +382,7 @@ def test_a_waiting_row_filled_before_a_second_insert_settles_is_kept(shown: Auth
 
     * insert and Tab to the URL cell, then insert again
     * give the overtaken row a URL before the event loop runs
-    * verify both rows are still there afterwards
+    * verify both rows are still there afterward
     """
     select(shown, 0)
     shown.item_actions.insert_action.trigger()
@@ -430,10 +430,10 @@ def test_a_drop_that_carries_no_link_is_left_alone(shown: AuthorsListEditor) -> 
     data = QMimeData()
     data.setText("just some words")
     viewport = shown.view.viewport()
-    centre = shown.view.visualRect(shown.model.index(0, URL_COLUMN)).center()
+    center = shown.view.visualRect(shown.model.index(0, URL_COLUMN)).center()
     args = (Qt.DropAction.CopyAction, data, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-    QApplication.sendEvent(viewport, QDragEnterEvent(centre, *args))
-    drop = QDropEvent(QPointF(centre), *args)
+    QApplication.sendEvent(viewport, QDragEnterEvent(center, *args))
+    drop = QDropEvent(QPointF(center), *args)
 
     QApplication.sendEvent(viewport, drop)
 

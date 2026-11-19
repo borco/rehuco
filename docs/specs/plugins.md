@@ -284,7 +284,7 @@ stored**, and only if that cannot restore does the type's current layout step in
 when the type is first known — at open, or at a session-restore placeholder's deferred first read — and swapped by a
 later type switch in the editor, which closes and removes the outgoing type's own docks, their toolbar toggles with
 them, and adds the incoming type's hidden. A switch applies no layout — the docks the user is switching from stay as
-they are; the layout button afterwards applies the *new* type's default. The one exception is **leaving (no type)**:
+they are; the layout button afterward applies the *new* type's default. The one exception is **leaving (no type)**:
 the empty type is a type like any other here, with its own saved default and an as-built layout of the Main Editor
 alone, and that layout only ever meant "no type yet" — so picking a type for a type-less document applies the new
 type's default (saved, else as-built). A session-restored document's stored layout still wins over this: its type
@@ -333,10 +333,10 @@ app's own renames, conversions and drops did to the folder can be read without l
 
 **It is confined to the resource's own folder.** The root is the record's directory, and there is no way above it: a
 `..` row appears only while the reader is below the root, and both it and the toolbar's up action stop there. Going up
-would leave the resource entirely, and a general file manager is not what this is — the neighbouring folder a reader
+would leave the resource entirely, and a general file manager is not what this is — the neighboring folder a reader
 wants is reached by opening the resource that owns it, which is what the foreign-record rows below are for. The
 toolbar also carries **home**, the one-click jump back to the record's own directory from any depth; it and up take the
-same condition and are both greyed at the root, and greyed together for a document with no folder to go home to. Up
+same condition and are both grayed at the root, and grayed together for a document with no folder to go home to. Up
 and the `..` row wear one glyph, being one act reached two ways, and deliberately not the glyph the folder rows wear.
 
 **What a row lets you do is decided by what the file is to this resource** — the roles
@@ -397,7 +397,7 @@ from what was already read, and listing the files is also when a renamed video t
 **The checksum column reports what *this* record claims, and nothing else.** Six verdicts and an empty cell: nothing
 at all for the record, a sidecar, a folder, content another record covers, or every file at all when this record
 cannot be read — this record makes no claim there, which is different from a claim of ignorance, and reading the
-neighbour's record to answer for it would make a glyph mean *somebody verified this*. Content this record holds no
+neighbor's record to answer for it would make a glyph mean *somebody verified this*. Content this record holds no
 hash for says so (whether the resource has no `.checksum` at all, that record skips the file, or lists it with no
 hash — all are *nothing is recorded about these bytes*, and the remedy for all is the same generate; #467). Four are
 matched-or-not crossed with fresh-or-stale, and the fresh/stale split is the **run's own** staleness rule rather than
@@ -405,7 +405,7 @@ an opinion formed in the GUI: a *current* glyph means exactly *a verify would sk
 exactly *it would not*. A claim moved in from another record — a hash with no date and no verdict — is stale and *not
 yet verified at this location*, never a mismatch (#467). The last is an entry resting at `malformed` (#303), its own
 glyph with no stale pair: this build has made **no claim** about the bytes — drawing it as a mismatch would assert a
-check that never happened, and drawing it as missing would invite a generate that overwrites a neighbour's entry. **The mapping from an entry to a glyph is one function** the checksum dock (#244) reads too, so a
+check that never happened, and drawing it as missing would invite a generate that overwrites a neighbor's entry. **The mapping from an entry to a glyph is one function** the checksum dock (#244) reads too, so a
 file's verdict looks the same in both. One `.checksum` read per refresh, whatever the folder holds.
 
 It **refreshes when shown and on demand** — `F5` and a refresh button, each refreshing only this sub-dock — plus
@@ -609,7 +609,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   the empty part of the roots column offers too, with Refresh, enabled alike — the roots can fill the column and leave
   none (#543). **Refresh sits under Open in file explorer on every row's menu**, F5 working in every column (#644).
   A root row is two lines, its name and under it its folder,
-  smaller and fainter and elided to fit, with its storage glyph centred beside both. Its details pane has no move buttons, the grip being the way to move one.
+  smaller and fainter and elided to fit, with its storage glyph centered beside both. Its details pane has no move buttons, the grip being the way to move one.
   A folder's menu holds the folder filter and the folder's rehu: **Open associated rehu** when its `info.rehu` (or `info.tc`) is there, **Create rehu**
   — a new unsaved record, opened in Documents — when it is not ([[data-model#resource-scoping]]). A checksum file's menu
   also offers **Verify checksums**, which queues a verify of the `.rehu` that shares its name — the same job the
@@ -655,7 +655,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   label, while left empty; typed or browsed to, it may go anywhere both catalogs reach, such as the NAS) and its **Layout**, a combo of the default root layouts kept in the settings
   ([[appendices.settings-pages#category-groups]]) whose last entry, *New layout…*, asks for a preset and saves it with
   the others at once. Each row has an **×** that takes it out. A folder that a staged `.rehuroot` is the root of is
-  shown only as the file, whichever came first. **A row that cannot be added says why** in the warning colour -- a
+  shown only as the file, whichever came first. **A row that cannot be added says why** in the warning color -- a
   root file unreadable or already listed, a location already a root, a folder inside or around a root or a row above
   it (through links too), a root file already there -- and is left out; **OK adds the rest** in order with one save,
   maps each one this machine reaches, its storage detected, never asked, makes the first current, and, with *Scan
@@ -676,13 +676,13 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   template, or alike in type and template to an earlier row, is flagged and left out; the **Path template** is an editable drop-down of `*` and the Root Layout Templates of the
   settings ([[appendices.settings-pages#category-groups]]) that the row's type accepts -- `*` standing for any type,
   so only the four placeholders every type has -- or typed. A template the row's type cannot use is shown in the
-  warning colour with the reason as its tooltip, and saved as typed; the file keeps the template's text, so editing
+  warning color with the reason as its tooltip, and saved as typed; the file keeps the template's text, so editing
   the library later changes no root. **Fallbacks** is a fixed table, one row for each of the five placeholders
   a template may use -- `title`, `publisher`, `authors`, `year`, `count` -- only *When empty* editable, no row
   added, duplicated or removed, an empty one not written, and with no buttons, the full width. The same editor serves the
   New Root Presets page and the Add Roots dialog's *New layout…*.
   A root whose file cannot be read, or a catalog open read-only, offers no edit. **A root this machine has not mapped**
-  is listed in its place, greyed, with one row saying so, never read; its **Map…** action (the root's menu and its
+  is listed in its place, grayed, with one row saying so, never read; its **Map…** action (the root's menu and its
   details pane) asks for the folder, and the *Map roots* question opens with the catalog for the roots nobody has
   answered for ([[mounts-and-storage#rehuco-scope]]). `F5` re-lists the visible columns: a
   folder deleted outside the app disappears, and the selection falls back to its nearest surviving ancestor. The
@@ -690,7 +690,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   one deleted while the app was closed, and a folder that appeared is walked for records
   ([[data-model#cache-schema]]). A root
   that cannot be listed says so by what it lives on: a **local** folder that is gone is struck through, a share, a
-  drive or a disc that is merely away keeps its glyph greyed out, and either way its column holds one row saying
+  drive or a disc that is merely away keeps its glyph grayed out, and either way its column holds one row saying
   what is wrong. The model lists off the GUI thread, holds no handle between listings and never uses
   `QFileSystemModel` — the files sub-dock's reasons, plus that browsing must never block a rename
   ([[mounts-and-storage#out-of-band]]). A node is root, folder, file, loading or unreachable, so an offline root is
@@ -1007,7 +1007,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   ([[plugins#viewer-editor-both]]): read-only field display on the **main view**; on the **description view**, a
   horizontal image strip with click-to-maximize, prev/next navigation, hideable thumbnail strip, ESC to
   close, over the rendered Markdown
-  description. The record's URL is a line on the main view, on the description view (under the strip, unlabelled, full
+  description. The record's URL is a line on the main view, on the description view (under the strip, unlabeled, full
   width), or both -- two checkboxes on the Descriptions settings page, both on by default (#620). **Where** a clicked
   screenshot maximizes is a user preference (the "Images / Display" settings page,
   [[appendices.settings-pages#category-groups]]), not a fixed choice: an overlay over the open document's own client
@@ -1051,8 +1051,8 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   is renumbered from `00` the first time it is rearranged. A delete is confirmed first — it is the one edit here
   that cannot be undone. Deliberately single-select: every ordering action names one file. A resource nothing can
   rearrange — one not yet saved anywhere, or a legacy `.tc`, which refuses every screenshot edit as it refuses the
-  drop ([[acquisition-tooling#drag-drop-aids]]) — keeps the list and greys the buttons, both row kinds alike.
-  A **locked** document ([[data-model#write-integrity]]) goes further and greys the check boxes with them, since
+  drop ([[acquisition-tooling#drag-drop-aids]]) — keeps the list and grays the buttons, both row kinds alike.
+  A **locked** document ([[data-model#write-integrity]]) goes further and grays the check boxes with them, since
   curating a screenshot writes to a record that may not be written; the rows, their metrics and the preview all
   stay. That is the whole point: a `.tc` is locked, and its images are exactly what the conversion about to run
   is going to act on, so the dock is where that is looked at first. It is the one editor surface a lock leaves
@@ -1086,7 +1086,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   conversion
   ([[acquisition-tooling#tc-to-rehu]]) would do to each pattern-matched row**, read from the same dry-run scan the
   conversion itself runs rather than re-decided here, so the column can never disagree with what Convert then
-  does. Every cell is a **filename — the one the file has afterwards**: the `<stem>NN` a row is renamed to, or
+  does. Every cell is a **filename — the one the file has afterward**: the `<stem>NN` a row is renamed to, or
   its own name again for a row the scan leaves alone, so the column reads the same way down its length. *Why* a
   file keeps its name is the cell's tooltip, in the scan's own vocabulary and nothing else — its slot is taken by
   an earlier name, by an earlier extension of its own name (the larger one wins), or its own number is at or past
@@ -1115,7 +1115,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   by construction.
   **The suggestion list is two groups** (#579, #339). First the **current names**: the type's Locations templates
   rendered into a name, a rename within the record's folder as above. Then, under a separator, **the roots' places**
-  ([[mounts-and-storage#rehuroot]]): where each root's layout puts the record, labelled by the root's name and the
+  ([[mounts-and-storage#rehuroot]]): where each root's layout puts the record, labeled by the root's name and the
   rendered path — one place for each of its templates for the type that renders, in the table's row order, a place two
   templates render offered once (#638); the root holding the record first, then every other root this machine maps and reaches, in the
   catalog's order. A record under no root (opened from outside every root) is offered every root's place, which is how
@@ -1132,7 +1132,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   place the record already sits at disabled and plain, as the current name is: under its own root it is a row of its
   own, first, whenever the layout puts the record somewhere else or cannot place it (a `*` layout puts it at the
   root's top, #643); when the layout's place is where it sits there is one row. Hovering a place shows the path
-  rendered for the record, then greyed the full path it would land at (the root's folder on this machine, joined with
+  rendered for the record, then grayed the full path it would land at (the root's folder on this machine, joined with
   it) and the path template that produced it, `*` included (#639). **A place that can be chosen carries icons after its
   text** (#649), each saying what choosing it involves, in this order, and the tooltip adds a line for each: *network*
   when the record's folder or the place is on a share, so the move is slow, a move from a share to a local disk and
@@ -1306,8 +1306,8 @@ file the player does not hold. **A dropdown on the transport bar, beside the clo
 another** (owner): `Subs: off`, then `Subs: English`, `Subs: Unknown` and so on, with the track's place -- `Subs:
 English 2/3` -- when the video has several of that name. A silent stretch of a video shows no subtitle even with one
 selected, so it is the only sign a key did anything. **It lists every subtitle track the video has**: those the keys
-visit first, in the colour of any other entry, then the others, in the disabled colour. The keys skip those, but the
-reader may pick one with the mouse, and the keys carry on from the start of their cycle afterwards. A pick is a choice
+visit first, in the color of any other entry, then the others, in the disabled color. The keys skip those, but the
+reader may pick one with the mouse, and the keys carry on from the start of their cycle afterward. A pick is a choice
 like a key's, and is remembered the same way -- by language, so a pick the keys would not visit gives way to the cycle's
 first at the next video. The dropdown takes no focus, as the speed combo does, so the keys stay the player's. It is
 VLC's alone, hidden under Qt. libvlc lists a video's tracks only while its file is open, and a video loaded paused has
@@ -1374,9 +1374,9 @@ when it is hidden (#355).
 **A rename that starts while a video plays pauses it first.** The player asks the rename coordinator to be told, ahead
 of any wait, which resource is about to be renamed; for its own resource it pauses into the released state, and the
 rename proceeds with the video paused where it was. Every surface that renames goes through the one coordinator, so
-this covers them all. Pressing play afterwards opens the video at the new path.
+this covers them all. Pressing play afterward opens the video at the new path.
 
-Behaviours of Qt Multimedia found by playing real clips, each in a test: `stop()` reports the position it resets to,
+Behaviors of Qt Multimedia found by playing real clips, each in a test: `stop()` reports the position it resets to,
 0, **ahead of** the state it ends in, so a position reported while the player still says *playing* is no progress;
 replacing a source reports `LoadedMedia` from inside `setSource`, for the video it replaces, so a video is *ready* at
 its own first `BufferedMedia`, and a resume seek made earlier is lost; a source as long as the one before it reports
@@ -1488,7 +1488,7 @@ viewer's fields ([[plugins#filter-urls]]) are the precedent for the dispatch.
 **Add note at** sits on the player's transport bar and in the player's commands (`B`, armed in the player like its other
 keys), so it works while the player is maximized too ([[plugins#player-maximized]]): it adds a line `-
 [mm:ss](rehuco-video:…#t=…)` and a space to the video's notes. That line is the bookmark: there is no other, and a note
-with no time is written by editing the notes. **The line goes beside its neighbours in time**, whatever order the user
+with no time is written by editing the notes. **The line goes beside its neighbors in time**, whatever order the user
 left the note in: after the latest bookmark at or before its time and the lines under that bookmark, else just before
 the earliest bookmark after it, else at the end; nothing else moves. **That is all it does**, docked or maximized:
 playback, the notes dock, its mode and the focus stay as they are, so a video can be listened to through, bookmarked as
@@ -1545,7 +1545,7 @@ are bold over what they head (owner). Each panel is a command of the player's fo
 and rebinds it; which are shown is session state, not saved:
 
 - **`I` — info**: the video's key, its pixel size (from `videos`, else the frame the engine shows), its length, its
-  position with its progress, and where it stands in the playlist (`[30/123]`), in the window's own colours.
+  position with its progress, and where it stands in the playlist (`[30/123]`), in the window's own colors.
 - **`T` — tree** (#575): a second view over the Tree sub-dock's rows, the name and the progress alone with no header,
   the current video marked and brought into view as the panel is shown. Clicks are the dock's: a click shows that
   video's notes without loading it, a double-click plays it, a bookmark row from its time.
@@ -1730,7 +1730,7 @@ Renaming an entity **A** onto the name of an existing **B** of the same kind ([[
     **identical to a screenshot B already has**, byte for byte, which is dropped; any other file keeps its suffix under
     B's stem. **A's description is rewritten to name the moved images** before it is appended — Markdown, HTML `<img>`
     and reference-style links alike, as the `.tc` conversion rewrites them. Whatever else the user does not want is
-    removed afterwards in B's Images editor: the merge keeps everything but duplicates.
+    removed afterward in B's Images editor: the merge keeps everything but duplicates.
   - Then **A's `.rehu`** and its `.checksum` go by the deletion policy (#312: the Recycle Bin where there is one).
     **Never A's folder** — a containment-shaped collection's `info.rehu` sits in its members' folder.
 - **Order:** move the files, write B, rewrite the members, delete A last. A run stopped at any point leaves a

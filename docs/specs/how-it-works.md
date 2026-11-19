@@ -143,7 +143,7 @@ next start reopens those documents with their edits, still unsaved.
 
 Work that takes minutes, and every save, runs on a **task queue** rather than in the window: one job at a time on
 this machine's disks, and the saves to each share in turn beside them, each row
-showing its progress and its own log, pausable, cancellable, reorderable, and written down so it survives
+showing its progress and its own log, pausable, cancelable, reorderable, and written down so it survives
 quitting. Checksums, `.tc` imports and saves run on it. A document stays editable while its save is out, a save
 whose share does not answer or whose record another writer holds waits in the queue and tries again, and a save made
 on closing a document or on quitting is waited for. Until it lands, a save is the record's saved state on this
@@ -157,8 +157,8 @@ it (its layouts and fallbacks, edited in the Roots view's edit mode), so two cat
 root. `Add Roots…` adds many at once: folders, which become new root files with a layout preset from the settings,
 and root files another catalog made, picked from a file browser in one dialog. Where a machine finds a root is that machine's own mapping, kept in its data folder under the root's id,
 not in either file: opening a catalog maps the roots whose share the machine has mounted, asks about the rest, and
-leaves a root nobody mapped listed but greyed, with `Map…` to map it later. A root whose `.rehuroot` is missing or
-unreadable is listed greyed too, with the reason, and its records already in the cache stay listed, greyed, until the
+leaves a root nobody mapped listed but grayed, with `Map…` to map it later. A root whose `.rehuroot` is missing or
+unreadable is listed grayed too, with the reason, and its records already in the cache stay listed, grayed, until the
 root is removed. Where the storage is a share, a drive or a disc is detected, never
 chosen. A catalog written before roots were files of their own is not opened; its roots are added to a new one.
 `Root Catalog` >
@@ -190,7 +190,7 @@ every machine's writes; anything else is looked at every two minutes, record by 
 rename, a deletion, made in the app, on another machine or in a text editor — reaches the table row and the Roots view a
 moment later, with no scan; an open document follows a save or a rename of its file: with no unsaved edits it reloads,
 with edits it says the file changed. The folder of a document opened from outside every root is watched the same
-way. A root that cannot be reached keeps its rows, greyed, and they do not open; it is watched again when it is back.
+way. A root that cannot be reached keeps its rows, grayed, and they do not open; it is watched again when it is back.
 
 Selecting a row in a table, or a record in the Roots view, shows that resource in a preview panel in Documents, without
 creating anything; a double-click on a table row opens it for real. `Root Catalog` > **Automatically preview the current rehu**, also

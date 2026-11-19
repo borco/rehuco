@@ -91,7 +91,7 @@
     <string>Retry</string>
    </property>
    <property name="toolTip">
-    <string>Run the selected cancelled or failed jobs again, from the top.</string>
+    <string>Run the selected canceled or failed jobs again, from the top.</string>
    </property>
   </action>
   <action name="clear_action">

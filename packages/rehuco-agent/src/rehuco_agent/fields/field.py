@@ -227,7 +227,7 @@ class ImageActivator(Protocol):  # pylint: disable=too-few-public-methods
     curated_images_changed: SignalInstance
     """Fires with the field's whole current image set, in display order, whenever it is rebuilt --
     including the first time it is populated. An activation names *where* to start; this is what lets
-    the owner's viewer keep following the same live set afterwards rather than the snapshot it opened
+    the owner's viewer keep following the same live set afterward rather than the snapshot it opened
     on (#161)."""
 
 

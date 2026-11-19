@@ -7,7 +7,7 @@ case does not matter, blanks and repeats go, and a list naming nothing at all re
 section ships rather than to *no recognized formats*. Only the fallback set differs, which is a parameter.
 
 Deliberately not next to :func:`~rehuco_agent.settings.persistent_settings.read_stored_strings`, which
-this builds on: that one allows for the *storage backend's* behaviour and applies no policy, while this
+this builds on: that one allows for the *storage backend's* behavior and applies no policy, while this
 is the policy -- and one an excluded-*pattern* list, matched verbatim, must not be given
 ([[appendices.settings-pages#persisting-changes]]).
 """

@@ -69,7 +69,7 @@ def login_command(browser: Browser, profile_folder: Path, url: str | None = None
     Launching this a second time while the first is still running does not open a second window: every
     browser here refuses two processes on the same profile and instead relays the request to the
     already-running one, which raises its own window -- exactly the "already open, bring it forward"
-    behaviour double-clicking a running browser's icon gives, needing nothing of our own to reproduce.
+    behavior double-clicking a running browser's icon gives, needing nothing of our own to reproduce.
     Passed a ``url`` that second time, the same relaying opens it as a **new tab** in that window,
     rather than only focusing it -- what lets clicking a scraper's site link in the Scrapers table
     behave the same whether or not the persona browser already happens to be open.

@@ -237,12 +237,12 @@ def test_a_folder_lists_when_fetched(qtbot: QtBot, library: Path, delete_at_tear
 
 
 @mark.parametrize(
-    ("storage", "row", "greyed", "struck"),
+    ("storage", "row", "grayed", "struck"),
     [
         param(RootStorage.LOCAL, "Folder not found", False, True, id="local-is-struck-through"),
-        param(RootStorage.NETWORK, "Share not connected", True, False, id="network-is-greyed"),
-        param(RootStorage.REMOVABLE, "Drive not connected", True, False, id="removable-is-greyed"),
-        param(RootStorage.COMPACT_DISK, "Disc not inserted", True, False, id="disc-is-greyed"),
+        param(RootStorage.NETWORK, "Share not connected", True, False, id="network-is-grayed"),
+        param(RootStorage.REMOVABLE, "Drive not connected", True, False, id="removable-is-grayed"),
+        param(RootStorage.COMPACT_DISK, "Disc not inserted", True, False, id="disc-is-grayed"),
     ],
 )
 # pylint: disable-next=too-many-arguments,too-many-positional-arguments
@@ -251,17 +251,17 @@ def test_an_unreachable_root_says_so_by_its_storage(
     tmp_path: Path,
     storage: RootStorage,
     row: str,
-    greyed: bool,
+    grayed: bool,
     struck: bool,
     delete_at_teardown: DeleteAtTeardown,
 ) -> None:
     """An away root is never an empty one: one row says why. A vanished local folder is struck through; a share or a
-    drive that is merely away is greyed out, keeping its glyph.
+    drive that is merely away is grayed out, keeping its glyph.
 
     **Test steps:**
 
     * show a root over a folder that does not exist, of each storage
-    * verify it is unreachable with one row naming what is wrong, its glyph is the storage's, and the greyed and
+    * verify it is unreachable with one row naming what is wrong, its glyph is the storage's, and the grayed and
       struck-through roles are as the storage says
     * verify the tooltip names the path
     """
@@ -273,7 +273,7 @@ def test_an_unreachable_root_says_so_by_its_storage(
     assert names(model, top) == [row]
     assert model.node_kind(model.index(0, 0, top)) is RootsNodeKind.UNREACHABLE
     assert top.data(RootsFolderModel.ICON_PATH_ROLE) == ROOT_STORAGE_ICONS[storage]
-    assert top.data(RootsFolderModel.GREYED_ROLE) is greyed
+    assert top.data(RootsFolderModel.GRAYED_ROLE) is grayed
     font = top.data(Qt.ItemDataRole.FontRole)
     assert (font is not None and font.strikeOut()) is struck
     assert str(tmp_path / "gone") in top.data(Qt.ItemDataRole.ToolTipRole)
@@ -283,18 +283,18 @@ def test_an_unreachable_root_says_so_by_its_storage(
 def test_a_reachable_root_wears_its_storages_glyph_plainly(
     qtbot: QtBot, library: Path, storage: RootStorage, delete_at_teardown: DeleteAtTeardown
 ) -> None:
-    """The glyph says what the root lives on, and nothing about a reachable root is greyed or struck through.
+    """The glyph says what the root lives on, and nothing about a reachable root is grayed or struck through.
 
     **Test steps:**
 
     * show a reachable root of each storage
-    * verify its glyph, no greying and no font change
+    * verify its glyph, no graying and no font change
     """
     model = make_model(delete_at_teardown, qtbot, [make_root(library, storage=storage)])
     top = model.index(0, 0)
 
     assert top.data(RootsFolderModel.ICON_PATH_ROLE) == ROOT_STORAGE_ICONS[storage]
-    assert top.data(RootsFolderModel.GREYED_ROLE) is False
+    assert top.data(RootsFolderModel.GRAYED_ROLE) is False
     assert top.data(Qt.ItemDataRole.FontRole) is None
 
 
@@ -464,7 +464,7 @@ def test_changing_the_roots_inserts_moves_updates_and_removes_without_a_reset(
 
     **Test steps:**
 
-    * show three roots, then show them reordered with the first relabelled and the second on another storage
+    * show three roots, then show them reordered with the first relabeled and the second on another storage
     * verify moves and data changes, no reset, and the roots in the new order
     * remove one and add another, and verify the row signals and the new order
     """
@@ -476,9 +476,9 @@ def test_changing_the_roots_inserts_moves_updates_and_removes_without_a_reset(
     lister = RootFolderLister([first, second, third])
     recorder = Recorder(model)
 
-    relabelled = replace(first, label="A")
+    relabeled = replace(first, label="A")
     reshaped = replace(second, storage=RootStorage.NETWORK)
-    model.set_roots([third, relabelled, reshaped], lister)
+    model.set_roots([third, relabeled, reshaped], lister)
 
     assert names(model) == ["c", "A", "b"]
     assert recorder.count("moved") >= 1
@@ -487,7 +487,7 @@ def test_changing_the_roots_inserts_moves_updates_and_removes_without_a_reset(
     assert model.index(2, 0).data(RootsFolderModel.ICON_PATH_ROLE) == ROOT_STORAGE_ICONS[RootStorage.NETWORK]
 
     fourth = make_root(tmp_path / "d", "d")
-    model.set_roots([third, fourth, relabelled], lister)
+    model.set_roots([third, fourth, relabeled], lister)
 
     assert names(model) == ["c", "d", "A"]
     assert recorder.count("removed") == 1

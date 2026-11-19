@@ -37,7 +37,7 @@ SAVE_PAUSED_TEXT: Final = "Save paused: it lands once the task is resumed"
 UNFINISHED_SAVE_STATES: Final = frozenset({JobState.QUEUED, JobState.RUNNING})
 """The states a close or a quit waits through (:meth:`PendingSaves.save_and_wait`)."""
 
-SETTLED_SAVE_STATES: Final = frozenset({JobState.DONE, JobState.CANCELLED})
+SETTLED_SAVE_STATES: Final = frozenset({JobState.DONE, JobState.CANCELED})
 """The states of a save that is history: landed, or dropped at a shutdown -- in every other one it is still the
 record's saved state on this machine ([[sync#unlanded-save]])."""
 
@@ -144,7 +144,7 @@ class PendingSaves(QObject):
         :param parent: the widget the conflict dialog is parented to.
         :param model: the document.
         :returns: ``True`` once the edits are with their save, or discarded in the dialog; ``False`` when nothing was
-            saved -- the dialog cancelled, or the record gone.
+            saved -- the dialog canceled, or the record gone.
         """
         if model.gone:
             return False
@@ -168,7 +168,7 @@ class PendingSaves(QObject):
 
         :param parent: the widget the dialogs are parented to.
         :param model: the document.
-        :returns: ``True`` once saved, discarded, or left pending; ``False`` when the caller must stop -- cancelled, or
+        :returns: ``True`` once saved, discarded, or left pending; ``False`` when the caller must stop -- canceled, or
             the record gone.
         """
         while True:
@@ -327,7 +327,7 @@ class PendingSaves(QObject):
         :param parent: the widget the dialog is parented to.
         :param model: the document.
         :param conflict: the refusal, carrying the file as it read it.
-        :returns: ``True`` to go on -- kept values taken, or edits discarded; ``False`` when cancelled.
+        :returns: ``True`` to go on -- kept values taken, or edits discarded; ``False`` when canceled.
         """
         key = cast(ResourceKey, model.key)
         resolution, values = ask_about_conflict(parent, model, conflict)
@@ -359,7 +359,7 @@ class PendingSaves(QObject):
         :param parent: the widget the dialog is parented to.
         :param model: the document.
         :param serial: its row.
-        :returns: the row as it ended up; ``None`` when cancelled, the row staying where it is.
+        :returns: the row as it ended up; ``None`` when canceled, the row staying where it is.
         """
         status = self.__status(serial)
         if status is None or status.state not in UNFINISHED_SAVE_STATES:
@@ -370,12 +370,12 @@ class PendingSaves(QObject):
         dialog.setAutoClose(False)
         dialog.setAutoReset(False)
         loop = QEventLoop(dialog)
-        cancelled = False
+        canceled = False
 
         def on_cancel() -> None:
             """Stop waiting; the row stays."""
-            nonlocal cancelled
-            cancelled = True
+            nonlocal canceled
+            canceled = True
             loop.quit()
 
         def on_snapshot() -> None:
@@ -392,7 +392,7 @@ class PendingSaves(QObject):
         finally:
             self.__rows.snapshot_taken.disconnect(on_snapshot)
             dialog.deleteLater()
-        return None if cancelled else self.__status(serial)
+        return None if canceled else self.__status(serial)
 
     @staticmethod
     def __ask_about_pending(parent: QWidget, model: RehuDocumentModel, status: JobStatus) -> QMessageBox.StandardButton:
@@ -468,7 +468,7 @@ class PendingSaves(QObject):
             return
         if status.state is JobState.FAILED:
             model.fail_save(job.conflict, gone=job.gone)
-        elif status.state is JobState.CANCELLED:
+        elif status.state is JobState.CANCELED:
             model.fail_save(None)
         model.pending_save = self.pending_text(status)
 

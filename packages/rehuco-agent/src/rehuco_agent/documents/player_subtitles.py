@@ -80,7 +80,7 @@ class PlayerSubtitles(QObject):
     def __show_menu(self, labels: object, index: int, visited: int) -> None:
         """Fill the subtitle menu on the transport bar and select the entry that is on. Under libvlc it is always
         there: libvlc lists a video's tracks only while its file is open, so until then it reads :data:`PENDING_TEXT`,
-        disabled; under Qt it is hidden. The tracks the keys skip are in the disabled colour, and the reader can still
+        disabled; under Qt it is hidden. The tracks the keys skip are in the disabled color, and the reader can still
         pick them.
 
         :param labels: the entries, a list of strings, empty for none.

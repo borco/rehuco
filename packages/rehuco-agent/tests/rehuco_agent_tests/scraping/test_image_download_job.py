@@ -43,7 +43,7 @@ def test_a_plain_drops_slot_is_none(delete_at_teardown: DeleteAtTeardown) -> Non
 def test_run_emits_result_ready_on_the_gui_thread_on_success(
     qtbot: QtBot, mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> None:
-    """A successful fetch's `~.image_pipeline.AcquiredImage` reaches `result_ready`, marshalled across
+    """A successful fetch's `~.image_pipeline.AcquiredImage` reaches `result_ready`, marshaled across
     the queued connection (#73).
 
     **Test steps:**

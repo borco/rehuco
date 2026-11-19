@@ -137,7 +137,7 @@ def test_a_search_that_found_nothing_usable_leaves_only_custom(
     **Test steps:**
 
     * store a search that found only an install that is too old, and build the block
-    * verify its row is greyed, Custom is chosen, and the status says nothing usable was found
+    * verify its row is grayed, Custom is chosen, and the status says nothing usable was found
     """
     tools.set_detection(FFMPEG_TOOL.ID, ToolDetection(True, (TOO_OLD,)))
 
@@ -212,13 +212,13 @@ def test_another_tools_result_is_not_this_blocks(
 def test_a_typed_path_is_inspected_and_its_status_shown(
     qtbot: QtBot, tools: ToolsSettings, discovery: ToolDiscovery, fake_tool_locator: Any
 ) -> None:
-    """The status is about the path as typed, in the words of its judgement.
+    """The status is about the path as typed, in the words of its judgment.
 
     **Test steps:**
 
     * make the locator judge any path too old
     * stage a custom path
-    * verify the locator was asked about that path, the Custom row reads its judgement and no line repeats it
+    * verify the locator was asked about that path, the Custom row reads its judgment and no line repeats it
     """
     fake_tool_locator.inspect.return_value = TOO_OLD
     frame = make_frame(qtbot, tools, discovery, fake_tool_locator)

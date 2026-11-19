@@ -7,7 +7,7 @@ its share mode withholds ``FILE_SHARE_DELETE``, and a rename needs it.
 
 Everywhere else this is ``path.open("rb")`` unchanged, because POSIX has nothing to withhold: a rename
 there is an operation on a directory entry, and an open descriptor keeps reading the file it was
-opened on whatever the entry is called afterwards.
+opened on whatever the entry is called afterward.
 """
 
 import sys

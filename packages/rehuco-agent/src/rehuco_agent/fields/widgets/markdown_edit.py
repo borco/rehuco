@@ -214,8 +214,8 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
         self.styleClearAll()
 
     def __setup_theme_reactivity(self) -> None:
-        """Keep :data:`EOL_REPRESENTATION` coloured with the current theme's disabled/muted text
-        colour, live -- not just at construction -- mirroring `ActionIconThemeHandler`'s own
+        """Keep :data:`EOL_REPRESENTATION` colored with the current theme's disabled/muted text
+        color, live -- not just at construction -- mirroring `ActionIconThemeHandler`'s own
         :class:`ApplicationPaletteChangeNotifier` wiring (not ``QStyleHints.colorSchemeChanged``, which can
         fire before the palette itself has actually updated).
         """
@@ -226,7 +226,7 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
         self.__apply_muted_color()
 
     def __apply_muted_color(self, *_args: object) -> None:
-        """Recolor :data:`EOL_REPRESENTATION` from the current theme's disabled ``Text`` colour.
+        """Recolor :data:`EOL_REPRESENTATION` from the current theme's disabled ``Text`` color.
 
         `setRepresentationColour` takes 0xAARRGGBB, not the classic Scintilla/COLORREF 0x00BBGGRR
         `styleSetFore` uses -- easy to mix up.

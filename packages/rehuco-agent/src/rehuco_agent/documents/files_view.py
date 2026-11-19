@@ -117,7 +117,7 @@ which is honest: this build knows nothing about any of them."""
 OTHER_RESOURCE_SUMMARY: Final = "The folders here belong to “{record}”; open it to browse them."
 """What the summary line says where a foreign ``info.rehu`` covers this directory (#254).
 
-The subdirectory rows are greyed, and a greyed row with no reason given reads as a bug; this names the
+The subdirectory rows are grayed, and a grayed row with no reason given reads as a bug; this names the
 record that owns them and the one thing to do about it, which is the row right there."""
 
 TALLY_SUMMARY: Final = "{folders} folder{folders_plural}, {files} file{files_plural}"
@@ -149,7 +149,7 @@ class FilesView(QWidget):
     :param model: the document whose folder this shows.
     :param parent: optional Qt parent.
     :param verify: what the checksum record's row calls -- this document's *Verify All*, or ``None``
-        where the document has no queue to put a run on, which also greys that row's activation.
+        where the document has no queue to put a run on, which also grays that row's activation.
     :param resource_events: the app's change feed to follow (#511); a private one when not given, for a view with no
         window around it.
     """
@@ -159,7 +159,7 @@ class FilesView(QWidget):
 
     Relayed up to ``MainWindow``, which opens it the same way every other open goes -- resolved,
     revealed, and remembered in ``Open recents`` -- rather than this dock reaching sideways into the
-    documents area. Typed as plain ``object`` for the marshalling reason ``DocumentsDock`` documents."""
+    documents area. Typed as plain ``object`` for the marshaling reason ``DocumentsDock`` documents."""
 
     images_activated: Signal = Signal(object, object)
     """Emitted ``(images, clicked)`` when an image row is double-clicked: every image in the browsed
@@ -357,7 +357,7 @@ class FilesView(QWidget):
     def __set_navigable(self, below_root: bool) -> None:
         """Offer Home and Up exactly while there is somewhere to go.
 
-        One method for the pair because they take the **same** condition: both lead back towards the
+        One method for the pair because they take the **same** condition: both lead back toward the
         resource's own folder, so at the root -- and for a document with no local path, which has no folder to
         go home to at all -- neither has anything to do. Called from :meth:`__go_to` alone, so the
         answer is the target's and never a landed read's.
@@ -616,7 +616,7 @@ class FilesView(QWidget):
 
         **Curation is ignored on purpose** ([[data-model#image-meanings]]): the lightbox's own set is the
         checked screenshots, and this is a view of the folder -- a screenshot someone curated out, and a
-        neighbour's, are both here and both worth looking at from here.
+        neighbor's, are both here and both worth looking at from here.
 
         :returns: the image paths, in row order.
         """

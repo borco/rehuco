@@ -69,7 +69,7 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 - `LogFilterModel.search` matches every word of the search, in any order, a `"quoted run"` as one phrase, ignoring case
   and diacritics (`borco_core.TextMatcher`), where it matched the whole text as one case-insensitive substring.
-- The current card of a card list is no longer filled and outlined in the selection colour: it is painted like any
+- The current card of a card list is no longer filled and outlined in the selection color: it is painted like any
   other card, and its add and delete buttons, shown for as long as it is current, are its only mark. `CardStyle`
   ships no `CURRENT` state and `CardStyle.style_for` takes the card's states alone; a flagged card shows its state's
   fill and border whether or not it is current.
@@ -78,12 +78,12 @@ Changelogs are per package in this monorepo, matching the per-package release ta
   `ActionButtonColumn.add_action` take an optional `command_id`.
 - `ItemListEditor` abandons a freshly inserted blank row when the user *leaves* it (the current row moves,
   or focus goes outside the view) rather than when its first editor closes, and a row counts as blank only
-  while every editable cell is, so a row can be filled in any order. Cancelling the first editor, and any
+  while every editable cell is, so a row can be filled in any order. Canceling the first editor, and any
   close on a one-column list, still abandon it at once. An edit to another row while a blank insert waits
   is now reported.
 - `LineEditClearActionFilter` draws its clear action with the style's own clear-button icon instead of a glyph,
   and leaves alone a line edit that turned Qt's clear button on; it takes only an optional parent, the glyph, font
-  family and colour role arguments gone.
+  family and color role arguments gone.
 
 ### Fixed
 
@@ -143,7 +143,7 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 ### Added
 
 - Theming — a theme manager cycling follow-system/light/dark, a theme model and menu, an
-  application-palette-change notifier, glyph-based action icons, and SVG recolouring.
+  application-palette-change notifier, glyph-based action icons, and SVG recoloring.
 - Dockable dialogs — `CDockWidget`-hosted dialog panels that can be restored on start, with their own
   frame, manager and settings.
 - Widgets — elided label, flow layout, rating, rich-text view, message banner, unbounded spin box,

@@ -54,7 +54,7 @@ A few consequences worth tracking precisely:
 - **`complete` is never touched, before or after archival.** Per [[data-model#rehu-format]], `complete` reflects whether
   all expected files were present *at cataloguing time* and is not revisited afterward for any reason — archiving (or
   any other later, deliberate file removal) does not flip it, set it, or otherwise interact with it. It is
-  write-once-at-creation, full stop.
+  write-once-at-creation, period.
 - **Two archival granularities.** The user can choose to archive **everything** (keep only `.rehu` and images, remove
   all video) or **selectively** (keep a chosen subset of files in addition to `.rehu`/images — e.g. one or two
   representative/interesting videos), so archival is not strictly all-or-nothing on the video content.
@@ -110,7 +110,7 @@ firm consequences:
 
 - **The tablet can never hold a borrow or any per-user offline state.** It has no node and no storage of its own; it
   only ever *views* what a reachable node serves. ("Borrow onto the tablet" is therefore not possible.)
-- **Away from home, the travelling machine's node is the tablet's server.** The canonical vacation topology: a laptop
+- **Away from home, the traveling machine's node is the tablet's server.** The canonical vacation topology: a laptop
   on any OS, or the Mac mini with a portable screen, runs its agent and so its node, which holds the borrowed resources
   in its store *and* serves the web pages to the tablet, reached over LAN or the machine's hotspot. The node runs only
   while that user is logged in, which is fine ([[nodes#overview]]).

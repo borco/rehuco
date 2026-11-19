@@ -17,7 +17,7 @@ Consolidated list of requirements established across discussion, checked against
   polling period everywhere else, without a scan ([[mounts-and-storage#out-of-band]]).
 - Per-resource and per-video notes, view/watch progress, favorites and bookmarking ([[field-schema#video-notes]]);
   ability to delete local viewed files on request. Progress
-  is per video file — a resume position and a *viewed* flag, totalled per folder — recorded by the agent and the web
+  is per video file — a resume position and a *viewed* flag, totaled per folder — recorded by the agent and the web
   UI and carried between them ([[field-schema#watch-progress]]). Each user's state lives in that user's own sidecar
   beside the record ([[data-model#single-file]]).
 - Track *why* something was deleted/skipped (via tags/notes), to avoid re-buying or re-downloading it later.
@@ -40,7 +40,7 @@ Consolidated list of requirements established across discussion, checked against
 - Self-determined fastest/safest move/rename, with checksum-gated cross-filesystem moves
   ([[mounts-and-storage#safe-move-rename]]).
 - Long operations — checksum runs, verified copies — run as jobs, and may run on a node whose disk holds the files, as
-  an optimisation ([[nodes#node-status]]).
+  an optimization ([[nodes#node-status]]).
 - Extensible resource types via plugins, with tutorial, reference-images, and Daz3D as the initial set
   ([[plugins#overview]]).
 - Scheduled archival of a borrowed resource's video files on return (fully or selectively, keeping chosen files),

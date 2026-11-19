@@ -14,7 +14,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     ChecksumReport,
     ChecksumTrust,
-    JobCancelled,
+    JobCanceled,
     JobControl,
     JobPaused,
     JobWaiting,
@@ -292,10 +292,8 @@ def test_a_paused_copy_comes_back_from_its_saved_state_and_finishes(
     assert (target_of(roots) / "content.zip").read_bytes() == CONTENT
 
 
-def test_a_cancelled_copy_takes_back_what_it_wrote(
-    roots: dict[UUID, Path], host: MagicMock, control: MagicMock
-) -> None:
-    """Cancelling a copy part-way removes what it wrote and made; the original is untouched.
+def test_a_canceled_copy_takes_back_what_it_wrote(roots: dict[UUID, Path], host: MagicMock, control: MagicMock) -> None:
+    """Canceling a copy part-way removes what it wrote and made; the original is untouched.
 
     **Test steps:**
 
@@ -306,7 +304,7 @@ def test_a_cancelled_copy_takes_back_what_it_wrote(
     job = mover(record, host, check_source=False)
     control.report.side_effect = lambda done, total=None: job.cancel() if done else None
 
-    with raises(JobCancelled):
+    with raises(JobCanceled):
         job.run(control)
 
     assert not roots[DESTINATION_ROOT].exists()
@@ -316,7 +314,7 @@ def test_a_cancelled_copy_takes_back_what_it_wrote(
 def test_a_cancel_that_cannot_take_everything_back_logs_what_stayed(
     roots: dict[UUID, Path], host: MagicMock, control: MagicMock, mocker: MockerFixture, caplog: LogCaptureFixture
 ) -> None:
-    """What a cancelled copy cannot remove is logged; the cancel still comes out.
+    """What a canceled copy cannot remove is logged; the cancel still comes out.
 
     **Test steps:**
 
@@ -328,7 +326,7 @@ def test_a_cancel_that_cannot_take_everything_back_logs_what_stayed(
     job = mover(record, host, check_source=False)
     control.report.side_effect = lambda done, total=None: job.cancel() if done else None
 
-    with caplog.at_level(logging.WARNING), raises(JobCancelled):
+    with caplog.at_level(logging.WARNING), raises(JobCanceled):
         job.run(control)
 
     assert "kept.txt (Access is denied)" in caplog.text
@@ -782,10 +780,10 @@ def test_a_rename_failing_otherwise_fails_the_move(
     assert job.mode is MoveMode.RENAME
 
 
-def test_a_cancelled_rename_has_nothing_to_take_back(
+def test_a_canceled_rename_has_nothing_to_take_back(
     roots: dict[UUID, Path], host: MagicMock, control: MagicMock
 ) -> None:
-    """A rename cancelled before it ran leaves everything as it was.
+    """A rename canceled before it ran leaves everything as it was.
 
     **Test steps:**
 
@@ -796,7 +794,7 @@ def test_a_cancelled_rename_has_nothing_to_take_back(
     job = mover(record, host, mode=MoveMode.RENAME, check_renamed=True)
     job.cancel()
 
-    with raises(JobCancelled):
+    with raises(JobCanceled):
         job.run(control)
 
     assert record.exists()

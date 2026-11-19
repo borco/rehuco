@@ -29,7 +29,7 @@ class GiveUp(Enum):
     """How the rows are given up on."""
 
     CANCEL = auto()
-    """Cancelled: each job stops, and keeps its copy or takes it back as asked."""
+    """Canceled: each job stops, and keeps its copy or takes it back as asked."""
 
     CLEAR = auto()
     """Removed from the queue: each finished job's copy stays or goes as asked, then the row goes."""
@@ -89,7 +89,7 @@ class ScanHolder:
 
 
 class PartialCopyQuestion(QObject):
-    """Asks, before rows are cancelled or cleared, what becomes of their jobs' partial copies -- then gives them up.
+    """Asks, before rows are canceled or cleared, what becomes of their jobs' partial copies -- then gives them up.
 
     One question at a time: a second asked while one waits for its scan is dropped.
 

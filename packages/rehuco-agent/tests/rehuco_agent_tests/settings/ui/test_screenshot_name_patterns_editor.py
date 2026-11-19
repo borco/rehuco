@@ -1,4 +1,4 @@
-"""Tests for ScreenshotNamePatternsEditor: the one-column patterns editor's own behaviour (#53, #287)."""
+"""Tests for ScreenshotNamePatternsEditor: the one-column patterns editor's own behavior (#53, #287)."""
 
 from borco_pyside.widgets import ContentSizedTableView, ItemListEditor
 from PySide6.QtCore import Qt
@@ -141,7 +141,7 @@ def test_a_click_acts_on_one_whole_pattern(editor: ScreenshotNamePatternsEditor)
 
     **Test steps:**
 
-    * read the view's selection behaviour and mode
+    * read the view's selection behavior and mode
     """
     view = editor.view
 

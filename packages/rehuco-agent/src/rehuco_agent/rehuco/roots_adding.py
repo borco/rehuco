@@ -21,7 +21,7 @@ class RootsAdding(QObject):
     :param catalog: the open catalog the roots join.
     :param model: the Roots view's model, which finds the first new root's row.
     :param view: the Roots view, whose current row the first new root becomes.
-    :param ask: asks for the roots -- ``None`` or none when cancelled; the owner's modal, which a test replaces.
+    :param ask: asks for the roots -- ``None`` or none when canceled; the owner's modal, which a test replaces.
     :param owner: the widget a refusal is shown over; also this object's parent.
     """
 

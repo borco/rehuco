@@ -128,7 +128,7 @@ def test_draws_into_the_padded_rect(
     assert drawn.call_args.args[0] == CELL.adjusted(TEXT_HPADDING, TEXT_VPADDING, -TEXT_HPADDING, -TEXT_VPADDING)
 
 
-def test_a_selected_row_is_drawn_in_the_highlight_colours(
+def test_a_selected_row_is_drawn_in_the_highlight_colors(
     delegate: LogMessageDelegate, option: QStyleOptionViewItem, model: LogModel, mocker: MockerFixture
 ) -> None:
     """A selected row gets the palette's highlight behind it and its highlighted-text pen.
@@ -157,7 +157,7 @@ def test_leaves_the_painter_as_it_found_it(
 
     **Test steps:**
 
-    * Note the painter's pen colour, paint a selected row, and note it again.
+    * Note the painter's pen color, paint a selected row, and note it again.
     * Assert the pen came back unchanged.
     """
     option.state |= QStyle.StateFlag.State_Selected

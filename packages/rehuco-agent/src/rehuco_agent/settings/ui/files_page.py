@@ -25,7 +25,7 @@ from .files_page_ui import Ui_FilesPage
 RECORD_PLACEHOLDER: Final = "<record>"
 """What stands in for a record's name in the structural exclusions shown on the page. Deliberately not
 ``info``: the rule covers *every* ``.rehu`` a scan meets -- the resource's own, a nested one's, a
-file-scoped neighbour's -- so naming one would read as a literal and understate what is skipped."""
+file-scoped neighbor's -- so naming one would read as a literal and understate what is skipped."""
 
 
 class FilesPage(QWidget):
@@ -62,7 +62,7 @@ class FilesPage(QWidget):
     Saving the patterns normalizes: blanks and duplicates are dropped, and an emptied list resolves to
     the shipped defaults rather than to *no exclusions*. That rule lives in `ExcludedFilesSettings`,
     not in the editor, which holds whatever was typed; the page reloads itself from the saved result
-    afterwards, so what it shows is always what a scan would actually use.
+    afterward, so what it shows is always what a scan would actually use.
 
     :param parent: optional Qt parent.
     """
@@ -98,7 +98,7 @@ class FilesPage(QWidget):
     def save_changes(self) -> None:
         """Push every staged choice into its own settings object, persist it, and show the result.
 
-        The pattern list is reloaded from the saved set afterwards rather than left as typed:
+        The pattern list is reloaded from the saved set afterward rather than left as typed:
         normalization can change it -- a blank or duplicated entry is dropped, and emptying the list
         restores the shipped defaults -- and a page still showing what was typed would disagree with
         what every scan reads.

@@ -142,7 +142,7 @@ def test_saving_persists_all_three_choices(page: TasksPage, fake_persistent_sett
 
 
 def test_dropping_changes_re_seeds_from_storage(page: TasksPage) -> None:
-    """Cancelling puts back what is actually saved.
+    """Canceling puts back what is actually saved.
 
     **Test steps:**
 

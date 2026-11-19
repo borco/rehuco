@@ -16,7 +16,7 @@ class TrayBlock:
     exact-``QFrame`` direct children of the page, deliberately excluding subclasses so a decorative
     rule is never mistaken for a group. A ``TrayBlock(QFrame)`` widget would therefore be invisible
     to the filter, the group column and the dirty highlight alike -- so the markup stays in the
-    ``.ui`` and what lives here is the behaviour, the half that reads and writes persistent storage.
+    ``.ui`` and what lives here is the behavior, the half that reads and writes persistent storage.
 
     Staged in the checkbox until :meth:`save_changes` pushes it into the shared `TraySettings`
     instance -- firing its ``enabled_changed`` signal, which `MainWindow` follows to create or tear

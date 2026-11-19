@@ -220,7 +220,7 @@ def test_an_error_ends_the_wait_for_a_frame(view: PlayerView, media: Media) -> N
     **Test steps:**
 
     * resume at 33 s, and have the player report an error
-    * verify the stage's reveal timer is stopped, and a frame given afterwards is not handed on
+    * verify the stage's reveal timer is stopped, and a frame given afterward is not handed on
     """
     player = resume(view, media)
     timer = view.findChild(QTimer, "reveal_timer")

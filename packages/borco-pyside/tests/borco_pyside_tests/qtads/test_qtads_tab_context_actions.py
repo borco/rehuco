@@ -25,7 +25,7 @@ def manager(qtbot: QtBot) -> Iterator[QtAds.CDockManager]:
 
 
 def add_dock(manager: QtAds.CDockManager, name: str) -> QtAds.CDockWidget:
-    """A dock named ``name``, added to the centre.
+    """A dock named ``name``, added to the center.
 
     :param manager: the manager to add to.
     :param name: its object name and title.

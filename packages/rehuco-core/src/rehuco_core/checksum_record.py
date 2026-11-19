@@ -77,7 +77,7 @@ ChecksumStatus = Literal["matched", "mismatched", "missing", "added", "malformed
 the disk does not hold it. ``added`` -- the disk holds it and the record carried no hash for it, so the
 run hashed it and recorded it ``matched`` (:func:`~rehuco_core.rehu_checksums.verify_checksums`, #467);
 only ever *reported*, since the file goes from no checksum to verified in one step. ``malformed`` -- an
-entry this build cannot read; it costs itself, is carried through untouched, and its neighbours still
+entry this build cannot read; it costs itself, is carried through untouched, and its neighbors still
 verify. ``malformed`` is only ever *reported* too, never written into an entry: writing anything into an
 entry this build cannot read is what carrying it through byte-for-byte exists to avoid."""
 
@@ -99,7 +99,7 @@ class ChecksumRecordError(ValueError):
     """A ``.checksum`` file this build cannot read at all ([[data-model#checksums]]).
 
     File-level, deliberately distinct from a *malformed entry*: an entry that cannot be read costs
-    itself and its neighbours still verify, but a file that is not JSON, not an object, or stamped
+    itself and its neighbors still verify, but a file that is not JSON, not an object, or stamped
     newer than this build can only be reported whole -- guessing at half of it could bless bytes the
     record never vouched for.
     """

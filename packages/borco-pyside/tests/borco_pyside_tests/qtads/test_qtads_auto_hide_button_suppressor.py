@@ -16,11 +16,11 @@ that rather than the work it is actually waiting for."""
 
 @fixture(autouse=True)
 def auto_hide_flags() -> Iterator[None]:
-    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterwards.
+    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterward.
 
     The flags are a `CDockManager` **static**, shared by every manager in the process -- which is the
-    whole reason the suppressor exists -- so a test that left them on would decide the behaviour of
-    every later test in the same session. New areas honour a flag set after the first manager was
+    whole reason the suppressor exists -- so a test that left them on would decide the behavior of
+    every later test in the same session. New areas honor a flag set after the first manager was
     built (verified), so this needs no session-wide ordering.
     """
     previous = QtAds.CDockManager.autoHideConfigFlags()
@@ -95,7 +95,7 @@ def test_an_area_built_before_the_suppressor_loses_its_pin_button(window: QMainW
     **Test steps:**
 
     * build a manager with one dock
-    * construct a suppressor on it afterwards
+    * construct a suppressor on it afterward
     * verify the area's auto-hide button ends up hidden
     """
     manager = QtAds.CDockManager(window)

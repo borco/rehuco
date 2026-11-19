@@ -33,7 +33,7 @@ class DateEdit(QWidget):
     ``value`` may also be ``None`` -- unreleased/unknown, distinct from a genuine stored ``""``
     ([[field-schema#deferred-items]]): emptying the line edit writes ``None`` through. :meth:`parse`
     itself keeps its own three-way contract unchanged (``""`` for blank text, ``None`` for
-    unparseable, the canonical string otherwise) -- :meth:`__on_text_changed` is what maps a blank
+    unparsable, the canonical string otherwise) -- :meth:`__on_text_changed` is what maps a blank
     parse to the widget's ``None``, so "cleared" and "still typing" stay distinguishable.
 
     :param parent: optional Qt parent.
@@ -124,7 +124,7 @@ class DateEdit(QWidget):
         ``dateutil.parser.parse`` itself raises on an invalid date (e.g. day 30 in February).
 
         :param text: the trimmed text to parse.
-        :returns: the canonical string, or ``None`` if unparseable, or has no year -- this schema has
+        :returns: the canonical string, or ``None`` if unparsable, or has no year -- this schema has
             no precision level coarser than "year" (no bare month/day).
         """
         try:
@@ -145,7 +145,7 @@ class DateEdit(QWidget):
 
     def __on_text_changed(self, text: str) -> None:
         """Write a keystroke through to :attr:`value` only once it parses to a valid partial date;
-        blank text writes ``None`` (unreleased/unknown), distinct from unparseable text, which is
+        blank text writes ``None`` (unreleased/unknown), distinct from unparsable text, which is
         left unwritten so mid-keystroke typing is never clobbered.
 
         :param text: the line edit's current text.
@@ -210,7 +210,7 @@ class DateEdit(QWidget):
         Compares the line edit's own *parsed* text against the incoming value (mirrors
         :class:`~rehuco_agent.fields.text_list_field.TextListField`'s guard) -- a keystroke that
         round-trips through :attr:`value` does not bounce back and reset the cursor, and typed text
-        that hasn't (yet) reached a parseable state is left alone rather than overwritten mid-edit.
+        that hasn't (yet) reached a parsable state is left alone rather than overwritten mid-edit.
         ``None`` renders the same blank text as a stored ``""`` (:meth:`parse`'s own blank-text result).
 
         :param value: the new value, or ``None`` when unreleased/unknown.

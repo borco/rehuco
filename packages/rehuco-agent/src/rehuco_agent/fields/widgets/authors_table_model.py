@@ -164,7 +164,7 @@ class AuthorsTableModel(QAbstractTableModel):
 
         A record entry is copied (``{**entry}``) rather than shared, since entries are never mutated in
         place and the two rows must go their own way from here. One insert announcement carrying the
-        copy, rather than a blank insert filled in afterwards, so the row never exists blank.
+        copy, rather than a blank insert filled in afterward, so the row never exists blank.
 
         :param at: the row to copy; a negative row is a no-op.
         :returns: the copy's row, or ``at`` when nothing was copied.
@@ -228,7 +228,7 @@ class AuthorsTableModel(QAbstractTableModel):
 
         `QAbstractItemModel.moveRow` is the whole operation: the model reports a single ``rowsMoved``,
         every other row keeps its index, and the selection follows the entry rather than the position
-        it used to sit at. Nothing is taken out and put back, so nothing has to be repaired afterwards.
+        it used to sit at. Nothing is taken out and put back, so nothing has to be repaired afterward.
 
         :param row: the row to move.
         :param destination: where to move it to; out-of-range or unchanged is a no-op.

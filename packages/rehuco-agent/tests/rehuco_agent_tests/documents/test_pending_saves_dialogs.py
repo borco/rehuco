@@ -123,8 +123,8 @@ def test_discarding_in_the_differences_reverts_and_drops_the_pending_save(
     assert len(rig.enqueued) == (1 if with_row else 0)
 
 
-def test_cancelling_the_differences_saves_nothing(rig: Rig, parent: QWidget, mocker: MockerFixture, ask: Any) -> None:
-    """Cancelling the dialog leaves the edits unsaved and says so.
+def test_canceling_the_differences_saves_nothing(rig: Rig, parent: QWidget, mocker: MockerFixture, ask: Any) -> None:
+    """Canceling the dialog leaves the edits unsaved and says so.
 
     **Test steps:**
 
@@ -313,16 +313,16 @@ def test_discarding_a_save_drops_it_and_reverts_its_saved_document(
     assert rig.model.dirty is not saved_on_disk
 
 
-@mark.parametrize("state", [JobState.RUNNING, JobState.DONE, JobState.CANCELLED])
+@mark.parametrize("state", [JobState.RUNNING, JobState.DONE, JobState.CANCELED])
 def test_discarding_a_save_that_is_writing_or_settled_asks_nothing_and_drops_nothing(
     rig: Rig, parent: QWidget, mocker: MockerFixture, state: JobState
 ) -> None:
     """*Discard* on a save that is writing does nothing -- its write cannot be stopped, so dropping the row would
-    only hide a save that lands anyway -- nor on one that landed or was cancelled, which is no pending save.
+    only hide a save that lands anyway -- nor on one that landed or was canceled, which is no pending save.
 
     **Test steps:**
 
-    * save, and have the row writing, landed or cancelled
+    * save, and have the row writing, landed or canceled
     * discard it
     * verify no question was asked, nothing was removed, and the document was not reverted
     """
@@ -555,7 +555,7 @@ def test_save_and_wait_of_a_record_gone_meanwhile_stops(rig: Rig, parent: QWidge
 def test_a_save_that_cannot_land_asks_what_to_do(
     rig: Rig, parent: QWidget, mocker: MockerFixture, answer: QMessageBox.StandardButton, result: bool
 ) -> None:
-    """A save that waits asks: leaving it pending lets the caller go on, cancelling stops it.
+    """A save that waits asks: leaving it pending lets the caller go on, canceling stops it.
 
     **Test steps:**
 
@@ -610,7 +610,7 @@ def test_a_save_failed_for_no_given_reason_names_its_state(rig: Rig, parent: QWi
     assert [text for text, _, _ in asked] == ['Could not save "res": failed']
 
 
-def test_cancelling_the_progress_stops_the_caller_and_leaves_the_row(
+def test_canceling_the_progress_stops_the_caller_and_leaves_the_row(
     rig: Rig, parent: QWidget, mocker: MockerFixture
 ) -> None:
     """*Cancel* on the progress dialog stops waiting; the row stays where it is.
@@ -619,7 +619,7 @@ def test_cancelling_the_progress_stops_the_caller_and_leaves_the_row(
 
     * patch the wait: the dialog's Cancel is pressed
     * save and wait
-    * verify ``False`` came back, and the row was neither cancelled nor removed
+    * verify ``False`` came back, and the row was neither canceled nor removed
     """
     steps: list[Callable[[], None]] = []
     dialog_class, _ = patch_wait(mocker, steps)

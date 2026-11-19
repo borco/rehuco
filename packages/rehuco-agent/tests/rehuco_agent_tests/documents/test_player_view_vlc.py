@@ -1,6 +1,6 @@
 """Tests for which engine the player builds, and what changes under libvlc (#319, [[plugins#in-app-player]]).
 
-The Qt Multimedia engine's behaviour is ``test_player_view``'s and ``test_player_view_controls``'s; here the engine
+The Qt Multimedia engine's behavior is ``test_player_view``'s and ``test_player_view_controls``'s; here the engine
 is a mock of :class:`VlcMediaPlayer`, since the engine itself is tested in ``test_vlc_media_player``.
 """
 
@@ -790,7 +790,7 @@ def test_the_transport_bar_offers_the_subtitles_while_the_engine_is_libvlc(
 
     * play under libvlc: verify the menu is there but disabled, reading that the tracks are not known yet
     * have the engine offer none, English and French with English on and only it visited, and verify the menu lists
-      them, shows English, and gives the entry the keys skip the disabled colour and the others the default
+      them, shows English, and gives the entry the keys skip the disabled color and the others the default
     * have it offer nothing, and verify the menu is disabled and pending again
     * have it offer the one entry that says there are none, and verify the menu is disabled
     * offer them again and stop the player, and verify the menu is hidden

@@ -99,7 +99,7 @@ def is_enabled(exe_name: str) -> tuple[bool, Path | None]:
     """Whether ``exe_name`` has a ``LocalDumps`` key, and the folder it points dumps at.
 
     Reads HKLM directly -- unlike the write, this needs no elevation. The status never comes from a
-    subprocess's exit code, so a cancelled UAC prompt on :func:`enable`/:func:`disable` reads as "not
+    subprocess's exit code, so a canceled UAC prompt on :func:`enable`/:func:`disable` reads as "not
     enabled" here rather than lying about what happened.
 
     ``DumpFolder`` is a ``REG_EXPAND_SZ``, and ``QueryValueEx`` hands it back unexpanded -- so a key set

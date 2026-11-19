@@ -380,7 +380,7 @@ def test_display_shows_label_and_state_columns(
         (JobState.WAITING, "Waiting"),
         (JobState.DONE, "Done"),
         (JobState.FAILED, "Failed"),
-        (JobState.CANCELLED, "Cancelled"),
+        (JobState.CANCELED, "Canceled"),
     ],
 )
 def test_each_state_reads_as_its_own_word(state: JobState, expected: str) -> None:
@@ -394,8 +394,8 @@ def test_each_state_reads_as_its_own_word(state: JobState, expected: str) -> Non
     assert state_text(JobStatus(serial=1, label="job", state=state)) == expected
 
 
-def test_a_pending_cancel_reads_as_cancelling_over_the_state() -> None:
-    """*Cancelling…* is the state plus ``stop_requested``, so a watcher is honest before the job obeys.
+def test_a_pending_cancel_reads_as_canceling_over_the_state() -> None:
+    """*Canceling…* is the state plus ``stop_requested``, so a watcher is honest before the job obeys.
 
     A running job that has been asked to cancel but has not looked at the request yet is genuinely
     still running -- what changes is that something has been asked of it.
@@ -403,11 +403,11 @@ def test_a_pending_cancel_reads_as_cancelling_over_the_state() -> None:
     **Test steps:**
 
     * describe a running job carrying a pending cancel
-    * verify it reads as Cancelling…, not Running
+    * verify it reads as Canceling…, not Running
     """
     status = JobStatus(serial=1, label="job", state=JobState.RUNNING, stop_requested=StopRequest.CANCEL)
 
-    assert state_text(status) == "Cancelling…"
+    assert state_text(status) == "Canceling…"
 
 
 def test_a_pending_pause_reads_as_pausing_over_the_state() -> None:
@@ -751,7 +751,7 @@ def test_removing_every_job_empties_the_model(
 def test_a_detached_model_stops_following_the_queue(
     queue: TaskQueue, deliver: Callable[[], None], delete_at_teardown: DeleteAtTeardown
 ) -> None:
-    """Detaching is what keeps shutdown's own cancellations from reaching a torn-down view.
+    """Detaching is what keeps shutdown's own cancelations from reaching a torn-down view.
 
     **Test steps:**
 

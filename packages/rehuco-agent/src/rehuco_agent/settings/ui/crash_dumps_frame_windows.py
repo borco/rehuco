@@ -100,7 +100,7 @@ class CrashDumpsFrameWindows(QObject):
         """Read the ``LocalDumps`` key back and show whether crash dumps are kept, and where.
 
         The status comes from this read-back, never from Enable/Disable's subprocess exit code, so a
-        cancelled UAC prompt reads as "not kept" rather than lying about what happened.
+        canceled UAC prompt reads as "not kept" rather than lying about what happened.
         """
         enabled, folder = crash_dumps.is_enabled(self.__exe_path.name)
         expected = crash_dumps.dumps_folder()

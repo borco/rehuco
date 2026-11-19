@@ -4,7 +4,7 @@ Rows are packed left to right in sequence order; each row's height is rescaled s
 on the right edge, **within a clamp** -- a row whose flush height would fall outside it is left ragged
 rather than distorted (a single panorama, a last short row). Masonry was rejected because column
 placement depends on every column's current height rather than an item's position, so it cannot
-guarantee sequence and images from neighbouring archives mingle at column borders. Row flow only ever
+guarantee sequence and images from neighboring archives mingle at column borders. Row flow only ever
 asks "does the next item fit", so order is preserved for free.
 
 Pure: no widget, no Qt type. The view paints from the table this produces and looks up the visible

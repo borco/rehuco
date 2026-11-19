@@ -147,7 +147,7 @@ def test_an_unknown_kind_is_refused_rather_than_raised(registry: TaskJobRegistry
 
 
 def test_a_job_that_refuses_its_state_is_dropped_and_logged(caplog: pytest.LogCaptureFixture) -> None:
-    """A half-built job is worse than a missing one, and the loss has to be readable afterwards.
+    """A half-built job is worse than a missing one, and the loss has to be readable afterward.
 
     **Test steps:**
 

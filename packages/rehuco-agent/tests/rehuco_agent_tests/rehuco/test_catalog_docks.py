@@ -1177,7 +1177,7 @@ def test_adding_a_root_saves_the_file_and_the_cache_follows(
     assert [root.label for root in catalog.reconcile.call_args.args[0]] == ["tutorials", "packs", "refs"]
 
 
-def test_cancelling_the_folder_picker_adds_nothing(
+def test_canceling_the_folder_picker_adds_nothing(
     mocker: MockerFixture, dock: CatalogDocks, served: Any, saves: MagicMock
 ) -> None:
     """No folder chosen, no edit and no write.
@@ -1449,7 +1449,7 @@ def test_the_sub_dock_tabs_keep_their_buttons_small_before_the_dock_is_ever_show
 def test_the_browser_paints_bands_and_the_roots_columns_their_own_rows(dock: CatalogDocks) -> None:
     """The browser looks like every other table in the app: one band per selected row, no grid. Each Roots column is
     drawn by the delegate that adds the glyph and the arrow -- the column view's own delegate would draw neither
-    the glyph nor a greyed row.
+    the glyph nor a grayed row.
 
     **Test steps:**
 
@@ -1942,7 +1942,7 @@ def test_rename_browser_sets_only_the_window_title(mocker: MockerFixture, qtbot:
 
 @mark.parametrize("answer", [None, "   ", "Browser"])
 @mark.usefixtures("served")
-def test_a_cancelled_blank_or_unchanged_name_renames_nothing(
+def test_a_canceled_blank_or_unchanged_name_renames_nothing(
     mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, answer: str | None
 ) -> None:
     """Only a real, different name is a rename.
@@ -2008,12 +2008,12 @@ def test_clone_copies_the_columns_under_a_new_id_and_name(mocker: MockerFixture,
 
 
 @mark.usefixtures("served")
-def test_a_cancelled_clone_adds_nothing(mocker: MockerFixture, dock: CatalogDocks) -> None:
-    """Cancelling the name box makes no copy.
+def test_a_canceled_clone_adds_nothing(mocker: MockerFixture, dock: CatalogDocks) -> None:
+    """Canceling the name box makes no copy.
 
     **Test steps:**
 
-    * open a catalog and trigger Clone with the box cancelled
+    * open a catalog and trigger Clone with the box canceled
     * verify there is still one browser
     """
     dock.catalog.open_rehuco(REHUCO_PATH)
@@ -2284,7 +2284,7 @@ def test_the_browser_slots_do_nothing_with_nothing_to_act_on(
 def test_ask_browser_name_returns_the_typed_name_or_none(
     mocker: MockerFixture, dock: CatalogDocks, accepted: bool, expected: str | None
 ) -> None:
-    """The real name box yields its text when accepted and ``None`` when cancelled, opened on the offered name.
+    """The real name box yields its text when accepted and ``None`` when canceled, opened on the offered name.
 
     **Test steps:**
 
@@ -2944,10 +2944,10 @@ def test_a_filter_link_with_no_catalog_open_or_naming_no_filter_sets_nothing(
 
     dock.catalog.open_rehuco(REHUCO_PATH)
     with caplog.at_level(logging.WARNING, logger="rehuco_agent.rehuco.rehuco_dock"):
-        assert not dock.browsers.apply_filter_url("filter://colour?name=red")
+        assert not dock.browsers.apply_filter_url("filter://color?name=red")
 
     assert first_browser(dock).filter_text == ""
-    assert "filter://colour?name=red" in caplog.text
+    assert "filter://color?name=red" in caplog.text
 
 
 @mark.usefixtures("served")
@@ -3081,7 +3081,7 @@ def test_an_unreachable_root_is_a_state_the_view_shows_unclicked(qtbot: QtBot, d
 
 @mark.usefixtures("served")
 def test_the_root_actions_follow_the_current_row(qtbot: QtBot, dock: CatalogDocks, folders: Path) -> None:
-    """Remove and the moves act on a **root row** only, the moves not at the end they move towards; the folder filter
+    """Remove and the moves act on a **root row** only, the moves not at the end they move toward; the folder filter
     takes a root or a folder; nothing is enabled with no current row.
 
     **Test steps:**
@@ -3466,12 +3466,12 @@ def test_the_removal_question_says_what_goes_and_what_stays(
 def test_the_real_add_roots_question_returns_what_the_dialog_would_add(
     mocker: MockerFixture, dock: CatalogDocks
 ) -> None:
-    """The dock opens its dialog over the open file and answers what OK adds; a cancelled dialog, or no file open,
+    """The dock opens its dialog over the open file and answers what OK adds; a canceled dialog, or no file open,
     answers nothing.
 
     **Test steps:**
 
-    * ask with no file open; open one, then ask with the dialog accepted holding one line, then cancelled
+    * ask with no file open; open one, then ask with the dialog accepted holding one line, then canceled
     * verify nothing, the line, and nothing
     """
     assert dock.roots.ask_roots_to_add() is None
@@ -3839,7 +3839,7 @@ def test_refresh_lists_a_deleted_folder_away_and_falls_back_to_its_parent(
     qtbot: QtBot, dock: CatalogDocks, folders: Path
 ) -> None:
     """F5 re-lists the open columns: a folder deleted outside the app disappears in place, and the selection falls
-    back to the nearest folder that survives -- not to a neighbour of the one that went.
+    back to the nearest folder that survives -- not to a neighbor of the one that went.
 
     **Test steps:**
 
@@ -5103,7 +5103,7 @@ def test_the_empty_part_of_a_column_opens_its_folders_menu_and_leaves_the_select
     mocker: MockerFixture, qtbot: QtBot, dock: CatalogDocks, records: Path
 ) -> None:
     """A right-click below the last row of a column opens the menu of the folder that column lists, acting on that
-    folder while it is open, with the selection where it was and the verbs put back for it afterwards; on the column of
+    folder while it is open, with the selection where it was and the verbs put back for it afterward; on the column of
     roots it offers Scan, Add Root and Refresh; off every column it opens nothing.
 
     **Test steps:**
@@ -5202,7 +5202,7 @@ def test_adding_a_root_scans_it_only_when_scan_after_adding_is_on(
         assert scan.call_args.args == (added.root_id,)  # pylint: disable=no-member
 
 
-def test_cancelling_the_add_scans_nothing(mocker: MockerFixture, dock: CatalogDocks, served: Any) -> None:
+def test_canceling_the_add_scans_nothing(mocker: MockerFixture, dock: CatalogDocks, served: Any) -> None:
     """No root added, nothing to scan.
 
     **Test steps:**

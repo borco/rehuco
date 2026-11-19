@@ -75,7 +75,7 @@ class TypeBadge(QLabel):
         Deliberately never calls :meth:`~QWidget.setVisible`: a QToolBar-hosted widget explicitly hidden
         and later shown again *before its top-level window has ever been shown* -- exactly a session
         restore's own sequence, since every pending dock's document loads while the window is still
-        hidden (``DocumentsDock.restore_session``) -- stays invisible forever afterwards even once the
+        hidden (``DocumentsDock.restore_session``) -- stays invisible forever afterward even once the
         window does show, a confirmed Qt/``QToolBarLayout`` quirk. Never touching visibility at all
         sidesteps it: an untouched widget simply follows its parent's own shown state once parented,
         which is also what keeps a still-parentless badge (the very first call, before

@@ -72,7 +72,7 @@ class DockableDialog:
         when a saved layout it tried to restore was refused.
 
         Re-placing an already-placed dock is supported, and decides nothing about visibility: a dock
-        currently closed is still closed afterwards. That takes two corrections on top of
+        currently closed is still closed afterward. That takes two corrections on top of
         ``addDockWidgetFloating``, which **reopens** a closed dock it moves, and sizes the new
         container from the dock's *current* size -- a degenerate ~100x15 for one tabbed into a
         never-shown window, and it survives the show. So a dock that was already placed is resized

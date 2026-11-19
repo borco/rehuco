@@ -12,7 +12,7 @@ and the SMB server's job ([[architecture-design#why-distributed]]); the node add
 - **Web pages** for a tablet or a browser: the tutorial list, a watch page that plays a video over HTTP with Range,
   converting it first when the browser cannot play it ([[nodes#web-playback]]), and writes progress into the user's
   sidecar ([[field-schema#watch-progress]]), the image browser later.
-- **Long jobs** run where the agent would otherwise block: checksum runs, verified copies, and, as an optimisation only,
+- **Long jobs** run where the agent would otherwise block: checksum runs, verified copies, and, as an optimization only,
   content hashing for a root whose disk is local to the node's machine ([[nodes#node-status]]).
 - **The borrow store**: the folder borrowed copies live in, with their `.borrow` records ([[borrowing]]).
 - **Discovery and login**: the node advertises itself over mDNS to agents on the LAN; a browser gets a plain URL. A
@@ -63,7 +63,7 @@ is killed rather than waited for. The packaged app hosts the node as itself: `re
 `main`, so there is no second executable to ship. The node runs as the agent's user, and so sees that user's mounts,
 credentials and profile folders with no elevation and no stored password.
 
-| Tray | Node | Behaviour |
+| Tray | Node | Behavior |
 | --- | --- | --- |
 | off | off | Closing the window quits |
 | on | off | Closing the window hides to the tray |
@@ -192,7 +192,7 @@ followed through renames and saves is its own. Each call opens the cache for its
 any worker may call it. Scans and removing a root's rows are jobs.
 
 **Changes come from the notifier.** The `ChangeFeed` carries `Moved`, `Changed`, `FolderChanged`, `RootStale` and
-`RootReachable`; the agent's `ResourceEvents` adapts it to Qt signals, marshalled to the GUI thread. The notifier
+`RootReachable`; the agent's `ResourceEvents` adapts it to Qt signals, marshaled to the GUI thread. The notifier
 publishes what the disk says ([[mounts-and-storage#out-of-band]]); a writer's own change reaches it the same way
 everyone else's does, but for a rename this machine runs, which the rename coordinator publishes at once.
 
@@ -218,7 +218,7 @@ copying, hashing, verifying, serving web sessions, with per-job progress, beside
 users in parallel (one lane per user at least, heavy I/O serialized per volume), where the agent's own `TaskQueue` is
 strictly serial ([[appendices.task-queue]]).
 
-**Hash delegation, an optimisation only.** A node advertises the root ids it reaches on *local* disk. Content checksums
+**Hash delegation, an optimization only.** A node advertises the root ids it reaches on *local* disk. Content checksums
 — the heavy `.checksum` runs over videos and archives, and the destination-side verify of a copy — may be handed to such
 a node, which runs them on its own queue and writes the `.checksum` record beside the resource as any client would; the
 agent learns of it through the notifier. The small `.rehu` hash a save compares is never delegated.
@@ -304,7 +304,7 @@ transcode stays within a frame, so a position carries between the agent, the web
 
 **HTTPS, with a certificate the node makes itself.** It must carry the `serverAuth` extended key usage and name the
 node's address in its subject alternative names: without `serverAuth`, Safari fails with a TLS error and offers only
-*Try again*. With it, Safari shows its warning once per device, and the video element honours the exception the user
+*Try again*. With it, Safari shows its warning once per device, and the video element honors the exception the user
 accepted: media loaded, seeked and resumed over HTTPS exactly as over HTTP. Plain HTTP played as well and was not
 chosen, since one-time passwords and session cookies would cross the LAN in clear
 ([[discovery-trust-access#user-auth]]).
@@ -339,7 +339,7 @@ itself: `hx-trigger="every 5s [!this.paused], pause, seeked, ended"` posted ever
 and seek, and a pause landing while a tick is in flight queues rather than drops, htmx's default. Two traps: a trigger
 filter runs with `this` as the element, but a `js:` value in `hx-vals` runs with `this` as `window` and no event, so it
 reads the player by id; and the trigger's name reaches the request only through an `htmx:configRequest` listener.
-htmx's request is cancelled when the page goes, so `pagehide` and a hidden `visibilitychange` post with
+htmx's request is canceled when the page goes, so `pagehide` and a hidden `visibilitychange` post with
 `navigator.sendBeacon` instead, about ten lines of script; both arrived on navigating away. The resume is the
 `#t=<position>` fragment ([[nodes#web-playback]]), whose seek posts the resumed position once on load.
 

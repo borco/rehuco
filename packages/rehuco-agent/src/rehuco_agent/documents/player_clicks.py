@@ -63,7 +63,7 @@ class PlayerClicks(QObject):
 
         :param watched: a surface.
         :param event: what happened to it.
-        :returns: whether the event is consumed -- never: the surfaces keep their own behaviour.
+        :returns: whether the event is consumed -- never: the surfaces keep their own behavior.
         """
         kind = event.type()
         if (

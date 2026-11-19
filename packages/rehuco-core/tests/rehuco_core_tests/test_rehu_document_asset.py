@@ -310,7 +310,7 @@ def test_a_malformed_list_or_map_reads_its_clean_entries_and_locks(
     ]
 
 
-def test_a_malformed_licence_url_locks_though_nothing_reads_it() -> None:
+def test_a_malformed_license_url_locks_though_nothing_reads_it() -> None:
     """``license_url`` has no accessor yet, but a non-string still locks, so no later edit can flatten it.
 
     **Test steps:**

@@ -126,7 +126,7 @@ def test_a_broken_row_flags_the_cell_that_is_wrong(model: WebSearchEnginesModel)
     **Test steps:**
 
     * blank the first name and empty the second URL's placeholder
-    * verify each row's tooltip and colour sit on the right cell only
+    * verify each row's tooltip and color sit on the right cell only
     """
     model.setData(cell(model, 0, NAME_COLUMN), "")
     model.setData(cell(model, 1, URL_COLUMN), "https://two.example/")

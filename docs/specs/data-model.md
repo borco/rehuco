@@ -74,7 +74,7 @@ property. The split is now made, for one reason that outweighs it: **per-user st
 Inside the record that is a conflict machine; beside it, in a file with one writer per user, it conflicts with nothing
 but that user's other device.
 
-- **`<stem>.user-<name>.rehuser`** holds one user's state for one record: ratings, favourites, *viewed* flags,
+- **`<stem>.user-<name>.rehuser`** holds one user's state for one record: ratings, favorites, *viewed* flags,
   progress, bookmarks, notes, learning-path memberships — what the plugin blocks' `users` maps hold today
   ([[field-schema#per-user-shared]]; notes, favorites and bookmarks as timestamped notes are
   [[field-schema#video-notes]]). `<name>` is the username, lower-cased, ASCII, filesystem-safe; Windows and macOS
@@ -95,7 +95,7 @@ but that user's other device.
   sidecar. A user whose state is all removed keeps a sidecar holding only its stamp, so nothing removed reads back.
 - **A sidecar changed is its record changed**, for every reader: the notifier reports both, and a record's signature
   covers its sidecars, so an open document follows another device's progress as it follows any outside edit.
-- **A sidecar that cannot be read** — unparseable, past a sanity cap, or from a newer build, which a save must never
+- **A sidecar that cannot be read** — unparsable, past a sanity cap, or from a newer build, which a save must never
   write over — locks only its own scope. The record and every other scope open and stay editable; the scope is left
   out of the joined `users` maps and named in a lock-free notice (which file, and why); a save never writes over the
   file, and refuses a write that holds fields for it. When it is the current user's own, their per-user fields (rating,
@@ -112,7 +112,7 @@ but that user's other device.
 - **Private is not secret.** A sidecar's permissions are the share's; the split isolates writes, not readers.
 - **Read-only media** take no sidecar beside the record; that user's state goes on the retained copy
   ([[mounts-and-storage#durable-retention]]).
-- **`<stem>.rehuterms` is a record's license text** ([[assets#licences]]): a YAML header and Markdown, one per record,
+- **`<stem>.rehuterms` is a record's license text** ([[assets#licenses]]): a YAML header and Markdown, one per record,
   carried by a rename and a move as the sidecars are, and bookkeeping like them, never checksummed.
 
 ## §4.4 Resource scoping: directory-scoped vs. file-scoped
@@ -280,7 +280,7 @@ shows an image its checksum does not cover:
   is **read** by one more surface than the runs: the files sub-dock reports it per file
   ([[plugins#files-subdock]]), and its *checked recently* glyph is defined as *what a verify would skip* — which is why
   the staleness rule is one shared predicate rather than arithmetic each caller repeats, since a second copy is how
-  that glyph would come to promise something a run does not honour. **Trust is per location and per machine**
+  that glyph would come to promise something a run does not honor. **Trust is per location and per machine**
   (#357, #358): a folder copied or moved elsewhere carries its record's dates along, but a stamp only counts where
   it was earned, so the copy reads unverified until re-verified where it now sits. That trust is tracked in a local
   cache rather than in the record itself — every machine keeps its own, so two machines seeing one share under
@@ -306,7 +306,7 @@ shows an image its checksum does not cover:
   used per entry* is satisfied literally, and it is genuinely per entry, so `crc32` and `xxh3` entries sit side by side
   and changing the configured algorithm invalidates nothing. A recorded `status` is `matched` / `mismatched` /
   `missing`; a run also *reports* `added` (a file it gave its first hash, recorded `matched`) and `malformed` (an
-  entry the reading build cannot read, which costs itself while its neighbours still verify), and writes neither.
+  entry the reading build cannot read, which costs itself while its neighbors still verify), and writes neither.
   `bar2.zip` above has a hash and no date or status: a claim moved in from another record and not yet checked by this
   one, which reads as needing a recheck. An entry with **no** hash says nothing about its file and reads as no entry
   at all — the `"status": "unexpected"` older builds wrote for a file they could not read is one (#467).
@@ -430,7 +430,7 @@ shows an image its checksum does not cover:
   authoritative about is reset, and it is re-checked, honestly, on the next verify. A name the manifest carries that
   the record has never held becomes an entry, since it is a claim held nowhere else. The exclusion half is
   **inherited, not built** — a line naming something the enumeration leaves out never becomes an entry at all, so it
-  can clear nothing — and the manifest is retired afterwards, as above. This is remediation and is **allowed to be
+  can clear nothing — and the manifest is retired afterward, as above. This is remediation and is **allowed to be
   narrow**: the seeding path no longer produces the state, and the door it once recurred through — a revert
   restoring a retired manifest wholesale beside the record it deliberately kept — is gone along with Revert itself
   ([[acquisition-tooling#convert-mechanics]]). The state now only ever originates in a catalog hand-converted before
@@ -490,7 +490,7 @@ shows an image its checksum does not cover:
   look it up against, and **any** `.orig` counts. That definition is asked of the backups module rather than restated
   here. A bulk import retains this small backup pair by default, so
   counting it would bake each converted resource's own `info.tc.orig` into its first checksum baseline, and
-  discarding it afterwards — the encouraged cleanup — would then report a missing file for every resource in
+  discarding it afterward — the encouraged cleanup — would then report a missing file for every resource in
   the catalog. It is deliberately not
   editable, and the reason is mutability rather than ownership: a record, its screenshots and its manifest can
   change at any moment, so a size or a manifest that counted them would need recomputing every time anyone edited a
@@ -637,8 +637,8 @@ shows an image its checksum does not cover:
     it `added` — so scoping the action removes that trap instead of
     explaining it. It hashes nothing, so it is one atomic write in place rather than a queued run: forgetting
     entries is core's third operation over a record, taking **names** rather than a status, because which entries
-    deserve dropping is the view's judgement and the format is core's.
-  - **An unreachable resource greys every action**, decided at the enumeration rather than from the rows: the record
+    deserve dropping is the view's judgment and the format is core's.
+  - **An unreachable resource grays every action**, decided at the enumeration rather than from the rows: the record
     lives beside the files and shares their fate, so *this resource is not reachable right now* is the honest thing
     to draw, where an empty table would look exactly like a resource with no files (#245). The read itself is a
     directory walk and never runs on the GUI thread.
@@ -682,7 +682,7 @@ shows an image its checksum does not cover:
     failure. The one refusal is the folder itself — a root that will not list means the run has nothing to say (#245).
     Progress counts **resources**, not bytes: a catalog's byte total is not knowable without `stat`-ing every file
     under it first, and the resource count is exact and free once the walk has run.
-- **A cancelled run reports nothing it did not establish.** A verdict is only produced once a file's whole digest has
+- **A canceled run reports nothing it did not establish.** A verdict is only produced once a file's whole digest has
   been computed and compared, and a stop leaves through the checkpoint rather than returning a half-filled report, so
   a cancel can never manufacture a mismatch. A generate writes its record **once, at the end**, through the atomic
   writer: a stopped or crashed run leaves the previous record intact rather than a truncated one that a later verify
@@ -699,7 +699,7 @@ shows an image its checksum does not cover:
   makes every Verify a Generate for a resource that has no record — which is a decision, and is why it is a setting
   rather than a default.
 - **Execution location is a dispatch decision, not fixed.** A checksum job runs in the agent against the path it has —
-  a local disk, a mount, a USB stick — or, as an optimisation, on a node whose machine holds the files on local disk,
+  a local disk, a mount, a USB stick — or, as an optimization, on a node whose machine holds the files on local disk,
   which then writes the `.checksum` record beside the resource like any client ([[nodes#node-status]]). The general
   rule: **prefer whichever route gives local-disk-speed access to the actual bytes**.
 
@@ -924,7 +924,7 @@ The cache is the stdlib `sqlite3` module in rehuco-core, Qt-free, one connection
 
 [[[data-model#write-integrity]]]
 
-- [#93: feat: lock reasons — named lock causes; unparseable and missing files open locked, empty](https://github.com/borco/rehuco/issues/93)
+- [#93: feat: lock reasons — named lock causes; unparsable and missing files open locked, empty](https://github.com/borco/rehuco/issues/93)
 - [#94: feat: MessageBanner — inline document notices replace modal error boxes](https://github.com/borco/rehuco/issues/94)
 
 A `.rehu` is the source of truth, and several actors can want to write one at once: two agents on two machines, a web
@@ -964,7 +964,7 @@ to *reading* any `.rehu` (a double-clicked file is untrusted input too, [[nodes#
 sanity caps (`rehu_parse_limits`, #88) — total file size, entry counts and sizes, JSON nesting depth — so a file
 exceeding them is refused at load, `RehuDocument.load` raising `RehuFormatError`. The normal open path
 (`RehuDocument.open_or_locked`) turns that refusal into a read-only view with a warning rather than a dialog, the same
-as any other unparseable file, instead of exhausting memory or wedging the app.
+as any other unparsable file, instead of exhausting memory or wedging the app.
 
 **A malformed value gets one of three responses, and which one is not a matter of severity.** It follows from two
 questions: *is this field ours to interpret*, and *does the file still have a coherent reading*.
@@ -1000,7 +1000,7 @@ modal error box.** A file that is refused (the grammar row above), one that cann
 read-time sanity caps), and one that is simply *gone* each open as an **empty, locked**
 view — never dirty, never savable — whose notice names the failure (for a parse error, including the parser's own
 line/column). Fixing the file by hand and reverting retries in place, refreshing the notice with any new failure, so
-there is no reopen-and-fail loop. "Missing" stays a distinct cause from "unparseable": bulk-closing the docks of
+there is no reopen-and-fail loop. "Missing" stays a distinct cause from "unparsable": bulk-closing the docks of
 vanished files must never sweep away a dock whose file the user is mid-repair.
 
 "Gone" is an *explicit open* of a path (a dialog, the command line, a file deleted while its dock was open) — **not a
@@ -1019,7 +1019,7 @@ call site funnels through **one seam** that offers a **Retry / Cancel** loop nam
 actions, Save All, the per-tab and batch close guards, and the whole-app close all share it, so the failure is surfaced
 (and the choice to abort whatever the save was gating) in exactly one place. Only `OSError` is caught: a save-blocking
 lock raises instead of doing I/O, but editing is disabled while a document is locked, so a lock never reaches a save
-site — only the file I/O can actually fail. Cancelling means nothing was written and the caller aborts what the save was
+site — only the file I/O can actually fail. Canceling means nothing was written and the caller aborts what the save was
 gating (a close is called off, the dock stays open).
 
 ### §4.9.1 The lock-reason vocabulary
@@ -1047,7 +1047,7 @@ malformed-but-recoverable field or an absent/broken file with coerced defaults o
 `legacy_tc`, `newer_format`, `newer_block_format` — **do not** touch `save()`: a `.tc` saves *through conversion*, and a
 newer file or block is *carried verbatim, never downgraded* ([[data-model#schema-version]]). They are gated at the UI
 (the edit affordances are disabled) rather than by refusing the write, keeping the two mechanisms — what `save()` refuses
-vs. what the editor greys out — from being conflated. `missing` is kept distinct from `invalid_file` precisely so a bulk
+vs. what the editor grays out — from being conflated. `missing` is kept distinct from `invalid_file` precisely so a bulk
 "close vanished files" sweep never closes a dock whose file the user is mid-repair on.
 
 ## §4.10 Schema format versioning of `.rehu` itself

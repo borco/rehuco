@@ -683,7 +683,7 @@ def test_a_file_scoped_record_owns_its_own_stem_and_nothing_else(mocker: MockerF
 
 def test_ownership_is_the_content_walks(mocker: MockerFixture) -> None:
     """The images an ``info.rehu`` shows are the content its checksums cover (#392, #393): its own
-    screenshots and a neighbour's ``foo.*`` are not, a ``bar/foo01.jpg`` is -- a record claims only its
+    screenshots and a neighbor's ``foo.*`` are not, a ``bar/foo01.jpg`` is -- a record claims only its
     own directory -- and a nested resource's images are that resource's.
 
     **Test steps:**

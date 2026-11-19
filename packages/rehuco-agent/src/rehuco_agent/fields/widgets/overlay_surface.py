@@ -97,7 +97,7 @@ class OverlaySurface(QWidget):
     switch) or a closing document leaves nothing to restore instead of reaching into a dead object.
 
     **ESC dismisses**, as does whatever a subclass adds. Every path funnels through ``close()``, and the
-    widget deletes itself afterwards (``WA_DeleteOnClose``).
+    widget deletes itself afterward (``WA_DeleteOnClose``).
 
     :param mode: which surface to paint on.
     :param document: the open document this view belongs to -- its Qt parent in every mode, the
@@ -240,7 +240,7 @@ class OverlaySurface(QWidget):
         # own become-current handling (`DocumentWidget.take_focus`) straight back into this
         # half-dismissed view, stranding focus on a widget about to be hidden
         self.closed.emit()
-        # hidden here rather than left to ``close()``'s own hide afterwards: Qt reassigns focus as a
+        # hidden here rather than left to ``close()``'s own hide afterward: Qt reassigns focus as a
         # widget disappears, and its choice is the next focusable widget in the whole window -- which
         # lands in some unrelated dock. Hiding first means that reassignment has already happened by
         # the time the focus below is handed back, so it is the last word instead of being overruled.

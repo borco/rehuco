@@ -302,13 +302,13 @@ def test_pausing_a_waiting_job_holds_it_past_its_wait(
     assert job.reran.wait(TIMEOUT)
 
 
-def test_cancelling_a_waiting_job_ends_it(queue: TaskQueue, listener: RecordingListener, clock: FrozenClock) -> None:
+def test_canceling_a_waiting_job_ends_it(queue: TaskQueue, listener: RecordingListener, clock: FrozenClock) -> None:
     """A cancel aimed at a waiting row ends it for good, and its reason with it.
 
     **Test steps:**
 
     * let a job wait, then cancel it
-    * verify it is cancelled with no reason left on it
+    * verify it is canceled with no reason left on it
     * move the clock past its wait and verify it is not run
     """
     job = WaitingJob()
@@ -318,7 +318,7 @@ def test_cancelling_a_waiting_job_ends_it(queue: TaskQueue, listener: RecordingL
     queue.cancel(serial)
 
     status = queue.jobs()[0]
-    assert (status.state, status.message) == (JobState.CANCELLED, None)
+    assert (status.state, status.message) == (JobState.CANCELED, None)
     clock.advance(1.0)
     assert not job.reran.wait(NOT_YET)
 
@@ -348,7 +348,7 @@ def test_pausing_the_queue_leaves_a_waiting_job_waiting(
 
 def test_shutting_down_leaves_a_waiting_job_waiting(queue: TaskQueue, listener: RecordingListener) -> None:
     """A job waiting for its share when the queue shuts down is still waiting -- the state the exit sequence wrote down,
-    so a save waiting for its share comes back waiting, not cancelled (#497).
+    so a save waiting for its share comes back waiting, not canceled (#497).
 
     **Test steps:**
 
@@ -399,7 +399,7 @@ def test_resuming_the_queue_leaves_a_waiting_job_waiting(queue: TaskQueue, liste
 
 @pytest.mark.parametrize(
     ("ask", "landed"),
-    [("pause_job", JobState.PAUSED), ("cancel", JobState.CANCELLED)],
+    [("pause_job", JobState.PAUSED), ("cancel", JobState.CANCELED)],
 )
 def test_a_stop_asked_during_a_run_that_then_waits_is_obeyed(
     queue: TaskQueue, listener: RecordingListener, ask: str, landed: JobState
@@ -409,7 +409,7 @@ def test_a_stop_asked_during_a_run_that_then_waits_is_obeyed(
     **Test steps:**
 
     * hold a job mid-run, ask it to pause or cancel, then let it report a wait without looking at the request
-    * verify it landed paused or cancelled, never waiting, with no reason and no request left on it
+    * verify it landed paused or canceled, never waiting, with no reason and no request left on it
     """
     job = GatedWaitingJob()
     serial = queue.enqueue(job)

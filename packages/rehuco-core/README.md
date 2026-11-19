@@ -37,7 +37,7 @@ It provides:
   root's path layouts rendered per record, and the `.rehudb` SQLite cache of the records found under them: an
   incremental scan, targeted updates after a save or rename, and filtered reads
 - **Staged images** — an image taken out of a resource, written unchanged under a name that traces it back
-- **A task queue** — one long job at a time, pausable, cancellable, reorderable, optionally persisted
+- **A task queue** — one long job at a time, pausable, cancelable, reorderable, optionally persisted
   across restarts
 - **Legacy `.tc` conversion** — parsing the predecessor format and converting it to `.rehu`, one file or
   a whole folder tree, with backups and rollback

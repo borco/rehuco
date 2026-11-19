@@ -12,7 +12,7 @@ Two distinct usernames, so per-user state carries honest provenance:
 Read by the document-open and ``.tc``-conversion call sites (`DocumentsDock`), which thread the **current**
 name into core's ``username=`` where UI edits land and the **unknown** name where imports land -- a document
 keeps the username it was **opened** with for its whole life (`RehuDocument`'s ``username`` is fixed at
-construction), so editing these settings affects only documents opened or converted afterwards, never ones
+construction), so editing these settings affects only documents opened or converted afterward, never ones
 already open. Setting both to the same value is a supported configuration -- there is no uniqueness constraint.
 """
 

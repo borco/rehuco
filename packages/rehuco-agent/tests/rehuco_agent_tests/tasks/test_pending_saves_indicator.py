@@ -84,12 +84,12 @@ def test_it_is_hidden_with_no_pending_save(host: QWidget) -> None:
 
     **Test steps:**
 
-    * build an indicator over a done save, a cancelled one and a waiting job that is not a save
+    * build an indicator over a done save, a canceled one and a waiting job that is not a save
     * verify it is hidden
     """
     model = model_holding(
         save(JobState.DONE),
-        save(JobState.CANCELLED),
+        save(JobState.CANCELED),
         JobStatus(serial=2, label="other", state=JobState.WAITING),
     )
 

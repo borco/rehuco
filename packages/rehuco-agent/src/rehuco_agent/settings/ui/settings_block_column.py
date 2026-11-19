@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 class SettingsBlockColumn(QWidget):
     """Shows the blocks of several settings pages as one column, each page's under its own heading.
 
-    A **block** is one of a page's top-level labelled ``QFrame``s -- the same unit the frame filter
+    A **block** is one of a page's top-level labeled ``QFrame``s -- the same unit the frame filter
     shows and hides ([[appendices.settings-pages]]), and the smallest thing the settings tree can point
     at. A group row carries no page of its own, so what it has to show is the blocks of every page
     under it.

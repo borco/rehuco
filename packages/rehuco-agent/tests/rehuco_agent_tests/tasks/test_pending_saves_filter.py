@@ -72,25 +72,25 @@ def filter_over(source: QStandardItemModel, delete_at_teardown: DeleteAtTeardown
 # region is_pending_save
 
 
-@mark.parametrize("state", [state for state in JobState if state not in (JobState.DONE, JobState.CANCELLED)])
+@mark.parametrize("state", [state for state in JobState if state not in (JobState.DONE, JobState.CANCELED)])
 def test_a_save_that_has_not_landed_is_pending(state: JobState) -> None:
     """Every save not yet settled is pending -- a failed one included, whose edits are still only in memory.
 
     **Test steps:**
 
-    * describe a save in each state but done and cancelled
+    * describe a save in each state but done and canceled
     * verify each is pending
     """
     assert is_pending_save(status("save", state))
 
 
-@mark.parametrize("state", [JobState.DONE, JobState.CANCELLED])
+@mark.parametrize("state", [JobState.DONE, JobState.CANCELED])
 def test_a_save_that_landed_or_was_dropped_is_not_pending(state: JobState) -> None:
     """A save that landed, or was dropped on purpose, has nothing left to wait for.
 
     **Test steps:**
 
-    * describe a done save and a cancelled one
+    * describe a done save and a canceled one
     * verify neither is pending
     """
     assert not is_pending_save(status("save", state))
@@ -148,7 +148,7 @@ def test_enabled_it_keeps_only_the_pending_saves_in_their_order(delete_at_teardo
             status("other", JobState.WAITING, OTHER_KIND),
             "not a job",
             status("waiting", JobState.WAITING),
-            status("dropped", JobState.CANCELLED),
+            status("dropped", JobState.CANCELED),
         ),
         delete_at_teardown,
     )

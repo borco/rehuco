@@ -149,7 +149,7 @@ def test_a_quit_not_keeping_unsaved_changes_asks_and_empties_the_store(
 
 
 def test_a_refused_quit_neither_keeps_nor_empties_the_store(mocker: MockerFixture, qtbot: QtBot, store: Any) -> None:
-    """A quit cancelled at the unsaved-changes prompt leaves the kept edits as they are.
+    """A quit canceled at the unsaved-changes prompt leaves the kept edits as they are.
 
     **Test steps:**
 

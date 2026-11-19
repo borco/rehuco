@@ -67,10 +67,10 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
 
 @fixture(autouse=True)
 def auto_hide_flags() -> Iterator[None]:
-    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterwards.
+    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterward.
 
     The flags are a `CDockManager` **static**, shared by every manager in the process, so a test that
-    left them on would decide the behaviour of every later test in the session.
+    left them on would decide the behavior of every later test in the session.
     """
     previous = QtAds.CDockManager.autoHideConfigFlags()
     QtAds.CDockManager.setAutoHideConfigFlags(QtAds.CDockManager.eAutoHideFlag.DefaultAutoHideConfig)

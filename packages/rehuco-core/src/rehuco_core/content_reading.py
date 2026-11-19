@@ -22,7 +22,7 @@ what makes "a rename never waits for a job" affordable: the cost is one chunk re
 :func:`~rehuco_core.readers_must_yield_for_directory_rename` says the storage does not lock, step 3
 skips the close and keeps the handle -- the rename succeeds regardless there, and an open descriptor
 goes on reading the file it was opened on. Leaving and re-entering the hold still happens, because that
-is the acknowledgement the rename is waiting for; a reader that skipped it would keep every rename
+is the acknowledgment the rename is waiting for; a reader that skipped it would keep every rename
 waiting until its ceiling ran out.
 
 **What this does not detect:** a file replaced out of band while the read is in flight. Seeking back to
@@ -67,7 +67,7 @@ def read_content_chunks(
     **Deliberately not a checkpoint** ([[appendices.task-queue#job-responsibility]]). A job still calls
     its own :meth:`~rehuco_core.tasks.TaskJobBase.checkpoint` between chunks to obey a pause or a
     cancel; this loop only ever pauses and continues, and never raises to stop. Merging the two would
-    make a rename look to a job like a cancellation.
+    make a rename look to a job like a cancelation.
 
     The handle is closed on the way out however the iteration ends -- exhausted, abandoned part-way, or
     unwound by an exception -- so a consumer that stops reading never leaves a rename blocked behind it.

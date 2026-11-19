@@ -339,7 +339,7 @@ def test_new_layout_saves_a_preset_and_gives_it_to_the_folder(
     qtbot: QtBot, mocker: MockerFixture, dialog: AddRootsDialog, tmp_path: Path, stored: FakeSettings
 ) -> None:
     """*New layout…* asks for a preset, saves it with the others at once, and the folder that asked starts with it;
-    a cancelled one changes nothing.
+    a canceled one changes nothing.
 
     **Test steps:**
 
@@ -511,7 +511,7 @@ def test_accepting_an_unchanged_choice_writes_nothing(dialog: AddRootsDialog, st
     assert stored.value("scan_after_adding") is None
 
 
-def test_cancelling_the_dialog_still_remembers_the_scan_after_adding_choice(
+def test_canceling_the_dialog_still_remembers_the_scan_after_adding_choice(
     dialog: AddRootsDialog, stored: FakeSettings
 ) -> None:
     """The choice is saved on every exit path, like a dialog's geometry (#542).
@@ -531,11 +531,11 @@ def test_cancelling_the_dialog_still_remembers_the_scan_after_adding_choice(
 
 
 def test_the_new_layout_question_answers_the_preset_or_nothing(mocker: MockerFixture, dialog: AddRootsDialog) -> None:
-    """The real question opens the *New layout* dialog and answers its preset, or nothing when it is cancelled.
+    """The real question opens the *New layout* dialog and answers its preset, or nothing when it is canceled.
 
     **Test steps:**
 
-    * ask with the dialog accepted holding a name, then cancelled
+    * ask with the dialog accepted holding a name, then canceled
     * verify the preset, then nothing
     """
 

@@ -21,8 +21,8 @@ class PoolJob(Protocol):
 
     Structural rather than a shared base class, the same reason `~.protocols.SiteScraper` is: `ScrapeJob`
     and `~.image_download_job.ImageDownloadJob` share nothing but this one method and their own
-    ``Marshaller`` idiom for getting a result back to the GUI thread -- there is no shared state or
-    behaviour a base class would actually be for.
+    ``Marshaler`` idiom for getting a result back to the GUI thread -- there is no shared state or
+    behavior a base class would actually be for.
     """
 
     def run(self) -> None:
@@ -49,7 +49,7 @@ class ScraperExecutor:
     class Runnable(QRunnable):
         """Runs one `PoolJob` inside the log context captured at submission.
 
-        Nested rather than a module-level helper, the same reason `rehuco_agent.tasks.TaskQueueModel.Marshaller`
+        Nested rather than a module-level helper, the same reason `rehuco_agent.tasks.TaskQueueModel.Marshaler`
         is: nothing outside `ScraperExecutor` has a reason to build one. A plain object rather than a
         lambda handed to `QThreadPool.start`, so it keeps a reference to ``job`` for as long as it runs.
         """

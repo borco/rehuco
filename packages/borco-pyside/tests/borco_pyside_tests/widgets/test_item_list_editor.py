@@ -427,7 +427,7 @@ def test_a_cell_the_user_cannot_type_into_does_not_keep_a_blank_row(pairs: ItemL
 
 
 def test_escape_on_the_first_cell_removes_the_insert_at_once(pairs: ItemListEditor) -> None:
-    """Cancelling is undoing the insert, not leaving it for later.
+    """Canceling is undoing the insert, not leaving it for later.
 
     **Test steps:**
 

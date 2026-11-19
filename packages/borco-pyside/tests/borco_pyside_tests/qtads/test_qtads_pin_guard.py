@@ -16,7 +16,7 @@ LEFT: Final = QtAds.SideBarLeft
 # region fixtures and helpers
 @fixture(autouse=True)
 def auto_hide_flags() -> Iterator[None]:
-    """Turn QtAds' pinning on for one test, and put the process-wide flags back afterwards -- the reason
+    """Turn QtAds' pinning on for one test, and put the process-wide flags back afterward -- the reason
     ``test_qtads_auto_hide_button_suppressor.py`` gives."""
     previous = QtAds.CDockManager.autoHideConfigFlags()
     QtAds.CDockManager.setAutoHideConfigFlags(QtAds.CDockManager.eAutoHideFlag.DefaultAutoHideConfig)

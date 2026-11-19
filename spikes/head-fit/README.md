@@ -19,7 +19,7 @@ carries its own dependencies in a PEP 723 header, so nothing is added to any pac
 on first run it downloads MediaPipe's `face_landmarker.task` (about 4 MB) into `spikes/head-fit/.cache/`.
 
 Each image with a face gets `<name>.loomis.png` in `OUT_DIR`: the Loomis sphere (cyan), the side-plane cuts
-and jaw (orange), the centre line (red), the brow line (green), the nose and chin arcs (white), the four
+and jaw (orange), the center line (red), the brow line (green), the nose and chin arcs (white), the four
 landmarks the fit uses (magenta) and the measured yaw / pitch / roll. `summary.csv` lists every input.
 
 ## What it does
@@ -27,7 +27,7 @@ landmarks the fit uses (magenta) and the measured yaw / pitch / roll. `summary.c
 1. MediaPipe Face Landmarker: 468 landmarks and the facial transformation matrix.
 2. Yaw, pitch and roll from the matrix's rotation; scale from the brow→chin distance in pixels, corrected
    for pitch; the Loomis proportions are constants at the top of `main.py` (brow line on the sphere's
-   centre, nose base on its bottom, chin half a radius lower, sides cut 0.6 r in).
+   center, nose base on its bottom, chin half a radius lower, sides cut 0.6 r in).
 3. The construction as 3D points in head space, rotated by the pose and projected weak-perspective onto
    the photo — the same shape #588's pure geometry module would take.
 
@@ -37,9 +37,9 @@ landmarks the fit uses (magenta) and the measured yaw / pitch / roll. `summary.c
   `<3.13` and `uv` fetches an interpreter. For a stage inside `rehuco-vision` this argues for an ONNX
   landmarker on `onnxruntime` (§18.7's default) over a second runtime — #587's decision.
 - **Fit quality (four public-domain portraits: frontal, two three-quarter views including a painting, one
-  near-frontal under a beret).** Yaw, pitch and roll read right by eye; the centre and brow lines follow the
-  face every time. The textbook proportion (brow on the sphere's centre, nose base on its bottom) drew the
-  sphere too small and too low on every skull; adult averages (brow 0.2 r below the centre, face thirds of
+  near-frontal under a beret).** Yaw, pitch and roll read right by eye; the center and brow lines follow the
+  face every time. The textbook proportion (brow on the sphere's center, nose base on its bottom) drew the
+  sphere too small and too low on every skull; adult averages (brow 0.2 r below the center, face thirds of
   0.7 r — the constants at the top of `main.py`) fixed it in one pass. What remains is handle-sized.
 - **The collection's packs** (one archive each, every 7th–11th image, 33–40 per pack):
 

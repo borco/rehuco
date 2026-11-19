@@ -32,7 +32,7 @@ def test_path_follows_the_theme_layout(fake_xdg: FakeXdg) -> None:
     assert IconTheme.path(NAME) == expected
 
 
-def test_path_honours_a_different_size_and_context(fake_xdg: FakeXdg) -> None:
+def test_path_honors_a_different_size_and_context(fake_xdg: FakeXdg) -> None:
     """A raster icon in another context goes where those arguments say.
 
     **Test steps:**

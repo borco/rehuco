@@ -748,7 +748,7 @@ def test_the_view_stays_level_with_the_first_button_however_short_it_is(editor: 
     """A one-entry list sits under the header, not floating in the middle of the row.
 
     The view is sized to its rows, so it is shorter than the button columns beside it -- and a layout
-    centres a short item in its cell unless told otherwise.
+    centers a short item in its cell unless told otherwise.
 
     **Test steps:**
 

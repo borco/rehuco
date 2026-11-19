@@ -200,7 +200,7 @@ class SmbWatch:
                 return
             if self.__stopped.is_set():
                 return
-            if actions is None:  # cancelled under us: the session is going
+            if actions is None:  # canceled under us: the session is going
                 self.__failed = True
                 return
             self.__report(actions)

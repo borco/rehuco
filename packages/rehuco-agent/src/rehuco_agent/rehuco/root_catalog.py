@@ -69,7 +69,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     the cache current through :class:`~rehuco_core.Catalog`, which opens one per call on whichever thread asks
     (SQLite's one connection per thread, [[data-model#cache-schema]]). **A scan is a queue job per root**, never run
     here: each opens its own on the worker. This is a queue listener only to learn when one of its
-    own jobs has finished, and then says which rows it changed (:attr:`rows_changed`) -- the same marshalling the
+    own jobs has finished, and then says which rows it changed (:attr:`rows_changed`) -- the same marshaling the
     checksum actions use ([[appendices.task-queue#observation]]).
 
     **What changes on disk arrives from the roots' file notifiers** ([[mounts-and-storage#out-of-band]], #511), which
@@ -124,7 +124,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
     """Emitted with a root's :class:`~uuid.UUID` and whether its folder can be reached, once the cache holds it
     (#511)."""
 
-    class Marshaller(QObject):
+    class Marshaler(QObject):
         """Carries "one of our jobs may have finished" across the thread boundary, and nothing else."""
 
         queue_changed = Signal()
@@ -161,8 +161,8 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         """The scans among them, by serial, so their end can say which rows they changed (GUI thread only)."""
 
         self.__overlaps: Final = RootOverlaps(self)
-        self.__marshaller: Final = RootCatalog.Marshaller(self)
-        self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
+        self.__marshaler: Final = RootCatalog.Marshaler(self)
+        self.__marshaler.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
         self.__verify: Final = RecordVerify(
             self.__catalog, rename_coordinator, resource_events, self.rows_changed, self
         )
@@ -796,7 +796,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             self.__scans[serial] = job  # pylint: disable=unsupported-assignment-operation
         # the job may have finished before its serial was remembered, in which case no callback is left
         # to say so: ask once now
-        self.__marshaller.queue_changed.emit()
+        self.__marshaler.queue_changed.emit()
 
     def __on_queue_changed(self) -> None:
         """Say which rows the scans among its own jobs that ended changed (GUI thread): each changed only the records
@@ -837,7 +837,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         with self.__lock:
             tracked = status.serial in self.__serials
         if tracked:
-            self.__marshaller.queue_changed.emit()
+            self.__marshaler.queue_changed.emit()
 
     def jobs_reordered(self, serials: Sequence[int]) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`."""
@@ -848,7 +848,7 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         with self.__lock:
             tracked = any(serial in self.__serials for serial in serials)
         if tracked:
-            self.__marshaller.queue_changed.emit()
+            self.__marshaler.queue_changed.emit()
 
     def queue_paused_changed(self, paused: bool) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`."""

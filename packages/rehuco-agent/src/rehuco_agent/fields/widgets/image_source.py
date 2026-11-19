@@ -422,11 +422,11 @@ class PathImageSource:
 class ScreenshotKey:
     """A screenshot's identity as the file it is, whatever it is named right now (#370).
 
-    A screenshot's name is its position -- moving one renames it and its neighbour, converting one
+    A screenshot's name is its position -- moving one renames it and its neighbor, converting one
     renames it into a slot -- so a path is exactly what does **not** identify it across an edit. Two
     things read the key and both need the file: a re-pointed viewer staying on the image it was on
     (`ImageLightbox.set_source`), and a thumbnail cached under it (`thumbnail_cache_key`), which a path
-    key would paint under the neighbour's name after a swap. A rename keeps the file's device, inode,
+    key would paint under the neighbor's name after a swap. A rename keeps the file's device, inode,
     size and modification time, so those are what compare; the path rides along for whoever needs to
     name the file, and is left out of equality and of the ``repr`` the cache key is built from.
 

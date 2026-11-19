@@ -307,7 +307,7 @@ def finish(qtbot: QtBot, moves: RecordMoves, queue: Mock, status: JobStatus) -> 
     :param status: the job's status now.
     """
     queue.jobs.return_value = (status,)
-    with qtbot.waitSignal(moves._RecordMoves__marshaller.queue_changed, timeout=1000):  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    with qtbot.waitSignal(moves._RecordMoves__marshaler.queue_changed, timeout=1000):  # type: ignore[attr-defined]  # pylint: disable=protected-access
         moves.job_updated(status)
     QCoreApplication.processEvents()
 
@@ -364,16 +364,16 @@ def test_a_finished_move_lands_or_says_what_it_left(  # pylint: disable=too-many
         model.move_failed.assert_called_once_with("Moved; kept x")
 
 
-def test_a_cancelled_move_says_nothing_and_an_unfinished_one_waits(
+def test_a_canceled_move_says_nothing_and_an_unfinished_one_waits(
     qtbot: QtBot, model: Mock, queue: Mock, queued: RecordMoves
 ) -> None:
-    """A cancelled move is the user's own doing; an update about another row, or about ours still running, changes
+    """A canceled move is the user's own doing; an update about another row, or about ours still running, changes
     nothing.
 
     **Test steps:**
 
     * report another row finishing, and ours running: nothing is read back
-    * read back with ours running, then cancelled
+    * read back with ours running, then canceled
     * check the model heard nothing either way
     """
     queued.job_updated(JobStatus(SERIAL + 1, "Other", JobState.DONE))
@@ -381,7 +381,7 @@ def test_a_cancelled_move_says_nothing_and_an_unfinished_one_waits(
     queue.jobs.return_value = (JobStatus(SERIAL, "Move", JobState.RUNNING),)
     queued._RecordMoves__on_queue_changed()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    finish(qtbot, queued, queue, JobStatus(SERIAL, "Move", JobState.CANCELLED))
+    finish(qtbot, queued, queue, JobStatus(SERIAL, "Move", JobState.CANCELED))
 
     model.move_failed.assert_not_called()
     model.move_landed.assert_not_called()

@@ -234,7 +234,7 @@ def companion_record(model: RootsFolderModel, index: QModelIndex) -> Path | None
 def companion_found(model: RootsFolderModel, index: QModelIndex) -> Path | None:
     """The rehu a folder or file already has: its ``.rehu``, else its legacy ``.tc``.
 
-    Answered from the listing when it has one -- a file's neighbours are always listed, a folder's only once it
+    Answered from the listing when it has one -- a file's neighbors are always listed, a folder's only once it
     has been opened -- and from the disk otherwise.
 
     :param model: the Roots model.

@@ -37,7 +37,7 @@ LOG_COMMANDS: Final = (LOG_COPY_COMMAND,)
 class LogView(QTableView):
     """A read-only, row-selecting table over a log model, with the two log delegates installed.
 
-    **It follows the tail while the reader is at the tail.** During a long job the useful behaviour is
+    **It follows the tail while the reader is at the tail.** During a long job the useful behavior is
     for new records to scroll into view; the moment a reader scrolls back to read something, it must
     stop, or the thing they were reading is yanked away. So following is not a mode the reader sets --
     it is a fact about where they are: at the bottom, it follows; anywhere above it, it does not; back

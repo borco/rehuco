@@ -92,7 +92,7 @@ class EmptyField(TextField):
         return replace(super().make_editor(binding), label=None, editor=None, misc=None)
 
 
-class LabellessField(TextField):
+class LabelessField(TextField):
     """A sample field that contributes content but no label (label column stays empty)."""
 
     @override
@@ -116,7 +116,7 @@ class ContentlessField(TextField):
         return replace(super().make_editor(binding), editor=None)
 
 
-class VerticalLabelLessField(VerticalField):
+class VerticalLabelessField(VerticalField):
     """A vertical sample field with content but no label (the description view's url line, #620)."""
 
     @override
@@ -192,7 +192,7 @@ class HeaderPinnedTallMiscField(HeaderPinnedField):
         return replace(super().make_editor(binding), misc=TallToolButton())
 
 
-class HeaderPinnedLabellessField(HeaderPinnedField):
+class HeaderPinnedLabelessField(HeaderPinnedField):
     """A ``HeaderPinned`` sample field with no label (its row has no label to pin)."""
 
     @override
@@ -473,7 +473,7 @@ def test_a_label_less_vertical_viewer_row_is_its_content_alone_spanning_all_colu
     * build a viewer form over a label-less vertical field
     * verify the content widget itself sits in all three columns of its row
     """
-    form = FieldsForm([VerticalLabelLessField("title")])
+    form = FieldsForm([VerticalLabelessField("title")])
     widget = sole_grid_widget(form.make_viewer(model))
     qtbot.addWidget(widget)
     grid = grid_of(widget)
@@ -536,7 +536,7 @@ def test_a_field_with_no_widgets_contributes_no_tab(model: RehuDocumentModel) ->
     assert not form.make_editor(model)
 
 
-def test_label_column_stays_empty_for_a_labelless_field(qtbot: QtBot, model: RehuDocumentModel) -> None:
+def test_label_column_stays_empty_for_a_labeless_field(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """A field with content but no label leaves the label column empty while still placing content.
 
     **Test steps:**
@@ -545,8 +545,8 @@ def test_label_column_stays_empty_for_a_labelless_field(qtbot: QtBot, model: Reh
     * verify the label column is empty and the content column is populated in each
     """
     for grids in (
-        FieldsForm([LabellessField("title")]).make_viewer(model),
-        FieldsForm([LabellessField("title")]).make_editor(model),
+        FieldsForm([LabelessField("title")]).make_viewer(model),
+        FieldsForm([LabelessField("title")]).make_editor(model),
     ):
         widget = sole_grid_widget(grids)
         qtbot.addWidget(widget)
@@ -697,7 +697,7 @@ def test_header_pinned_editor_row_without_a_label_still_pins_the_editor(qtbot: Q
     * build an editor form over a label-less ``HeaderPinned`` field
     * verify the label column is empty and the editor is still reachable, pinned, in the content column
     """
-    form = FieldsForm([HeaderPinnedLabellessField("title")])
+    form = FieldsForm([HeaderPinnedLabelessField("title")])
     widget = sole_grid_widget(form.make_editor(model))
     qtbot.addWidget(widget)
     grid = grid_of(widget)

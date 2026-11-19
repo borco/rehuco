@@ -95,7 +95,7 @@ def release_at(point: QPoint) -> QMouseEvent:
 def new_painter() -> tuple[QImage, QPainter]:
     """An active painter over a throwaway image -- never a bare `QPainter()`, which is unbegun and
     crashed the process outright the one time this suite tried it (`painter.save()` inside `paint` is
-    real, undefined behaviour on an unbegun painter, even with `QStyle.drawPrimitive` itself mocked).
+    real, undefined behavior on an unbegun painter, even with `QStyle.drawPrimitive` itself mocked).
 
     **Returns the image too**, not just the painter: a `QPainter` keeps only a raw pointer back to the
     `QPaintDevice` it was built on, so an image built and discarded inside this function would be

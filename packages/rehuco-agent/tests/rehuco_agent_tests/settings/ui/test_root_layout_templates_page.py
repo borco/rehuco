@@ -208,13 +208,13 @@ def test_try_it_applies_the_saved_location_replacements_and_follows_their_change
 
 
 def test_a_star_row_is_flagged_with_its_reason_and_gets_no_try_it_line(page: RootLayoutTemplatesPage) -> None:
-    """The root editor always offers ``*``, so a ``*`` row is shown in the warning colour with that as its tooltip, and
+    """The root editor always offers ``*``, so a ``*`` row is shown in the warning color with that as its tooltip, and
     Try it says nothing of it (#637).
 
     **Test steps:**
 
     * stage a valid template and a ``*`` row
-    * verify the ``*`` row has the warning colour and the reason, and the valid one neither
+    * verify the ``*`` row has the warning color and the reason, and the valid one neither
     * verify Try it has one line, the valid template's
     """
     editor(page).values = ("{title}", "*")

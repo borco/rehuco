@@ -177,7 +177,7 @@ def test_a_catalog_with_nothing_retained_reports_an_empty_scan(mocker: MockerFix
 
 # endregion
 
-# region Progress and cancellation
+# region Progress and cancelation
 
 
 def test_progress_counts_every_resource_examined_not_only_the_ones_found(mocker: MockerFixture) -> None:
@@ -220,7 +220,7 @@ def test_whatever_progress_raises_unwinds_the_scan(mocker: MockerFixture) -> Non
 
 def test_the_checkpoint_can_stop_the_walk_before_any_resource_is_read(mocker: MockerFixture) -> None:
     """The walk itself is the slow part over a mount, and it runs before a single record has been
-    examined -- so cancelling has to reach it, not only the per-resource loop.
+    examined -- so canceling has to reach it, not only the per-resource loop.
 
     **Test steps:**
 

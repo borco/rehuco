@@ -33,7 +33,7 @@ def make_entry(message: str, *, level: int = logging.INFO, scope: Hashable | Non
 
 
 def make_entries(*messages: str) -> Sequence[LogEntry]:
-    """Build a batch of entries, serialled in order.
+    """Build a batch of entries, serialed in order.
 
     :param messages: the formatted messages.
     :returns: the batch.

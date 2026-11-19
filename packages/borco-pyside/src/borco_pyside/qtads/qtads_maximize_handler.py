@@ -27,7 +27,7 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
     the sizes they had. The container is the scope, not the manager: a dock living in a floating
     window fills that window and leaves the main one alone. A dock already alone in its container
     has nothing to hide -- maximizing it is a no-op that still checks the button, so the toggle
-    reads consistently. Hiding the neighbouring tabs is what keeps the state readable: left in the
+    reads consistently. Hiding the neighboring tabs is what keeps the state readable: left in the
     tab bar, one of them could be maximized with nothing visible happening, and its restore would
     then put back everything the first maximize hid.
 
@@ -89,7 +89,7 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
 
     BUTTON_OBJECT_NAME: Final = TAB_MAXIMIZE_BUTTON_NAME
     """Object name of every button this handler inserts, for a stylesheet rule or a test to find --
-    what `QtAdsFocusTracker`'s stylesheet recolours on the current tab, beside ``#tabCloseButton``,
+    what `QtAdsFocusTracker`'s stylesheet recolors on the current tab, beside ``#tabCloseButton``,
     and what it re-polishes as current-ness moves so that rule takes on the button itself."""
 
     DEFAULT_GLYPH_SIZE: Final = 12
@@ -273,7 +273,7 @@ class QtAdsMaximizeHandler(QObject):  # pylint: disable=too-many-instance-attrib
 
     @staticmethod
     def __set_tabs_visible(docks: list[QtAds.CDockWidget], visible: bool) -> None:
-        """Hide or show the tabs of ``docks`` -- the maximized dock's neighbours in its own area.
+        """Hide or show the tabs of ``docks`` -- the maximized dock's neighbors in its own area.
 
         The tab widgets only: the docks stay open, so nothing reads closed and no toggle action
         moves, and QtAds neither re-shows a hidden tab on a resize or a current change nor lists it

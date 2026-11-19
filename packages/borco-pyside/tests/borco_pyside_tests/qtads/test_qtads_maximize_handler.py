@@ -142,7 +142,7 @@ def test_beside_a_tracker_the_button_sits_level_with_the_close_button(
     """
     QtAdsFocusTracker(manager)
     handler = QtAdsMaximizeHandler(manager, GLYPH, MAXIMIZED_GLYPH)
-    dock = add_dock(manager, "levelled", QtAds.LeftDockWidgetArea)
+    dock = add_dock(manager, "leveled", QtAds.LeftDockWidgetArea)
     button = button_of(handler, dock, qtbot)
     close_button = tab_close_button(dock)
     assert close_button is not None
@@ -462,7 +462,7 @@ def test_a_capture_inside_unmaximized_records_the_real_sizes(
     handler: QtAdsMaximizeHandler, manager: QtAds.CDockManager, docks: list[QtAds.CDockWidget], qtbot: QtBot
 ) -> None:
     """A ``saveState`` taken inside :meth:`unmaximized` restores to the pre-maximize sizes, and the
-    maximize is exactly as it was afterwards.
+    maximize is exactly as it was afterward.
 
     **Test steps:**
 
@@ -513,7 +513,7 @@ def test_a_handler_built_over_existing_docks_hooks_their_toggle_too(
     manager: QtAds.CDockManager, docks: list[QtAds.CDockWidget]
 ) -> None:
     """Docks already on the manager when the handler is constructed are wired to exit-first the
-    same as ones added afterwards, not only walked for a button.
+    same as ones added afterward, not only walked for a button.
 
     **Test steps:**
 
@@ -722,7 +722,7 @@ def test_a_dock_gone_mid_teardown_is_skipped_hiding_its_tab(
     mocker: MockerFixture,
     qtbot: QtBot,
 ) -> None:
-    """A dock whose tab Shiboken already flags deleted while its neighbour is being maximized is
+    """A dock whose tab Shiboken already flags deleted while its neighbor is being maximized is
     skipped rather than raising (an exit hook can run mid-teardown).
 
     Patches the *tab widget's* own ``setVisible`` rather than ``CDockWidget.tabWidget()`` itself:
@@ -779,7 +779,7 @@ def test_a_hidden_area_gone_mid_capture_is_skipped_re_hiding_it(
 
     * maximize the left dock, and make the right area's second ``setVisible`` call raise
     * run an ``unmaximized`` block
-    * verify the maximize still stands afterwards, and ``setVisible`` was asked to hide it
+    * verify the maximize still stands afterward, and ``setVisible`` was asked to hide it
     """
     handler.maximize(docks[0])
     right_area = area_of(docks[1])

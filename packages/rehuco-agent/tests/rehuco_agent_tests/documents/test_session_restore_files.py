@@ -183,7 +183,7 @@ def test_the_checksums_tables_sort_comes_back(view: ChecksumView) -> None:
 def test_a_header_state_qt_refuses_leaves_the_checksums_sort_alone(view: ChecksumView) -> None:
     """**Test steps:**
 
-    * sort the table, and restore a state Qt does not recognise
+    * sort the table, and restore a state Qt does not recognize
     * verify the sort stays
     """
     view._ChecksumView__ui.file_view.sortByColumn(1, Qt.SortOrder.DescendingOrder)  # type: ignore[attr-defined]

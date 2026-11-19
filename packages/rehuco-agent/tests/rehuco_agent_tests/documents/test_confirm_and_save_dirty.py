@@ -35,8 +35,8 @@ def test_proceeds_without_a_dialog_when_nothing_is_dirty(mocker: MockerFixture, 
     dialog_class.assert_not_called()
 
 
-def test_refuses_when_the_dialog_is_cancelled(mocker: MockerFixture, parent: QWidget) -> None:
-    """Cancelling the dialog reports ``False`` and saves nothing -- the caller must abort its close.
+def test_refuses_when_the_dialog_is_canceled(mocker: MockerFixture, parent: QWidget) -> None:
+    """Canceling the dialog reports ``False`` and saves nothing -- the caller must abort its close.
 
     **Test steps:**
 
@@ -75,8 +75,8 @@ def test_saves_only_the_selected_models_when_accepted(mocker: MockerFixture, par
     unselected.save.assert_not_called()
 
 
-def test_refuses_and_stops_saving_when_a_failing_save_is_cancelled(mocker: MockerFixture, parent: QWidget) -> None:
-    """Cancelling the retry/cancel dialog a failing save raises (#146) reports ``False`` *before* the
+def test_refuses_and_stops_saving_when_a_failing_save_is_canceled(mocker: MockerFixture, parent: QWidget) -> None:
+    """Canceling the retry/cancel dialog a failing save raises (#146) reports ``False`` *before* the
     remaining selections are attempted -- the ordering both callers rely on to close nothing.
 
     **Test steps:**

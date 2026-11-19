@@ -1,4 +1,4 @@
-"""Tests for BooleanField: Yes/No viewer, the ``complete`` warning colour, and the live editor binding."""
+"""Tests for BooleanField: Yes/No viewer, the ``complete`` warning color, and the live editor binding."""
 
 from PySide6.QtWidgets import QCheckBox, QLabel
 from pytestqt.qtbot import QtBot

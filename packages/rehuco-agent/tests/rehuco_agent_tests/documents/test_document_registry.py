@@ -411,7 +411,7 @@ def test_a_folder_rename_carries_its_file_scoped_record_and_a_sibling_rename_doe
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
     """A folder holding ``info.rehu`` and a file-scoped ``bar.rehu``: renaming the folder moves both open
-    records; renaming ``bar`` afterwards moves only ``bar``.
+    records; renaming ``bar`` afterward moves only ``bar``.
 
     **Test steps:**
 
@@ -457,14 +457,14 @@ def stays_put(model: RehuDocumentModel) -> Generator[None]:
 def renaming(
     mocker: MockerFixture, delete_at_teardown: DeleteAtTeardown
 ) -> tuple[DocumentRegistry, ResourceEvents, RehuDocumentModel, Path]:
-    """A model held in a registry whose events hear a coordinator, its rename on disk mocked to land at ``modelling``.
+    """A model held in a registry whose events hear a coordinator, its rename on disk mocked to land at ``modeling``.
 
     :param mocker: pytest-mock fixture.
     :param delete_at_teardown: deletes the `ResourceEvents` when the test ends.
     :returns: the registry, its events, the model and the record's path once renamed.
     """
     load_document(mocker)
-    renamed = FAKE_PATH.parent.with_name("modelling") / "info.rehu"
+    renamed = FAKE_PATH.parent.with_name("modeling") / "info.rehu"
     renamer = mocker.patch("rehuco_core.rename_coordination.RehuRenamer", autospec=True).return_value
     renamer.rename.return_value = renamed
     renamer.relocation = Relocation(((FAKE_PATH.parent, renamed.parent),))
@@ -495,7 +495,7 @@ def test_the_renaming_document_adopts_its_rename_exactly_once(
     model.key_changed.connect(keys.append)  # type: ignore[attr-defined]
     model.image_scanner_changed.connect(scanners.append)  # type: ignore[attr-defined]
 
-    assert model.rename_location("modelling")
+    assert model.rename_location("modeling")
 
     assert keys == [ResourceKey(renamed)]
     assert len(scanners) == 1
@@ -520,7 +520,7 @@ def test_a_rename_is_announced_as_an_access_of_its_new_key_after_the_move(
     events.moved.connect(lambda relocation: heard.append(("moved", relocation)))
     events.accessed.connect(lambda keys: heard.append(("accessed", keys)))
 
-    assert model.rename_location("modelling")
+    assert model.rename_location("modeling")
 
     assert [kind for kind, _ in heard] == ["moved", "accessed"]
     assert heard[1] == ("accessed", (ResourceKey(renamed),))

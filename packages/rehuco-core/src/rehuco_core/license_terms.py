@@ -1,4 +1,4 @@
-"""A record's license text, in a sidecar of its own beside it ([[assets#licences]], #677).
+"""A record's license text, in a sidecar of its own beside it ([[assets#licenses]], #677).
 
 ``<stem>.rehuterms`` holds the terms an item was got under, in full: a store can change its terms or take them down,
 and a copy fetched on demand would then be the wrong text or none. One per record, never shared between records.

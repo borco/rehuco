@@ -95,10 +95,10 @@ class ThumbnailLabel(QLabel):
         serves both a document's own surface and the maximized viewer's dark backdrop.
 
         Filled as a ring -- the thumbnail's rect with the inset rect punched out of it -- rather than
-        stroked with a pen. A stroke is centred on the path it follows, so half of it falls outside the
+        stroked with a pen. A stroke is centered on the path it follows, so half of it falls outside the
         thumbnail: the frame rasterized a pixel wider on two sides than the other two, and its corners
         came out cut off (a pen's default join is a bevel), letting the screenshot -- or, once the row's
-        thumbnails sit flush, the neighbour -- bleed through all four corners. A ring has no centring
+        thumbnails sit flush, the neighbor -- bleed through all four corners. A ring has no centering
         and no joins, so every side is exactly :data:`THUMBNAIL_BORDER` and the corners close.
 
         :param event: the Qt paint event, forwarded to the base class.
@@ -307,7 +307,7 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
 
         The two layouts are different `QLayout` types and a widget only ever has one, so the content
         widget is rebuilt rather than reconfigured -- taking its thumbnails with it, which is why the
-        screenshots are read off first and repainted into the new layout afterwards.
+        screenshots are read off first and repainted into the new layout afterward.
 
         :param wrap: whether the thumbnails wrap.
         """
@@ -490,7 +490,7 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         thumbnail_height = self.__height
         ratio = self.devicePixelRatioF()
         # keyed by the file, not its name: a screenshot's name is its place in the set, so a curation edit
-        # renames the files and a name key would paint a neighbour's cached picture
+        # renames the files and a name key would paint a neighbor's cached picture
         source = ScreenshotRowsImageSource([(path, ImageVisibility.VISIBLE) for path in paths])
         # the paths too: a rename keeps the file, and each label is its path -- a skipped rebuild would leave the
         # row naming files that are no longer there

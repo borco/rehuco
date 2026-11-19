@@ -1,4 +1,4 @@
-"""Tests for the license sidecar's names, parsing, serializing, reading and writing (#677, [[assets#licences]])."""
+"""Tests for the license sidecar's names, parsing, serializing, reading and writing (#677, [[assets#licenses]])."""
 
 import datetime
 from pathlib import Path
@@ -203,7 +203,7 @@ def test_a_write_goes_through_the_atomic_write(tmp_path: Path, mocker: MockerFix
     atomic.assert_called_once_with(tmp_path / NAME, TERMS.to_text())
 
 
-def test_an_unparseable_sidecar_is_refused_on_read(tmp_path: Path) -> None:
+def test_an_unparsable_sidecar_is_refused_on_read(tmp_path: Path) -> None:
     """A file that is no sidecar raises rather than reading as empty terms.
 
     **Test steps:**

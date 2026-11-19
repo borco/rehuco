@@ -53,7 +53,7 @@ class MapRootRow(QWidget):
 
         A public method rather than an inline dialog, so a test replaces the question on the instance.
 
-        :returns: the folder picked, or an empty string when the dialog was cancelled.
+        :returns: the folder picked, or an empty string when the dialog was canceled.
         """
         return QFileDialog.getExistingDirectory(self, f"Folder of {root_title(self.root)}", self.__ui.path_edit.text())
 

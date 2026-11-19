@@ -124,7 +124,7 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
 
     **Deliberately not** :meth:`~rehuco_core.tasks.TaskJobBase.checkpoint`. A checkpoint *raises to
     stop*; a yield *pauses and continues*. Folding the two together would make a rename look to a job
-    like a cancellation, which is the one thing it must not look like.
+    like a cancelation, which is the one thing it must not look like.
 
     **A counted barrier rather than a single flag**, because the count is the same amount of code and is
     already right for the parallel lane [[appendices.task-queue#serial]] leaves the door open to. Today's
@@ -270,7 +270,7 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
 
         Brackets **handle ownership**, not one chunk read: it is the open handle that a directory rename
         collides with, so a reader entered here once and reading a hundred chunks is holding for all of
-        them. Leaving the block is the acknowledgement the rename is waiting for.
+        them. Leaving the block is the acknowledgment the rename is waiting for.
 
         **The entry wait is unbounded**, unlike the rename's own. It ends when the flag comes down,
         which :meth:`rename` guarantees in a ``finally`` -- so the only way to sit here forever is for

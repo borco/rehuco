@@ -137,7 +137,7 @@ def test_the_suffix_takes_its_width_before_the_text_is_fitted(qtbot: QtBot, mock
 
 
 def test_the_text_elides_where_it_is_told_to(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """A caption whose tail tells it apart from its neighbours elides at its start.
+    """A caption whose tail tells it apart from its neighbors elides at its start.
 
     **Test steps:**
 

@@ -83,7 +83,7 @@ def plan_move(record: Path, into: Path, settings: MoveSettings | None) -> PlaceM
 class RecordMoves(QObject):
     """Moves one document's record to the places the path row offers, and reports what became of each (#339).
 
-    Attached to the queue as a :class:`~rehuco_core.TaskQueueListener`, marshalled onto the GUI thread as
+    Attached to the queue as a :class:`~rehuco_core.TaskQueueListener`, marshaled onto the GUI thread as
     :class:`~rehuco_agent.documents.checksum_actions.ChecksumActions` is: the engine calls its listeners on whichever
     thread the change happened on.
 
@@ -95,7 +95,7 @@ class RecordMoves(QObject):
     :param parent: optional Qt parent.
     """
 
-    class Marshaller(QObject):
+    class Marshaler(QObject):
         """Carries "one of our moves finished" across the thread boundary, and nothing else."""
 
         queue_changed = Signal()
@@ -107,8 +107,8 @@ class RecordMoves(QObject):
         self.__queue: Final = queue
         self.__pending: Final[dict[int, MoveRecordJob]] = {}
         """The record's moves that have not been read back, by serial."""
-        self.__marshaller: Final = RecordMoves.Marshaller(self)
-        self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
+        self.__marshaler: Final = RecordMoves.Marshaler(self)
+        self.__marshaler.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
         model.path_changed.connect(self.__on_path_changed)  # type: ignore[attr-defined]
         queue.add_listener(self)
         self.__adopt()
@@ -198,7 +198,7 @@ class RecordMoves(QObject):
     def job_updated(self, status: JobStatus) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`; called on the engine's thread, so it only wakes the GUI's."""
         if status.serial in self.__pending and status.state in FINISHED_JOB_STATES:
-            self.__marshaller.queue_changed.emit()
+            self.__marshaler.queue_changed.emit()
 
     def jobs_reordered(self, serials: Sequence[int]) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`."""

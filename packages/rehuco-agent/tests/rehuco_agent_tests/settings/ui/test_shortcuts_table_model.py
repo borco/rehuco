@@ -87,7 +87,7 @@ def test_two_commands_on_one_key_badge_both_rows(model: ShortcutsTableModel) -> 
     **Test steps:**
 
     * bind the Open command's key to ``Ctrl+K`` and the Idle command's too (both window scope)
-    * verify both Conflict cells name the other, with an error colour and a tooltip
+    * verify both Conflict cells name the other, with an error color and a tooltip
     * verify the model reports conflicts
     """
     model.set_entry(OPEN.id, [QKeySequence("Ctrl+K")], OPEN.default_scope)

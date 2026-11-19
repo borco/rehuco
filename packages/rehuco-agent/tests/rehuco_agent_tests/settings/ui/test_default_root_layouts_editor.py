@@ -170,7 +170,7 @@ def test_a_new_list_keeps_the_row_selected_where_it_can(editor: DefaultRootLayou
 
 
 def test_the_list_model_names_each_layout_and_flags_an_empty_name() -> None:
-    """A row shows a layout's name, editable; an empty one is coloured and explained, and saved as it is.
+    """A row shows a layout's name, editable; an empty one is colored and explained, and saved as it is.
 
     **Test steps:**
 

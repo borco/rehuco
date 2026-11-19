@@ -584,7 +584,7 @@ def test_failure_during_backup_restores_what_already_moved(mocker: MockerFixture
 def test_an_occupied_destination_refuses_rather_than_overwriting(mocker: MockerFixture) -> None:
     """A destination that exists when the rename is about to run aborts the conversion: the scan hands
     out no taken slot, so this can only be a race -- and *never overwrite* is the contract, which
-    ``Path.rename`` does not honour on its own outside Windows.
+    ``Path.rename`` does not honor on its own outside Windows.
 
     **Test steps:**
 

@@ -596,7 +596,7 @@ def test_registers_the_identity_page(qtbot: QtBot) -> None:
 
 def test_the_window_installs_the_configured_deleter_for_discard_jobs(qtbot: QtBot) -> None:
     """A discard job resolves its deleter when it runs, so the window points the process-wide provider
-    at the Recycle Bin setting before the saved queue is restored -- a restored discard then honours
+    at the Recycle Bin setting before the saved queue is restored -- a restored discard then honors
     the setting exactly as a freshly enqueued one does, rather than coming back as a plain unlink (#298).
 
     **Test steps:**
@@ -1115,11 +1115,11 @@ def test_an_open_request_from_a_documents_files_dock_takes_the_ordinary_open_rou
     window = MainWindow()
     qtbot.addWidget(window)
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    neighbour = Path("a.rehu").resolve()
+    neighbor = Path("a.rehu").resolve()
 
-    documents_dock.open_requested.emit(neighbour)
+    documents_dock.open_requested.emit(neighbor)
 
-    open_document.assert_called_once_with(ResourceKey(neighbour))
+    open_document.assert_called_once_with(ResourceKey(neighbor))
 
 
 def test_an_open_request_carrying_anything_else_opens_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -1273,7 +1273,7 @@ def test_open_file_records_a_successful_open_into_recents(mocker: MockerFixture,
 
 def test_open_file_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
     """An ``open_file`` whose file could not be read (a load-failure stub) is not recorded into
-    ``Open recents`` (#64) -- the dock still opens (locked), but a missing/unparseable file is not a file
+    ``Open recents`` (#64) -- the dock still opens (locked), but a missing/unparsable file is not a file
     you opened ([[data-model#write-integrity]]).
 
     **Test steps:**
@@ -1411,12 +1411,12 @@ def test_open_rehu_action_opens_the_chosen_file(mocker: MockerFixture, qtbot: Qt
     open_file.assert_called_once_with("picked.rehu")
 
 
-def test_open_rehu_action_does_nothing_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """``File > Open rehu...`` does nothing when the dialog is cancelled (#64).
+def test_open_rehu_action_does_nothing_when_dialog_is_canceled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open rehu...`` does nothing when the dialog is canceled (#64).
 
     **Test steps:**
 
-    * mock the file-open dialog to report no chosen path (cancelled)
+    * mock the file-open dialog to report no chosen path (canceled)
     * trigger ``open_rehu_action``
     * verify ``open_file`` was never called
     """
@@ -1449,12 +1449,12 @@ def test_open_folder_action_opens_the_chosen_folder(mocker: MockerFixture, qtbot
     open_folder.assert_called_once_with("picked_folder")
 
 
-def test_open_folder_action_does_nothing_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """``File > Open folder...`` does nothing when the dialog is cancelled (#64).
+def test_open_folder_action_does_nothing_when_dialog_is_canceled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open folder...`` does nothing when the dialog is canceled (#64).
 
     **Test steps:**
 
-    * mock the folder-picker dialog to report no chosen path (cancelled)
+    * mock the folder-picker dialog to report no chosen path (canceled)
     * trigger ``open_folder_action``
     * verify ``open_folder`` was never called
     """
@@ -1487,12 +1487,12 @@ def test_open_companion_action_opens_the_chosen_archive(mocker: MockerFixture, q
     open_archive.assert_called_once_with("picked.zip")
 
 
-def test_open_companion_action_does_nothing_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """``File > Open companion...`` does nothing when the dialog is cancelled (#64).
+def test_open_companion_action_does_nothing_when_dialog_is_canceled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open companion...`` does nothing when the dialog is canceled (#64).
 
     **Test steps:**
 
-    * mock the file-open dialog to report no chosen path (cancelled)
+    * mock the file-open dialog to report no chosen path (canceled)
     * trigger ``open_companion_action``
     * verify ``open_archive`` was never called
     """
@@ -1531,12 +1531,12 @@ def test_save_all_action_saves_only_dirty_open_documents(mocker: MockerFixture, 
 
 
 def test_save_all_stops_at_a_save_the_user_cancels(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A ``Save all`` whose save of one document is cancelled -- a save that could not land, #146, #497 -- leaves the
+    """A ``Save all`` whose save of one document is canceled -- a save that could not land, #146, #497 -- leaves the
     remaining dirty documents untouched.
 
     **Test steps:**
 
-    * stand in two dirty open documents, and mock the save-and-wait to answer cancelled
+    * stand in two dirty open documents, and mock the save-and-wait to answer canceled
     * mock the unsaved-changes dialog for teardown
     * trigger ``save_all_action``
     * verify only the first document was saved
@@ -1603,8 +1603,8 @@ def test_sweep_checksums_action_remembers_the_folder_it_was_pointed_at(mocker: M
     window._MainWindow__task_queue.pause()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-def test_sweep_checksums_action_does_nothing_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A cancelled chooser must neither queue work nor overwrite the remembered folder (#242).
+def test_sweep_checksums_action_does_nothing_when_dialog_is_canceled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A canceled chooser must neither queue work nor overwrite the remembered folder (#242).
 
     **Test steps:**
 
@@ -2256,8 +2256,8 @@ def test_close_event_saves_selected_documents_when_accepted(mocker: MockerFixtur
     save_and_wait.assert_called_once_with(window, kept)
 
 
-def test_close_event_ignores_the_close_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Cancelling the unsaved-changes dialog aborts the app close; nothing is saved.
+def test_close_event_ignores_the_close_when_dialog_is_canceled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Canceling the unsaved-changes dialog aborts the app close; nothing is saved.
 
     **Test steps:**
 
@@ -2313,13 +2313,13 @@ def test_close_event_still_persists_when_a_save_is_left_pending(mocker: MockerFi
     save.assert_called_once()
 
 
-def test_close_event_is_aborted_when_a_failing_save_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Cancelling a save that could not land aborts the close: the window stays open, its edits and session intact,
+def test_close_event_is_aborted_when_a_failing_save_is_canceled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Canceling a save that could not land aborts the close: the window stays open, its edits and session intact,
     and persistence does not run (#146, #497).
 
     **Test steps:**
 
-    * stand in one selected dirty model, and mock the save-and-wait to answer cancelled
+    * stand in one selected dirty model, and mock the save-and-wait to answer canceled
     * mock the unsaved-changes dialog to accept and select it
     * mock ``MainWindowSettings.save`` to detect whether persistence ran
     * dispatch a close event
@@ -2599,7 +2599,7 @@ def float_open_settings_dock(window: MainWindow) -> Any:
     """Tear the Settings dock out into a floating window of its own, open, and return that container.
 
     Stands in for the user dragging it out, which is the only way any of these docks floats since #307
-    -- none of them is placed that way. The behaviour under test is about a floating dock window rather
+    -- none of them is placed that way. The behavior under test is about a floating dock window rather
     than about Settings; this is simply the dock whose content is cheapest to build.
     ``addDockWidgetFloating`` reopens the closed dock it moves
     ([[appendices.qt-ads#auto-hide-abandoned-float]]), so no toggle is needed; the container is read
@@ -3054,7 +3054,7 @@ def test_close_event_saves_the_outer_layout(mocker: MockerFixture, qtbot: QtBot)
 def test_close_event_saves_an_open_settings_dock_as_open(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A Settings dock left open at close reopens open on the next launch (#307).
 
-    The deliberate behaviour change: "Restore on start" used to let the user leave it open now and
+    The deliberate behavior change: "Restore on start" used to let the user leave it open now and
     still have it stay shut next time, and a plain dock does not draw that distinction -- open at
     close is open at start, the same deal Documents, Log and Tasks already offer. Pinned here because
     it is the capability that release spent, and a silent regression back to closed would look like a
@@ -4456,7 +4456,7 @@ def test_restoring_the_session_reveals_the_documents_dock(mocker: MockerFixture,
     """Session restore reveals the dock before handing the session to ``DocumentsDock`` (#268, #66).
 
     Asserted by call order rather than by the end state: ``__init__`` restores the outer layout
-    *afterwards*, which is what actually decides the dock's visibility on a launch (see the test
+    *afterward*, which is what actually decides the dock's visibility on a launch (see the test
     below), so "is it open now" cannot tell the reveal from the restore.
 
     **Test steps:**
@@ -4486,7 +4486,7 @@ def test_the_saved_theme_is_applied_before_the_session_is_restored(mocker: Mocke
     """The saved theme is applied before any restored document is built (#304).
 
     The other order built every restored document's chrome against a palette that was about to be
-    replaced, leaving each one to catch up through a ``palette_changed`` round-trip afterwards -- the
+    replaced, leaving each one to catch up through a ``palette_changed`` round-trip afterward -- the
     fragility that #304's stale toolbar glyphs grew out of. Constructing ``ThemeModel`` is what applies
     the theme, so its ``setColorScheme`` call has to land before ``DocumentsDock.restore_session``.
 
@@ -5353,7 +5353,7 @@ def test_the_task_queue_status_indicator_follows_the_queue_while_its_dock_stays_
     queue.enqueue(job)
     assert job.entered.wait(SWEEP_TIMEOUT)
     # entered.wait only confirms the worker thread reached the job -- the state change still has to
-    # cross to the GUI thread through the queue's own marshalling before the indicator reacts, so a
+    # cross to the GUI thread through the queue's own marshaling before the indicator reacts, so a
     # fixed sleep races that hop under load; wait for the actual effect instead
     qtbot.waitUntil(lambda: not indicator.isHidden(), timeout=WAIT_TIMEOUT_MS)
 
@@ -5677,7 +5677,7 @@ def test_a_rename_makes_the_queue_re_read_its_job_sources(mocker: MockerFixture,
     * verify the queue was asked to re-read exactly once
 
     Patched on the **class, before the window exists**: the window hands the coordinator a *bound*
-    method, so an instance patched afterwards would never be the object the coordinator holds -- and
+    method, so an instance patched afterward would never be the object the coordinator holds -- and
     the test would fail while the wiring was perfectly correct.
 
     The **renamer** is mocked rather than ``Path``: patching the filesystem wholesale reaches the
@@ -5718,7 +5718,7 @@ def test_a_closed_window_hears_no_more_renames(mocker: MockerFixture, qtbot: QtB
 
 def test_a_closed_window_stops_adapting_the_change_feed(qtbot: QtBot) -> None:
     """The change feed outlives the window's announcements, so closing detaches them from it -- a change published
-    afterwards must not call into announcements about to be deleted.
+    afterward must not call into announcements about to be deleted.
 
     **Test steps:**
 
@@ -6009,16 +6009,16 @@ def test_a_queue_that_will_not_settle_is_logged_rather_than_waited_on(
 @mark.parametrize(
     ("clear_done", "clear_failed", "kept"),
     [
-        (False, False, ["done", "failed", "cancelled", "queued", "failed save"]),
-        (True, False, ["failed", "cancelled", "queued", "failed save"]),
-        (False, True, ["done", "cancelled", "queued", "failed save"]),
-        (True, True, ["cancelled", "queued", "failed save"]),
+        (False, False, ["done", "failed", "canceled", "queued", "failed save"]),
+        (True, False, ["failed", "canceled", "queued", "failed save"]),
+        (False, True, ["done", "canceled", "queued", "failed save"]),
+        (True, True, ["canceled", "queued", "failed save"]),
     ],
 )
 def test_each_clear_on_restart_setting_drops_only_its_own_kind(
     mocker: MockerFixture, qtbot: QtBot, clear_done: bool, clear_failed: bool, kept: list[str]
 ) -> None:
-    """The two clears are independent, and **a cancelled job survives every combination** -- it was
+    """The two clears are independent, and **a canceled job survives every combination** -- it was
     stopped on purpose and is the likeliest of the three to be retried. **So does a failed save** (#497): it still
     holds the edits it could not land.
 
@@ -6031,7 +6031,7 @@ def test_each_clear_on_restart_setting_drops_only_its_own_kind(
     saved = [
         {"kind": "x", "label": "done", "job_state": "done", "state": {}},
         {"kind": "x", "label": "failed", "job_state": "failed", "state": {}},
-        {"kind": "x", "label": "cancelled", "job_state": "cancelled", "state": {}},
+        {"kind": "x", "label": "canceled", "job_state": "canceled", "state": {}},
         {"kind": "x", "label": "queued", "job_state": "queued", "state": {}},
         {"kind": SAVE_RECORD_KIND, "label": "failed save", "job_state": "failed", "state": {}},
     ]
@@ -6151,11 +6151,11 @@ the work it is actually waiting for."""
 
 @fixture(autouse=True)
 def auto_hide_flags() -> Iterator[None]:
-    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterwards.
+    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterward.
 
     The flags are a `CDockManager` **static**, normally set in ``Application.show_main_window`` --
-    which these tests never run -- and leaving them on would decide the behaviour of every later test
-    in the session. New areas honour a flag set after the first manager was built (verified), so this
+    which these tests never run -- and leaving them on would decide the behavior of every later test
+    in the session. New areas honor a flag set after the first manager was built (verified), so this
     needs no session-wide ordering.
     """
     previous = QtAds.CDockManager.autoHideConfigFlags()
@@ -6202,7 +6202,7 @@ def dict_backed_settings(settings: Any) -> dict[str, Any]:
     :func:`mock_persistent_settings` hands back a ``MagicMock`` whose ``value`` returns the default it
     was asked for -- right for the windows that must not read anything, and useless for a test about
     something *surviving* a save and a load. This wires the four calls that matter onto one dict,
-    honouring ``beginGroup`` so each dock's key stays its own (without it every handler would write the
+    honoring ``beginGroup`` so each dock's key stays its own (without it every handler would write the
     same bare ``pin_side`` and the test would pass for the wrong reason).
 
     :param settings: the ``QSettings`` stand-in to wire up -- ``mock_persistent_settings.return_value``.
@@ -6510,7 +6510,7 @@ def pinned_settings_layout(window: MainWindow, open_dock: bool) -> dict[str, Any
     the task queue included -- for a layout this only needs one method to produce.
 
     :param window: the window to pin and read.
-    :param open_dock: whether the dock is left open (pinned and in play) or closed afterwards.
+    :param open_dock: whether the dock is left open (pinned and in play) or closed afterward.
     :returns: the saved outer dock layout.
     """
     dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -6722,7 +6722,7 @@ def test_a_restored_floating_dock_is_shown_at_once_with_the_window_on_windows(
     that produces it.
 
     Same platform trap as ``test_raise_and_activate_forces_foreground_on_windows``: the window is built
-    with the real platform still in effect, and ``sys.platform`` is faked only afterwards.
+    with the real platform still in effect, and ``sys.platform`` is faked only afterward.
 
     **Test steps:**
 
@@ -7156,12 +7156,12 @@ def test_new_rehuco_adds_the_suffix_the_user_left_off(mocker: MockerFixture, qtb
     new_rehuco.assert_called_once_with(Path("/fake/home.rehuco").resolve())
 
 
-def test_new_rehuco_does_nothing_when_the_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A cancelled save dialog creates nothing and leaves the dock closed (#377).
+def test_new_rehuco_does_nothing_when_the_dialog_is_canceled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A canceled save dialog creates nothing and leaves the dock closed (#377).
 
     **Test steps:**
 
-    * mock the save dialog as cancelled
+    * mock the save dialog as canceled
     * trigger ``new_rehuco_action``
     * verify the dock was never asked, and is still closed
     """
@@ -7218,12 +7218,12 @@ def test_open_rehuco_action_opens_the_chosen_file(mocker: MockerFixture, qtbot: 
     open_rehuco_path.assert_called_once_with("picked.rehuco")
 
 
-def test_open_rehuco_action_does_nothing_when_the_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A cancelled open dialog opens nothing (#377).
+def test_open_rehuco_action_does_nothing_when_the_dialog_is_canceled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A canceled open dialog opens nothing (#377).
 
     **Test steps:**
 
-    * mock the open dialog as cancelled
+    * mock the open dialog as canceled
     * trigger ``open_rehuco_action``
     * verify ``open_rehuco_path`` was never called
     """

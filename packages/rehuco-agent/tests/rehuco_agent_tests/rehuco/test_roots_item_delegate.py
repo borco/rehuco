@@ -24,7 +24,7 @@ NAME: Final = "movie.mp4"
 
 
 ICON_SLOT: Final = QRect(ROW.right() - 6 - ICON_SIZE + 1, (ROW.height() - ICON_SIZE) // 2, ICON_SIZE, ICON_SIZE)
-"""Where a state's icon is drawn: the right edge of the padded row, centred in its height."""
+"""Where a state's icon is drawn: the right edge of the padded row, centered in its height."""
 
 
 class RecordingPainter(QPainter):
@@ -158,7 +158,7 @@ def test_a_problem_is_drawn_in_its_own_ink_unless_the_row_is_selected(
     view: QListView, state: FileChecksumState, ink: QColor
 ) -> None:
     """Red for a mismatch, orange for one that has expired; on the selection band the band's own ink wins, since a
-    warning colour over a highlight would not read.
+    warning color over a highlight would not read.
 
     **Test steps:**
 

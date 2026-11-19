@@ -11,7 +11,7 @@ pivoting to CdCat cloning. It predates the whole TutCatalog line in both domain 
 
 ## File formats
 
-- **XML catalog** (`.xml`) — a single monolithic document describing catalogued volumes and their
+- **XML catalog** (`.xml`) — a single monolithic document describing cataloged volumes and their
   file trees. ibocator reads the CdCat XML format (`libs/storage` `cdcatreader`) and writes its own
   `*.xml` catalogs (`MainWindow::saveFile`, "Save Catalog"). There is **no per-resource sidecar** —
   one file holds the whole catalog.

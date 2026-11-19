@@ -52,7 +52,7 @@ class OneRowModel(QAbstractTableModel):
         del index
         if role == TaskQueueModel.Roles.STATUS:
             return self.__payload
-        return "Cancelling…" if role == Qt.ItemDataRole.DisplayRole else None
+        return "Canceling…" if role == Qt.ItemDataRole.DisplayRole else None
 
 
 @fixture
@@ -179,7 +179,7 @@ def test_a_pending_stop_draws_its_own_glyph_in_the_state_it_is_still_in(
     assert requested(asked) == (PENDING_STOP_ICONS[StopRequest.PAUSE], RUNNING_COLOR)
 
 
-def test_the_glyph_is_centred_and_never_bigger_than_the_cell(
+def test_the_glyph_is_centered_and_never_bigger_than_the_cell(
     painter: QPainter, option: QStyleOptionViewItem, asked: Any
 ) -> None:
     """A square glyph in the middle of the cell, shrunk rather than clipped by a short row.
@@ -187,7 +187,7 @@ def test_the_glyph_is_centred_and_never_bigger_than_the_cell(
     **Test steps:**
 
     * paint a row into the shared cell
-    * verify the rect the icon was painted into is square, centred, and at the icon size
+    * verify the rect the icon was painted into is square, centered, and at the icon size
     """
     icon = asked.return_value
 

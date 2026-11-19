@@ -153,7 +153,7 @@ class LocationTemplatePatternsModel(QAbstractTableModel):
     def duplicate(self, at: int) -> int:
         """Insert a copy of ``at`` below it -- the `ItemEditor` contract.
 
-        One insert announcement carrying the copy, rather than a blank insert filled in afterwards, so
+        One insert announcement carrying the copy, rather than a blank insert filled in afterward, so
         the row never exists blank.
 
         :param at: the row to copy; a negative row is a no-op.

@@ -98,7 +98,7 @@ ASSET_FIELD_NAMES: Final = (
     "texture_size",
     "acquired",
 )
-"""The **Asset-only** tier ([[assets#block]]): what an item bought from a store is, the licence it came under, the
+"""The **Asset-only** tier ([[assets#block]]): what an item bought from a store is, the license it came under, the
 formats and versions it works with, and what the store says of it. Every one is optional, and a missing one means
 *not known* -- never a zero.
 

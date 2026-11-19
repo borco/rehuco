@@ -441,8 +441,8 @@ def test_a_frame_is_shown_cropped_to_the_videos_visible_size(
 
     **Test steps:**
 
-    * play and feed one grey frame from a libvlc thread, then a darker one
-    * verify the surface shows each at the visible size, in its grey, the size asked of libvlc once, and that the
+    * play and feed one gray frame from a libvlc thread, then a darker one
+    * verify the surface shows each at the visible size, in its gray, the size asked of libvlc once, and that the
       still is the last frame
     """
     engine.play()

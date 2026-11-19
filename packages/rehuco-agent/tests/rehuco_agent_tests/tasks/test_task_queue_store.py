@@ -468,7 +468,7 @@ def test_a_removal_is_written(
 
     * run a job to completion with the store attached
     * remove it
-    * verify the file is empty afterwards
+    * verify the file is empty afterward
     """
     store.restore([])
     serial = queue.enqueue(CounterJob("gone-later"))

@@ -46,7 +46,7 @@ class TaskInfoDelegate(TaskRowDelegate):
     and state tint (:class:`~.task_row_delegate.TaskRowDelegate`, #251).
 
     **The bar and its figure sit side by side, never on top of each other.** The figure has the cell's
-    rightmost :data:`FIGURE_WIDTH` and the bar takes what is left. Text centred *on* a bar was tried
+    rightmost :data:`FIGURE_WIDTH` and the bar takes what is left. Text centered *on* a bar was tried
     and is worse than either half suggests: the color that reads over the filled part is the wrong one
     over the empty part, so one end of the bar always loses its text -- and no single pen fixes it,
     because the surface under the text changes as the job runs. Two areas, each with one background,
@@ -183,7 +183,7 @@ class TaskInfoDelegate(TaskRowDelegate):
 
     @staticmethod
     def bar_rect(cell: QRect) -> QRect:
-        """What is left of the cell for the bar, vertically centred at :data:`BAR_HEIGHT`.
+        """What is left of the cell for the bar, vertically centered at :data:`BAR_HEIGHT`.
 
         :param cell: the whole cell.
         :returns: the bar's rect; empty when the cell is too narrow to hold both.

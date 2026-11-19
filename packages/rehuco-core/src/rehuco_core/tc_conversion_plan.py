@@ -146,12 +146,12 @@ class TcConversionPlan:  # pylint: disable=too-many-instance-attributes
     def collision(self) -> bool:
         """Whether some image would keep its own name because its slot was already taken (#288).
 
-        The one outcome of a conversion a human might want to look at afterwards
+        The one outcome of a conversion a human might want to look at afterward
         ([[acquisition-tooling#convert-mechanics]]): two pictures claim one number and nothing here
         decides between them, so the images dock is where that is settled
         ([[plugins#tutorial-plugin]]). An image left alone for carrying a number of its own beyond the
         range ([[acquisition-tooling#tc-to-rehu]]) is not flagged: it is someone else's convention
-        being respected, not a judgement this conversion ducked.
+        being respected, not a judgment this conversion ducked.
         """
         return any(image.reason is ScreenshotSkipReason.COLLISION for image in self.unconverted)
 

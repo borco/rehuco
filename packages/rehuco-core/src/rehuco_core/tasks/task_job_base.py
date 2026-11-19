@@ -11,7 +11,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Final
 
-from .task_job import DISK_CHAIN, JobCancelled, JobControl, JobPaused, StopRequest
+from .task_job import DISK_CHAIN, JobCanceled, JobControl, JobPaused, StopRequest
 
 
 class TaskJobBase:
@@ -34,7 +34,7 @@ class TaskJobBase:
     unwinds in the same breath, where a bare :attr:`stop_requested` read has to assume the worst.
 
     **The single request slot** ([[appendices.task-queue#pause-concept]]): a job is asked for at most
-    one thing, and the latest instruction replaces the one before it. Asking a cancelling job to pause
+    one thing, and the latest instruction replaces the one before it. Asking a canceling job to pause
     downgrades the request; asking a pausing job to cancel escalates it. Two independent flags could
     express *cancel and pause*, which is not something a checkpoint can act on.
 
@@ -77,7 +77,7 @@ class TaskJobBase:
 
     @property
     def stop_requested(self) -> StopRequest | None:
-        """What this job has been asked to do, **and an acknowledgement that it has been told**.
+        """What this job has been asked to do, **and an acknowledgment that it has been told**.
 
         For a job that would rather tidy up than be raised out of -- a conversion writing its rollback
         record ([[acquisition-tooling#convert-mechanics]]). Reading it is how the job says *I know*,
@@ -99,7 +99,7 @@ class TaskJobBase:
         job that never calls it runs to completion and cannot be interrupted, and a job that calls it
         between two halves of an atomic step can be stopped in the middle of one.
 
-        :raises JobCancelled: when a cancel is pending.
+        :raises JobCanceled: when a cancel is pending.
         :raises JobPaused: when a pause is pending.
         """
         with self.__lock:
@@ -107,7 +107,7 @@ class TaskJobBase:
                 return
             self.__acted = True
             if self.__stop is StopRequest.CANCEL:
-                raise JobCancelled(self.label)
+                raise JobCanceled(self.label)
             raise JobPaused(self.label)
 
     def pause(self) -> None:

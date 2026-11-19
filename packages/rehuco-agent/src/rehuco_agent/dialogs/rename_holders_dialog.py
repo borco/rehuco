@@ -1,6 +1,6 @@
 """What is holding a refused rename, and what to do about it (#505): the banner magnifier's dialog.
 
-Modelled on PowerToys File Locksmith: the programs that have the resource's files open, each with
+Modeled on PowerToys File Locksmith: the programs that have the resource's files open, each with
 **Show App** -- its window brought to the front, to close the file there -- and **End Task**, which ends it
 the way Task Manager does. Ending is slow by the operating system's clock and asking is slow by the share's,
 so both run on the pool and land back here; a program that ended leaves the list, and one that could not be

@@ -31,7 +31,7 @@ class CardContent(Protocol):
         """
 
     def buddies(self) -> tuple[QWidget, QWidget]:  # pyright: ignore[reportReturnType]
-        """The rows the card's buttons sit beside, each button centred on its buddy.
+        """The rows the card's buttons sit beside, each button centered on its buddy.
 
         :returns: the delete button's buddy, then the insert button's.
         """

@@ -13,7 +13,7 @@ ARROW_PEN: Final = 1.5
 """How thick an arrow is drawn."""
 
 HOVER_SHARE: Final = 0.2
-"""How much of the highlight colour the hover band mixes into the base colour."""
+"""How much of the highlight color the hover band mixes into the base color."""
 
 
 class BandTreeView(QTreeView):
@@ -21,9 +21,9 @@ class BandTreeView(QTreeView):
     :class:`~borco_pyside.widgets.RowBandDelegate`.
 
     The delegate fills each selected *cell*, and a tree's indentation belongs to no cell: the style paints it, with
-    its own idea of a selection and of a hover, and draws the expand arrow in the plain text colour whatever the row's
+    its own idea of a selection and of a hover, and draws the expand arrow in the plain text color whatever the row's
     state. Here the branch area of a selected row is filled with the same highlight, and the arrow is drawn in the
-    colour the row's text is -- the highlighted-text colour on the band -- so the row reads as one band from edge to
+    color the row's text is -- the highlighted-text color on the band -- so the row reads as one band from edge to
     edge. The row under the mouse is filled the same way, edge to edge, with :attr:`hover_color`, and the base view
     never hears of the hover, so the style paints none of its own -- it covered the branch area alone.
 
@@ -41,8 +41,8 @@ class BandTreeView(QTreeView):
 
     @property
     def hover_color(self) -> QColor:
-        """The hover band's colour: the base colour with a share of the highlight, opaque, in whole channel values so it
-        is exactly the colour painted."""
+        """The hover band's color: the base color with a share of the highlight, opaque, in whole channel values so it
+        is exactly the color painted."""
         palette = self.palette()
         base = palette.color(QPalette.ColorRole.Base)
         highlight = palette.color(QPalette.ColorRole.Highlight)
@@ -138,8 +138,8 @@ class BandTreeView(QTreeView):
         """Draw a chevron, pointing down for an open row and right for a closed one.
 
         :param painter: the painter to draw with.
-        :param box: where the arrow is centred.
-        :param color: the colour to draw it in.
+        :param box: where the arrow is centered.
+        :param color: the color to draw it in.
         :param expanded: whether the row is open.
         """
         center = QPointF(box.center()) + QPointF(0.5, 0.5)

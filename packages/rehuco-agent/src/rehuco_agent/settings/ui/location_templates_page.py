@@ -46,7 +46,7 @@ class LocationTemplatesPage(QWidget):
 
     :attr:`__known_placeholders` is fixed at construction from ``resource_type``'s plugin declaration
     (`~rehuco_core.known_placeholders_for`) and never changes
-    afterwards, which is what lets it also gate the Try-it sample record's Count row: one instance, one
+    afterward, which is what lets it also gate the Try-it sample record's Count row: one instance, one
     type, one placeholder set for its lifetime.
 
     **The sample record is a setting like the patterns**: staged in its fields, part of :meth:`is_dirty`,
@@ -67,7 +67,7 @@ class LocationTemplatesPage(QWidget):
     defaults rather than to *offer nothing* -- but an **invalid row is kept**, flagged, so a typo is fixed
     in place rather than retyped: only the effective list a document reads skips it. That rule lives in
     `LocationTemplatesSettings`, not in the editor, which holds whatever was typed; the page reloads
-    itself from the stored result afterwards, so what it shows is always what the next Apply would keep.
+    itself from the stored result afterward, so what it shows is always what the next Apply would keep.
 
     :param resource_type: the plugin main key this page edits (e.g. ``"tutorial"``).
     :param parent: optional Qt parent.
@@ -129,7 +129,7 @@ class LocationTemplatesPage(QWidget):
         """Push this type's staged patterns and sample record into the shared settings object, persist
         them, and show the result.
 
-        The list is reloaded from the stored set afterwards rather than left as typed: normalization can
+        The list is reloaded from the stored set afterward rather than left as typed: normalization can
         change it, and a page still showing what was typed would disagree with what the next Apply
         would keep.
         """

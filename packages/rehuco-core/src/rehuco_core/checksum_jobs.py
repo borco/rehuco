@@ -81,7 +81,7 @@ registry, the queue and the file all treat the state as opaque.
 The exclusion set is captured with the rest rather than re-resolved from the settings on restore: a
 restored job is meant to be *the job that was queued*, and the list decides which unlisted files a run
 adopts, which is part of what was asked for. The two verify choices (#242) are captured for the same
-reason, and read back with today's behaviour as their default, so a queue saved by a build that had
+reason, and read back with today's behavior as their default, so a queue saved by a build that had
 neither key restores exactly the run it described. Seeding (#256) is captured the same way and defaults
 to on, which is what every job written before that key existed meant."""
 
@@ -400,7 +400,7 @@ class ChecksumJob(TaskJobBase):
         not ship (as the run's own or as its migration target), or a selection that is not a list of
         names raises, and the registry logs and drops the item ([[appendices.task-queue#lifetime]]).
 
-        The two verify choices (#242) default to this job's own behaviour when the state does not carry
+        The two verify choices (#242) default to this job's own behavior when the state does not carry
         them, and seeding (#256) to on, so an item written by a build that predates any of them restores
         as the run it was.
 
@@ -790,7 +790,7 @@ class SweepChecksumsJob(TaskJobBase):
         because #245 made :class:`~rehuco_core.ContentUnreachableError` deliberately **not** a
         :class:`FileNotFoundError`: the first is *this resource has no record*, which is expected and
         countable, and the second is *this resource could not be read*, which is a fault. A
-        :class:`~rehuco_core.tasks.JobPaused` or :class:`~rehuco_core.tasks.JobCancelled` is a plain
+        :class:`~rehuco_core.tasks.JobPaused` or :class:`~rehuco_core.tasks.JobCanceled` is a plain
         :class:`Exception` and passes through both untouched, which is what keeps the sweep stoppable.
 
         :param rehu_path: the resource to verify.

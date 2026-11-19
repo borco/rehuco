@@ -145,7 +145,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         self.__fallback: tuple[UUID, tuple[str, ...]] | None = None
         """Where the Roots selection goes once the rows it was in are removed: the folder they were in."""
         # connected before the view's selection model exists, so it runs before that model moves the current row to a
-        # neighbour of the removed one -- which is the one thing this has to see unmoved
+        # neighbor of the removed one -- which is the one thing this has to see unmoved
         self.__roots_model.rowsAboutToBeRemoved.connect(self.__on_roots_rows_about_to_be_removed)
         self.__roots_model.rowsRemoved.connect(self.__on_roots_rows_removed)
         # queued: a drop is handled inside the view's own event, and the move changes the rows it is dropping on
@@ -474,7 +474,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
 
     def __update_enablement(self, *_args: object) -> None:
         """Enable Scan while a file is open, and the root edits only while it can also be saved -- Remove and the moves
-        needing a selected **root row** besides, the moves not at the end they move towards. Refresh and the folder
+        needing a selected **root row** besides, the moves not at the end they move toward. Refresh and the folder
         filter need a catalog, the filter a root or folder to name. Map needs a root this machine does not map, and
         no save: it writes this machine's mappings, not the file. Scan root needs a root this machine does map
         (#644)."""
@@ -856,7 +856,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def __on_roots_rows_about_to_be_removed(self, parent: QModelIndex, first: int, last: int) -> None:
         """Remember where the selection falls back to if the rows about to go hold it: the folder they are in.
 
-        Qt would move it to a neighbour of the removed row, which is a different folder from the one the reader was
+        Qt would move it to a neighbor of the removed row, which is a different folder from the one the reader was
         in; the nearest surviving ancestor is the better answer (a folder deleted outside the app, then F5).
 
         :param parent: the row the removed rows are under.
@@ -888,7 +888,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Ask for the roots to add to the open file. The one modal behind Add Roots, so a test replaces it per
         instance.
 
-        :returns: what OK adds, in order, or ``None`` if the dialog was cancelled or no file is open.
+        :returns: what OK adds, in order, or ``None`` if the dialog was canceled or no file is open.
         """
         file = self.__catalog.file
         if file is None:
@@ -903,7 +903,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         """Ask for the folder of this machine a root is. The one modal behind Map, so a test replaces it per instance.
 
         :param root: the root to map.
-        :returns: the folder, or ``None`` if the dialog was cancelled.
+        :returns: the folder, or ``None`` if the dialog was canceled.
         """
         folder = QFileDialog.getExistingDirectory(self, f'Map "{root_title(root)}"', "")
         return Path(folder) if folder else None

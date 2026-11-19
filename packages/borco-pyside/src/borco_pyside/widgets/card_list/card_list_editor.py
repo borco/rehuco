@@ -190,7 +190,7 @@ class CardListEditor(QWidget):
         self.__after_structure_change()
 
     def __on_rows_removed(self, _parent: QModelIndex, first: int, last: int) -> None:
-        """Drop the removed rows' cards, handing focus to a neighbour first when one of them held it.
+        """Drop the removed rows' cards, handing focus to a neighbor first when one of them held it.
 
         :param _parent: unused -- the model is flat.
         :param first: the first removed row.

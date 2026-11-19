@@ -204,13 +204,13 @@ def test_a_viewer_with_no_exporter_offers_nothing_to_take_out(
     RecordingMenu.shown = []
     drag_class = mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
     viewer = open_viewer(qtbot, document, resource, None)
-    centre = picture_rect(viewer).center()
+    center = picture_rect(viewer).center()
 
     QApplication.sendEvent(
-        viewer, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, centre, viewer.mapToGlobal(centre))
+        viewer, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, center, viewer.mapToGlobal(center))
     )
     viewer.copy_current()
-    press_and_move(viewer, centre, 3 * QApplication.startDragDistance())
+    press_and_move(viewer, center, 3 * QApplication.startDragDistance())
 
     assert viewer.copy_action is None
     assert not viewer.drag_enabled()
@@ -231,10 +231,10 @@ def test_the_context_menu_offers_copy(
     monkeypatch.setattr("rehuco_agent.fields.widgets.image_lightbox.QMenu", RecordingMenu)
     RecordingMenu.shown = []
     viewer = open_viewer(qtbot, document, resource, ImageExporter(staging, lambda: ID))
-    centre = picture_rect(viewer).center()
+    center = picture_rect(viewer).center()
 
     QApplication.sendEvent(
-        viewer, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, centre, viewer.mapToGlobal(centre))
+        viewer, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, center, viewer.mapToGlobal(center))
     )
 
     assert len(RecordingMenu.shown) == 1
@@ -305,9 +305,9 @@ def test_a_double_click_on_the_picture_still_closes_the_viewer(
     closed: list[bool] = []
     viewer.closed.connect(lambda: closed.append(True))
 
-    centre = picture_rect(viewer).center()
-    target = target_at(viewer, centre)
-    QTest.mouseDClick(target, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, target.mapFrom(viewer, centre))
+    center = picture_rect(viewer).center()
+    target = target_at(viewer, center)
+    QTest.mouseDClick(target, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, target.mapFrom(viewer, center))
 
     assert closed == [True]
     drag_class.assert_not_called()

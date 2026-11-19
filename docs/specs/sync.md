@@ -15,7 +15,7 @@
 There is **no sync engine**. Until 2026-10-16 this file specified version vectors, an append-only activity log,
 tombstones and a verdict queue, all resting on one node being a resource's sole writer. With the files on a share that
 anyone may mount, nothing can be the sole writer, so convergence is settled where the files are: on the filesystem,
-with the primitives every SMB client honours.
+with the primitives every SMB client honors.
 
 Two different kinds of data live beside a resource, with different natural owners:
 
@@ -40,7 +40,7 @@ the user.
 Every write to a record takes `<record>.lock` beside it — the record's own name with `.lock` added, `info.rehu.lock`
 beside `info.rehu`, `catalog.rehuco.lock` beside a `.rehuco` — created with exclusive-create (`O_CREAT | O_EXCL`),
 which on SMB2 is a server-side atomic create and the one locking primitive Windows, macOS and Linux clients all
-honour; OS byte-range and `fcntl` locks are not that ([[appendices.post-mortem#architecture]]). Measured on the TS-230
+honor; OS byte-range and `fcntl` locks are not that ([[appendices.post-mortem#architecture]]). Measured on the TS-230
 (#503):
 two Windows processes and a Mac racing 1500 attempts each, every holder reading its own id back after the hold —
 1443 holds, **0 clobbered**.
@@ -140,7 +140,7 @@ another land beside them, and none waits behind a checksum run ([[appendices.tas
 - **One pending save per record.** A later Save hands a save that has not landed — queued, waiting, paused or failed —
   the newer data rather than queueing a second write behind it, so edits made while it waits land as one write. One
   made while the save is writing is written by the same job right after, against the version that write left, so it
-  never conflicts with it. A save that landed, or was cancelled, is history: the next Save is a job of its own. Pressed
+  never conflicts with it. A save that landed, or was canceled, is history: the next Save is a job of its own. Pressed
   before the document heard of the landing, it is still based on what the document handed that save, and is moved onto
   what was written; a document based on anything else went on since — it heard, then saved inline for a rename or read
   the file again — and its Save is written as it is (#648).
@@ -177,7 +177,7 @@ for a save the queued payload does. Every rule below is the borrow's.
   save stays and lands later, exactly as closing a borrowed document leaves the copy.
 - **Nothing drops a pending save on its own.** It leaves only by landing or by **Drop** — *Discard Save* in the Tasks
   dock, which asks first ([[borrowing#borrow-vs-delete]]). Drop returns an open document to the file, edits made since
-  the last Save included, as Revert did before any save was pending. Cancelling or clearing a save row is a Drop, and a
+  the last Save included, as Revert did before any save was pending. Canceling or clearing a save row is a Drop, and a
   sweep of the dock's finished or failed rows, or a restart's, leaves failed saves alone: each still holds the edits it
   could not land.
 - **The file changing meanwhile is the save's to judge.** While a save is pending, a change on disk reloads nothing: the
@@ -199,7 +199,7 @@ for a save the queued payload does. Every rule below is the borrow's.
 - [#497: feat(agent): saves as jobs — apply a payload to a record, off the GUI thread, persisted, Pending saves](https://github.com/borco/rehuco/issues/497)
 
 The status bar counts the saves not yet landed — *N pending saves*, hidden at zero — and a click on it opens the Tasks
-dock on its **Pending Saves** filter, the save rows neither done nor cancelled: waiting for the share, waiting for a
+dock on its **Pending Saves** filter, the save rows neither done nor canceled: waiting for the share, waiting for a
 lock, paused, or **failed on a conflict** with its payload kept. *Inspect Save* on one failed or waiting save opens its
 document — showing the row's edits, as every open of a record with a pending save does ([[sync#unlanded-save]]) — and,
 if the file changed since, the differences, then saves again; *Discard Save…* asks once, drops the rows, and returns
@@ -259,7 +259,7 @@ under its lock ([[sync#lock-file]]) — take, re-read, rewrite, write atomically
 the version before and the version after. It **checkpoints after every record**, so a job stopped by quitting, a
 pause or a share going away resumes with the records it has not done. **A record it cannot write is skipped and
 named, never fatal**: locked by another writer, unreachable, unreadable or locked as a document (a newer format, an
-unparseable file), or a legacy `.tc`, which is converted first. A run with skips ends failed, saying how many records
+unparsable file), or a legacy `.tc`, which is converted first. A run with skips ends failed, saying how many records
 were not renamed and listing them with the reason; **Retry** runs only those — safe, because a record already renamed
 reads as one with nothing to change. The cache follows each write through the notifier, so the Tag Browser's counts
 move as the job runs rather than all at once.

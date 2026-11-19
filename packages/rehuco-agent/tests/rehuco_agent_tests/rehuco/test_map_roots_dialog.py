@@ -133,7 +133,7 @@ def test_a_root_with_an_empty_name_is_shown_and_asked_about_by_its_location(
 
 
 def test_browse_puts_the_chosen_folder_in_the_line(mocker: MockerFixture, qtbot: QtBot, tmp_path: Path) -> None:
-    """*Browse...* fills the folder line with what the folder question answers, and leaves it when cancelled.
+    """*Browse...* fills the folder line with what the folder question answers, and leaves it when canceled.
 
     **Test steps:**
 
@@ -238,7 +238,7 @@ def test_a_relative_path_counts_as_not_filled(qtbot: QtBot) -> None:
     assert dialog.skipped == []
 
 
-def test_cancelling_reports_nothing(qtbot: QtBot, tmp_path: Path) -> None:
+def test_canceling_reports_nothing(qtbot: QtBot, tmp_path: Path) -> None:
     """Cancel maps and skips nothing, whatever the rows hold.
 
     **Test steps:**

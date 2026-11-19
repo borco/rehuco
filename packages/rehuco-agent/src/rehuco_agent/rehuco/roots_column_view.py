@@ -61,7 +61,7 @@ class RootsColumnView(QColumnView):
         """Give the column of roots the model while there are no roots, and take it back with the first one (#570).
 
         With no rows ``QColumnView`` has nothing to open a column on, so it shows its bare preview column, which has
-        no model: it is drawn grey, and :meth:`column_root_at_global` skips it, so the background of an empty catalog
+        no model: it is drawn gray, and :meth:`column_root_at_global` skips it, so the background of an empty catalog
         has no menu. That column is kept, and becomes the preview column once there are rows, which is the one item
         view here without a model (:meth:`__collapse_preview_column`).
         """
@@ -71,7 +71,7 @@ class RootsColumnView(QColumnView):
             return
         if model.rowCount() == 0:
             bare.setModel(model)
-            # a column made for rows fills its viewport with the base colour; the preview column does not
+            # a column made for rows fills its viewport with the base color; the preview column does not
             bare.viewport().setAutoFillBackground(True)
         elif bare.model() is not None:
             bare.setModel(None)
@@ -150,7 +150,7 @@ class RootsColumnView(QColumnView):
     def __make_reorderable(column: QAbstractItemView, drag: ReorderDrag) -> None:
         """Let the column that lists the roots take a root dragged by its grip to another place.
 
-        The drag is :class:`~rehuco_agent.rehuco.roots_grip.RootsGripFilter`'s, the card list's behaviour: the view's
+        The drag is :class:`~rehuco_agent.rehuco.roots_grip.RootsGripFilter`'s, the card list's behavior: the view's
         own drag and its drop line stay off, and the column only takes drops, every one of which the filter answers.
 
         :param column: the first column.

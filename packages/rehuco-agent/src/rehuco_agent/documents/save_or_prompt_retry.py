@@ -38,7 +38,7 @@ def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel, pending_save
     A save refused because the record's details changed on disk since it was read (:class:`~rehuco_core.RecordConflict`)
     opens :class:`~rehuco_agent.dialogs.record_conflict_dialog.RecordConflictDialog`: every value the two disagree on,
     saved with the value kept for each row, or the edits discarded -- either leaves nothing unsaved, so the gated
-    action goes on -- or cancelled, which aborts it like a cancelled retry.
+    action goes on -- or canceled, which aborts it like a canceled retry.
 
     A save-blocking lock raises ``ValueError`` from :meth:`~rehuco_core.RehuDocument.save`, but editing is disabled
     while a document is locked, so a lock never reaches a save call site here ([[data-model#write-integrity]]).
@@ -47,7 +47,7 @@ def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel, pending_save
     :param model: the document model to save.
     :param pending_saves: the window's save jobs, or ``None`` to write here.
     :returns: ``True`` once the document is saved or reverted -- or, as a job, left pending; ``False`` if the user
-        cancelled -- nothing was written, and the caller should abort whatever the save was gating (e.g. a close).
+        canceled -- nothing was written, and the caller should abort whatever the save was gating (e.g. a close).
     """
     if pending_saves is not None:
         return pending_saves.save_and_wait(parent, model)

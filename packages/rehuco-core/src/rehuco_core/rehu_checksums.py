@@ -20,7 +20,7 @@ out untouched and this module never learns a queue exists
 ([[appendices.task-queue#job-responsibility]]). Progress counts **bytes, not files** -- a tutorial is
 three eight-gigabyte videos, and a bar that moves three times in twenty minutes says nothing.
 
-**A cancelled run reports nothing it did not establish.** A verdict exists only once a file's whole
+**A canceled run reports nothing it did not establish.** A verdict exists only once a file's whole
 digest has been computed and compared, and the record is written **once, at the end**, through the
 atomic writer -- so a stop between chunks leaves the previous record intact, and can never manufacture
 a mismatch.
@@ -110,7 +110,7 @@ passes its control's method straight through (#204)."""
 ChecksumCheckpoint = Callable[[], None]
 """A run's place to stop: called before each file and between chunks, **never caught here**
 ([[appendices.task-queue#job-responsibility]]) -- whatever it raises travels out with the record
-unwritten, which is the whole cancellation contract. :meth:`~rehuco_core.tasks.TaskJobBase.checkpoint`
+unwritten, which is the whole cancelation contract. :meth:`~rehuco_core.tasks.TaskJobBase.checkpoint`
 is exactly this shape."""
 
 
@@ -277,7 +277,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         **An entry no resource's content could ever include is dropped** (#254) -- a ``.orig`` backup, a
         junk-glob match, a nested record's own bookkeeping, all of them adopted under the coverage rule
         this replaced. Decided before anything is read, so a pruned entry is not hashed, not counted
-        towards the progress denominator, and not reported ``missing``; decided from the **name**, so a
+        toward the progress denominator, and not reported ``missing``; decided from the **name**, so a
         file that is merely deleted keeps its entry. Freshness does not protect one either: skipping a
         re-read is what ``stale_after`` is for, and an entry that was never content has nothing to
         re-read.
@@ -293,7 +293,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         **A resource with no record but a legacy manifest beside it is verified against that** (#243):
         the seeded entries carry a hash and no date, so every rule above applies to them unchanged --
         which is the whole point of seeding entries rather than writing a second kind of run. The
-        manifest is **retired** afterwards (#259, :meth:`__retire_seeded_manifests`), the record having
+        manifest is **retired** afterward (#259, :meth:`__retire_seeded_manifests`), the record having
         just been written from it.
 
         :returns: what the run established.
@@ -434,7 +434,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
 
         Only names the enumeration did **not** answer are collected, which is nothing at all for a record
         written under the current rule -- so the ordinary run pays one set lookup per entry and no extra
-        listing. The selection is honoured: *Verify Selection* over three rows may not quietly rewrite
+        listing. The selection is honored: *Verify Selection* over three rows may not quietly rewrite
         the two hundred it was not shown, the same restraint a targeted generate keeps.
 
         :returns: name to the raw entry carrying it, the first of each name, in the record's own order.
@@ -454,7 +454,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         (:mod:`rehuco_core.checksum_claim_moves`), so the failure between the two duplicates a claim
         instead of destroying it.
 
-        A record and a same-directory neighbour of the other format share one ``.checksum``
+        A record and a same-directory neighbor of the other format share one ``.checksum``
         (``info.rehu`` and a leftover ``info.tc`` both keep their claims in ``info.checksum``), so a
         covering record resolving to *this run's own record* is no move at all and is dropped here rather
         than written and then pruned.
@@ -773,7 +773,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         This run's own window and instant applied to :func:`~rehuco_core.is_checksum_fresh`, which is
         where the rule itself lives (#266): the agent's file browser draws a glyph meaning *a new check
         would do nothing*, and a second copy of the arithmetic is exactly how that glyph would come to
-        promise something this run does not honour.
+        promise something this run does not honor.
         """
         return is_checksum_fresh(entry, self.__stale_after, self.__now, self.__trusted_since)
 
@@ -1080,7 +1080,7 @@ def forget_checksums(rehu_path: Path, *, only: Collection[str]) -> tuple[str, ..
 
     The third operation over a record, beside generate and verify, and the only one that **removes**.
     It takes the same ``only`` selection they take -- and takes **names, never a status**: which entries
-    should go is the caller's judgement, made against what it is showing, and this stays the place that
+    should go is the caller's judgment, made against what it is showing, and this stays the place that
     knows the format rather than the place that knows the policy. The surface that offers it scopes
     itself to ``missing`` rows ([[data-model#checksums]], #244), because dropping the entry of a file
     that is still on disk achieves nothing -- the next verify adopts it straight back.

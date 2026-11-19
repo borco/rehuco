@@ -104,8 +104,8 @@ class TaskRowDelegate(QStyledItemDelegate):
         :param painter: the painter to draw with.
         :param cell: the rect to draw in -- the whole item's, or a slot within it.
         :param text: the text to draw.
-        :param alignment: how to place it horizontally; vertically it is always centred. A progress
-            bar's label is centred on its cell, a label or a failure reason starts at the left.
+        :param alignment: how to place it horizontally; vertically it is always centered. A progress
+            bar's label is centered on its cell, a label or a failure reason starts at the left.
         """
         rect = cell.adjusted(TEXT_HPADDING, 0, -TEXT_HPADDING, 0)
         elided = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, rect.width())

@@ -98,7 +98,7 @@ def excessive_entry_reason(data: object) -> str | None:
 
     Walked with an explicit stack rather than recursion, and each *physical* container is visited
     **once** (by identity). For JSON the two are just belt-and-braces against unbounded depth; for YAML
-    they are the whole point. ``yaml.safe_load`` honours anchors and aliases, so a few hundred bytes of
+    they are the whole point. ``yaml.safe_load`` honors anchors and aliases, so a few hundred bytes of
     ``.tc`` can parse into a shared DAG whose logical entry count is exponential in its size (the
     billion-laughs shape), and a self-referencing anchor parses into a genuine **cycle** -- a naive tree
     walk takes exponential time on the first and never terminates on the second, turning this very check

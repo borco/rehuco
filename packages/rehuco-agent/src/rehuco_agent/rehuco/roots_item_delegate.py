@@ -58,9 +58,9 @@ class RootsItemDelegate(RowBandDelegate):
     """Draws what :class:`~borco_pyside.widgets.RowBandDelegate` draws, plus the row's glyph and the column view's
     arrow.
 
-    The glyph path is the model's :attr:`~RootsFolderModel.ICON_PATH_ROLE`, recoloured to the text colour so it
-    reads on the selection band as the text does. A row the model says is greyed
-    (:attr:`~RootsFolderModel.GREYED_ROLE`) is drawn in the palette's disabled colours while staying selectable --
+    The glyph path is the model's :attr:`~RootsFolderModel.ICON_PATH_ROLE`, recolored to the text color so it
+    reads on the selection band as the text does. A row the model says is grayed
+    (:attr:`~RootsFolderModel.GRAYED_ROLE`) is drawn in the palette's disabled colors while staying selectable --
     which an unreachable root has to be, so its card can still be edited.
 
     **A covered file shows its checksum state at the right edge** (#457): the state's icon, right-aligned in the
@@ -105,7 +105,7 @@ class RootsItemDelegate(RowBandDelegate):
         try:
             color = self.paint_band(painter, opt, index)
             selected = QStyle.StateFlag.State_Selected in opt.state
-            if index.data(RootsFolderModel.GREYED_ROLE) and not selected:
+            if index.data(RootsFolderModel.GRAYED_ROLE) and not selected:
                 # pylint infers QStyleOptionViewItem.palette on some runs and not others
                 color = opt.palette.color(  # pylint: disable=no-member,useless-suppression
                     QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text
@@ -130,12 +130,12 @@ class RootsItemDelegate(RowBandDelegate):
     ) -> QColor:
         """Draw a file's state icon at the right edge of ``rect``, and keep the name clear of it.
 
-        :param painter: the painter, its pen already the row's colour.
+        :param painter: the painter, its pen already the row's color.
         :param rect: what the row has left, padded; its right edge moves in to leave room for the icon.
         :param checksum: the file's state.
-        :param color: the row's text colour.
+        :param color: the row's text color.
         :param selected: whether the row is selected, which keeps the band's own ink.
-        :returns: the colour the name is drawn in: the row's, or the warning ink of a bad file.
+        :returns: the color the name is drawn in: the row's, or the warning ink of a bad file.
         """
         ink = color
         warning = None if selected else warning_ink(checksum)
@@ -174,11 +174,11 @@ class RootsItemDelegate(RowBandDelegate):
         """Draw what is in a row between its grip and its arrow: the glyph, then the name. What a subclass changes to
         draw a different row.
 
-        :param painter: the painter, its pen already the row's colour.
-        :param opt: the initialised option.
+        :param painter: the painter, its pen already the row's color.
+        :param opt: the initialized option.
         :param index: the row.
         :param rect: what the row has left, padded.
-        :param color: the row's text colour.
+        :param color: the row's text color.
         """
         path = index.data(RootsFolderModel.ICON_PATH_ROLE)
         if isinstance(path, str):
@@ -190,7 +190,7 @@ class RootsItemDelegate(RowBandDelegate):
         painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided)
 
     def draw_icon(self, painter: QPainter, path: str, color: QColor, rect: QRect) -> None:
-        """Draw a glyph recoloured to ``color``.
+        """Draw a glyph recolored to ``color``.
 
         :param painter: the painter.
         :param path: the glyph's resource path.
@@ -204,7 +204,7 @@ class RootsItemDelegate(RowBandDelegate):
         """Draw the style's column-view arrow at the right of a row.
 
         :param painter: the painter to draw with.
-        :param opt: the initialised option.
+        :param opt: the initialized option.
         :param rect: the row's rect, padded.
         """
         arrow = QStyleOptionViewItem(opt)

@@ -88,7 +88,7 @@ def read_stored_strings(value: object) -> tuple[str, ...]:
     """Coerce a value read back out of `QSettings` into the strings it was stored as.
 
     Kept here rather than in either section that reads a list, because what it allows for is the
-    *backend's* behaviour and not any one setting's: the ini format writes a single-element list as a
+    *backend's* behavior and not any one setting's: the ini format writes a single-element list as a
     plain string and hands it back that way, so a bare ``str`` is one entry rather than garbage. A
     non-string inside a stored list is skipped rather than stringified -- reading a stray ``7`` as
     ``"7"`` would invent an entry nobody typed. Anything else -- absent, or of a type a list was never

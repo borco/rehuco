@@ -37,7 +37,7 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 - **Move a record to another root**: a rename on one volume, a checksum-verified copy that resumes across volumes
   (#339).
 - **The catalog follows the disk**: a record saved, renamed or deleted anywhere updates its row, the Roots view and an
-  open document with no scan; a root that cannot be reached is greyed (#511).
+  open document with no scan; a root that cannot be reached is grayed (#511).
 - **The local node runs beside the agent**, switched on *Settings* > *System Integration*, with its state in the status
   bar (#506).
 - **Unsaved changes can be kept across a quit** (*Settings* > *Session*), and reopen with their documents (#497).
@@ -157,7 +157,7 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   the folder lives on before the folder. The selected root's **name** and **storage** are edited in the pane beside the columns
   — a local folder, a network share, a removable drive or a CD or DVD, each with its own icon. A root that cannot be
   listed says so: a deleted local folder is struck through, and a share, drive or disc that is away keeps its icon
-  greyed out. Remove Root asks first and says how many cached entries go. A root's right-click menu has the folder filter and Open in file
+  grayed out. Remove Root asks first and says how many cached entries go. A root's right-click menu has the folder filter and Open in file
   explorer, then the moves, then Remove Root, and a root's row shows its folder under its name. A checksum file's menu
   has **Verify checksums**. A folder's has **Show only rehu in this folder**, which filters the current browser.
   `F5` lists the open columns again, a folder deleted outside the app disappears, and the selection falls back to
@@ -228,7 +228,7 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   floating docks included.
 - The **Content Images** panel and the measured image count include a reference pack's loose images, not
   only those inside its archives. Folders and archives sort together, ignoring case, the pack's own
-  folder first. Both honour the Files page's excluded-files globs, as checksums do.
+  folder first. Both honor the Files page's excluded-files globs, as checksums do.
 
 ### Changed
 
@@ -248,7 +248,7 @@ released becomes the body of the GitHub Release, so each entry is written to be 
   all in the app's folder beside it. **The first launch starts from the default layout with no remembered
   documents**: what the `.ini` held is not carried over. Its old `[documents]`, `[main_window]`,
   `[default_layout]` and `[preview_layout]` sections are no longer read and are left in place; delete them by hand
-  to shrink the file. An older build started afterwards still finds them, and opens with that old session and
+  to shrink the file. An older build started afterward still finds them, and opens with that old session and
   layout. Preferences stay in the `.ini`.
 - **Open Recent and the restored session no longer keep files that are gone.** A rehu deleted since the last run
   is forgotten at start instead of coming back as an empty, locked *missing* tab, and drops out of `File` > `Open
@@ -394,7 +394,7 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 The first release to reach PyPI, so `pip install rehuco-agent` and `uv tool install rehuco-agent` now get
 the application instead of the `0.0.1` name-reservation stub that had been sitting there. The application
-is byte-for-byte what `0.1.0` shipped — no fixes, no new behaviour, and the installers attached here are
+is byte-for-byte what `0.1.0` shipped — no fixes, no new behavior, and the installers attached here are
 rebuilt from the same sources. What is new is the publishing path itself.
 
 ### Changed

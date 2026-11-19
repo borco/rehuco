@@ -16,7 +16,7 @@ own: :class:`~rehuco_core.MoveRecordJob` runs them in order, and checks between 
 - :meth:`VerifiedCopy.detach_source` -- inside the rename barrier, and so on the GUI thread: the source checked to be
   as it was reconciled, by one listing, and its ``.rehu`` and ``.checksum`` removed, so it stops being a record;
 - :func:`remove_leftovers` -- the rest of the source removed, off the GUI thread again;
-- :meth:`VerifiedCopy.remove_copy` -- what a cancelled copy wrote, taken away again.
+- :meth:`VerifiedCopy.remove_copy` -- what a canceled copy wrote, taken away again.
 
 What one copy wrote is kept in a :class:`CopyJournal` its job saves, so a copy stopped by a quit picks up where it was,
 and a cancel removes exactly what it wrote and nothing that was there before. The journal names each entry relative to
@@ -168,7 +168,7 @@ def check_move_source(
 
 @dataclass
 class CopyJournal:
-    """What one verified copy wrote, kept by its job so a stopped copy resumes and a cancelled one can be undone.
+    """What one verified copy wrote, kept by its job so a stopped copy resumes and a canceled one can be undone.
 
     Each entry is spelled relative to the folder the record lands in, POSIX-separated -- ``..`` for a parent the copy
     had to make -- so the journal holds wherever that folder is mapped (:class:`VerifiedCopy` spells and reads them).
@@ -542,7 +542,7 @@ class VerifiedCopy:
         return Relocation(reconciled.pairs)
 
     def remove_copy(self, journal: CopyJournal) -> list[str]:
-        """Take away what a copy wrote and made -- a cancelled copy's undo, the source untouched.
+        """Take away what a copy wrote and made -- a canceled copy's undo, the source untouched.
 
         :param journal: what the copy wrote and made.
         :returns: what could not be removed, as a sentence per item.

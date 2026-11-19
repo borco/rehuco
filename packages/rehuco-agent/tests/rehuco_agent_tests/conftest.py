@@ -351,7 +351,7 @@ def no_links_between_roots(mocker: MockerFixture) -> None:
 def warm_the_markdown_extension_cache() -> None:
     """Resolve Python-Markdown's extensions once, while the real filesystem is still visible (#262).
 
-    ``markdown`` looks its extensions up through ``importlib.metadata`` entry points and memoises the
+    ``markdown`` looks its extensions up through ``importlib.metadata`` entry points and memoizes the
     result in a process-wide ``lru_cache`` -- deliberately, "only load extension entry_points once".
     Reading entry points means reading ``*.dist-info/entry_points.txt`` through ``Path.read_text``,
     and a great many tests here patch exactly that to serve a document's JSON from a fake path. Should
@@ -732,7 +732,7 @@ def isolate_conversion_backups_dialog_settings(mocker: MockerFixture) -> FakeSet
     Under ``make cov-parallel`` that became several worker processes writing one .ini at once, which is
     where a worker died mid-``load`` with a fatal fault rather than a test failure.
 
-    Nothing patched it before: unlike its neighbours the dialog has no settings *page*, so it fell
+    Nothing patched it before: unlike its neighbors the dialog has no settings *page*, so it fell
     outside the section-by-section isolation above and was reached only through the dialog's own tests.
 
     :returns: the in-memory stand-in the dialog loads from and saves to -- the same object across one
@@ -748,7 +748,7 @@ def isolate_tasks_page_settings(mocker: MockerFixture) -> FakeSettings:
     """Isolate every test building a `TasksPage` from real persistent storage (#262).
 
     `TasksSettings` is read where it is needed rather than held as a process-wide singleton, so unlike
-    its neighbours above there is no cache to clear -- but the page still reaches storage through its
+    its neighbors above there is no cache to clear -- but the page still reaches storage through its
     own import of ``persistent_settings``, and the settings dialog asks it whether it is dirty on every
     edit. Each ask built a ``QSettings`` over the developer's real ``.ini`` and re-parsed it: 2372 real
     reads in one profiled run, and the second-largest such leak after `ChecksumsPage`.
@@ -970,7 +970,7 @@ def isolate_settings_dialog_settings(mocker: MockerFixture) -> FakeSettings:
 def clipboard(qapp: object) -> Iterator[None]:
     """Hand a test the system clipboard and put back what the developer had on it (#485).
 
-    A test that copies an image writes the real clipboard when the platform is not offscreen; clearing it afterwards
+    A test that copies an image writes the real clipboard when the platform is not offscreen; clearing it afterward
     would still lose what was there, and a clear after an assertion is skipped by a failure. This restores every format
     held at the start, in a ``finally``, whatever the test did -- or clears it when nothing was held, which is every
     test under the offscreen platform: a process that exits with a Python-made ``QMimeData`` on the clipboard

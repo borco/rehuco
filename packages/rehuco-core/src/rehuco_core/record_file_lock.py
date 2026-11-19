@@ -3,7 +3,7 @@
 
 Every write to a record takes ``<record>.lock`` beside it -- ``info.rehu.lock`` beside ``info.rehu`` -- created with an
 exclusive create, which on SMB2 is a server-side atomic create and the one locking primitive Windows, macOS and Linux
-clients all honour (#503). **The lock is the directory entry, never an open handle**: it is created, written with who
+clients all honor (#503). **The lock is the directory entry, never an open handle**: it is created, written with who
 holds it (``user@host pid app time``) and closed in one go, and read back when someone else finds it; a handle kept
 open would outlive its holder by a minute on the macOS client. It is read with delete shared: a plain Windows open of
 it denies its holder the delete that releases it, and every writer then waits out the TTL.

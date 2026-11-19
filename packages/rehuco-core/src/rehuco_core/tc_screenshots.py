@@ -239,7 +239,7 @@ class TcScreenshotPlan:
     @property
     def collision(self) -> bool:
         """Whether some image was left alone because its slot was taken -- the one outcome of a
-        conversion worth a human's attention afterwards ([[acquisition-tooling#convert-mechanics]])."""
+        conversion worth a human's attention afterward ([[acquisition-tooling#convert-mechanics]])."""
         return any(image.reason is ScreenshotSkipReason.COLLISION for image in self.unconverted)
 
 
@@ -417,7 +417,7 @@ class TcScreenshotScanner:
             renames.append(ScreenshotRename(f"{self.__stem}{match.slot:02d}{Path(winner).suffix}", winner))
             unconverted.extend(UnconvertedScreenshot(name, ScreenshotSkipReason.COLLISION) for name in variants)
         # slots are handed out in pattern order, which is not slot order -- a bare `05` under the third
-        # pattern is decided before an `image-01` under the fifth -- so the plan is sorted afterwards
+        # pattern is decided before an `image-01` under the fifth -- so the plan is sorted afterward
         return TcScreenshotPlan(
             tuple(sorted(renames, key=lambda rename: rename.new_name)),
             tuple(sorted(unconverted, key=lambda image: image.filename)),

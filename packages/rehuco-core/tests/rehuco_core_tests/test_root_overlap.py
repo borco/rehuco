@@ -182,7 +182,7 @@ def test_the_message_names_a_root_with_an_empty_label_by_its_folder_alone(enclos
 
     **Test steps:**
 
-    * build an overlap each way with a root labelled empty
+    * build an overlap each way with a root labeled empty
     * verify its message
     """
     stored = MappedRoot(uuid4(), "", location_at(Path("T:/lib")), Path("T:/lib"))

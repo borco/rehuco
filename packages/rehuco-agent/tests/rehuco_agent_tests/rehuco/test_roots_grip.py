@@ -112,13 +112,13 @@ def hover(viewport: QWidget, position: QPoint) -> None:
     QApplication.sendEvent(viewport, move)
 
 
-def test_the_grip_is_two_columns_of_three_dots_in_the_text_colour() -> None:
-    """The handle reads as a handle: dots, in the row's colour, centred in the band, and nothing outside it.
+def test_the_grip_is_two_columns_of_three_dots_in_the_text_color() -> None:
+    """The handle reads as a handle: dots, in the row's color, centered in the band, and nothing outside it.
 
     **Test steps:**
 
     * paint a grip in a band on a white image
-    * verify there are dots inside the band, of a colour near the text colour, and none beyond it
+    * verify there are dots inside the band, of a color near the text color, and none beyond it
     """
     image = QImage(40, 24, QImage.Format.Format_RGB32)
     image.fill(QColor("white"))
@@ -223,7 +223,7 @@ def test_pressing_and_moving_a_grip_drags_its_root_whose_place_is_the_shadow_mea
     * replace ``QDrag`` so the drag records what the column shows instead of blocking
     * press and move the second root's grip
     * verify one move drag carrying the second root, the column showing the shadow at its place meanwhile, and the
-      roots back in order afterwards
+      roots back in order afterward
     """
     view, model = roots
     viewport = first_column(view).viewport()

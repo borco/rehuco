@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 
 
 class ScaledImage(QWidget):
-    """Draws an image no wider than itself and no larger than it is, centred, with the height that keeps its
+    """Draws an image no wider than itself and no larger than it is, centered, with the height that keeps its
     proportions.
 
     Its width comes from the layout and never from the image -- the policy is ``Ignored`` horizontally and the minimum

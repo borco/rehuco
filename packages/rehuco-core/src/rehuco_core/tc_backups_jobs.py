@@ -8,7 +8,7 @@ does the same for the forward direction.
 **Not safely interruptible, and does not resume.** One resource, one call: the underlying operation
 either completes or never starts, and there is no natural division point inside it for
 :meth:`~rehuco_core.tasks.TaskJobBase.checkpoint` to divide. A pause or cancel asked of a *running* one
-has no effect until it returns on its own; a **queued** one is cancelled outright and never starts
+has no effect until it returns on its own; a **queued** one is canceled outright and never starts
 ([[appendices.task-queue#job-responsibility]]). That is the whole of what #192's "cancel stops after the
 current resource" means here too.
 

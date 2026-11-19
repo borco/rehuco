@@ -101,15 +101,15 @@ def test_end_of_line_shows_one_platform_independent_glyph(qtbot: QtBot, sequence
     assert representation == EOL_REPRESENTATION
 
 
-def test_end_of_line_glyph_uses_the_disabled_text_colour(qtbot: QtBot) -> None:
-    """The EOL glyph is coloured from the current theme's disabled ``Text`` colour, not left in the
-    ordinary text colour (#74).
+def test_end_of_line_glyph_uses_the_disabled_text_color(qtbot: QtBot) -> None:
+    """The EOL glyph is colored from the current theme's disabled ``Text`` color, not left in the
+    ordinary text color (#74).
 
     **Test steps:**
 
     * construct a `MarkdownEdit`
-    * verify the EOL representation's colour matches the application palette's disabled ``Text``
-      colour, encoded as `setRepresentationColour` expects (0xAARRGGBB)
+    * verify the EOL representation's color matches the application palette's disabled ``Text``
+      color, encoded as `setRepresentationColour` expects (0xAARRGGBB)
     """
     editor = MarkdownEdit()
     qtbot.addWidget(editor)
@@ -117,24 +117,24 @@ def test_end_of_line_glyph_uses_the_disabled_text_colour(qtbot: QtBot) -> None:
     color = QApplication.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
     expected_argb = (color.alpha() << 24) | (color.red() << 16) | (color.green() << 8) | color.blue()
 
-    # & 0xFFFFFFFF: the Scintilla getter returns a signed 32-bit int, so a colour with the high
+    # & 0xFFFFFFFF: the Scintilla getter returns a signed 32-bit int, so a color with the high
     # (alpha) bit set comes back negative -- the same bit pattern as the unsigned expected value
     assert editor.representationColour("\n") & 0xFFFFFFFF == expected_argb
 
 
-def test_end_of_line_glyph_colour_follows_a_live_palette_change(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """A theme switch (palette change) re-colours the EOL glyph immediately, not just at
+def test_end_of_line_glyph_color_follows_a_live_palette_change(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A theme switch (palette change) re-colors the EOL glyph immediately, not just at
     construction (#74).
 
     **Test steps:**
 
     * construct a `MarkdownEdit`
-    * spy on the colour setter and change the application palette for real
+    * spy on the color setter and change the application palette for real
     * verify it ran again
     """
     editor = MarkdownEdit()
     qtbot.addWidget(editor)
-    set_representation_colour = mocker.spy(editor, "setRepresentationColour")
+    set_representation_color = mocker.spy(editor, "setRepresentationColour")
     # pylint: disable=duplicate-code  # same drive-a-real-palette-change dance as the handler tests
     app = QApplication.instance()
     assert isinstance(app, QApplication)
@@ -146,7 +146,7 @@ def test_end_of_line_glyph_colour_follows_a_live_palette_change(qtbot: QtBot, mo
         app.setPalette(palette)
         # pylint: enable=duplicate-code
 
-        set_representation_colour.assert_called()
+        set_representation_color.assert_called()
     finally:
         app.setPalette(original_palette)
 

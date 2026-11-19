@@ -53,7 +53,7 @@ class ContentSizedTableView(QTableView):
     @override
     def setModel(self, model: QAbstractItemModel | None) -> None:  # noqa: N802  (Qt API name)
         # the rows are what this widget's height is made of, so every change to them re-advertises it.
-        # Wired here rather than in __init__ because a view is handed its model afterwards -- and may be
+        # Wired here rather than in __init__ because a view is handed its model afterward -- and may be
         # handed a second one, which is why the previous model is let go of first.
         previous = self.model()
         if previous is not None:

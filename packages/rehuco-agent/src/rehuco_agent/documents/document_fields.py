@@ -396,7 +396,7 @@ def build_document_form(
     # a current type naming no installed plugin is still offered so the row shows what the document
     # *is*, but disabled: leaving it behind is one-way, there is no block to switch back into (#310).
     # The empty type is not that case -- a fresh document's placeholder, shown checked and plain, not
-    # greyed as though something were missing
+    # grayed as though something were missing
     type_disabled_choices: tuple[str, ...] = ()
     if model.resource_type not in type_choices:
         type_choices = [model.resource_type, *type_choices]
@@ -539,7 +539,7 @@ def build_document_form(
 
         :returns: the total in whole seconds, or ``None`` when there is nothing to measure -- a document
             with no local path, a probe backend that cannot run here at all, or a resource part of which
-            will not read (#245). Neither of the last two is a ``0``: core raises rather than totalling
+            will not read (#245). Neither of the last two is a ``0``: core raises rather than totaling
             one, because a misconfigured backend, an offline branch and a tutorial holding no video
             would otherwise be the same answer.
         """

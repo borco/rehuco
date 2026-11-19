@@ -171,7 +171,7 @@ def test_a_custom_extension_set_changes_what_is_summed(mocker: MockerFixture) ->
 
 def test_a_tutorial_with_no_video_measures_zero(mocker: MockerFixture) -> None:
     """No video is a genuine ``0``, not an error -- a resource may hold none. An unreachable resource is
-    a different answer, and refuses rather than totalling one (#245).
+    a different answer, and refuses rather than totaling one (#245).
 
     **Test steps:**
 
@@ -183,7 +183,7 @@ def test_a_tutorial_with_no_video_measures_zero(mocker: MockerFixture) -> None:
     assert content_duration(REHU_PATH, FakeProbe()) == 0
 
 
-def test_a_resource_that_will_not_read_in_full_is_refused_rather_than_totalled(mocker: MockerFixture) -> None:
+def test_a_resource_that_will_not_read_in_full_is_refused_rather_than_totaled(mocker: MockerFixture) -> None:
     """A runtime summed over the branches that happened to answer is not this tutorial's runtime, and it
     reads exactly like one -- the same refusal the size scan makes over the same walk (#245).
 
@@ -191,7 +191,7 @@ def test_a_resource_that_will_not_read_in_full_is_refused_rather_than_totalled(m
 
     * make the enumeration answer with one video and a branch it could not list
     * measure
-    * verify it refused, naming the branch, rather than totalling the video alone
+    * verify it refused, naming the branch, rather than totaling the video alone
     """
     mocker.patch(
         f"{MODULE}.enumerate_content_files",
@@ -209,7 +209,7 @@ def test_an_unreadable_file_costs_its_own_seconds_and_no_more(mocker: MockerFixt
     **Test steps:**
 
     * enumerate three videos, one of which the probe cannot read
-    * verify the scan still ran to the end and totalled the two it could read
+    * verify the scan still ran to the end and totaled the two it could read
     """
     mock_content_files(mocker, ["a.mp4", "broken.mp4", "c.mp4"])
     probe = FakeProbe({"a.mp4": 10.0, "c.mp4": 5.0})
@@ -641,7 +641,7 @@ def ffprobe_output(duration: str | None, stream: dict[str, object] | None = None
         param("[]", id="not-an-object"),
     ],
 )
-def test_ffprobe_treats_unparseable_output_as_an_unreadable_file(mocker: MockerFixture, stdout: str) -> None:
+def test_ffprobe_treats_unparsable_output_as_an_unreadable_file(mocker: MockerFixture, stdout: str) -> None:
     """Both of ``ffprobe``'s ways of saying *no duration here* mean this file contributes nothing.
 
     **Test steps:**

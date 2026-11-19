@@ -3,7 +3,7 @@
 The queue is a **real** :class:`~rehuco_core.TaskQueue` and the runs themselves are mocked: what these
 tests are about is that a click *enqueues* instead of hashing on the GUI thread, which is only worth
 asserting against the engine that would actually have run it. The findings then travel back the way
-they do in the app -- off the job, through the queue's listener, marshalled onto the GUI thread -- so
+they do in the app -- off the job, through the queue's listener, marshaled onto the GUI thread -- so
 the banner assertions exercise that path rather than a shortcut around it.
 """
 
@@ -60,7 +60,7 @@ TIMEOUT: Final = 5000
 class ScopeRecordingHandler(logging.Handler):
     """Keeps the **scopes** of every record it is handed, so a test can assert where one was placed.
 
-    Resolved in ``emit`` rather than afterwards, because that is the only place it is correct: a
+    Resolved in ``emit`` rather than afterward, because that is the only place it is correct: a
     handler runs synchronously on the thread that logged, and the scopes live in that thread's context
     ([[appendices.logging#scopes]]) -- which here is the worker's copy of the enqueuer's.
 
@@ -79,16 +79,16 @@ class ScopeRecordingHandler(logging.Handler):
         self.__scopes.append(LogScope.of(record))
 
 
-def marshaller_of(actions: ChecksumActions) -> ChecksumActions.Marshaller:
-    """Return the actions' private marshaller, whose signal is the wake the coalescing is about.
+def marshaler_of(actions: ChecksumActions) -> ChecksumActions.Marshaler:
+    """Return the actions' private marshaler, whose signal is the wake the coalescing is about.
 
     Private by design -- nothing outside the class has a reason to emit one -- but it is the only place
     a wake is observable, and *how often it fires* is exactly what these tests are for.
 
     :param actions: the actions to inspect.
-    :returns: the marshaller.
+    :returns: the marshaler.
     """
-    return actions._ChecksumActions__marshaller  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return actions._ChecksumActions__marshaler  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def snapshot(serial: int, done: int, state: JobState = JobState.RUNNING) -> JobStatus:
@@ -228,7 +228,7 @@ def fixture_wakes(actions: ChecksumActions) -> list[object]:
     :returns: a list gaining one entry per wake.
     """
     counted: list[object] = []
-    marshaller_of(actions).queue_changed.connect(lambda: counted.append(None))
+    marshaler_of(actions).queue_changed.connect(lambda: counted.append(None))
     return counted
 
 
@@ -628,7 +628,7 @@ def test_a_second_run_replaces_the_first_s_finding(
     assert actions.finding_clean
 
 
-OTHER_INFO_PATH: Final = Path.cwd() / "fake" / "library" / "modelling" / "info.rehu"
+OTHER_INFO_PATH: Final = Path.cwd() / "fake" / "library" / "modeling" / "info.rehu"
 
 
 def load_another_record(mocker: MockerFixture, model: RehuDocumentModel) -> None:
@@ -637,7 +637,7 @@ def load_another_record(mocker: MockerFixture, model: RehuDocumentModel) -> None
     :param mocker: pytest-mock fixture.
     :param model: the model.
     """
-    other = RehuDocument({"type": "Tutorial", "sources": [{"title": "Modelling", "primary": True}]}, OTHER_INFO_PATH)
+    other = RehuDocument({"type": "Tutorial", "sources": [{"title": "Modeling", "primary": True}]}, OTHER_INFO_PATH)
     mocker.patch(
         "rehuco_agent.documents.record_reader.RecordReader.read_record",
         return_value=LoadedRecord(other, None, tuple(other.lock_reasons), None),
@@ -707,12 +707,12 @@ def test_a_run_finishing_after_another_record_was_loaded_reports_nothing_on_it( 
 def test_a_run_that_was_stopped_part_way_says_nothing(
     qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions, queue: TaskQueue
 ) -> None:
-    """A cancelled run established nothing, so there is nothing to report ([[data-model#checksums]]).
+    """A canceled run established nothing, so there is nothing to report ([[data-model#checksums]]).
 
     **Test steps:**
 
     * hold a verify inside its call until the cancel has landed, then let it checkpoint into it
-    * check the job is cancelled and no finding was raised
+    * check the job is canceled and no finding was raised
     """
     entered = Event()
     proceed = Event()
@@ -722,12 +722,12 @@ def test_a_run_that_was_stopped_part_way_says_nothing(
 
         The wait is what makes the cancel land first. Called straight away instead, ``checkpoint``
         returns ``None`` on a run nobody has stopped yet -- and that ``None`` goes back to the job as
-        its report, which dies on ``report.seed`` and records the job *failed* rather than cancelled.
+        its report, which dies on ``report.seed`` and records the job *failed* rather than canceled.
         The main thread nearly always got its cancel in first, until a cov-parallel run put every core
         under load and the worker started winning (#262).
 
         :param kwargs: the job's call, for the ``checkpoint`` it passes down.
-        :returns: never -- ``checkpoint`` raises `JobCancelled` by the time it is called.
+        :returns: never -- ``checkpoint`` raises `JobCanceled` by the time it is called.
         """
         entered.set()
         proceed.wait(TIMEOUT / 1000)
@@ -740,7 +740,7 @@ def test_a_run_that_was_stopped_part_way_says_nothing(
     queue.cancel(queue.jobs()[0].serial)
     proceed.set()
 
-    qtbot.waitUntil(lambda: queue.jobs()[0].state in {JobState.CANCELLED, JobState.DONE}, timeout=TIMEOUT)
+    qtbot.waitUntil(lambda: queue.jobs()[0].state in {JobState.CANCELED, JobState.DONE}, timeout=TIMEOUT)
 
     assert actions.finding == ""
 
@@ -757,7 +757,7 @@ def test_a_first_generate_turns_verify_on(
     **Test steps:**
 
     * generate over a resource with no record, with the record appearing as the run finishes
-    * check Verify is enabled afterwards
+    * check Verify is enabled afterward
     """
     record_exists = False
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH or record_exists)
@@ -781,7 +781,7 @@ def test_a_first_generate_turns_verify_on(
 def test_a_resource_with_only_a_legacy_manifest_is_offered_verify(
     mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue, delete_at_teardown: DeleteAtTeardown
 ) -> None:
-    """A ``.sfv`` beside the record is something to verify against, so Verify is not greyed out (#243).
+    """A ``.sfv`` beside the record is something to verify against, so Verify is not grayed out (#243).
 
     **Test steps:**
 

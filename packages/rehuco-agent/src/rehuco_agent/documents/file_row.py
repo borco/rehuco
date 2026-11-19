@@ -55,7 +55,7 @@ class FileChecksumState(StrEnum):
     """The entry's hash sits under a key this build cannot read (#303). Distinct from
     :data:`MISSING` and ``mismatched``: this build has made **no claim at all** about the bytes and never
     re-hashes them -- drawing it as a mismatch would assert a check that never happened, and drawing it
-    as :data:`MISSING` would invite a generate that overwrites a neighbour's entry. Never actually
+    as :data:`MISSING` would invite a generate that overwrites a neighbor's entry. Never actually
     written by this build ([[data-model#checksums]]), so an entry resting here came from elsewhere.
     Carries no ``verified`` stamp either, so there is no ``old_`` pair."""
 
@@ -120,7 +120,7 @@ class FilesRows:  # pylint: disable=too-many-instance-attributes
         (#245): drawing an empty table over an offline mount
         ([[mounts-and-storage#offline-mounts]]) would say this resource's folder is empty.
     :param at_root: whether this is the resource's own directory, which is as far up as the browser
-        goes -- what hides the ``..`` row and greys the up action.
+        goes -- what hides the ``..`` row and grays the up action.
     :param subdirectories_navigable: whether the subdirectories here may be entered. ``False`` where a
         *foreign* directory-scoped record sits in this listing: everything beside it is that resource's
         wholesale (#254), so the way in is to open that record, which is exactly the row offered.

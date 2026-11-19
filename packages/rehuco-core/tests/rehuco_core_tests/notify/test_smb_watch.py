@@ -132,7 +132,7 @@ class Server:  # pylint: disable=too-few-public-methods  # the one factory smbpr
     """Stands in for the server's answers: each ``FileSystemWatcher`` the watch makes takes the next scripted answer,
     and once they run out it waits for one that never comes.
 
-    An answer is a list of entries, ``None`` for a request cancelled under the watch, or an exception its start raises.
+    An answer is a list of entries, ``None`` for a request canceled under the watch, or an exception its start raises.
     """
 
     def __init__(self) -> None:
@@ -341,16 +341,16 @@ def test_an_empty_answer_is_an_overflow_and_the_watch_asks_again(smb: Smb, watch
     ]
 
 
-@mark.parametrize("answer", [ConnectionResetError("reset"), None], ids=["raised", "cancelled"])
+@mark.parametrize("answer", [ConnectionResetError("reset"), None], ids=["raised", "canceled"])
 def test_a_session_that_ends_fails_the_watch(
     smb: Smb, watching: Watching, caplog: LogCaptureFixture, answer: Exception | None
 ) -> None:
-    """A request that raises, or is cancelled under the watch, ends it: it has failed, and a stop then says it did
+    """A request that raises, or is canceled under the watch, ends it: it has failed, and a stop then says it did
     not.
 
     **Test steps:**
 
-    * make the server's first answer an error, or a cancellation
+    * make the server's first answer an error, or a cancelation
     * start the watch and wait for it to fail
     * verify only the error is logged; stop it and verify it no longer reports failing
     """

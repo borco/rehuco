@@ -343,7 +343,7 @@ def test_showing_the_frame_turns_the_path_into_a_link_once_the_folder_exists(
 def test_enable_status_comes_from_the_read_back_even_when_the_subprocess_failed(
     qtbot: QtBot, mocker: MockerFixture
 ) -> None:
-    """A failed outer PowerShell (a cancelled UAC prompt, say) followed by a read-back that finds the
+    """A failed outer PowerShell (a canceled UAC prompt, say) followed by a read-back that finds the
     key reports *kept*: the exit code is never what the status is built from.
 
     **Test steps:**

@@ -170,7 +170,7 @@ def test_a_root_with_no_label_is_named_by_its_location() -> None:
 
     **Test steps:**
 
-    * refuse a record under an unlabelled root
+    * refuse a record under an unlabeled root
     * verify the reason names the location
     """
     answer = destination(root({"*": "{authors}"}, label=""), naming(), ())

@@ -88,7 +88,7 @@ def shared_log_bridge() -> LogBridge:
 def build_log_widget(parent: QWidget | None = None, *, limit: int | None = DEFAULT_LOG_LIMIT) -> LogWidget:
     """Build a `LogWidget` wearing this app's icons and colors.
 
-    One place, so the app-wide dock and every resource's dock are recognisably the same surface -- the
+    One place, so the app-wide dock and every resource's dock are recognizably the same surface -- the
     thing that differs between them is which records they are shown, not how they look.
 
     :param parent: optional Qt parent.

@@ -83,7 +83,7 @@ def test_one_row_per_install_found_with_its_version_and_the_best_chosen(qtbot: Q
 
 
 def test_an_unusable_install_is_listed_but_cannot_be_chosen(qtbot: QtBot) -> None:
-    """Listed so the user sees why it is not used, greyed so it cannot be picked.
+    """Listed so the user sees why it is not used, grayed so it cannot be picked.
 
     **Test steps:**
 
@@ -347,8 +347,8 @@ def test_browse_fills_the_path_from_the_file_dialog(qtbot: QtBot, mocker: Mocker
     assert dialog.call_args.args[1] == "Locate FFmpeg"
 
 
-def test_a_cancelled_pick_leaves_the_path_alone(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Cancelling the dialog must not blank a path already typed.
+def test_a_canceled_pick_leaves_the_path_alone(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Canceling the dialog must not blank a path already typed.
 
     **Test steps:**
 

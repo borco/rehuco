@@ -57,8 +57,8 @@ def spin_box_clear_action(edit: DurationEdit) -> QAction:
         param("1H", 3600, id="uppercase-abbreviation"),
         param("1HOUR", 3600, id="uppercase-word"),
         param("2 hours 30 mins", 9000, id="spaced-out-words"),
-        param("", None, id="empty-is-unparseable"),
-        param("   ", None, id="whitespace-only-is-unparseable"),
+        param("", None, id="empty-is-unparsable"),
+        param("   ", None, id="whitespace-only-is-unparsable"),
         param("not a duration", None, id="garbage-text"),
         param("1h 30", None, id="trailing-number-with-no-unit"),
         param("-5h", None, id="negative-is-rejected"),
@@ -71,7 +71,7 @@ def test_parse(text: str, expected: int | None) -> None:
     **Test steps:**
 
     * parse each ``text``
-    * verify it matches ``expected`` (the total seconds, or ``None`` when unparseable)
+    * verify it matches ``expected`` (the total seconds, or ``None`` when unparsable)
     """
     assert DurationEdit.parse(text) == expected
 
@@ -195,7 +195,7 @@ def test_duration_edit_clearing_the_line_edit_resets_value_to_none(qtbot: QtBot)
     """Emptying the line edit (e.g. via its clear action) resets ``value`` to ``None`` (unmeasured),
     with the spin box showing its empty-state stand-in, zero.
 
-    A blank line edit is an explicit reset, not "incomplete typing" -- unlike genuinely unparseable
+    A blank line edit is an explicit reset, not "incomplete typing" -- unlike genuinely unparsable
     non-empty text, which leaves ``value`` untouched (confirmed empirically, #24: without this, the
     spin box kept its old number after clearing the line edit).
 
@@ -252,7 +252,7 @@ def test_duration_edit_typing_a_bare_zero_writes_a_genuine_zero_not_none(qtbot: 
     assert edit.value == 0
 
 
-def test_duration_edit_typing_unparseable_text_does_not_change_value(qtbot: QtBot) -> None:
+def test_duration_edit_typing_unparsable_text_does_not_change_value(qtbot: QtBot) -> None:
     """Text that doesn't parse (yet, or ever) leaves ``value`` untouched.
 
     **Test steps:**
@@ -275,14 +275,14 @@ def test_duration_edit_typing_unparseable_text_does_not_change_value(qtbot: QtBo
     [
         param("", False, id="blank-is-not-a-warning"),
         param("1h 30m", False, id="valid-text-is-not-a-warning"),
-        param("1h 30", True, id="unparseable-non-blank-text-is-a-warning"),
+        param("1h 30", True, id="unparsable-non-blank-text-is-a-warning"),
     ],
 )
-def test_duration_edit_line_edit_warns_only_for_non_blank_unparseable_text(
+def test_duration_edit_line_edit_warns_only_for_non_blank_unparsable_text(
     qtbot: QtBot, text: str, expected_warning: bool
 ) -> None:
     """The line edit's ``warning`` dynamic property (driving :attr:`DurationEdit.WARNING_STYLESHEET`)
-    is set exactly when the typed text is non-blank and unparseable.
+    is set exactly when the typed text is non-blank and unparsable.
 
     **Test steps:**
 
@@ -303,11 +303,11 @@ def test_duration_edit_line_edit_warns_only_for_non_blank_unparseable_text(
 
 
 def test_duration_edit_line_edit_warning_clears_once_text_becomes_valid(qtbot: QtBot) -> None:
-    """The warning property clears once unparseable text is completed into valid text.
+    """The warning property clears once unparsable text is completed into valid text.
 
     **Test steps:**
 
-    * type unparseable text, then complete it into a valid duration
+    * type unparsable text, then complete it into a valid duration
     * verify the ``warning`` property clears
     """
     # pylint: enable=duplicate-code

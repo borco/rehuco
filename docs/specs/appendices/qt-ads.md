@@ -155,7 +155,7 @@ property + highlight styling on the tab (a `FocusHighlighting`-free equivalent o
 conflict from two writers touching one `windowTitle`.
 
 **Register a dock with the tracker before placing it** (#398): `addDockWidget` itself makes the dock current, so the
-tracker emits from inside that call, and a dock registered afterwards misses its own first selection.
+tracker emits from inside that call, and a dock registered afterward misses its own first selection.
 
 ## 3. `restoreState` doesn't restore which *split* area was current
 
@@ -245,7 +245,7 @@ factory whose `create...` virtuals (`createDockWidgetTab`, `createDockAreaTitleB
 `createDockAreaTabBar`, `createDockWidgetSideTab`) build every dock/tab/title-bar widget instance,
 replaceable wholesale via `CDockComponentsFactory.setFactory(...)`. `pyside6-qtads`'s `bindings.xml`
 does bind it (`object-type`, all four virtuals), with inject-code on `setFactory` specifically to keep
-a Python override callable afterwards — confirmed live too (`setFactory`/`createDockWidgetTab` both
+a Python override callable afterward — confirmed live too (`setFactory`/`createDockWidgetTab` both
 present in `dir(QtAds.CDockComponentsFactory)`, per [[appendices.qt-ads#verify-bindings-live]]'s rule of
 never trusting the header alone). Overriding `createDockAreaTitleBar`/`createDockAreaTabBar` alone, each
 returning a plain (non-subclassed) base-class instance from Python, works end-to-end through
@@ -430,7 +430,7 @@ A floated dock keeps its chrome: a stylesheet reaches a child widget even when t
 top-level window (verified with a `Qt.Tool` `QLabel` parented to a styled widget — it renders
 styled), and QtAds parents its floating containers to the manager they came from.
 
-## 9. QtAds **replaces** its own stylesheet at runtime — pin the colour scheme to own the timing
+## 9. QtAds **replaces** its own stylesheet at runtime — pin the color scheme to own the timing
 
 [[[appendices.qt-ads#stylesheet-reload]]]
 
@@ -452,10 +452,10 @@ highlight and §4's `qproperty-iconSize: 0px`. Measured in a real window (light 
 Four sheets ship, not one — `default.css` (9 359), `default_dark.css` (9 478), and the two
 `default_linux*` variants — which is why the length changes rather than merely the content.
 
-**Re-appending afterwards cannot be timed against it.** Qt fires `ApplicationPaletteChange` several
+**Re-appending afterward cannot be timed against it.** Qt fires `ApplicationPaletteChange` several
 times per switch and QtAds reloads off a *later* one than a coalescing notifier
 (`ApplicationPaletteChangeNotifier`) emits for, so a re-append from that signal is simply overwritten
-again — confirmed: the rules were still gone afterwards. Reacting to the carrier's own `StyleChange`
+again — confirmed: the rules were still gone afterward. Reacting to the carrier's own `StyleChange`
 does work, but an event filter on a dock manager was rejected as too costly.
 
 **Fix: pin the mode.** `setColorSchemeMode(Light|Dark)` stops the event-driven reload entirely, and
@@ -539,7 +539,7 @@ pin buttons back on the first `toggleView(True)`, measured. The suppressor there
 
 [[[appendices.qt-ads#auto-hide-icon-only]]]
 
-`AutoHideSideBarsIconOnly` drops each sidebar tab's title in favour of the dock's **own** icon —
+`AutoHideSideBarsIconOnly` drops each sidebar tab's title in favor of the dock's **own** icon —
 `CDockWidget.setIcon`, not the icon on whatever `QAction` a toolbar uses to toggle that dock. An app
 whose dock icons live only on its actions (as rehuco-agent's did) gets sidebar tabs with no glyph and
 no text. Left off for that reason; a rotated title says what the dock is with nothing to set up.
@@ -606,7 +606,7 @@ the constant).
 
 Both shipped sheets already style the new chrome — `default.css` and `default_dark.css` each carry 6
 `ads--CAutoHideSideBar` selectors and 27 `ads--CAutoHideTab` ones — and
-[[appendices.qt-ads#stylesheet-reload]]'s pinned colour scheme is what loads the right one of the two.
+[[appendices.qt-ads#stylesheet-reload]]'s pinned color scheme is what loads the right one of the two.
 So pinning adds no unstyled element and needed no rule of its own.
 
 Worth knowing for the next visual check: **a theme switch cannot be observed under
@@ -628,7 +628,7 @@ or in a floating window of its own, is reconciled correctly; the sidebar is the 
 not.
 
 **Why QtAds' own guard misses it.** `CDockManager::showEvent` shows every floating widget it still holds
-as uninitialised, skipping those with no open dock areas. This one reports `hasOpenDockAreas() == True`
+as uninitialized, skipping those with no open dock areas. This one reports `hasOpenDockAreas() == True`
 with `dockAreaCount() == 1`: a *stale* area, not an empty container. Both numbers are worth recording,
 because the guard reads as though it should have caught this and the reason it does not is exactly that
 the container is not empty.
@@ -642,7 +642,7 @@ reason.
 exists when `restoreState` runs and there is nothing to abandon; a floating container should only ever
 come from the user tearing a dock out, or from `restoreState` rebuilding one the user saved. rehuco's
 Settings dock used to reach floating as a *fallback* for a layout that did not restore, which is what
-#306 first had to make safe and #307 then removed outright. Deleting the container afterwards would be
+#306 first had to make safe and #307 then removed outright. Deleting the container afterward would be
 chasing one instance of a general rule: nothing guarantees QtAds retires a container a restore emptied.
 Placing the dock *somewhere* is not optional — an unplaced dock is never registered with the manager,
 and `restoreState` silently skips it.
@@ -652,7 +652,7 @@ dock reads as open" — QtAds state that does not survive an operation one would
 `addDockWidgetFloating`:
 
 - **reopens a closed dock it moves** (`isClosed()` goes `True` → `False`), so a caller that has already
-  decided the dock should be closed has to close it again afterwards. Doing so *is* enough: the guard
+  decided the dock should be closed has to close it again afterward. Doing so *is* enough: the guard
   above then suppresses the container on show, since a closed dock leaves no open area behind.
 - **sizes the new container from the dock's current size** — `640x480` for a dock that was never placed,
   but a degenerate `100x15` for one tabbed into a never-shown window, and it survives the show at about
@@ -706,7 +706,7 @@ emptied. But `floatingWidget()` is `findParent<CFloatingDockContainer*>`, the ne
 container, the same walk §14 met in `QtAdsLayout.save`. So a nested manager emptied inside a dock of an outer floating
 window deletes the **outer** window, and every dock in it goes with the next turn of the event loop (measured, bare
 QtAds and the app alike). It is the removal that does it: the Browsers dock lets every browser go as a catalog closes,
-before the next catalog's are built. Nothing undoes `finishDropOperation()` afterwards, and nothing signals it. It is
+before the next catalog's are built. Nothing undoes `finishDropOperation()` afterward, and nothing signals it. It is
 the upward twin of 10.7's downward search.
 
 **Every nested manager in the app empties somewhere.** The Browsers dock empties as a catalog closes and on the last
@@ -744,7 +744,7 @@ than holding the wrapper.
 `CDockManager.addDockWidgetFloating` and `CDockManager.restoreState` disagree about a floating
 container's first show, and only the first of them is careful. `addDockWidgetFloating` checks whether
 the manager is visible and, when it is not, parks the new container in QtAds' own
-uninitialised-floating-widgets list for `CDockManager::showEvent` to show later. `restoreState` does
+uninitialized-floating-widgets list for `CDockManager::showEvent` to show later. `restoreState` does
 not: a blob describing a dock as floating **and open** has its container shown the moment the blob is
 applied. A window that restores its layout during construction — which it must, since restoring after
 the first show visibly resettles a layout the user is already looking at — therefore puts that dialog
@@ -817,7 +817,7 @@ brought to the front of its area, the area's other tabs are hidden (`tabWidget()
 the docks stay open; QtAds neither re-shows such a tab on a resize or current change nor lists it in
 the tabs menu, measured), `setVisible(False)` on every sibling `CDockAreaWidget` of the same container
 grows that area to the whole container, and showing exactly those tabs and areas puts them back. The
-neighbouring tabs go too so that the maximized dock is the only thing on screen: left in the tab bar,
+neighboring tabs go too so that the maximized dock is the only thing on screen: left in the tab bar,
 one of them could be "maximized" with nothing visible happening, and its restore would then put back
 everything the first maximize hid. The *container* is the scope, not the manager — `CDockManager.openedDockAreas()` covers the main
 container only, so a dock in a floating window is reached through `area.dockContainer().openedDockAreas()`
@@ -835,7 +835,7 @@ hides, and why a document's `viewToggled`-driven size stash never sees them.
 
 
 
-**A capture taken while maximized is poisoned.** `saveState()` serialises the hidden panes' splitter
+**A capture taken while maximized is poisoned.** `saveState()` serializes the hidden panes' splitter
 `Sizes` at zero (`800 0` for a two-pane split), and restoring that blob later gives a sliver, not the
 layout the user had. Every layout capture in the app — a document's session and default-layout blobs,
 the documents area's, the task queue's, the window's close-time outer state — therefore runs inside the
@@ -894,7 +894,7 @@ tab no longer highlighted (measured). The buttons are re-walked from `dockWidget
 
 `CDockManager` keeps every dock in a by-name registry — `dockWidgetsMap()`, the one `findDockWidget` and
 `restoreState` look docks up in — and fills it in `addDockWidget` from the dock's `objectName()` **at that
-moment**. Nothing re-keys it afterwards, and `removeDockWidget` drops the entry under the name the dock has
+moment**. Nothing re-keys it afterward, and `removeDockWidget` drops the entry under the name the dock has
 **now**. Measured against the installed binding: add a dock as `path-a`, rename it `path-a-renamed`, remove
 it, and the registry still lists `path-a`; `findDockWidget("path-a")` finds the renamed dock, while
 `findDockWidget("path-a-renamed")` finds nothing.
@@ -1008,7 +1008,7 @@ guard finds its containers again at release by the `WA_DontShowOnScreen` it set.
 
 [[[appendices.qt-ads#floating-titles]]]
 
-Three QtAds behaviours decide what a floating dock window is called and whether it shows a tab (#488):
+Three QtAds behaviors decide what a floating dock window is called and whether it shows a tab (#488):
 
 - **`setConfigFlags` replaces QtAds' defaults; it does not add to them.** `FloatingContainerHasWidgetTitle` is
   one of those defaults, so an app that sets its own flags drops it unless it lists it again. Without it every

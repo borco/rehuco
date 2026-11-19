@@ -35,7 +35,7 @@ def view(qtbot: QtBot, qapp: Any) -> ShortcutsTableView:
 
 
 def test_the_view_is_a_value_control(view: ShortcutsTableView) -> None:
-    """The settings frame filter recognises it by shape.
+    """The settings frame filter recognizes it by shape.
 
     **Test steps:**
 

@@ -38,7 +38,7 @@ class ResourceEvents(QObject):
     sources to move.
 
     The events arrive from the feed on whichever thread published them -- a notifier's own thread, the thread that
-    renamed -- and go through a :class:`Marshaller` whose signals are connected to the public ones, so a public signal
+    renamed -- and go through a :class:`Marshaler` whose signals are connected to the public ones, so a public signal
     fires at once when published on this object's thread and is queued onto it otherwise.
 
     :param changes: the feed to adapt; a private one when not given, for a holder with no window around it.
@@ -68,7 +68,7 @@ class ResourceEvents(QObject):
     catalog cache can be checked against them (verify-on-access, #487). Nothing was written, so it is no change and
     never goes through the feed."""
 
-    class Marshaller(QObject):
+    class Marshaler(QObject):
         """Carries each announcement onto the events' own thread."""
 
         moved: Signal = Signal(object)
@@ -81,13 +81,13 @@ class ResourceEvents(QObject):
     def __init__(self, changes: ChangeFeed | None = None, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__changes: Final = changes if changes is not None else ChangeFeed()
-        self.__marshaller: Final = ResourceEvents.Marshaller(self)
-        self.__marshaller.moved.connect(self.moved)
-        self.__marshaller.changed.connect(self.changed)
-        self.__marshaller.folder_changed.connect(self.folder_changed)
-        self.__marshaller.root_stale.connect(self.root_stale)
-        self.__marshaller.root_reachable.connect(self.root_reachable)
-        self.__marshaller.accessed.connect(self.accessed)
+        self.__marshaler: Final = ResourceEvents.Marshaler(self)
+        self.__marshaler.moved.connect(self.moved)
+        self.__marshaler.changed.connect(self.changed)
+        self.__marshaler.folder_changed.connect(self.folder_changed)
+        self.__marshaler.root_stale.connect(self.root_stale)
+        self.__marshaler.root_reachable.connect(self.root_reachable)
+        self.__marshaler.accessed.connect(self.accessed)
         self.__changes.add_listener(self.__on_change)
 
     @property
@@ -112,7 +112,7 @@ class ResourceEvents(QObject):
 
         :param keys: the records' keys.
         """
-        self.__marshaller.accessed.emit(tuple(keys))
+        self.__marshaler.accessed.emit(tuple(keys))
 
     def __on_change(self, event: ChangeEvent) -> None:
         """Hand one published event to its signal, on the publisher's thread.
@@ -121,14 +121,14 @@ class ResourceEvents(QObject):
         """
         match event:
             case Moved(relocation):
-                self.__marshaller.moved.emit(relocation)
+                self.__marshaler.moved.emit(relocation)
             case Changed(keys):
-                self.__marshaller.changed.emit(keys)
+                self.__marshaler.changed.emit(keys)
             case FolderChanged(key):
-                self.__marshaller.folder_changed.emit(key)
+                self.__marshaler.folder_changed.emit(key)
             case RootStale(root_id):
-                self.__marshaller.root_stale.emit(root_id)
+                self.__marshaler.root_stale.emit(root_id)
             case RootReachable(root_id, reachable):
-                self.__marshaller.root_reachable.emit(root_id, reachable)
+                self.__marshaler.root_reachable.emit(root_id, reachable)
             case _:
                 assert_never(event)

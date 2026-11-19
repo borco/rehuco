@@ -16,7 +16,7 @@ CENTRAL_DIRECTORY_SIGNATURE = b"PK\x01\x02"
 def write_encrypted_member_zip(path: Path) -> Path:
     """Write a zip whose central directory flags its one member as encrypted.
 
-    :mod:`zipfile` cannot write an encrypted member, so the flag bit is set in the directory entry afterwards; the
+    :mod:`zipfile` cannot write an encrypted member, so the flag bit is set in the directory entry afterward; the
     member's bytes are untouched, which a directory-only read never looks at.
 
     :param path: the zip.

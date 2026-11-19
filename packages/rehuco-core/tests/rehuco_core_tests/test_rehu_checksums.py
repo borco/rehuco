@@ -911,13 +911,13 @@ def test_a_verify_naming_one_file_leaves_the_rest_alone(disk: FakeDisk, freezer:
     ],
 )
 def test_an_unreadable_entry_is_reported_not_crashed_on(disk: FakeDisk, broken: dict[str, Any], reason: str) -> None:
-    """An entry this build cannot read costs itself and its neighbours still verify (#203).
+    """An entry this build cannot read costs itself and its neighbors still verify (#203).
 
     **Test steps:**
 
     * seed a record holding one broken entry beside one good one, and verify
     * check the broken entry is reported malformed and carried through byte-for-byte
-    * check its neighbour was still checked
+    * check its neighbor was still checked
     """
     del reason  # named in the parametrization so a failure says which shape broke
     disk.seed_record([broken, entry(ARCHIVE, ARCHIVE_BYTES)])
@@ -1202,7 +1202,7 @@ def test_a_generate_over_a_partly_unreadable_tree_says_so_with_nothing_recorded_
     disk: FakeDisk,
 ) -> None:
     """A branch with no entries under it has nothing to carry, and still must not read as a clean run:
-    the files behind it are simply not in the baseline anybody reads afterwards (#245).
+    the files behind it are simply not in the baseline anybody reads afterward (#245).
 
     **Test steps:**
 
@@ -1276,20 +1276,20 @@ def test_the_size_scan_refuses_the_same_tree_the_checksums_carry_entries_over(di
 # endregion
 
 
-# region Cancellation and progress
+# region Cancelation and progress
 
 
-def test_a_cancelled_verify_writes_nothing(disk: FakeDisk) -> None:
+def test_a_canceled_verify_writes_nothing(disk: FakeDisk) -> None:
     """A stop leaves through the checkpoint with the previous record intact (#203).
 
     **Test steps:**
 
     * corrupt the video, then verify with a checkpoint that raises on its third call
-    * check the exception travelled out untouched and the record was never rewritten
+    * check the exception traveled out untouched and the record was never rewritten
     """
 
     class Stop(Exception):
-        """What the caller's checkpoint raises -- a stand-in for ``JobCancelled``."""
+        """What the caller's checkpoint raises -- a stand-in for ``JobCanceled``."""
 
     calls = 0
 
@@ -1311,7 +1311,7 @@ def test_a_cancelled_verify_writes_nothing(disk: FakeDisk) -> None:
     assert disk.record == before
 
 
-def test_a_cancelled_verify_reports_no_verdict_it_did_not_establish(disk: FakeDisk) -> None:
+def test_a_canceled_verify_reports_no_verdict_it_did_not_establish(disk: FakeDisk) -> None:
     """A stop part-way can never manufacture a mismatch: no verdict exists until a whole file is hashed.
 
     **Test steps:**
@@ -2178,7 +2178,7 @@ def test_a_resident_duplicate_of_the_incoming_name_goes_with_the_one_it_replaces
 def test_an_annotation_this_build_does_not_know_travels_with_the_claim(disk: FakeDisk) -> None:
     """A moved entry is carried key for key, the same round-trip discipline a rewrite keeps.
 
-    Only the two this run cannot honour are left behind -- the date and the verdict, neither of which is
+    Only the two this run cannot honor are left behind -- the date and the verdict, neither of which is
     true of a record that has never checked the file.
 
     **Test steps:**
@@ -2319,7 +2319,7 @@ def test_a_covering_record_that_exists_takes_the_claim_whatever_sits_beside_it(
     assert disk.entries_at(NESTED_RECORD_PATH)[NESTED_ARCHIVE][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(ARCHIVE_BYTES)
 
 
-def test_a_file_scoped_neighbour_takes_the_claim_under_the_same_name(disk: FakeDisk) -> None:
+def test_a_file_scoped_neighbor_takes_the_claim_under_the_same_name(disk: FakeDisk) -> None:
     """The other half of the coverage rule, and the case where the name does not change (#254).
 
     **Test steps:**

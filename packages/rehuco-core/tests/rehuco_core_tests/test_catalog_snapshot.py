@@ -353,7 +353,7 @@ def test_a_selection_of_some_rows_keeps_the_caches_order(catalog: Catalog) -> No
 
     **Test steps:**
 
-    * select every row by a query matching all, among three ids given backwards plus one unknown
+    * select every row by a query matching all, among three ids given backward plus one unknown
     * verify the three, in the cache's order
     """
     rows = catalog.snapshot.rows

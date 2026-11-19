@@ -12,7 +12,7 @@ walk's own rules a directory at a time. Nothing here re-decides what a screensho
 module turns those names into a row, a glyph and an enabled state.
 
 **The checksum column reports what this record claims, and nothing else.** A file another record covers
-gets no verdict at all, because this record makes no claim about it -- reading the neighbour's record to
+gets no verdict at all, because this record makes no claim about it -- reading the neighbor's record to
 answer for it would make a glyph mean *somebody verified this*, which is not what the column is for. And
 the fresh/stale split is :func:`~rehuco_core.is_checksum_fresh`'s, so a green glyph means exactly *Verify
 Old would skip this file* rather than an opinion formed here (#266).
@@ -83,7 +83,7 @@ COLUMN_TITLES: Final = ("Name", "", "Kind", "Size", "Modified")
 
 The checksum column's title is **empty** on purpose: it holds one 16px glyph, and a word above it would
 set the column's width to the word rather than to the glyph. What each glyph means is on its tooltip,
-which is what an icon-only column owes a reader who has not learnt them yet -- the same arrangement the
+which is what an icon-only column owes a reader who has not learned them yet -- the same arrangement the
 task queue's State column makes (#248)."""
 
 DATE_FORMAT: Final = "%Y-%m-%d %H:%M"
@@ -160,7 +160,7 @@ KIND_LABELS: Final[dict[FileKind, str]] = {
 """What the Kind column says -- what the file is **to this resource**.
 
 Plain phrases rather than the enum's own names: the column is read by someone looking at their own
-folder, and *other resource's* covers a neighbour's screenshot and a neighbour's content alike, because
+folder, and *other resource's* covers a neighbor's screenshot and a neighbor's content alike, because
 the only thing this resource has to say about either is that it is not its."""
 
 MISSING_KIND_LABEL: Final = "missing"
@@ -522,7 +522,7 @@ class FilesRowsLoader(QObject):
     ([[mounts-and-storage#offline-mounts]]) makes it block for the share timeout -- long enough to
     freeze a window that was only asked to show a tab.
 
-    **A read already in flight is not cancelled, it is disowned.** Walking into a subdirectory while the
+    **A read already in flight is not canceled, it is disowned.** Walking into a subdirectory while the
     previous listing is still out is the ordinary case here rather than a rarity: each read carries the
     generation it was started in, and an answer from an older one is dropped rather than drawn over the
     directory the reader has since moved to.
@@ -666,7 +666,7 @@ class FilesTableModel(QAbstractTableModel):
             self.__replace(position, replace(row, path=moved, name=name))
 
     def __remove_missing(self, fresh: dict[Path, FileRow]) -> None:
-        """Remove the rows ``fresh`` no longer has, one contiguous run at a time, from the end backwards so
+        """Remove the rows ``fresh`` no longer has, one contiguous run at a time, from the end backward so
         the positions still to visit stay put.
 
         :param fresh: the new rows by path.

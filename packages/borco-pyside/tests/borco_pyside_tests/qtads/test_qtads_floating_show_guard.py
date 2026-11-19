@@ -21,7 +21,7 @@ def shown_manager(qtbot: QtBot) -> Iterator[QtAds.CDockManager]:
 
     Shown on purpose, unlike most managers in these tests: QtAds only shows a freshly floated dock's
     container when its manager is already visible (otherwise it parks it in its own
-    uninitialised-floating-widgets list), and a container that is never shown is not what this guard
+    uninitialized-floating-widgets list), and a container that is never shown is not what this guard
     is about.
 
     A generator fixture for the reason ``test_qtads_focus_tracker.py`` explains.
@@ -102,7 +102,7 @@ def test_a_container_shown_after_the_release_is_left_alone(shown_manager: QtAds.
     **Test steps:**
 
     * arm a guard and release it immediately
-    * float a dock afterwards
+    * float a dock afterward
     * verify its container carries no attribute, and a second release hands back nothing
     """
     guard = QtAdsFloatingShowGuard()

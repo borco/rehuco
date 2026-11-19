@@ -12,14 +12,14 @@ class QtAdsFloatingShowGuard(QObject):
 
     For the one window in a dock-shell app that restores its layout during construction. QtAds'
     ``CDockManager.addDockWidgetFloating`` defers a freshly floated dock's window until its owner is shown (it parks
-    the container in QtAds' own uninitialised-floating-widgets list), but only while it holds that one dock: adding a
+    the container in QtAds' own uninitialized-floating-widgets list), but only while it holds that one dock: adding a
     second dock to its area -- what a layout restore does to rebuild a floating window of several (`QtAdsLayout`,
     #102), as ``CDockManager.restoreState`` did for any floating-and-open dock -- shows it at once, regardless of
     whether the owning window exists on screen yet. Since the restore has to happen before that window is first shown
-    -- restoring afterwards visibly resettles a layout the user is already looking at -- the dialog would otherwise
+    -- restoring afterward visibly resettles a layout the user is already looking at -- the dialog would otherwise
     appear, alone, a moment ahead of the window it belongs to.
 
-    **Hiding the container again afterwards is not enough**, which is what this class exists for: the
+    **Hiding the container again afterward is not enough**, which is what this class exists for: the
     native window is mapped and painted synchronously inside the ``show()``, measured on a real
     platform plugin, so a hide on the next line shortens the flash rather than removing it.
 

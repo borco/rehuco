@@ -42,7 +42,7 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | 18 | `reference-images` | Reference Images: Scanning, Regions, Search, and Practice | [reference-images.md](reference-images.md) |
 | 19 | `assets` | Assets: Store Libraries as Records | [assets.md](assets.md) |
 | | **Appendices** | | |
-| | `appendices.assets` | Assets — How Store Licences Bind | [appendices/assets.md](appendices/assets.md) |
+| | `appendices.assets` | Assets — How Store Licenses Bind | [appendices/assets.md](appendices/assets.md) |
 | | `appendices.briefcase-packaging` | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
 | | `appendices.code-conventions` | Code Conventions | [appendices/code-conventions.md](appendices/code-conventions.md) |
 | | `appendices.continuous-integration` | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |

@@ -307,7 +307,7 @@ class TcDocument:
         ``viewed``/``todo`` import for a **Tutorial only** ([[field-schema#resource-types]], #195): tc4
         wrote all six booleans for every type, but progress through timed material is not something a
         reference-image pack has. Filtered at the source rather than left to the block's v3 step
-        (:mod:`~rehuco_core.migrations.reference_images.v3_drop_progress_flags`) to strip afterwards --
+        (:mod:`~rehuco_core.migrations.reference_images.v3_drop_progress_flags`) to strip afterward --
         this builds the block already stamped current, so nothing would ever run that step over it.
 
         :returns: the per-user field map.
@@ -381,7 +381,7 @@ class TcDocument:
         (``Tutorial::fileSizeFromYaml``).
 
         :returns: the size in bytes when the ``.tc`` carried the key and it parsed (an explicit value
-            imports, even ``0``), or ``None`` when it was absent or unparseable, so the caller omits it
+            imports, even ``0``), or ``None`` when it was absent or unparsable, so the caller omits it
             rather than fabricating a ``0`` ([[field-schema#deferred-items]]).
         """
         if key not in self.__data:
@@ -417,7 +417,7 @@ class TcDocument:
         (``Tutorial::durationFromYaml``).
 
         :returns: the duration in seconds when the ``.tc`` carried the key and it parsed (an explicit value
-            imports, even ``0``), or ``None`` when it was absent or unparseable, so the caller omits it rather
+            imports, even ``0``), or ``None`` when it was absent or unparsable, so the caller omits it rather
             than fabricating a ``0`` ([[field-schema#deferred-items]], [[field-schema#ms-leak-history]]).
         """
         if key not in self.__data:

@@ -297,7 +297,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
 
     @staticmethod
     def __destination_tooltip(row: DestinationRow, markers: PlaceMarker) -> str:
-        """The tooltip of a place (#639): the rendered path, then greyed the full path and the template used, then
+        """The tooltip of a place (#639): the rendered path, then grayed the full path and the template used, then
         a line for each marker shown (#649).
 
         :param row: the place.
@@ -305,8 +305,8 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         :returns: rich text; empty when the row carries nothing to say.
         """
         lines = [html.escape(row.rendered)] if row.rendered else []
-        # the role, not its colour: Qt resolves it each time the tooltip is shown, so a theme switch can never leave
-        # the light grey behind on a dark tooltip (#665)
+        # the role, not its color: Qt resolves it each time the tooltip is shown, so a theme switch can never leave
+        # the light gray behind on a dark tooltip (#665)
         lines += [
             f'<span style="color:palette(placeholder-text); font-size:small;">{html.escape(text)}</span>'
             for text in (row.full_path, row.template)

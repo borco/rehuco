@@ -360,15 +360,15 @@ def test_an_away_mount_says_so_rather_than_drawing_an_empty_folder(
 def test_refused_folders_are_explained_by_naming_the_record_that_owns_them(
     qtbot: QtBot, model: RehuDocumentModel, listing: Any
 ) -> None:
-    """A greyed row with no reason given reads as a bug, so the line under the table names the record
+    """A grayed row with no reason given reads as a bug, so the line under the table names the record
     the folders belong to and the one thing to do about it -- the row right there (#254).
 
     Named from the listing rather than from whichever foreign record happens to be drawn first: a
-    directory can hold a file-scoped neighbour as well, and it is not the one that owns the folders.
+    directory can hold a file-scoped neighbor as well, and it is not the one that owns the folders.
 
     **Test steps:**
 
-    * answer a listing covered by a foreign ``info.rehu``, beside a file-scoped neighbour
+    * answer a listing covered by a foreign ``info.rehu``, beside a file-scoped neighbor
     * verify the summary names the ``info.rehu``
     """
     listing.side_effect = lambda _self, directory: DirectoryListing(
@@ -392,7 +392,7 @@ def test_refused_folders_are_explained_by_naming_the_record_that_owns_them(
 def test_nothing_is_explained_where_there_are_no_folders_to_refuse(
     qtbot: QtBot, model: RehuDocumentModel, listing: Any
 ) -> None:
-    """The sentence exists to explain a greyed folder row; with no folder rows it would be noise about
+    """The sentence exists to explain a grayed folder row; with no folder rows it would be noise about
     something the reader cannot see.
 
     **Test steps:**
@@ -477,7 +477,7 @@ def test_the_rows_this_resource_cannot_speak_for_are_refused(view: FilesView) ->
 
     **Test steps:**
 
-    * verify the own record and the neighbour's screenshot are disabled while the rest are not
+    * verify the own record and the neighbor's screenshot are disabled while the rest are not
     """
     assert not enabled(view, "info.rehu")
     assert not enabled(view, "other00.jpg")
@@ -555,7 +555,7 @@ def test_home_goes_back_to_the_resources_own_folder(qtbot: QtBot, view: FilesVie
 
 
 def test_home_and_up_are_offered_together(qtbot: QtBot, view: FilesView) -> None:
-    """The pair takes one condition: both lead back towards the resource's own folder, so at the root
+    """The pair takes one condition: both lead back toward the resource's own folder, so at the root
     neither has anywhere to go.
 
     **Test steps:**
@@ -729,7 +729,7 @@ def test_another_resources_record_is_reported_rather_than_opened(qtbot: QtBot, v
 
     **Test steps:**
 
-    * activate the neighbour's record
+    * activate the neighbor's record
     * verify its path was reported
     """
     with qtbot.waitSignal(view.record_activated, timeout=TIMEOUT) as reported:
@@ -740,13 +740,13 @@ def test_another_resources_record_is_reported_rather_than_opened(qtbot: QtBot, v
 
 def test_an_image_opens_against_every_image_in_the_folder(qtbot: QtBot, view: FilesView) -> None:
     """**Curation is ignored on purpose**: this is a view of the folder, so a screenshot someone curated
-    out -- and a neighbour's -- are both here and both worth looking at from here
+    out -- and a neighbor's -- are both here and both worth looking at from here
     ([[data-model#image-meanings]]).
 
     **Test steps:**
 
     * activate one of the resource's screenshots
-    * verify the whole folder's image set was reported, the neighbour's included, starting at the
+    * verify the whole folder's image set was reported, the neighbor's included, starting at the
       clicked one
     """
     with qtbot.waitSignal(view.images_activated, timeout=TIMEOUT) as reported:
@@ -890,7 +890,7 @@ def test_a_disabled_row_cannot_be_activated(view: FilesView, mocker: MockerFixtu
 
     **Test steps:**
 
-    * activate the neighbour's screenshot row and the own record's row
+    * activate the neighbor's screenshot row and the own record's row
     * verify neither reported anything and nothing was handed to the system
     """
     opened = mocker.patch.object(QDesktopServices, "openUrl")
@@ -1149,11 +1149,11 @@ def test_a_file_scoped_rename_renames_its_sibling_rows_in_place(
     qtbot: QtBot, events: ResourceEvents, listing: Any
 ) -> None:
     """``foo.rehu`` renamed to ``bar.rehu`` carries ``foo.*``, its screenshots and its ``.checksum`` with it;
-    their rows are renamed, not replaced, and a neighbour's row is left alone (#376).
+    their rows are renamed, not replaced, and a neighbor's row is left alone (#376).
 
     **Test steps:**
 
-    * browse a folder holding a file-scoped ``foo`` set and a neighbour, and select a screenshot
+    * browse a folder holding a file-scoped ``foo`` set and a neighbor, and select a screenshot
     * re-point the model and announce the sibling set's rename
     * verify the rows carry the new names, none was removed or inserted, and the selection followed
     """

@@ -62,7 +62,7 @@ def loadable_image(mocker: MockerFixture) -> None:
     """Make every screenshot decode as a real image, with no file on disk.
 
     Patched at the source's own seam, which both the viewer's maximized copy and the row's thumbnails
-    read through -- and honouring the height cap the way the real decode does, so a row thumbnail
+    read through -- and honoring the height cap the way the real decode does, so a row thumbnail
     comes back row-sized rather than full-sized.
 
     :param mocker: pytest-mock fixture.
@@ -716,7 +716,7 @@ def test_home_and_end_jump_to_the_ends_of_the_set(document: QWidget, qtbot: QtBo
 def test_navigation_stops_at_the_ends_rather_than_wrapping(document: QWidget, qtbot: QtBot) -> None:
     """Stepping past either end leaves the viewer where it is -- the set does not wrap.
 
-    The end behaviour is a deliberate choice (#161): a wrap makes a three-image set feel endless, and
+    The end behavior is a deliberate choice (#161): a wrap makes a three-image set feel endless, and
     the ends are where its shape is legible.
 
     **Test steps:**
@@ -756,7 +756,7 @@ def test_pressing_a_hover_band_steps_through_the_set(document: QWidget, qtbot: Q
 
 
 def test_a_hover_band_leaves_the_keyboard_with_the_viewer(document: QWidget, qtbot: QtBot) -> None:
-    """Clicking a band does not take focus, so the keys keep working afterwards.
+    """Clicking a band does not take focus, so the keys keep working afterward.
 
     Regression: a focusable control inside the viewer would swallow the keyboard, and ESC (and every
     navigation key) would then reach nothing.
@@ -1542,7 +1542,7 @@ def test_the_read_only_viewer_has_no_curating_keys(document: QWidget, qtbot: QtB
 
 
 def test_the_backdrop_is_opaque_and_follows_the_owner(document: QWidget, qtbot: QtBot, mocker: MockerFixture) -> None:
-    """The viewer paints an opaque backdrop -- the default neutral grey, or whatever the owner names --
+    """The viewer paints an opaque backdrop -- the default neutral gray, or whatever the owner names --
     and repaints when told a new one (#221).
 
     **Test steps:**
@@ -1560,7 +1560,7 @@ def test_the_backdrop_is_opaque_and_follows_the_owner(document: QWidget, qtbot: 
     lightbox.set_backdrop(QColor("#336699"))
     assert lightbox.grab().toImage().pixelColor(corner).name() == "#336699"
 
-    # the colour it already has is a no-op, not a repaint
+    # the color it already has is a no-op, not a repaint
     repainted = mocker.spy(lightbox, "update")
     lightbox.set_backdrop(QColor("#336699"))
     repainted.assert_not_called()
@@ -1803,7 +1803,7 @@ def test_clicking_a_thumbnail_does_not_also_step_the_viewer(document: QWidget, q
     **Test steps:**
 
     * reveal a viewer on the first screenshot with its row shown
-    * click the second thumbnail, which sits left of the viewer's own centre
+    * click the second thumbnail, which sits left of the viewer's own center
     * verify the viewer settled on that screenshot rather than stepping back off it
     """
     lightbox = reveal_over(document, PATHS, PATHS[0], strip_visible=True)
@@ -1910,10 +1910,10 @@ def test_a_click_on_the_open_screenshot_does_nothing(document: QWidget, qtbot: Q
     """
     lightbox = reveal_over(document, PATHS, PATHS[1])
     qtbot.addWidget(lightbox)
-    centre = lightbox.rect().center()
+    center = lightbox.rect().center()
 
-    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre + QPoint(1, 0))
-    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre - QPoint(1, 0))
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=center + QPoint(1, 0))
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=center - QPoint(1, 0))
 
     assert lightbox.current_key == PATHS[1]
     assert not lightbox.isHidden()

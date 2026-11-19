@@ -28,11 +28,11 @@ GRIP_TOOLTIP: Final = "Drag to reorder"
 
 
 def paint_grip(painter: QPainter, band: QRect, color: QColor) -> None:
-    """Draw the grip: two columns of three dots, centred in ``band``.
+    """Draw the grip: two columns of three dots, centered in ``band``.
 
     :param painter: the painter to draw with.
     :param band: the band at a row's left edge.
-    :param color: the row's text colour, which the dots are drawn in, softened.
+    :param color: the row's text color, which the dots are drawn in, softened.
     """
     dot = QColor(color)
     dot.setAlpha(DOT_ALPHA)

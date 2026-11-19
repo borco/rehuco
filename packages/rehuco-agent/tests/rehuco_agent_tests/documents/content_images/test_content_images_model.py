@@ -282,7 +282,7 @@ def test_a_destroyed_model_stops_and_closes_its_archives(mocker: MockerFixture, 
     """
     del archive
     # on the class, before construction: the model binds `close` at construction, so an instance spy
-    # patched afterwards would never see the call
+    # patched afterward would never see the call
     closed = mocker.spy(ArchiveCache, "close")
     content_model = ContentImagesModel()
 

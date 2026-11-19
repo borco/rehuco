@@ -174,7 +174,7 @@ class DocumentRegistry(QObject):
         thread, so a share that has gone silent never holds the window (:attr:`reader`). A record with a save not
         landed shows that save at once, editable; one with nothing pending is :attr:`~RehuDocumentModel.reading`
         until the file arrives. The read **always** yields a record, never an error
-        ([[data-model#write-integrity]]): a file that is missing, unparseable or refused becomes an **empty, locked**
+        ([[data-model#write-integrity]]): a file that is missing, unparsable or refused becomes an **empty, locked**
         model bound to the path, whose lock reason names the failure.
 
         :param key: the key of a ``.rehu`` to load, or to create when ``new``; a ``.tc`` loads through

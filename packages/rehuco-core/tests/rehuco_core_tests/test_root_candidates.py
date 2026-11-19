@@ -77,7 +77,7 @@ def root_file(path: Path, location: str, label: str = "shared") -> Path:
 
 
 def test_folders_become_new_roots_with_root_files_named_after_their_locations(tmp_path: Path, home: RehucoFile) -> None:
-    """Sibling folders each become a root, labelled by its folder, its root file beside the ``.rehuco`` named after its
+    """Sibling folders each become a root, labeled by its folder, its root file beside the ``.rehuco`` named after its
     location -- a label typed changes the label only, a taken name is suffixed.
 
     **Test steps:**
@@ -288,7 +288,7 @@ def test_a_label_changes_nothing_about_the_root_file_name(tmp_path: Path, home: 
 
     **Test steps:**
 
-    * pick a folder labelled only with characters no file name keeps
+    * pick a folder labeled only with characters no file name keeps
     * verify its root file is the one its location names, beside the catalog
     """
     picked = folder(tmp_path, "x")

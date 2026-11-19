@@ -1,4 +1,4 @@
-"""Tests for ScreenshotTryItEditor: the try-it table's own behaviour (#287)."""
+"""Tests for ScreenshotTryItEditor: the try-it table's own behavior (#287)."""
 
 from borco_pyside.widgets import ContentSizedTableView, ItemListEditor
 from PySide6.QtCore import Qt
@@ -109,7 +109,7 @@ def test_a_click_acts_on_one_whole_sample(editor: ScreenshotTryItEditor) -> None
 
     **Test steps:**
 
-    * read the view's selection behaviour and mode
+    * read the view's selection behavior and mode
     """
     view = editor.view
 

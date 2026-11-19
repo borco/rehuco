@@ -148,7 +148,7 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         self.__clock: Final = clock if clock is not None else time.monotonic
         self.__chains: Final[list[ScrapeActions.Chain]] = []
         """Drops not yet resolved. Every arriving outcome is matched against them by its job: one whose job is
-        no chain's any more -- cancelled, detached, ended -- is dropped."""
+        no chain's any more -- canceled, detached, ended -- is dropped."""
 
         self.__relay: Final = ScrapeJob.Relay(self)
         """Where every job this object runs reports, built once for its lifetime rather than one `QObject` per
@@ -253,7 +253,7 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
     # region Outcomes
 
     def __chain_of(self, job: object) -> ScrapeActions.Chain | None:
-        """The chain still waiting on ``job`` -- `None` once its chain was cancelled, detached or ended.
+        """The chain still waiting on ``job`` -- `None` once its chain was canceled, detached or ended.
 
         :param job: the job an outcome came from.
         :returns: the chain the outcome should be acted on for, or `None` to drop it.
@@ -353,7 +353,7 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
         if chain not in self.__chains:
             return
         with LogScope.open(chain.path):
-            LOG.info("Cancelled the re-fetch of %s.", chain.url)
+            LOG.info("Canceled the re-fetch of %s.", chain.url)
         self.__end(chain)
         self.changed.emit()
 
