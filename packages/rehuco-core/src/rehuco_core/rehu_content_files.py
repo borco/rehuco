@@ -44,6 +44,7 @@ from .constants import (
     IMAGE_EXTENSIONS,
 )
 from .directory_entries import is_walkable_directory
+from .license_terms import is_license_terms_name
 from .record_file_lock import is_lock_name
 from .resource_scoping import (
     DIRECTORY_SCOPED_FILENAMES,
@@ -441,18 +442,20 @@ class ContentFileScanner:
         in a directory that has none. A ``.orig`` backup counts wherever it sits and against no record at
         all (#253): what it is a backup *of* is whatever the directory holding it is, which is the rule
         :mod:`rehuco_core.tc_conversion_backups` restores by and the one asked here. A record's lock and its
-        per-user sidecars count on their names alone too: neither is ever anyone's content.
+        per-user sidecars and its license sidecar count on their names alone too: none is ever anyone's content.
 
         :param filename: the candidate's file name.
         :param records: the record names found in that file's own directory, from :meth:`__record_names`.
-        :returns: whether it is a record, a record's lock file (#512), a per-user sidecar (#513), one of a record's
-            ``<record>NN`` screenshots, a record's checksum manifest, or a retained conversion backup.
+        :returns: whether it is a record, a record's lock file (#512), a per-user sidecar (#513), a license sidecar
+            (#677), one of a record's ``<record>NN`` screenshots, a record's checksum manifest, or a retained
+            conversion backup.
         """
         if (
             is_conversion_backup(filename)
             or is_record_name(filename)
             or is_lock_name(filename)
             or is_user_sidecar_name(filename)
+            or is_license_terms_name(filename)
         ):
             return True
         stem, suffix = os.path.splitext(filename)

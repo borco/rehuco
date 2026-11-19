@@ -90,6 +90,7 @@ from .constants import (
     INFO_REHU_FILENAME,
     INFO_TC_FILENAME,
     LEGACY_SUFFIX,
+    LICENSE_SIDECAR_SUFFIX,
     REHU_SUFFIX,
     REHUCO_SUFFIX,
     REHUDB_SUFFIX,
@@ -140,6 +141,15 @@ from .learning_path_entries import (
     visible_learning_paths,
 )
 from .legacy_manifest_jobs import LEGACY_MANIFEST_RETIRE_KIND, RetireLegacyManifestJob
+from .license_terms import (
+    LicenseTerms,
+    LicenseTermsError,
+    is_license_terms_name,
+    license_terms_owner,
+    license_terms_path,
+    read_license_terms,
+    write_license_terms,
+)
 from .location_pattern import (
     BLANK_PATTERN_PROBLEM,
     EMPTY_GROUP_PROBLEM,
@@ -768,6 +778,7 @@ __all__ = [
     "LEGACY_SUFFIX",
     "LIBRARY_PATH_VARIABLE",
     "LIBVLC_PROBE_FLAG",
+    "LICENSE_SIDECAR_SUFFIX",
     "LOCAL_SERVER",
     "LOCK_SUFFIX",
     "Layouts",
@@ -775,6 +786,8 @@ __all__ = [
     "LegacyDrop",
     "LegacySeed",
     "LibrariesUnusableError",
+    "LicenseTerms",
+    "LicenseTermsError",
     "LinkInRecordError",
     "LoadedRecord",
     "LocationPattern",
@@ -1026,6 +1039,7 @@ __all__ = [
     "is_language",
     "is_legacy_record_name",
     "is_legacy_screenshot",
+    "is_license_terms_name",
     "is_lock_name",
     "is_record_name",
     "is_user_sidecar_name",
@@ -1041,6 +1055,8 @@ __all__ = [
     "legacy_manifest_for",
     "legacy_manifests_among",
     "library_files",
+    "license_terms_owner",
+    "license_terms_path",
     "list_archive_images",
     "load_checksum_record",
     "load_libraries",
@@ -1093,6 +1109,7 @@ __all__ = [
     "read_content_chunks",
     "read_last_video",
     "read_layouts",
+    "read_license_terms",
     "read_notes",
     "read_progress",
     "read_video_favorites",
@@ -1175,4 +1192,5 @@ __all__ = [
     "volume_of",
     "watch_totals",
     "with_titled_index",
+    "write_license_terms",
 ]

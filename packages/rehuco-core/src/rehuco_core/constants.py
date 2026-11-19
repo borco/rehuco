@@ -19,6 +19,10 @@ USER_SIDECAR_SUFFIX: Final = ".rehuser"
 """A per-user sidecar's file extension ([[data-model#single-file]], #513) -- ``<stem>.user-<name>.rehuser`` beside a
 record, holding one user's state for it (:mod:`rehuco_core.user_sidecars`)."""
 
+LICENSE_SIDECAR_SUFFIX: Final = ".rehuterms"
+"""A license sidecar's file extension ([[assets#licences]], #677) -- ``<stem>.rehuterms`` beside a record, holding the
+terms it was got under (:mod:`rehuco_core.license_terms`)."""
+
 LEGACY_SUFFIX: Final = ".tc"
 """A legacy tc4 record's file extension -- the source format a conversion consumes
 ([[acquisition-tooling#convert-mechanics]]), and the second thing that makes a file *a resource*

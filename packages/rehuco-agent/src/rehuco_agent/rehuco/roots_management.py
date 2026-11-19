@@ -42,6 +42,7 @@ MANAGED_KINDS: Final = frozenset(
         FileKind.OWN_SCREENSHOT,
         FileKind.OWN_MANIFEST,
         FileKind.OWN_USER_STATE,
+        FileKind.OWN_LICENSE,
         FileKind.DIRECTORY,
     }
 )

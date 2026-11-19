@@ -178,6 +178,23 @@ def test_file_scoped_drops_its_own_record_screenshots_and_manifest(mocker: Mocke
     assert names(content_files(FILE_SCOPED_PATH)) == ["foo.zip"]
 
 
+def test_a_license_sidecar_is_never_content(mocker: MockerFixture) -> None:
+    """``<stem>.rehuterms`` is bookkeeping on its name alone, in either scope, so no size or checksum covers it (#677).
+
+    **Test steps:**
+
+    * mock a file-scoped ``foo.rehu`` beside ``foo.rehuterms`` and ``foo.zip``, and enumerate its content
+    * verify only ``foo.zip`` came back
+    * mock a directory-scoped ``info.rehu`` beside ``info.rehuterms`` and ``lesson.mp4``, and enumerate its content
+    * verify only ``lesson.mp4`` came back
+    """
+    mock_siblings(mocker, ["foo.rehu", "foo.rehuterms", "foo.zip"])
+    assert names(content_files(FILE_SCOPED_PATH)) == ["foo.zip"]
+
+    mock_tree(mocker, ["info.rehu", "info.rehuterms", "lesson.mp4"])
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["lesson.mp4"]
+
+
 def test_file_scoped_takes_every_same_stem_sibling_whatever_its_format(mocker: MockerFixture) -> None:
     """Content is what shares the stem, not a fixed extension list: a single-file tutorial counts too.
 

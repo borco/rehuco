@@ -190,6 +190,25 @@ def test_file_scoped_renames_every_file_named_after_the_resource(mocker: MockerF
     assert result == DIRECTORY / f"{NEW_NAME}.rehu"
 
 
+def test_file_scoped_carries_its_license_sidecar(mocker: MockerFixture) -> None:
+    """``<stem>.rehuterms`` is named after the record, so a rename takes it along as it takes a screenshot (#677).
+
+    **Test steps:**
+
+    * list a `.rehu` beside its `.rehuterms`
+    * rename
+    * verify both moved, the `.rehuterms` keeping its tail
+    """
+    mock_rename = mock_environment(mocker, siblings=[FILE_PATH, DIRECTORY / "old_file.rehuterms"])
+
+    rename_rehu_resource(FILE_PATH, NEW_NAME)
+
+    assert renames(mock_rename) == [
+        (FILE_PATH, DIRECTORY / f"{NEW_NAME}.rehu"),
+        (DIRECTORY / "old_file.rehuterms", DIRECTORY / f"{NEW_NAME}.rehuterms"),
+    ]
+
+
 def test_file_scoped_leaves_a_coincidental_prefix_alone(mocker: MockerFixture) -> None:
     """A name that merely *starts* like the resource is a different name, not one of its files: what
     follows the stem must be an extension separator or a digit, never more letters.
