@@ -195,7 +195,7 @@ class CatalogRowsLoader(QObject):
         return request.base.patched(request.affected, fresh)
 
     def __on_answered(self, generation: int, snapshot: CatalogSnapshot | None) -> None:
-        """Take a read's answer, unless it was cancelled or a read of every row has been asked for since; then start
+        """Take a read's answer, unless it was canceled or a read of every row has been asked for since; then start
         the next read (GUI thread).
 
         :param generation: which read answered.

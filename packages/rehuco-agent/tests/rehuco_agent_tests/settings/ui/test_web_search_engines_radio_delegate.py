@@ -63,7 +63,7 @@ def test_a_selected_row_fills_the_cell_and_draws_the_radio_in_the_highlighted_pe
     **Test steps:**
 
     * paint a checked radio on a selected row
-    * verify the corner is the highlight and the radio's centre dot is the highlighted-text colour
+    * verify the corner is the highlight and the radio's center dot is the highlighted-text color
     """
     image = painted(delegate, Qt.CheckState.Checked, selected=True)
 

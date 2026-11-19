@@ -192,7 +192,7 @@ class ScrapersPage(QWidget):
         reveal_in_file_browser(Path(QUrl(href).toLocalFile()))
 
     def __on_browse_clicked(self) -> None:
-        """Pick the scripts folder with a file dialog, leaving a cancelled pick untouched."""
+        """Pick the scripts folder with a file dialog, leaving a canceled pick untouched."""
         folder = QFileDialog.getExistingDirectory(self, "Locate scraper scripts folder", self.__ui.folder_edit.text())
         if folder:
             self.__ui.folder_edit.setText(folder)

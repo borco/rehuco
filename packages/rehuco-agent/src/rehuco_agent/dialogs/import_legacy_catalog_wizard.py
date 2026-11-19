@@ -5,12 +5,12 @@ no choices: every screenshot keeps the number it already carries, and one whose 
 whole name ([[acquisition-tooling#tc-to-rehu]]), so a per-resource confirmation pass over thousands of
 items would be ceremony nobody would ever finish. Safety instead comes from renaming rather than
 writing, from retaining the `.tc` backup, and from flagging the minority of resources where two images
-wanted one number (#191), corrected afterwards at leisure in the images dock.
+wanted one number (#191), corrected afterward at leisure in the images dock.
 
-The scan (#191) runs on a worker thread so the dialog stays responsive and cancellable; the import
+The scan (#191) runs on a worker thread so the dialog stays responsive and cancelable; the import
 step enqueues one :class:`~rehuco_core.TcImportJob` per selected resource onto the app-wide queue and
 watches them the way `rehuco_agent.documents.checksum_actions.ChecksumActions` watches its own --
-attached as a :class:`~rehuco_core.TaskQueueListener`, marshalled onto the GUI thread, reading each
+attached as a :class:`~rehuco_core.TaskQueueListener`, marshaled onto the GUI thread, reading each
 job's own outcome once it has finished rather than carrying a payload through the engine.
 
 **The one import option is whether to read the content** (#256). Every conversion carries the resource's
@@ -88,14 +88,14 @@ STRANDED_NOTE: Final = (
 )
 
 
-class _ScanCancelled(Exception):
+class _ScanCanceled(Exception):
     """Raised inside :class:`_ScanWorker`'s progress callback to unwind out of
     :func:`~rehuco_core.plan_tc_conversion` when the wizard's Cancel was clicked mid-scan."""
 
 
 class _ScanWorker(QObject):
     """Runs :func:`~rehuco_core.plan_tc_conversion` on a worker thread, so the dialog stays responsive
-    and cancellable while it walks a folder tree that may hold thousands of resources.
+    and cancelable while it walks a folder tree that may hold thousands of resources.
 
     :param root: the folder to scan.
     :param username: the identity an actual conversion's imported per-user flags would be filed under.
@@ -107,7 +107,7 @@ class _ScanWorker(QObject):
     progress = Signal(int)
     finished = Signal(object)
     failed = Signal(str)
-    cancelled = Signal()
+    canceled = Signal()
 
     def __init__(self, root: Path, username: str, screenshot_name_patterns: tuple[ScreenshotNamePattern, ...]) -> None:
         super().__init__()
@@ -129,8 +129,8 @@ class _ScanWorker(QObject):
                 screenshot_name_patterns=self.__screenshot_name_patterns,
                 progress=self.__on_progress,
             )
-        except _ScanCancelled:
-            self.cancelled.emit()
+        except _ScanCanceled:
+            self.canceled.emit()
             return
         except Exception as error:  # pylint: disable=broad-exception-caught
             LOG.exception("The legacy catalog scan failed.")
@@ -142,10 +142,10 @@ class _ScanWorker(QObject):
         """The scan's own progress callback: report, or unwind if a cancel is pending.
 
         :param count: resources planned so far.
-        :raises _ScanCancelled: a cancel was asked for.
+        :raises _ScanCanceled: a cancel was asked for.
         """
         if self.__cancel_requested:
-            raise _ScanCancelled
+            raise _ScanCanceled
         self.progress.emit(count)
 
 
@@ -162,11 +162,11 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
     :param parent: optional Qt parent.
     """
 
-    class Marshaller(QObject):
+    class Marshaler(QObject):
         """Carries "one of our jobs may have moved" across the thread boundary, and nothing else.
 
         Nested and undocumented outside this class for the same reason
-        :class:`~rehuco_agent.documents.checksum_actions.ChecksumActions.Marshaller` is: a mangled
+        :class:`~rehuco_agent.documents.checksum_actions.ChecksumActions.Marshaler` is: a mangled
         class name is not one Qt or the linters will accept.
         """
 
@@ -226,8 +226,8 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         what the Tasks dock is for. What is still owed them here is Cancel -- somebody stopping an import
         mid-run means the hashing too."""
 
-        self.__marshaller: Final = ImportLegacyCatalogWizard.Marshaller(self)
-        self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
+        self.__marshaler: Final = ImportLegacyCatalogWizard.Marshaler(self)
+        self.__marshaler.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
         self.__queue.add_listener(self)
 
         self.__root_page.ui.browse_button.clicked.connect(self.__on_browse)
@@ -307,7 +307,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         previous = self.__seen.get(status.serial)
         self.__seen[status.serial] = status  # pylint: disable=unsupported-assignment-operation
         if previous is None or previous.state is not status.state:
-            self.__marshaller.queue_changed.emit()
+            self.__marshaler.queue_changed.emit()
 
     # endregion
 
@@ -419,7 +419,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         self.__scan_worker.progress.connect(self.__on_scan_progress)
         self.__scan_worker.finished.connect(self.__on_scan_finished)
         self.__scan_worker.failed.connect(self.__on_scan_failed)
-        self.__scan_worker.cancelled.connect(self.__on_scan_cancelled)
+        self.__scan_worker.canceled.connect(self.__on_scan_canceled)
         self.__thread.finished.connect(self.__scan_worker.deleteLater)
         self.__thread.start()
 
@@ -444,7 +444,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         self.__scan_page.ui.status_label.setText(f"Scan failed: {message}")
         self.__scan_page.ui.scan_progress_bar.setRange(0, 1)
 
-    def __on_scan_cancelled(self) -> None:
+    def __on_scan_canceled(self) -> None:
         self.__stop_scan_thread()
         self.__ui.page_stack.setCurrentWidget(self.__root_page)
         self.__update_nav()
@@ -476,7 +476,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
 
         The second line's counts are the conversions' own. Stranded manifests (#259) are named again on
         their own line below rather than folded into *clean*: they are not conversions, nothing about
-        them is a judgement call, and a reader who came here to convert a tree deserves to be told the
+        them is a judgment call, and a reader who came here to convert a tree deserves to be told the
         run will also tidy up after an earlier one.
 
         A large :attr:`~rehuco_core.TcConversionPlan.suspect_mtime` count is named on its own line
@@ -642,8 +642,8 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         """
         if status.state is JobState.DONE:
             return ("retired" if isinstance(job, RetireLegacyManifestJob) else "converted"), None
-        if status.state is JobState.CANCELLED:
-            return "cancelled", None
+        if status.state is JobState.CANCELED:
+            return "canceled", None
         return "failed", status.message
 
     def __result_summary_text(self) -> str:
@@ -656,7 +656,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         rows = self.__model.rows()
         converted = sum(1 for row in rows if row.outcome == "converted")
         failed = sum(1 for row in rows if row.outcome == "failed")
-        skipped = sum(1 for row in rows if row.outcome in ("skipped", "cancelled"))
+        skipped = sum(1 for row in rows if row.outcome in ("skipped", "canceled"))
         text = f"{converted:,} converted · {failed:,} failed · {skipped:,} skipped"
         retired = sum(1 for row in rows if row.outcome == "retired")
         if retired:

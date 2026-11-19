@@ -138,7 +138,7 @@ class PluginBlock:
 
 
 class RehuFormatError(ValueError):
-    """Raised when a ``.rehu`` payload cannot be read as valid: not a JSON object, unparseable, or
+    """Raised when a ``.rehu`` payload cannot be read as valid: not a JSON object, unparsable, or
     misusing a reserved key ([[data-model#rehu-format]])."""
 
 
@@ -382,7 +382,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """Load ``path``, or return an **empty document bound to it, locked**, when it cannot be read.
 
         The one place the *refuse-vs-lock* line is drawn ([[data-model#write-integrity]]): a file that is
-        missing, unparseable, or refused by :meth:`load` does not raise past here and does not surface as a
+        missing, unparsable, or refused by :meth:`load` does not raise past here and does not surface as a
         modal error box -- it opens as a locked, never-dirty, never-savable view whose
         :attr:`lock_reasons` name the failure, so the file stays inspectable in exactly the tool best
         suited to hand-fixing it. :meth:`reload` retries through here, which is what makes revert the
@@ -421,7 +421,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :data:`SAVE_BLOCKING_LOCK_KINDS`). A ``FileNotFoundError`` becomes :attr:`~LockReasonKind.MISSING`;
         anything else becomes :attr:`~LockReasonKind.INVALID_FILE`, carrying the error's own text (a JSON
         parser's line/column included). This is the single seam both :meth:`open_or_locked` (``.rehu``) and
-        the legacy ``.tc`` open path route their failures through, so the missing-vs-unparseable line is
+        the legacy ``.tc`` open path route their failures through, so the missing-vs-unparsable line is
         drawn exactly once.
 
         :param path: the path the failed read was for; the stub is bound to it for a later revert.
@@ -476,7 +476,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           layout and its version reach disk together. A document loaded at a **newer** version keeps that
           version: migrations never lower a stamp, since such a file still carries fields from a schema
           this build has never seen ([[data-model#schema-version]]'s preserve-unknown-fields rule) and
-          relabelling it would mislead the build that *can* read them.
+          relabeling it would mislead the build that *can* read them.
         - The **block persistence invariant** decides which blocks are written
           (:meth:`__dropped_block_keys` and :func:`~rehuco_core.rehu_serialization.ordered_for_file`,
           [[plugins#plugin-blocks]]): the active block, plus every inactive block **never claimed** this
@@ -753,7 +753,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         **Never raises on an unreadable file** -- that is what makes revert the fix-retry loop
         ([[data-model#write-integrity]]). The re-read goes through :meth:`open_or_locked`, so a file that
-        has since gone missing or become unparseable leaves this document **empty and locked** with a
+        has since gone missing or become unparsable leaves this document **empty and locked** with a
         refreshed reason, and a re-read that now succeeds refills the data and **drops** the lock. Only a
         genuinely path-less document (never loaded or saved) still raises, since there is nothing to
         re-read.
@@ -847,7 +847,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     @property
     def load_failed(self) -> bool:
         """Whether this document is an **empty stub** standing in for a file that could not be read at all
-        ([[data-model#write-integrity]]) -- missing (:attr:`~LockReasonKind.MISSING`) or unparseable
+        ([[data-model#write-integrity]]) -- missing (:attr:`~LockReasonKind.MISSING`) or unparsable
         (:attr:`~LockReasonKind.INVALID_FILE`), as opposed to a genuinely-loaded document that merely
         locked (a newer format, a legacy ``.tc``, a present-but-uncoercible field).
 
@@ -1031,7 +1031,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def __coerced_version(data: dict[str, Any]) -> int:
         """Read a payload's ``format_version`` as a plain number ([[data-model#write-integrity]]).
 
-        Defers the "is this stamp usable" judgement to `rehuco_core.migrations`, so this class and the
+        Defers the "is this stamp usable" judgment to `rehuco_core.migrations`, so this class and the
         migrator can never disagree about what a stamp says. The two differ only in what they do when it
         says nothing: this reports **v0**, while the migrator goes on to read the payload's shape.
 
@@ -2180,7 +2180,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def license(self) -> str | None:
-        """An asset's licence short id, such as ``fab-standard`` ([[assets#licences]]); a shared field on the active
+        """An asset's license short id, such as ``fab-standard`` ([[assets#licenses]]); a shared field on the active
         plugin block. ``None`` when absent or JSON ``null``; a present non-string reads ``None`` and locks."""
         return optional_str(self.active_field("license"))
 

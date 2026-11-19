@@ -136,7 +136,7 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   area's viewport does (`qscrollarea_viewport_childat_invalidates_wrappers`, a comment on PYSIDE-3515). Asked for
   once by a getter (`scroll_area.viewport()`), such an object has a lasting wrapper and nothing is freed. Read the
   chain with `shiboken6.dump(obj)`'s `parent` line.
-- **`shiboken6.dump` on 6.11.1 faults on a wrapper with an invalid neighbour.** It calls `str()` on the wrapper's
+- **`shiboken6.dump` on 6.11.1 faults on a wrapper with an invalid neighbor.** It calls `str()` on the wrapper's
   Python parent, children and referred objects, never on its own C++ object; `str()` of an invalid one raises, and
   6.11.1 dereferences the NULL. An invalid wrapper stays in its Python parent's child list (Qt deleting an object it
   made only clears the wrapper's flag), so a live, valid line edit whose clear action Qt deleted faults. Fixed in
@@ -157,7 +157,7 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   area's viewport `autoFillBackground` from `_q_original_autofill_background`, which `polish` stores only for a
   styled-panel `QTextEdit` or `QPlainTextEdit` (from 6.11.2; before, for any styled-panel scroll area). Unset, it
   reads false, and a stylesheet set on any shown ancestor re-polishes the views below it: a frameless view is then
-  drawn in the window's colour. A framed one loses the flag too but is still drawn in Base, the style painting the
+  drawn in the window's color. A framed one loses the flag too but is still drawn in Base, the style painting the
   framed panel itself. 6.9.2 keeps the fill; 6.9.3 to 6.12.0 lose it (#662, QTBUG-152290). Compare such a flag across versions,
   not pixels: before 6.9.3 the style replaced the viewport's palette, so Base read black.
 - **A stylesheet removed before the first polish leaves `WA_StyleSheet` set.** `QStyleSheetStyle` sets the
@@ -171,11 +171,11 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   `\`, after a `/`. An inline `pre` breaks at its spaces too. Only a block's `white-space` (`nowrap` or `pre`) makes
   its lines unbreakable. Known since 2007 (QTBUG-1135, its duplicates QTBUG-12057 and QTBUG-54787), and the block form
   is Qt's own advice there, so it is not a workaround to remove; the same on 6.11.3 and 6.12.0 (#664, no report).
-- **A palette colour can carry alpha, and `QColor.name()` drops it.** `QToolTip.palette()`'s `PlaceholderText` is
+- **A palette color can carry alpha, and `QColor.name()` drops it.** `QToolTip.palette()`'s `PlaceholderText` is
   its text at half alpha (`#80000000` light, `#80ffffff` dark) under windows11, fusion and windowsvista, on 6.11.3
-  and 6.12.0; through `name()` it reads as the text itself. Print a colour with `name(QColor.NameFormat.HexArgb)`.
+  and 6.12.0; through `name()` it reads as the text itself. Print a color with `name(QColor.NameFormat.HexArgb)`.
   Rich text takes the role by name, `color:palette(placeholder-text)`, resolved each time the text is parsed: a
-  colour written in once stays the light one on a dark tooltip after a live theme switch (#665, not a bug).
+  color written in once stays the light one on a dark tooltip after a live theme switch (#665, not a bug).
 - **A slider's absolute-set press acts before `sliderPressed`, in every style.** `QSlider::mousePressEvent` sets the
   position, triggers `SliderMove` and only then sets the slider down: `actionTriggered(SliderMove)`, `valueChanged`,
   `actionTriggered(SliderMove)` again, `sliderPressed`. The style only picks the button: windows11 gives the left
@@ -195,9 +195,9 @@ that") without looking at the bug. So the reproducer reads like a small, well-be
   `QAccessible.setActive(True)` reproduces it, and only in the active window, since the event needs `hasFocus()`.
   PySide has no `installUpdateHandler`, so a script reads the focused widget's `focusChild()` as the click is
   reported; a focusable widget beside the view takes the focus first, so the log is a label.
-- **Under a style sheet, a line edit's text keeps the old colour scheme.** After a runtime
+- **Under a style sheet, a line edit's text keeps the old color scheme.** After a runtime
   `QStyleHints.setColorScheme()` switch, a `QLineEdit` under any style sheet (its own, or an ancestor's naming no
-  `QLineEdit`) draws its text in the previous scheme's colour while `palette()` already holds the new one. windows11
+  `QLineEdit`) draws its text in the previous scheme's color while `palette()` already holds the new one. windows11
   fills it from the new scheme, so the text can become unreadable; fusion keeps the whole old look. A hand-set
   palette's `Text` follows the switch. Without a style sheet, windows11 fills a line edit from its scheme's tables,
   not the palette's `Base`, which only shows when `Base` is set by hand; rehuco themes by scheme, and the app

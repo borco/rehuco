@@ -15,13 +15,13 @@ def confirm_and_save_dirty(
 
     The batch counterpart to :func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`'s
     single save: one :class:`~rehuco_agent.dialogs.unsaved_changes_dialog.UnsavedChangesDialog` listing
-    every dirty document with a checkbox, then a guarded save of each checked one. Cancelling either the
+    every dirty document with a checkbox, then a guarded save of each checked one. Canceling either the
     dialog or a failed save's retry prompt reports ``False``.
 
     Callers keep their own follow-on action -- ignoring a close event
     (:meth:`~rehuco_agent.main_window.MainWindow.closeEvent`) or removing the docks
     (:meth:`~rehuco_agent.documents.documents_dock.DocumentsDock.close_all`) -- but the *ordering* lives
-    here: a cancelled retry aborts before the caller closes anything, so no document is closed out from
+    here: a canceled retry aborts before the caller closes anything, so no document is closed out from
     under a failed save (#146). Unchecked dirty documents are left unsaved, their edits discarded along
     with whatever close follows.
 
@@ -29,7 +29,7 @@ def confirm_and_save_dirty(
     :param models: the dirty document models to confirm. An empty list proceeds silently -- there is
         nothing to confirm, so no dialog is shown.
     :param pending_saves: the window's save jobs, each save waited through (#497); ``None`` saves in place.
-    :returns: ``True`` if the caller should proceed with its close; ``False`` if the user cancelled,
+    :returns: ``True`` if the caller should proceed with its close; ``False`` if the user canceled,
         in which case nothing further may be closed.
     """
     if not models:

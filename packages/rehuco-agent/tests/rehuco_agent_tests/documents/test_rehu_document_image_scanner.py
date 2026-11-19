@@ -322,7 +322,7 @@ def test_get_markdown_viewer_image_resolves_a_file_url(mocker: MockerFixture) ->
 
 def test_get_markdown_viewer_image_scales_an_over_cap_image(mocker: MockerFixture) -> None:
     """An image wider than the live max-width setting is decoded straight at it, keeping its shape -- never
-    decoded in full and scaled afterwards (#381).
+    decoded in full and scaled afterward (#381).
 
     **Test steps:**
 

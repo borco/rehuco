@@ -194,7 +194,7 @@ class Application(QApplication):
             # it. AutoHideShowOnMouseOver (hover to peek) is deliberately absent: its delay timer keeps a raw
             # pointer to the last hovered sidebar tab and fires into it after that tab is deleted, so unpinning a
             # dock under the mouse crashed the app (#492). AutoHideSideBarsIconOnly is deliberately absent too:
-            # it drops each sidebar tab's title in favour of the dock's icon, and no dock here sets
+            # it drops each sidebar tab's title in favor of the dock's icon, and no dock here sets
             # one, so it would leave the sidebar saying nothing at all
             # ([[appendices.qt-ads#auto-hide-icon-only]]).
             auto_hide_flags = QtAds.CDockManager.eAutoHideFlag
@@ -243,7 +243,7 @@ def run(argv: list[str]) -> int:
     taskbar pin resolve to nothing in particular -- the Linux counterpart of the Windows AUMID set
     in ``__main__``. Deliberately unconditional rather than behind a ``sys.platform`` branch: Qt
     reads it on the X11/Wayland platform plugins only, so it is inert on Windows and macOS, and a
-    branch would buy a coverage exclusion instead of behaviour.
+    branch would buy a coverage exclusion instead of behavior.
 
     :param argv: process argv (``sys.argv``); ``argv[1:]`` are ``.rehu``/directory paths to open
         immediately (see :meth:`Application.open_path`).

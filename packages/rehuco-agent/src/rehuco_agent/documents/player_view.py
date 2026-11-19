@@ -68,7 +68,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
 
     **One player per document** ([[plugins#in-app-player]]) over **the whole tutorial's videos**, in every folder, in
     natural path order. Showing the dock loads the one watched last, paused where it was left (:meth:`load_last`);
-    :meth:`jump` -- a double-click in the Files dock -- plays one at once. Previous and next load the neighbour paused:
+    :meth:`jump` -- a double-click in the Files dock -- plays one at once. Previous and next load the neighbor paused:
     at its recorded position when partly watched, at the start when never watched or watched to the end. The engine is
     built on the first video, so opening a tutorial loads neither FFmpeg nor libvlc.
 

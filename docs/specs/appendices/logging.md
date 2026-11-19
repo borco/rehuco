@@ -319,7 +319,7 @@ one elevated PowerShell prompted by UAC, the GUI itself never running elevated. 
 *running* executable (`rehuco-agent-dev.exe` or `Rehuco.exe`), keeps ten minidumps (`DumpType` 1, a few
 MB each; never a full dump) and points them at `crashdumps/` beside the run log in `config_folder()`,
 which Windows creates with the first dump. The frame's status is always read back from the registry, so a
-cancelled prompt reads as *not kept* rather than as whatever the subprocess claimed; the same frame shows
+canceled prompt reads as *not kept* rather than as whatever the subprocess claimed; the same frame shows
 the folder, what its dumps use, and clears them. Not running from a real `.exe` disables the switch, as
 the key would otherwise name `python.exe` and keep dumps of every Python process on the machine.
 

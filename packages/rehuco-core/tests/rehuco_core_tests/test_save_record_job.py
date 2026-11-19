@@ -346,7 +346,7 @@ def test_a_job_with_no_payload_refuses_to_start_and_to_write() -> None:
 
     * build a job with no payload
     * verify validate refuses it and write raises ``ValueError``
-    * verify it still takes a payload afterwards, and then validates
+    * verify it still takes a payload afterward, and then validates
     """
     job = SaveRecordJob()
 
@@ -605,7 +605,7 @@ def test_reset_drops_a_gone_finding(mocker: MockerFixture) -> None:
 
 # region what the job says about itself
 def test_a_job_on_a_share_names_the_resource_and_takes_the_hosts_chain(mocker: MockerFixture) -> None:
-    """A save is labelled with the resource's name, is about its record, and takes turns with saves to its host.
+    """A save is labeled with the resource's name, is about its record, and takes turns with saves to its host.
 
     **Test steps:**
 

@@ -52,9 +52,9 @@ from .thumbnail_loader import ThumbnailLoader
 from .thumbnail_row import ThumbnailRow
 
 DEFAULT_BACKDROP: Final = "#1e1e1e"
-"""The backdrop painted behind the image when the owner names none (#221): a neutral dark grey, fully
+"""The backdrop painted behind the image when the owner names none (#221): a neutral dark gray, fully
 opaque on every surface -- a translucent overlay let the covered document bleed through the image's
-own edges. The user's choice reaches this widget from the owner as a colour; the settings section
+own edges. The user's choice reaches this widget from the owner as a color; the settings section
 reads this default from here, the way it reads :data:`DEFAULT_STRIP_HEIGHT`."""
 
 OVERLAY_GLYPH_COLOR: Final = QColor(Qt.GlobalColor.white)
@@ -432,7 +432,7 @@ class ImageLightbox(OverlaySurface):  # pylint: disable=too-many-instance-attrib
 
     **Dismiss is ESC, the close button, or -- when the owner allows it -- a double-click on the image**
     (#221): the gesture that opened the viewer, undoing it. A single click on the image does nothing at
-    all. Every path funnels through ``close()``, and the widget deletes itself afterwards
+    all. Every path funnels through ``close()``, and the widget deletes itself afterward
     (``WA_DeleteOnClose``).
 
     **The image leaves the app** (#395) -- when the owner hands over an exporter -- by **Copy** (``Ctrl+C``, the
@@ -450,7 +450,7 @@ class ImageLightbox(OverlaySurface):  # pylint: disable=too-many-instance-attrib
     :param strip_visible: whether to open with the thumbnail row shown (keyword-only).
     :param strip_height: the thumbnail row's fixed pixel height (keyword-only).
     :param info_visible: whether to open with the info overlay shown (keyword-only).
-    :param backdrop: the colour painted behind the image (keyword-only); :data:`DEFAULT_BACKDROP`
+    :param backdrop: the color painted behind the image (keyword-only); :data:`DEFAULT_BACKDROP`
         when the owner names none.
     :param double_click_closes: whether a double-click on the image dismisses the viewer
         (keyword-only).
@@ -568,17 +568,17 @@ class ImageLightbox(OverlaySurface):  # pylint: disable=too-many-instance-attrib
 
     @property
     def backdrop(self) -> QColor:
-        """The colour painted behind the image."""
+        """The color painted behind the image."""
         return QColor(self.__backdrop)
 
-    def set_backdrop(self, colour: QColor) -> None:
-        """Repaint behind the image in ``colour`` -- the settings page's Apply (#221).
+    def set_backdrop(self, color: QColor) -> None:
+        """Repaint behind the image in ``color`` -- the settings page's Apply (#221).
 
-        :param colour: the new backdrop.
+        :param color: the new backdrop.
         """
-        if colour == self.__backdrop:
+        if color == self.__backdrop:
             return
-        self.__backdrop = QColor(colour)
+        self.__backdrop = QColor(color)
         self.update()
 
     @property
@@ -659,7 +659,7 @@ class ImageLightbox(OverlaySurface):  # pylint: disable=too-many-instance-attrib
     def paintEvent(self, event: QPaintEvent) -> None:
         """Fill the viewer with its backdrop, under the scaled screenshot.
 
-        Painted rather than set as a palette/stylesheet background, so a change of colour is one
+        Painted rather than set as a palette/stylesheet background, so a change of color is one
         repaint and no stylesheet rebuild.
 
         :param event: the Qt paint event; unused -- the whole widget is repainted either way.

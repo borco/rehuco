@@ -626,7 +626,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
     The same hop :attr:`status_message` makes, and for the same reason: opening a resource is the
     window's act -- it resolves the path, reveals the documents area and remembers the file in ``Open
     recents`` -- so a sub-dock three managers down reports rather than reaches. Typed as plain
-    ``object`` (Python-object marshalling) for the reason ``DocumentsDock``'s own object-typed signals
+    ``object`` (Python-object marshaling) for the reason ``DocumentsDock``'s own object-typed signals
     document."""
 
     def __init__(  # pylint: disable=too-many-statements,too-many-arguments
@@ -1150,7 +1150,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         form's field bindings, the log sink, every dock (out of the manager, deleted with its content),
         every action added to the host's widget, the toolbar and the banner rows go, and this object is
         deleted. The host's own parts -- its manager, focus tracker, maximize toggle and banner -- stay
-        for the next document. One-shot: nothing is usable afterwards.
+        for the next document. One-shot: nothing is usable afterward.
         """
         if self.__image_viewer is not None:
             self.__image_viewer.close()
@@ -1790,7 +1790,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         session blob it was opened with is restored onto the completed set (:attr:`__opened_with_state`).
 
         A stateful widget's own UI state (e.g. the path editor's expand toggle) is captured before the
-        swap and restored into its freshly-built counterpart afterwards -- keyed by object name, the same
+        swap and restored into its freshly-built counterpart afterward -- keyed by object name, the same
         contract :meth:`save_state` persists -- so a switch doesn't reset it. Today the set of stateful
         widgets is preserved (the leading fields, the path editor among them, are on every type), but a
         captured name is looked up defensively rather than assumed present, so a future type-specific
@@ -1804,7 +1804,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         focus tracker (`QtAdsFocusTracker`) faithfully follows real Qt focus, so that dock then visibly
         picks up the "current" highlight -- distracting, since nothing the user did asked to leave Main
         Editor (#310). Capturing whether focus was on Main Editor *before* the swap, and handing it back
-        into the rebuilt grid afterwards, keeps it there instead of leaving Qt to pick a new home for it.
+        into the rebuilt grid afterward, keeps it there instead of leaving Qt to pick a new home for it.
         """
         focus_widget = QApplication.focusWidget()
         refocus_main_editor = (
@@ -2105,7 +2105,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         editor is still viewable, just not editable.
 
         A **lock-aware** surface is the exception (`LockAware`, #292): it is left enabled and told the
-        lock instead, so the field on it can keep showing what it shows and grey only what edits --
+        lock instead, so the field on it can keep showing what it shows and gray only what edits --
         the curation editor's rows and preview are exactly what a `.tc` about to be converted is
         worth looking at. Every field is told either way, since a tab that lost its exemption (a
         rebuild composing an ordinary field onto it) must still see the lock it is now under.
@@ -2295,7 +2295,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         Deliberately **not** :attr:`__curated_images`: the browser is a view of the folder, so what it
         opens is every image sitting there -- a screenshot curated out of the lightbox, and a
-        neighbouring resource's, included ([[data-model#image-meanings]]). The set arrives with the
+        neighboring resource's, included ([[data-model#image-meanings]]). The set arrives with the
         activation rather than being recomputed here, since the browser is the thing that knows which
         folder is on screen.
 
@@ -2625,14 +2625,14 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if self.__image_viewer is not None:
             self.__image_viewer.set_info_visible(visible)
 
-    def __on_lightbox_backdrop_changed(self, colour: str) -> None:
+    def __on_lightbox_backdrop_changed(self, color: str) -> None:
         """Repaint an open viewer's backdrop as the setting is applied (#221), the same live push the
         row height and the info overlay get.
 
-        :param colour: the newly-configured colour, as ``#rrggbb``.
+        :param color: the newly-configured color, as ``#rrggbb``.
         """
         if self.__image_viewer is not None:
-            self.__image_viewer.set_backdrop(QColor(colour))
+            self.__image_viewer.set_backdrop(QColor(color))
 
     def __on_lightbox_double_click_closes_changed(self, closes: bool) -> None:
         """Allow or refuse an open viewer's double-click dismissal as the setting is applied (#221).
@@ -2834,7 +2834,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
     def __description_view_dock(self) -> QtAds.CDockWidget | None:
         """The Description View dock -- the right-hand area's own, which every hidden inspection dock
-        stacks into and which is put back as that area's current tab afterwards (#299).
+        stacks into and which is put back as that area's current tab afterward (#299).
 
         The right area is where the single ``Viewer`` dock sat before the split, so stacking there keeps
         the inspection set exactly where revealing one has always put it.
@@ -2962,7 +2962,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         :returns: the dock, hidden.
         """
         # the *action*'s trigger rather than the method behind it: a disabled QAction triggers nothing,
-        # so the row honours exactly the enablement the toolbar's Verify does instead of enqueuing a run
+        # so the row honors exactly the enablement the toolbar's Verify does instead of enqueuing a run
         # the toolbar would have refused
         view = FilesView(
             model,
@@ -3240,8 +3240,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         :param dock: the dock to place; a fresh one, or one a restored layout never named.
         """
-        neighbour = self.__description_view_dock()
-        area = neighbour.dockAreaWidget() if neighbour is not None else None
+        neighbor = self.__description_view_dock()
+        area = neighbor.dockAreaWidget() if neighbor is not None else None
         if area is not None:
             self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, area)
         else:
@@ -3252,8 +3252,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # a just-added dock opens as the current tab, which would leave an arbitrary inspection tab
         # current; put the viewer it was stacked beside back. Done here rather than by each caller,
         # which is what every one of them used to do with its own copy of this guard
-        if neighbour is not None:
-            neighbour.setAsCurrentTab()
+        if neighbor is not None:
+            neighbor.setAsCurrentTab()
 
     def __make_dock(
         self,
@@ -3276,7 +3276,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if min_content_height is not None:
             # QtAds's own minimumSizeHint() ignores the content by default, so a splitter drag can
             # squeeze a dock to near nothing regardless of what the content widget's own minimum says
-            # -- this mode is what makes the splitter actually honour it (measured offscreen).
+            # -- this mode is what makes the splitter actually honor it (measured offscreen).
             widget.setMinimumHeight(min_content_height)
             dock.setMinimumSizeHintMode(QtAds.CDockWidget.eMinimumSizeHintMode.MinimumSizeHintFromContentMinimumSize)
         dock.viewToggled.connect(lambda visible: self.__on_view_toggled(dock, visible))

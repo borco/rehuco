@@ -27,7 +27,7 @@ from rehuco_core import (
     ChecksumReport,
     CoveringRecord,
     GenerateChecksumsJob,
-    JobCancelled,
+    JobCanceled,
     JobPaused,
     JobState,
     JobStatus,
@@ -534,7 +534,7 @@ def test_a_stop_travels_out_of_the_run_untouched(
         side_effect=lambda *_args, **kwargs: kwargs["checkpoint"](),
     )
 
-    with raises(JobPaused if request_stop == "pause" else JobCancelled):
+    with raises(JobPaused if request_stop == "pause" else JobCanceled):
         job.run(control)  # pyright: ignore[reportArgumentType]
 
 
@@ -620,7 +620,7 @@ def test_a_state_written_before_the_two_choices_existed_restores_the_run_it_desc
     **Test steps:**
 
     * restore each kind from a state carrying neither new key
-    * check each kept its own creation behaviour and migrates nothing
+    * check each kept its own creation behavior and migrates nothing
     """
     job = job_class()
 

@@ -492,7 +492,7 @@ def test_applying_the_engine_frame_saves_both_drafts_and_leaves_the_editor_frame
 
 def test_resetting_the_engine_frame_reverts_the_hidden_engines_draft_too(qtbot: QtBot) -> None:
     """Reset on the engine frame puts back the saved engine *and both drafts*, so the page reads
-    clean afterwards -- where a widget-only restore would leave the hidden draft edited and the page
+    clean afterward -- where a widget-only restore would leave the hidden draft edited and the page
     dirty with nothing tinted.
 
     **Test steps:**

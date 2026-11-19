@@ -46,7 +46,7 @@ prints — the `.local` name resolves on every platform that has Bonjour.
 
 Retired. Pairing by device ID, mutual TLS between nodes and trust-on-first-use existed for a network of peers; there
 are no peers. What remains is the browser's trust in one node's HTTPS certificate when the web pages come: a
-self-signed certificate the node makes itself, accepted once per device, which the iPad's video element honours
+self-signed certificate the node makes itself, accepted once per device, which the iPad's video element honors
 ([[nodes#web-playback]]). The `NodeKey` the access seam carried for an owning node went with the teardown
 (#510, [[nodes#access-seam]]).
 
@@ -74,7 +74,7 @@ The agent holds no identity beyond the OS user running it ([[field-schema#per-us
 **Admin** is a role on a node's web login, granted when the one-time password is issued
 ([[discovery-trust-access#user-auth]]): an admin sees every user's jobs and borrows on that node and may return a borrow
 for everyone ([[nodes#node-status]], [[borrowing#agent-ui]]). It is per node, like every user: a household member who
-is admin on the machine at home is whatever the travelling machine's node says they are there. The open question of a
+is admin on the machine at home is whatever the traveling machine's node says they are there. The open question of a
 revocable master identity is void.
 
 ## §6.8 User login: a one-time password from the node's CLI
@@ -178,7 +178,7 @@ in its status, never a reason to move to a free one, which would leave the brows
 **Opening the firewall takes the administrator once, and the agent asks for it itself.** Measured on Windows (#418):
 every way of adding an inbound rule, by program or by port, through `New-NetFirewallRule` or `netsh`, is refused
 without elevation. The prompt Windows shows when a program first listens is no better: it writes a rule for the program
-on every port, and a cancelled prompt leaves a *Block* rule behind that outranks any later *Allow*, with no further
+on every port, and a canceled prompt leaves a *Block* rule behind that outranks any later *Allow*, with no further
 prompt. So the agent never lets that prompt appear, and the rule follows *Allow network access*
 ([[discovery-trust-access#remote-admin]]), not the node:
 

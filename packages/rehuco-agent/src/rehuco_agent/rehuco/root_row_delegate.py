@@ -25,14 +25,14 @@ ROW_PADDING: Final = 4
 
 
 class RootRowDelegate(RootsItemDelegate):
-    """Draws a root as two lines, with the glyph centred on the row beside both::
+    """Draws a root as two lines, with the glyph centered on the row beside both::
 
                name
         [icon]
                D:\\\\folder\\\\that\\\\is\\\\the\\\\root
 
-    The folder is middle-elided to the width the row has, in a smaller font and a fainter colour than the name. The
-    name keeps the model's font -- struck through for a local folder that is gone -- and the row's colour, greyed for a
+    The folder is middle-elided to the width the row has, in a smaller font and a fainter color than the name. The
+    name keeps the model's font -- struck through for a local folder that is gone -- and the row's color, grayed for a
     root that is away; the grip, the selection band and the arrow are the base delegate's.
 
     The folder is the model's :attr:`~RootsFolderModel.PATH_ROLE`.
@@ -105,7 +105,7 @@ class RootRowDelegate(RootsItemDelegate):
 
     @staticmethod
     def __draw_line(painter: QPainter, font: QFont, text: str, elide: Qt.TextElideMode, line: QRect) -> None:
-        """Draw one line of text, elided to fit, vertically centred in its rect.
+        """Draw one line of text, elided to fit, vertically centered in its rect.
 
         :param painter: the painter, its pen already set.
         :param font: the font.

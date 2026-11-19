@@ -35,7 +35,7 @@ def test_reading_a_link_decodes_its_name() -> None:
     [
         "https://authors?name=Foo",
         "filter://folder?name=Tutorials",
-        "filter://colour?name=red",
+        "filter://color?name=red",
         "filter://tags",
         "filter://tags?name=",
         "filter://tags?value=x",

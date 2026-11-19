@@ -106,7 +106,7 @@ def test_tint_for_applies_the_alpha_to_a_colored_state(delegate: TaskRowDelegate
     assert tint.alpha() == BAND_TINT_ALPHA
 
 
-@mark.parametrize("state", [JobState.RUNNING, JobState.PAUSED, JobState.DONE, JobState.CANCELLED])
+@mark.parametrize("state", [JobState.RUNNING, JobState.PAUSED, JobState.DONE, JobState.CANCELED])
 def test_a_state_with_no_color_has_no_tint(delegate: TaskRowDelegate, state: JobState) -> None:
     """A state absent from the map is drawn plain rather than in some invented color.
 
@@ -252,7 +252,7 @@ def test_text_can_be_drawn_into_a_slot_of_the_cell_rather_than_the_whole_of_it(
     delegate: TaskRowDelegate, option: QStyleOptionViewItem, mocker: MockerFixture
 ) -> None:
     """The rect is the caller's, which is what lets the info column put a bar and a figure side by
-    side in one cell (#248) -- and the alignment goes with it, since a figure is centred on its slot
+    side in one cell (#248) -- and the alignment goes with it, since a figure is centered on its slot
     where a label starts at the left.
 
     **Test steps:**

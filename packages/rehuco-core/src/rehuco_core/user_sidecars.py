@@ -151,7 +151,7 @@ def read_user_sidecars(record: Path) -> tuple[list[UserSidecar], list[Unreadable
     ([[data-model#single-file]]).
 
     :param record: the ``.rehu``.
-    :returns: the sidecars read, by name, and the ones that could not be -- unparseable, past a sanity cap, written by
+    :returns: the sidecars read, by name, and the ones that could not be -- unparsable, past a sanity cap, written by
         a newer build, or unreadable; one gone between the listing and its read is in neither.
     :raises OSError: the folder could not be listed.
     """
@@ -283,7 +283,7 @@ def write_user_sidecars(record: Path, sidecars: dict[str, dict[str, Any]]) -> No
     A sidecar beside the record that ``sidecars`` no longer names -- its user's state all removed -- is written
     holding nothing but its stamp, so it never reads back what was removed.
 
-    One that cannot be read (:func:`read_user_sidecar`) is never written over -- unparseable, past a sanity cap, or
+    One that cannot be read (:func:`read_user_sidecar`) is never written over -- unparsable, past a sanity cap, or
     written by a newer build, whose fields this one has never seen ([[data-model#schema-version]]). Its scope was left
     out of the record when it was read (:func:`join_user_sidecars`), so ``sidecars`` holds nothing for it and it is
     skipped; fields for it mean a write reached a scope that was never read, and are refused.

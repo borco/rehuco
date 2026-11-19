@@ -108,7 +108,7 @@ def test_authors_field_viewer_renders_no_anchor_for_a_non_http_url(qtbot: QtBot,
 
     **Test steps:**
 
-    * seed a record with an ``ftp`` URL, one with an unparseable URL, and one with an empty URL
+    * seed a record with an ``ftp`` URL, one with an unparsable URL, and one with an empty URL
     * build the viewer
     * verify every entry shows its name only, with no anchor
     """

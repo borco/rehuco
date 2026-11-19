@@ -111,7 +111,7 @@ class ChecksumRows:
         read that imposed an order would fight it.
     :param reachable: whether the resource's own directory listed. **The record shares its files'
         fate**: if the mount is away the ``.checksum`` is as unreachable as the content it describes, so
-        one answer covers both, and every action is greyed on it (#245, #244).
+        one answer covers both, and every action is grayed on it (#245, #244).
     :param error: why the record could not be read at all, when that is what happened -- a file this
         build cannot parse. Distinct from an empty record, which is a real and ordinary state.
     """
@@ -205,7 +205,7 @@ class ChecksumRowsLoader(QObject):
     verdict, not a measured number, and teaching one runner both would put this surface's policy inside
     a field's helper.
 
-    **A read already in flight is not cancelled, it is disowned.** A rename or a finished job can ask
+    **A read already in flight is not canceled, it is disowned.** A rename or a finished job can ask
     for a re-read while the first walk is still round-tripping over a mount; each read carries the
     generation it was started in, and an answer from an older one is dropped rather than drawn. That is
     cheaper and more honest than trying to interrupt a walk that has no checkpoint.

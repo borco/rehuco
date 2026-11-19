@@ -238,7 +238,7 @@ def test_a_stored_run_log_size_or_backup_count_below_its_minimum_is_raised_to_it
 
 def test_a_stored_run_log_size_or_backup_count_above_its_maximum_is_lowered_to_it(settings: FakeSettings) -> None:
     """Unlike the two record limits above, these two are clamped at **both** ends: an unbounded file or
-    backup count is a disk-space runaway, not a reader's preference to honour as typed (#362).
+    backup count is a disk-space runaway, not a reader's preference to honor as typed (#362).
 
     **Test steps:**
 
@@ -300,7 +300,7 @@ def test_a_resource_limit_of_zero_is_no_cap_rather_than_the_app_limit() -> None:
     """*Keep everything* is not a number, so the clamp has nothing to hold it down to (#236).
 
     Unbounded is not *above* the app limit in the sense the clamp exists for: it promises to keep what
-    reaches the surface, which the plumbing does honour, from attach onward.
+    reaches the surface, which the plumbing does honor, from attach onward.
 
     **Test steps:**
 

@@ -25,15 +25,15 @@ from .test_catalog_table_model import (  # noqa: F401  # pylint: disable=unused-
 OFFLINE_REASON: Final = "This network share is not connected."
 
 
-def test_an_offline_roots_rows_are_greyed_and_say_why_and_the_others_are_not(qtbot: QtBot) -> None:
-    """A row of a root that cannot be reached draws in the disabled text colour and says why when hovered, over every
+def test_an_offline_roots_rows_are_grayed_and_say_why_and_the_others_are_not(qtbot: QtBot) -> None:
+    """A row of a root that cannot be reached draws in the disabled text color and says why when hovered, over every
     cell's own tooltip; a row of another root draws and hovers as before.
 
     **Test steps:**
 
     * a model holding an unreadable row of one root and a row of another, then mark the first root offline
     * verify one ``dataChanged`` over every cell, for the foreground and the tooltip
-    * verify the first row is greyed and says why, the reason is the root's, and the other row is as it was
+    * verify the first row is grayed and says why, the reason is the root's, and the other row is as it was
     """
     other = uuid4()
     model = CatalogTableModel()

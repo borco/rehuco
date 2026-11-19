@@ -1,4 +1,4 @@
-"""Tests for the Roots view's handling of a root whose ``.rehuroot`` cannot be read (#577): it is listed greyed with one
+"""Tests for the Roots view's handling of a root whose ``.rehuroot`` cannot be read (#577): it is listed grayed with one
 row saying so and the reason as its tooltip, offers neither Map nor a name to edit, and can still be removed. The rows
 the cache holds for it are kept, as an offline root's are, until it is.
 
@@ -62,21 +62,21 @@ def fixture_gone_dock(
     return dock
 
 
-def test_an_unreadable_root_is_listed_greyed_with_why_and_offers_no_map(gone_dock: CatalogDocks) -> None:
-    """The view lists the root by its file's name, greyed, with one row saying its file cannot be read and the reason
+def test_an_unreadable_root_is_listed_grayed_with_why_and_offers_no_map(gone_dock: CatalogDocks) -> None:
+    """The view lists the root by its file's name, grayed, with one row saying its file cannot be read and the reason
     as the tooltip; nothing offers to map it, and it is not among the roots to ask about.
 
     **Test steps:**
 
     * open a file naming a missing root file, and read the view
-    * verify the rows, the third greyed with its one row, its tooltip the reason and its path the file
+    * verify the rows, the third grayed with its one row, its tooltip the reason and its path the file
     * verify its menu offers no Map, the Map action stays disabled with it selected, and nothing asks to map it
     """
     roots = gone_dock.roots
     model = roots.roots_model
     assert [model.index(row, 0).data() for row in range(model.rowCount())] == ["tutorials", "packs", "gone"]
     gone = model.index(2, 0)
-    assert gone.data(RootsFolderModel.GREYED_ROLE) is True
+    assert gone.data(RootsFolderModel.GRAYED_ROLE) is True
     assert model.index(0, 0, gone).data() == UNREADABLE_ROW
     assert gone.data(Qt.ItemDataRole.ToolTipRole) == f"The root file is missing: {GONE}"
     assert gone.data(RootsFolderModel.PATH_ROLE) == str(GONE)
@@ -211,7 +211,7 @@ def test_a_root_whose_file_went_missing_keeps_its_rows_offline(
     lost_dock: tuple[CatalogDocks, UUID, Path], catalog: Mock
 ) -> None:
     """The cache is handed the missing file to hold, keeps the root's rows under its own id, and the root reads as one
-    that cannot be reached -- greyed in the browsers, left out of the overlap check -- rather than as gone.
+    that cannot be reached -- grayed in the browsers, left out of the overlap check -- rather than as gone.
 
     **Test steps:**
 

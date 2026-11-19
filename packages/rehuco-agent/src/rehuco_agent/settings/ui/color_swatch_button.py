@@ -1,4 +1,4 @@
-"""A push button that is its own colour swatch, and carries the colour as a settings value (#221, #342)."""
+"""A push button that is its own color swatch, and carries the color as a settings value (#221, #342)."""
 
 from typing import Final
 
@@ -6,16 +6,16 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QColorDialog, QPushButton, QWidget
 
 SWATCH_TEXT_FLIP: Final = 0.5
-"""The lightness under which the swatch's own text turns white, so the colour's name stays readable
+"""The lightness under which the swatch's own text turns white, so the color's name stays readable
 against whatever it names."""
 
 
 class ColorSwatchButton(QPushButton):
-    """Shows a colour as its own background, names it as its text, and picks a new one when pressed.
+    """Shows a color as its own background, names it as its text, and picks a new one when pressed.
 
-    **It holds the staged colour itself**, which is the point (#342). The page used to keep it in an
+    **It holds the staged color itself**, which is the point (#342). The page used to keep it in an
     attribute beside the button, where the settings dialog's frame snapshot could not see it: the
-    frame never tinted when the colour changed, and once frames grew their own Apply / Reset buttons
+    frame never tinted when the color changed, and once frames grew their own Apply / Reset buttons
     those stayed dead for the one frame whose value was invisible -- while the change still rode
     along with any *other* frame's Apply. A value that lives in the widget is read, compared, written
     back and committed by exactly the same generic path as every other control on every page.
@@ -33,7 +33,7 @@ class ColorSwatchButton(QPushButton):
         self.set_color(QColor().name())  # objectName not set yet -- see set_color
 
     def color(self) -> str:
-        """The staged colour, as ``#rrggbb``."""
+        """The staged color, as ``#rrggbb``."""
         return self.__color
 
     def set_color(self, color: str) -> None:
@@ -43,7 +43,7 @@ class ColorSwatchButton(QPushButton):
         ID selector), never a bare ``QPushButton {...}`` type selector: the moment *any* widget in the
         app sets one of those, Qt's stylesheet-aware style engine applies it to every ``QPushButton``
         application-wide, not just this one and its children -- confirmed empirically as the OK/Cancel
-        buttons of the colour-picker dialog this button opens turning the same colour as the swatch.
+        buttons of the color-picker dialog this button opens turning the same color as the swatch.
         An ID selector matches only the one widget it names.
 
         A widget promoted from a ``.ui`` has no objectName yet during its own ``__init__`` -- ``uic``
@@ -67,12 +67,12 @@ class ColorSwatchButton(QPushButton):
     def set_settings_value(self, value: object) -> None:
         """Write a snapshotted value back into this control.
 
-        :param value: a colour as :meth:`settings_value` returned it.
+        :param value: a color as :meth:`settings_value` returned it.
         """
         self.set_color(str(value))
 
     def __pick(self) -> None:
-        """Open the colour dialog on the staged colour and stage what it returns, if anything."""
-        chosen = QColorDialog.getColor(QColor(self.__color), self.parentWidget(), "Pick a colour")
+        """Open the color dialog on the staged color and stage what it returns, if anything."""
+        chosen = QColorDialog.getColor(QColor(self.__color), self.parentWidget(), "Pick a color")
         if chosen.isValid():
             self.set_color(chosen.name())

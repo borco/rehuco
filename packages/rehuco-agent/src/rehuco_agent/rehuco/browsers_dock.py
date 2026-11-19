@@ -66,7 +66,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     :data:`IN_PLACE_LIMIT` -- and each browser picks what its query matches from the one snapshot -- at once when its
     filter changes, and when a read lands. Until one lands, every browser keeps the rows it shows.
 
-    **A root that cannot be reached keeps its rows, greyed** (#511): each says why when hovered, and is not opened --
+    **A root that cannot be reached keeps its rows, grayed** (#511): each says why when hovered, and is not opened --
     :attr:`open_refused` says why instead. Browsing what the cache retains of such a root is #452.
 
     :param catalog: the open catalog, whose rows every browser reads.
@@ -252,7 +252,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         :param current: the name the box opens on.
         :param title: the box's title.
-        :returns: the typed name, or ``None`` if the box was cancelled.
+        :returns: the typed name, or ``None`` if the box was canceled.
         """
         name, accepted = QInputDialog.getText(self, title, "Name:", text=current)
         return name if accepted else None
@@ -297,7 +297,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__loader.update(affected)
 
     def __on_root_reachable(self, root_id: UUID, reachable: bool) -> None:
-        """Grey a root's rows, or draw them as usual again, as its notifier says (#511).
+        """Gray a root's rows, or draw them as usual again, as its notifier says (#511).
 
         :param root_id: the root.
         :param reachable: whether its folder can be reached.
@@ -310,7 +310,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__set_offline(frozenset(offline))
 
     def __set_offline(self, root_ids: frozenset[UUID]) -> None:
-        """Remember which roots cannot be reached, with why, and grey their rows in every browser.
+        """Remember which roots cannot be reached, with why, and gray their rows in every browser.
 
         :param root_ids: the roots that cannot be reached.
         """

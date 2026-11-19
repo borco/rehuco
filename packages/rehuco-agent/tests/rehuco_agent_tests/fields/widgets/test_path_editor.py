@@ -567,7 +567,7 @@ def test_a_place_tooltip_names_the_path_the_full_path_and_the_template(qtbot: Qt
     **Test steps:**
 
     * set a place of each state, carrying a rendered path, a full path and a template
-    * verify the tooltip lists the three in that order, the last two in a greyed span
+    * verify the tooltip lists the three in that order, the last two in a grayed span
     """
     editor = PathEditor()
     qtbot.addWidget(editor)
@@ -605,14 +605,14 @@ def test_a_place_with_no_path_has_no_rendered_line_and_no_template_line(qtbot: Q
     assert label.toolTip().count("<div") == 1
 
 
-def test_the_tooltip_grey_names_the_placeholder_role(qtbot: QtBot) -> None:
-    """The tooltip's grey is the placeholder role by name, which Qt resolves each time the tooltip is shown: a
-    colour baked in at a theme switch stayed light on a dark tooltip (#639, #665).
+def test_the_tooltip_gray_names_the_placeholder_role(qtbot: QtBot) -> None:
+    """The tooltip's gray is the placeholder role by name, which Qt resolves each time the tooltip is shown: a
+    color baked in at a theme switch stayed light on a dark tooltip (#639, #665).
 
     **Test steps:**
 
     * set a place with a full path
-    * verify its greyed line names ``palette(placeholder-text)``
+    * verify its grayed line names ``palette(placeholder-text)``
     """
     editor = PathEditor()
     qtbot.addWidget(editor)

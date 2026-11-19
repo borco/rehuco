@@ -46,12 +46,12 @@ def test_the_rows_are_the_maps_entries_in_order(model: StringMapModel) -> None:
 
 
 def test_a_row_with_no_key_or_a_repeated_key_is_flagged_and_left_out(model: StringMapModel) -> None:
-    """Such a row is kept, coloured and explained, and the map is made of the others.
+    """Such a row is kept, colored and explained, and the map is made of the others.
 
     **Test steps:**
 
     * add a row with no key and one repeating ``*``
-    * verify their tooltips and colours, a sound row's lack of both, and the map
+    * verify their tooltips and colors, a sound row's lack of both, and the map
     """
     model.insert(-1)
     blank = model.insert(-1)
@@ -74,7 +74,7 @@ def test_an_edit_that_changes_nothing_is_no_edit(qtbot: QtBot, model: StringMapM
     **Test steps:**
 
     * set a value to itself, then with the display role, then on an invalid index
-    * verify each returns ``False`` and no change was signalled
+    * verify each returns ``False`` and no change was signaled
     """
     with qtbot.assertNotEmitted(model.dataChanged):
         assert not model.setData(model.index(0, VALUE_COLUMN), "*")
@@ -159,7 +159,7 @@ def test_renaming_the_columns_says_so(qtbot: QtBot, model: StringMapModel) -> No
 
     **Test steps:**
 
-    * rename the columns and verify the change is signalled and read back
+    * rename the columns and verify the change is signaled and read back
     """
     with qtbot.waitSignal(model.headerDataChanged):
         model.set_titles(("Placeholder", "When empty"))
@@ -167,14 +167,14 @@ def test_renaming_the_columns_says_so(qtbot: QtBot, model: StringMapModel) -> No
     assert model.headerData(1, Qt.Orientation.Horizontal) == "When empty"
 
 
-def test_a_value_the_checker_faults_is_coloured_with_its_reason_and_kept(model: StringMapModel) -> None:
-    """With a value checker set, a faulted value shows a warning colour and the reason as a tooltip, on the value cell
+def test_a_value_the_checker_faults_is_colored_with_its_reason_and_kept(model: StringMapModel) -> None:
+    """With a value checker set, a faulted value shows a warning color and the reason as a tooltip, on the value cell
     only, and the row still counts (#637).
 
     **Test steps:**
 
     * set a checker that faults the value ``{title}`` with a reason, and read the roles of both value cells
-    * verify the faulted one has the colour and the reason, the other neither, and the map unchanged
+    * verify the faulted one has the color and the reason, the other neither, and the map unchanged
     * clear the checker and verify nothing is flagged
     """
     model.set_value_problem(lambda key, value: f"{key} cannot use {value}" if value == "{title}" else "")
@@ -212,7 +212,7 @@ def test_fixed_keys_make_one_read_only_row_per_key_and_keep_only_filled_values(m
     * verify the map holds the one filled value; edit another and verify it joins; empty it and verify it leaves
     """
     model.set_fixed_keys(("title", "authors", "year"))
-    model.set_mapping({"authors": "Unknown", "colour": "Red"})
+    model.set_mapping({"authors": "Unknown", "color": "Red"})
 
     assert model.fixed_keys == ("title", "authors", "year")
     assert rows(model) == [("title", ""), ("authors", "Unknown"), ("year", "")]

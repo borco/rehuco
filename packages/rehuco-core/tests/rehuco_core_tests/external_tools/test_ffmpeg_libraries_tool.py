@@ -222,7 +222,7 @@ def test_a_tool_not_configured_in_this_process_is_not_runnable(tmp_path: Path) -
     assert reason == "Not available in this process."
 
 
-def test_the_version_is_read_through_the_same_judgement(
+def test_the_version_is_read_through_the_same_judgment(
     mocker: MockerFixture, tmp_path: Path, tool: FfmpegLibrariesTool
 ) -> None:
     """**Test steps:**

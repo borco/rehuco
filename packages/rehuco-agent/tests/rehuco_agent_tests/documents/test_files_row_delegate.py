@@ -1,7 +1,7 @@
 """Tests for the file browser's row painting: its selection fill, its glyphs and its text (#266).
 
 **Fills and icons are read back from a painted image; text is not.** A fill (``fillRect``, a solid
-colour) and an SVG icon (rasterized vector paths) render the same regardless of which fonts happen to
+color) and an SVG icon (rasterized vector paths) render the same regardless of which fonts happen to
 be loaded, so those claims are checked by painting into an off-screen image and reading its pixels back,
 the same way `test_the_way_out_is_drawn_apart_from_the_folders_it_sits_above` compares two whole images.
 
@@ -84,7 +84,7 @@ def sample(
 
 @fixture(name="palette")
 def fixture_palette() -> QPalette:
-    """A palette whose four roles are four colours nothing else draws."""
+    """A palette whose four roles are four colors nothing else draws."""
     palette = QPalette()
     palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, INK)
     palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, DIM)
@@ -95,7 +95,7 @@ def fixture_palette() -> QPalette:
 
 @fixture(name="delegate")
 def fixture_delegate(qapp: object) -> FilesRowDelegate:
-    """A delegate; takes ``qapp`` because recolouring an SVG needs a `QGuiApplication`.
+    """A delegate; takes ``qapp`` because recoloring an SVG needs a `QGuiApplication`.
 
     :param qapp: the Qt application fixture.
     :returns: the delegate.
@@ -140,11 +140,11 @@ def painted(
 
 
 def colors(image: QImage, rect: QRect | None = None) -> set[str]:
-    """Every colour drawn in an image, or in part of one.
+    """Every color drawn in an image, or in part of one.
 
     :param image: the painted image.
     :param rect: the part to read, or ``None`` for all of it.
-    :returns: the colours as ``#rrggbb`` names; an untouched pixel contributes nothing.
+    :returns: the colors as ``#rrggbb`` names; an untouched pixel contributes nothing.
     """
     area = rect or QRect(0, 0, image.width(), image.height())
     return {
@@ -246,13 +246,13 @@ def test_a_selected_row_is_filled_across_the_whole_cell(delegate: FilesRowDelega
 def test_a_selected_rows_content_is_drawn_in_the_highlighted_pen(
     delegate: FilesRowDelegate, palette: QPalette, mocker: MockerFixture
 ) -> None:
-    """Filled and then drawn over, in the colour the palette pairs with that fill -- so the text stays
+    """Filled and then drawn over, in the color the palette pairs with that fill -- so the text stays
     legible against it rather than keeping the unselected ink.
 
     **Test steps:**
 
     * paint a selected text cell, capturing the pen live at the moment text is drawn
-    * verify the pen was the highlighted-text colour, never the ordinary ink
+    * verify the pen was the highlighted-text color, never the ordinary ink
     """
     image = QImage(CELL.size(), QImage.Format.Format_ARGB32)
     image.fill(Qt.GlobalColor.transparent)
@@ -271,7 +271,7 @@ def test_a_selected_rows_content_is_drawn_in_the_highlighted_pen(
 def test_an_unselected_row_fills_nothing(delegate: FilesRowDelegate, palette: QPalette, mocker: MockerFixture) -> None:
     """The view's own background shows through, which is what lets the table stay banded.
 
-    A plain rect fill is safe to read back from the painted image -- it draws a solid colour regardless
+    A plain rect fill is safe to read back from the painted image -- it draws a solid color regardless
     of which fonts are loaded -- so the "no fill happened" half of this claim is still a pixel check;
     only the text half goes through the draw-call spy (see the module docstring). Mocking ``fillRect``
     itself, rather than merely reading its effect, crashed the process outright -- an overloaded C++
@@ -302,7 +302,7 @@ def test_an_unselected_row_fills_nothing(delegate: FilesRowDelegate, palette: QP
 
 
 @mark.parametrize("column", [NAME_COLUMN, CHECKSUM_COLUMN])
-def test_a_glyph_is_centred_vertically_in_its_row(delegate: FilesRowDelegate, palette: QPalette, column: int) -> None:
+def test_a_glyph_is_centered_vertically_in_its_row(delegate: FilesRowDelegate, palette: QPalette, column: int) -> None:
     """Both columns' glyphs sit on one line, which is what the base delegate could not do for the
     checksum column: with no text to be placed relative to, it left the decoration wherever an empty
     string put it.
@@ -310,7 +310,7 @@ def test_a_glyph_is_centred_vertically_in_its_row(delegate: FilesRowDelegate, pa
     **Test steps:**
 
     * paint each glyph column, with a name of one space so only the glyph draws
-    * verify what was drawn is centred in the cell's height, to within a pixel
+    * verify what was drawn is centered in the cell's height, to within a pixel
     """
     image = painted(delegate, palette, sample(" ", state=FileChecksumState.OK), column)
     rows = ink_rows(image)
@@ -319,14 +319,14 @@ def test_a_glyph_is_centred_vertically_in_its_row(delegate: FilesRowDelegate, pa
     assert abs((rows[0] + rows[-1]) / 2 - (CELL.height() - 1) / 2) <= 1
 
 
-def test_the_checksum_glyph_is_centred_horizontally(delegate: FilesRowDelegate, palette: QPalette) -> None:
+def test_the_checksum_glyph_is_centered_horizontally(delegate: FilesRowDelegate, palette: QPalette) -> None:
     """Its column has no title and no text, so a left-aligned lone glyph would sit under the edge of
     the column beside it.
 
     **Test steps:**
 
     * paint the checksum cell
-    * verify what was drawn is centred in the cell's width
+    * verify what was drawn is centered in the cell's width
     """
     columns = ink_columns(painted(delegate, palette, sample(state=FileChecksumState.BAD), CHECKSUM_COLUMN))
 
@@ -471,7 +471,7 @@ def test_a_disabled_rows_content_is_drawn_in_the_disabled_pen(
     **Test steps:**
 
     * paint the Name cell of a disabled row
-    * verify the glyph is drawn in the disabled colour and so is the text's pen
+    * verify the glyph is drawn in the disabled color and so is the text's pen
     """
     image = QImage(CELL.size(), QImage.Format.Format_ARGB32)
     image.fill(Qt.GlobalColor.transparent)
@@ -490,7 +490,7 @@ def test_a_disabled_row_still_reads_as_selected_when_it_is(
     delegate: FilesRowDelegate, palette: QPalette, mocker: MockerFixture
 ) -> None:
     """Selection wins over the dimming: a caller that selects a disabled row must not get a row filled
-    with highlight and drawn in a colour chosen against the unselected background.
+    with highlight and drawn in a color chosen against the unselected background.
 
     **Test steps:**
 

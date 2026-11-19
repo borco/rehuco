@@ -20,7 +20,7 @@ here, unlike the marketplace page, so name and URL come from two unrelated corne
 one element. Its ``.product-categories`` are broad site sections (``Resources``), not the marketplace's tag
 vocabulary, so `advertised_tags` alone is left unset on a store-host result rather than guessed from
 description prose -- a different preset theme, unconfirmed, would fall back to the same empty-field
-behaviour any unrecognized markup gets. Either way, `fields["url"]` carries the reconstructed
+behavior any unrecognized markup gets. Either way, `fields["url"]` carries the reconstructed
 ``www.artstation.com`` URL: `ScrapeActions.__apply` adds it as a source ahead of the store URL actually
 fetched, so on a fresh document it becomes the primary and the store URL a second entry, and on one that
 already has sources both are kept beside them ([[acquisition-tooling#scraper-protocols]]) -- nothing

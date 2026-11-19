@@ -784,7 +784,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         whole of an ordinary open (#564).
 
         Reads the path the way :meth:`load` reads any file, off the GUI thread -- including materializing the empty
-        **locked** dock for a file that has since vanished or become unparseable ([[data-model#write-integrity]]) --
+        **locked** dock for a file that has since vanished or become unparsable ([[data-model#write-integrity]]) --
         and always rebuilds the whole form (:attr:`active_block_changed`) for the real type in place of the
         placeholder's typeless one, since that rebuild is also when the dock adopts the layout the session remembered
         for it.
@@ -933,7 +933,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def snapshot(self) -> SavePayload:
         """What a save of this document writes, taken now, so editing can go on while it runs (#497).
 
-        A deep copy: nothing the document does afterwards reaches it. Also what the document's edits are kept as across
+        A deep copy: nothing the document does afterward reaches it. Also what the document's edits are kept as across
         a quit.
 
         :returns: the payload.
@@ -2319,7 +2319,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         whether it was ever active this session: a **claimed-then-abandoned** block (switched *to* and
         then away from) is dropped on save (``True``), while a **never-claimed foreign** block is carried
         verbatim (``False``). Surfacing the split is the "visually distinguish former-identity from
-        foreign" the slice decides to honour ([[plugins#plugin-blocks]]'s safety net): a user may switch
+        foreign" the slice decides to honor ([[plugins#plugin-blocks]]'s safety net): a user may switch
         to a type merely to preview it, which arms its deletion, so the form flags an abandoned block
         differently from one that will simply be carried.
 

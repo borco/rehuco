@@ -91,7 +91,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
     rather than on an identity this class would have to keep, which is what makes it still true for a
     job restored from the last session (#238).
 
-    Attached to the queue as a :class:`~rehuco_core.TaskQueueListener`, marshalled onto the GUI thread
+    Attached to the queue as a :class:`~rehuco_core.TaskQueueListener`, marshaled onto the GUI thread
     the way :class:`~rehuco_agent.tasks.TaskQueueModel` is and for the same reason: the engine calls
     its listeners on whichever thread the change happened on
     ([[appendices.task-queue#observation]]), and touching a ``QAction`` there would be a plain
@@ -118,11 +118,11 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
     that established nothing worth a banner row still rewrote dates, and a forget writes the record
     without producing a finding at all."""
 
-    class Marshaller(QObject):
+    class Marshaler(QObject):
         """Carries "one of our jobs may have moved" across the thread boundary, and nothing else.
 
         Nested and undocumented outside this class for the same reason
-        :class:`~rehuco_agent.tasks.TaskQueueModel.Marshaller` is: a mangled class name is not one Qt
+        :class:`~rehuco_agent.tasks.TaskQueueModel.Marshaler` is: a mangled class name is not one Qt
         or the linters will accept.
         """
 
@@ -154,8 +154,8 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         self.__unreported = 0
         """Bytes of progress seen since the GUI thread was last woken ([[appendices.task-queue#observation]])."""
 
-        self.__marshaller: Final = ChecksumActions.Marshaller(self)
-        self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
+        self.__marshaler: Final = ChecksumActions.Marshaler(self)
+        self.__marshaler.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
 
         self.__generate_action: Final = QAction("Generate &Checksums", self)
         self.__generate_action.setToolTip(GENERATE_TOOLTIP)
@@ -451,7 +451,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
     def __wake(self) -> None:
         """Ask the GUI thread to read the queue back, and start counting bytes again."""
         self.__unreported = 0
-        self.__marshaller.queue_changed.emit()
+        self.__marshaler.queue_changed.emit()
 
     def __on_queue_changed(self) -> None:
         """Read back whichever of this document's jobs have finished, on the GUI thread.
@@ -459,7 +459,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         Reads the *job*, not the status: a run's findings live on the object this class built, and it
         is safe to read once the job has finished, which is the same discipline the engine's own state
         capture is under ([[appendices.task-queue#lifetime]]). A job that ended without a report --
-        cancelled, or failed before it established anything -- says nothing here, because a run that
+        canceled, or failed before it established anything -- says nothing here, because a run that
         was stopped part-way has established nothing to say ([[data-model#checksums]]).
         """
         reported = ""
@@ -538,7 +538,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         """Whether this resource has a record, or the makings of one.
 
         A legacy ``.sfv``/``.md5``/``.sha*`` beside it counts (#243): a verify seeds a record from it
-        and checks that, so greying Verify out here would offer Generate instead -- which throws away
+        and checks that, so graying Verify out here would offer Generate instead -- which throws away
         the one claim the old file is good for. Looked for only where there is no ``.checksum``, so a
         resource that has been verified once is back to the single ``stat`` this used to be.
 

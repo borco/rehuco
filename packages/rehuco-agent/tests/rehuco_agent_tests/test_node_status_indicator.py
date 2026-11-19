@@ -27,8 +27,8 @@ class FakeHost(QObject):
         self.state_changed.emit(state)
 
 
-def test_starts_greyed_out_and_stopped(qtbot: QtBot) -> None:
-    """Built over a stopped host, the label says Stopped and is disabled, so the palette greys it.
+def test_starts_grayed_out_and_stopped(qtbot: QtBot) -> None:
+    """Built over a stopped host, the label says Stopped and is disabled, so the palette grays it.
 
     **Test steps:**
 
@@ -64,7 +64,7 @@ def test_running_reads_running_with_the_pid_in_the_tooltip(qtbot: QtBot) -> None
 
 
 def test_every_other_state_reads_stopped_with_its_own_tooltip(qtbot: QtBot) -> None:
-    """Disabled, starting and failed all show Stopped greyed out; only the tooltip tells them apart.
+    """Disabled, starting and failed all show Stopped grayed out; only the tooltip tells them apart.
 
     **Test steps:**
 

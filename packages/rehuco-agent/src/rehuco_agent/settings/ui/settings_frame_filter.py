@@ -341,7 +341,7 @@ class SettingsFrameFilter:
         :returns: its current value, comparable across snapshots.
         """
         # first, so a control that says what its value is wins over whatever it happens to subclass
-        # (the backdrop swatch is a QPushButton, whose checked state says nothing about the colour)
+        # (the backdrop swatch is a QPushButton, whose checked state says nothing about the color)
         if isinstance(widget, ValueControl):
             return widget.settings_value()
         if isinstance(widget, QLineEdit):

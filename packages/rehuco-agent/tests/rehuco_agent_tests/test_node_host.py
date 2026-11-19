@@ -262,7 +262,7 @@ def test_enabling_while_the_old_process_is_still_leaving_restarts_once_it_has_go
 
     * start, wait for running; make the process report ``Running`` to the enable handler as if still leaving
     * set ``enabled`` ``True`` on an already-enabled host through the handler and let the real process finish
-    * verify the node is running again afterwards
+    * verify the node is running again afterward
     """
     host = NodeHost(settings, WAITS_FOR_STDIN)
     host.start()
@@ -281,7 +281,7 @@ def test_enabling_while_the_old_process_is_still_leaving_restarts_once_it_has_go
 
 
 def test_start_later_starts_only_if_still_enabled(qtbot: QtBot, settings: NodeSettings) -> None:
-    """The timer's start honours the setting at the time it fires: off means nothing starts.
+    """The timer's start honors the setting at the time it fires: off means nothing starts.
 
     **Test steps:**
 

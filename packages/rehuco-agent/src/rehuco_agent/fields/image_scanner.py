@@ -17,7 +17,7 @@ class ScreenshotSet:
     """A resource's screenshots, the two kinds kept apart ([[data-model#image-meanings]], #270).
 
     Both kinds are screenshots and the curated-out list governs both; what separates them is that only
-    the numbered ones hold a *position*, which is why the curation editor lists them first and greys
+    the numbered ones hold a *position*, which is why the curation editor lists them first and grays
     the reorder buttons on the rest. Every other reader wants them as one sequence and gets it from
     :meth:`paths`.
 
@@ -52,7 +52,7 @@ class AfterConversion:
     contract the toolkit's curation editor reads -- the ``documents`` layer fills it in from the
     conversion's own dry-run plan, and the widget never learns where it came from.
 
-    :ivar name: the filename the image has afterwards -- the ``<stem>NN`` it is renamed to, or its own
+    :ivar name: the filename the image has afterward -- the ``<stem>NN`` it is renamed to, or its own
         name when the conversion leaves it alone. What the *After conversion* cell shows.
     :ivar reason: why it keeps its own name, in the conversion's vocabulary; empty for a renamed image.
         What the cell's tooltip says.

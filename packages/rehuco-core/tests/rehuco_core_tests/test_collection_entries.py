@@ -115,7 +115,7 @@ def test_document_collections_are_empty_without_a_block() -> None:
 
 
 def test_reading_the_collections_leaves_the_document_unchanged_on_save() -> None:
-    """Reading the accessor is not an edit: the serialized document is byte-identical afterwards
+    """Reading the accessor is not an edit: the serialized document is byte-identical afterward
     ([[data-model#write-integrity]]).
 
     **Test steps:**
@@ -219,7 +219,7 @@ def test_setting_no_collection_records_removes_the_key() -> None:
 
 
 def test_setting_the_collection_records_does_not_adopt_the_caller_s_list() -> None:
-    """The list is copied on the way in, so a caller mutating its own afterwards cannot reach the document.
+    """The list is copied on the way in, so a caller mutating its own afterward cannot reach the document.
 
     **Test steps:**
 

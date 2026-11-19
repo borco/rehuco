@@ -488,7 +488,7 @@ def test_an_unreadable_root_cannot_be_relabeled(tmp_path: Path) -> None:
     **Test steps:**
 
     * load ``HOME`` with one root file missing
-    * verify relabelling that root raises ``ValueError`` with the reason
+    * verify relabeling that root raises ``ValueError`` with the reason
     """
     path = write_home(tmp_path)
     (tmp_path / "discs.rehuroot").unlink()
@@ -521,7 +521,7 @@ def test_an_unreadable_root_takes_no_label_or_location(tmp_path: Path) -> None:
 # endregion
 
 
-# region Removing, relabelling and moving
+# region Removing, relabeling and moving
 
 
 def test_remove_root_returns_it_and_keeps_its_file(tmp_path: Path, home: RehucoFile) -> None:
@@ -545,7 +545,7 @@ def test_remove_root_returns_it_and_keeps_its_file(tmp_path: Path, home: RehucoF
 
 
 def test_relabel_root_writes_its_root_file(tmp_path: Path, home: RehucoFile) -> None:
-    """A label is the root's, so relabelling writes the ``.rehuroot`` and keeps the root's id.
+    """A label is the root's, so relabeling writes the ``.rehuroot`` and keeps the root's id.
 
     **Test steps:**
 
@@ -608,7 +608,7 @@ def test_a_read_only_root_file_cannot_be_relabeled(tmp_path: Path) -> None:
     **Test steps:**
 
     * load ``HOME`` with one root file stamped newer
-    * verify relabelling it raises ``ValueError``
+    * verify relabeling it raises ``ValueError``
     """
     path = write_home(tmp_path)
     write_json(tmp_path / "discs.rehuroot", {**root_data(ROOT_IDS[1], "discs", "//x/discs"), "format_version": 2})

@@ -287,7 +287,7 @@ def test_missing_or_unrecognized_type_defaults_to_tutorial(mocker: MockerFixture
 @mark.parametrize(
     "content",
     [
-        param("tags: [unterminated", id="unparseable_yaml"),
+        param("tags: [unterminated", id="unparsable_yaml"),
         param("just a string", id="non_mapping_top_level"),
     ],
 )
@@ -296,7 +296,7 @@ def test_invalid_yaml_raises_rehu_format_error(mocker: MockerFixture, content: s
 
     **Test steps:**
 
-    * load unparseable YAML (an unterminated flow sequence), then a YAML scalar (not a mapping)
+    * load unparsable YAML (an unterminated flow sequence), then a YAML scalar (not a mapping)
     * verify each raises :class:`RehuFormatError`
     """
     mock_file_contents(mocker, content)
@@ -317,7 +317,7 @@ def test_load_refuses_a_payload_with_an_over_long_integer(mocker: MockerFixture)
     Fed a real payload because that limit is a documented, platform-independent 4300 digits
     (``sys.int_info.str_digits_check_threshold``) -- unlike the recursion case below.
 
-    Not a size defence -- the real sanity caps are #88.
+    Not a size defense -- the real sanity caps are #88.
 
     **Test steps:**
 

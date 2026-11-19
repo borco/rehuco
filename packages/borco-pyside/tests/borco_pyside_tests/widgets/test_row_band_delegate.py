@@ -83,7 +83,7 @@ class SampleModel(QAbstractTableModel):
 
 @fixture(name="palette")
 def fixture_palette() -> QPalette:
-    """A palette whose relevant roles are colours nothing else draws."""
+    """A palette whose relevant roles are colors nothing else draws."""
     palette = QPalette()
     palette.setColor(QPalette.ColorGroup.Normal, QPalette.ColorRole.Text, INK)
     palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, DISABLED_INK)
@@ -133,7 +133,7 @@ def paint(
     :param option: the style option.
     :param index: the cell.
     :param mocker: pytest-mock fixture, to capture ``drawText``.
-    :returns: ``(image, calls)`` with ``(pen colour, rect, flags, text)`` per call.
+    :returns: ``(image, calls)`` with ``(pen color, rect, flags, text)`` per call.
     """
     image = QImage(option.rect.size(), QImage.Format.Format_ARGB32)
     image.fill(Qt.GlobalColor.transparent)
@@ -200,7 +200,7 @@ def test_a_selected_cell_is_drawn_in_the_highlighted_pen(
     """**Test steps:**
 
     * paint a selected and an unselected cell, capturing the pen at the moment text is drawn
-    * verify the highlighted-text colour for the first and the ordinary ink for the second
+    * verify the highlighted-text color for the first and the ordinary ink for the second
     """
     _, selected = paint(delegate, option_for(palette, selected=True), model.index(0, 0), mocker)
     mocker.stopall()
@@ -216,7 +216,7 @@ def test_the_models_foreground_tint_survives(
     """**Test steps:**
 
     * paint the cell of a row whose model answers a ``ForegroundRole`` brush
-    * verify its text is drawn in that colour
+    * verify its text is drawn in that color
     """
     _, calls = paint(delegate, option_for(palette), model.index(1, 0), mocker)
 
@@ -229,7 +229,7 @@ def test_a_disabled_row_is_drawn_in_the_disabled_group(
     """**Test steps:**
 
     * paint a cell of a row whose flags carry no ``ItemIsEnabled``
-    * verify its text is drawn in the palette's disabled colour
+    * verify its text is drawn in the palette's disabled color
     """
     _, calls = paint(delegate, option_for(palette), model.index(2, 0), mocker)
 
@@ -237,7 +237,7 @@ def test_a_disabled_row_is_drawn_in_the_disabled_group(
 
 
 def test_a_hovered_cell_draws_nothing_extra(delegate: RowBandDelegate, model: SampleModel, palette: QPalette) -> None:
-    """A table with no concept of hovering a row must not grow a grey box under the mouse.
+    """A table with no concept of hovering a row must not grow a gray box under the mouse.
 
     **Test steps:**
 
@@ -410,7 +410,7 @@ def test_a_selected_radio_shows_a_dot_only_when_checked(qapp: object) -> None:
     **Test steps:**
 
     * draw a checked and an unchecked radio
-    * verify both have a ring, and only the checked one has ink at its centre
+    * verify both have a ring, and only the checked one has ink at its center
     """
     del qapp
     checked = indicator_image(radio=True, state=Qt.CheckState.Checked)
@@ -443,7 +443,7 @@ def test_a_selected_check_cell_draws_its_indicator_in_the_highlighted_pen(
     """**Test steps:**
 
     * paint a selected check cell
-    * verify the highlighted-text colour appears, which the band alone never draws
+    * verify the highlighted-text color appears, which the band alone never draws
     """
     image, _ = paint(delegate, option_for(palette, selected=True), model.index(0, 1))
 
@@ -474,7 +474,7 @@ def test_a_models_background_brush_fills_an_unselected_cell(
     """**Test steps:**
 
     * paint an unselected cell whose model answers a ``BackgroundRole`` brush
-    * verify the corner is that colour
+    * verify the corner is that color
     """
     image, _ = paint(delegate, option_for(palette), model.index(1, 1))
 

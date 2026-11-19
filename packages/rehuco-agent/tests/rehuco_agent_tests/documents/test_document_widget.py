@@ -725,7 +725,7 @@ def test_space_in_the_viewer_toggles_the_row_and_dirties_the_document(
 def test_a_convert_and_a_delete_through_the_viewer_re_point_it(
     widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """Both rename or remove files, and the viewer follows the editor's rows afterwards.
+    """Both rename or remove files, and the viewer follows the editor's rows afterward.
 
     **Test steps:**
 
@@ -2695,7 +2695,7 @@ def test_a_model_outliving_its_widget_reaches_nothing_the_widget_hung_on_it(
 
 def test_field_signals_after_a_switch_do_not_fire_into_deleted_widgets(qtbot: QtBot) -> None:
     """A type switch rebuilds the form, deleting every field's old widgets; the model's field signals
-    firing afterwards must not reach those deleted widgets ([[plugins#field-toolkit]], #114).
+    firing afterward must not reach those deleted widgets ([[plugins#field-toolkit]], #114).
 
     The form is retained and its outgoing fields' long-lived-signal connections are cleared on the
     rebuild (`FieldsForm.clear_external`), so a lambda viewer/editor never outlives its widget. Without
@@ -2808,7 +2808,7 @@ def test_switching_type_rebuilds_the_docks_with_the_abandoned_block_flagged(
     qtbot: QtBot, block_model: RehuDocumentModel
 ) -> None:
     """A type switch re-resolves the docks: the former-active block, absent as a flagged row before the
-    switch, appears as a will-drop-on-save row afterwards ([[plugins#plugin-blocks]], #83).
+    switch, appears as a will-drop-on-save row afterward ([[plugins#plugin-blocks]], #83).
 
     This is the whole point of rebuilding rather than reactive show/hide -- the abandoned block's row
     did not exist in the pre-switch composition, so only a rebuild can add it.
@@ -5008,14 +5008,14 @@ def test_another_resource_activated_in_the_browser_is_relayed_out(qtbot: QtBot, 
     * emit the browser's own activation
     * verify the widget re-emitted it with the same path
     """
-    neighbour = Path("/fake/library/sculpting/other.rehu")
+    neighbor = Path("/fake/library/sculpting/other.rehu")
     view = files_dock(widget).widget()
     assert isinstance(view, FilesView)
 
     with qtbot.waitSignal(widget.record_activated, timeout=WAIT_TIMEOUT_MS) as relayed:
-        view.record_activated.emit(neighbour)
+        view.record_activated.emit(neighbor)
 
-    assert relayed.args == [neighbour]
+    assert relayed.args == [neighbor]
 
 
 def test_an_image_activated_in_the_browser_opens_against_the_folder(widget: DocumentWidget) -> None:
@@ -5371,7 +5371,7 @@ def test_a_type_switch_closes_the_outgoing_types_open_dock(
 
     * open the pack's Content Images, then switch the pack to a tutorial
     * verify the dock is gone from the manager and the toolbar, and the widget's fields say so
-    * verify a path change afterwards is ignored rather than refreshing a dock that no longer exists
+    * verify a path change afterward is ignored rather than refreshing a dock that no longer exists
     """
     content_images_dock(refimages_widget).toggleView(True)
     toggle = content_images_dock(refimages_widget).toggleViewAction()
@@ -6071,10 +6071,10 @@ def test_the_viewer_names_a_screenshot_relative_to_the_document(
 
 @fixture
 def auto_hide_flags() -> Iterator[None]:
-    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterwards.
+    """Turn QtAds' pinning on for the duration of one test, and put the flags back afterward.
 
     Not autouse, unlike this module's other fixtures: the flags are a `CDockManager` **static** and
-    leaving them on would decide the behaviour of every later test in the session, so only the tests
+    leaving them on would decide the behavior of every later test in the session, so only the tests
     that need the button QtAds only creates under them ask for it.
     """
     previous = QtAds.CDockManager.autoHideConfigFlags()
@@ -6160,7 +6160,7 @@ def test_a_sub_dock_maximizes_over_the_documents_other_areas(widget: DocumentWid
 
 def test_a_layout_capture_reads_a_maximized_document_undone(widget: DocumentWidget, qtbot: QtBot) -> None:
     """``save_layout_state`` and ``save_state`` capture the un-maximized layout while a sub-dock
-    stands maximized, and leave it maximized afterwards (#341) -- a default saved from a maximized
+    stands maximized, and leave it maximized afterward (#341) -- a default saved from a maximized
     document must not open every later one as a sliver.
 
     **Test steps:**
@@ -6573,7 +6573,7 @@ def test_a_path_less_documents_images_dock_refuses_a_drop(
     acquire_local.assert_not_called()
 
 
-def test_an_unrecognised_drop_on_the_images_dock_is_refused(saved_widget: DocumentWidget, qtbot: QtBot) -> None:
+def test_an_unrecognized_drop_on_the_images_dock_is_refused(saved_widget: DocumentWidget, qtbot: QtBot) -> None:
     """Plain text carrying no URL, no image payload and no local file is refused outright (#73)."""
     data = QMimeData()
     data.setText("just some words")

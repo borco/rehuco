@@ -677,7 +677,7 @@ def test_the_record_signature_is_what_a_reported_file_is_compared_with(tmp_path:
 
 
 def test_a_save_takes_the_written_files_signature(tmp_path: Path) -> None:
-    """The model's own write is not a change on disk: reporting the saved file afterwards changes nothing.
+    """The model's own write is not a change on disk: reporting the saved file afterward changes nothing.
 
     **Test steps:**
 
@@ -737,12 +737,12 @@ def test_a_rename_whose_save_is_refused_as_a_conflict_moves_nothing(tmp_path: Pa
     model.title = "Mine"
     edit_on_disk(path, retitle("Theirs"))
 
-    assert not model.rename_location("modelling")
+    assert not model.rename_location("modeling")
 
     assert model.rename_error.startswith('Could not save "sculpting" before renaming it:')
     assert "changed by someone else" in model.rename_error
     assert path.exists()
-    assert not (tmp_path / "modelling").exists()
+    assert not (tmp_path / "modeling").exists()
     assert isinstance(model.conflict, RecordConflict)
 
 

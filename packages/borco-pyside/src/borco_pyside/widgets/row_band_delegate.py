@@ -21,7 +21,7 @@ type ModelIndex = QModelIndex | QPersistentModelIndex
 
 
 class RowBandDelegate(QStyledItemDelegate):
-    """Draws what the default delegate draws -- text, check state, the model's colours -- but fills a
+    """Draws what the default delegate draws -- text, check state, the model's colors -- but fills a
     selected cell's whole rect, so one selected row reads as one band.
 
     The style draws a selected row cell by cell, and with no grid between the cells a selection becomes a
@@ -32,7 +32,7 @@ class RowBandDelegate(QStyledItemDelegate):
     the look.
 
     Painting is still per cell: with the grid off the cells' rects tile the row, so every column of a row
-    filling its own rect is what makes one band. A column delegate set on top (a spin box, a centred
+    filling its own rect is what makes one band. A column delegate set on top (a spin box, a centered
     checkbox) subclasses this and calls :meth:`paint_band` first, so its cell takes part.
 
     Editing is the base class's: the editor lands on the cell's own rect, and a check-state cell is
@@ -50,7 +50,7 @@ class RowBandDelegate(QStyledItemDelegate):
         :param painter: the painter to draw with.
         :param option: the item's rect, palette and state.
         :param index: the cell, for its flags.
-        :returns: the colour content should be drawn in.
+        :returns: the color content should be drawn in.
         """
         if QStyle.StateFlag.State_Selected in option.state:
             painter.fillRect(option.rect, option.palette.highlight())
@@ -77,7 +77,7 @@ class RowBandDelegate(QStyledItemDelegate):
 
         :param painter: the painter to draw with.
         :param rect: the indicator's rect.
-        :param color: the colour to draw it in -- the highlighted-text colour.
+        :param color: the color to draw it in -- the highlighted-text color.
         :param state: the check state to show.
         :param radio: whether to draw a radio button rather than a check box.
         """
@@ -139,7 +139,7 @@ class RowBandDelegate(QStyledItemDelegate):
         """Draw the check indicator where the base delegate hit-tests it.
 
         :param painter: the painter to draw with.
-        :param opt: the initialised option of a cell that has an indicator.
+        :param opt: the initialized option of a cell that has an indicator.
         :returns: the part of the cell left for text, after the indicator.
         """
         style = opt.widget.style() if opt.widget is not None else QApplication.style()

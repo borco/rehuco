@@ -148,7 +148,7 @@ class RootsChecksumVerbs:
 
         :param index: the checksum file.
         :returns: the ``.rehu``'s path when it is there, else ``None``. Answered from the listing, which a file's
-            neighbours always have.
+            neighbors always have.
         """
         path = self.__model.path_of(index)
         names = self.__model.child_names(index.parent())

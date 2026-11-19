@@ -154,9 +154,9 @@ docstring of `borco_core.path_presence` — read it there, where the code is.
   (`AbandonableTaskJob`, #339). A rename through the barrier runs on the GUI thread, since the player's listener is a
   widget: a job hands it over by `RecordMoveHost.run_step`, holding no lock while it waits.
 
-### Qt and PySide behaviour
+### Qt and PySide behavior
 
-[[[appendices.code-conventions#qt-behaviour]]]
+[[[appendices.code-conventions#qt-behavior]]]
 
 Facts about Qt and PySide that cost time to find, beyond the thread rules above. QtAds' own are in
 [[appendices.qt-ads]]; driving these in tests, in [[appendices.testing#offscreen-qt]].
@@ -164,7 +164,7 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
 - **Never keep the wrapper of an object Qt owns when its parent can hand it back** (#459, #488): read it per use; delete
   a child menu in a `finally` around `exec`; walk a widget's own descendants, not `nextInFocusChain()` (#487).
 - **Deletion** (#529, #479): a queued signal to a Python callable posts to PySide's receiver — make the sender its own
-  (`LogBridge.Marshaller`); a deleted `QObject`'s signals and methods raise `RuntimeError`; a `QObject` kept alive only
+  (`LogBridge.Marshaler`); a deleted `QObject`'s signals and methods raise `RuntimeError`; a `QObject` kept alive only
   by its children's closures deletes itself mid-destruction; `destroyed` fires parent first — closures hold a token. A
   form keeping strong references to the widgets its grids own leaves the model's receivers doubled after a teardown
   (`test_a_teardown_lets_go_of_every_model_connection`): hold `weakref.ref` (#568). A host-parented `QAction` a
@@ -194,7 +194,7 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
   parent was shown stays hidden until `show()`; an unshown `ElidedLabel` reads `…` (#378).
 - **Widgets**: `QColumnView` — `createColumn` for a delegate, `setFixedWidth(0)` for the preview (#378); a `QToolButton`
   mirrors its action but not its font; a `StrEnum` item comes back `str`; `applicationDisplayName()` falls back to
-  `applicationName()` (#412); `QStatusBar.addPermanentWidget` appends rightwards; the agent's conftest makes
+  `applicationName()` (#412); `QStatusBar.addPermanentWidget` appends rightward; the agent's conftest makes
   `NodeHost.start_later` a no-op, so a host test arms the real one, kept at import (#506; #661:
   `QTimer.singleShot(ms, receiver, callable)` fires), and its callable is a method of the receiver, a `partial` or a
   lambda, never a method of a plain object nothing else holds, which is called freed (#671, PYSIDE-3517);
@@ -221,7 +221,7 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
   `QWIDGETSIZE_MAX`. A hidden widget's grid row drops its spacing, a visible empty wrapper keeps it; a field on two
   viewer tabs returns a row per tab from `make_viewer_rows` (#620).
 - **Views and editors**: a second view over listed rows gets no reset; two `ScintillaEdit`s share a document by
-  `setDocPointer` (#575). A combo item greyed by `ForegroundRole` stays pickable (#618). `ItemListEditor` takes a
+  `setDocPointer` (#575). A combo item grayed by `ForegroundRole` stays pickable (#618). `ItemListEditor` takes a
   `delegate=`, since a column delegate set later misses its `closeEditor`; a class promoted in a `.ui` needs its own
   module, or the `_ui` import is circular; a settings frame's compound control is a `ValueControl` (#578).
 - **Ownership**: a Qt-made object held in an attribute (`addWidget`'s, `addSeparator`'s action) is made in Python
@@ -297,6 +297,6 @@ Rules that came out of fixing a bug and hold beyond it, until a spec page takes 
 - **An editor is disabled while what it shows is not safe to edit** (#573).
 - **A value that belongs to the file is read once per file** (#574), never re-read on a model signal.
 - **A choice that outlives one video is kept by meaning, not by id** (#618).
-- **Cached rows go only when the user removes their root** (#577): an offline or unreadable root keeps them, greyed.
+- **Cached rows go only when the user removes their root** (#577): an offline or unreadable root keeps them, grayed.
 - **A click and the row that previews it read one function** (#649: `plan_move`), never two copies of the rule.
 - **Read the firewall through its rules** (#418): `Get-NetFirewallRule | Get-NetFirewallPortFilter`.

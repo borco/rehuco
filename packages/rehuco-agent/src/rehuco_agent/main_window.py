@@ -337,7 +337,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # armed for the whole of __init__ and released at the end of it, so nothing this window owns
         # can put a top-level window on screen while the window itself is not up: the layout restore
         # below shows a dock saved as floating-and-open the moment it applies the blob, and merely
-        # hiding it again afterwards leaves a real, painted flash (#306)
+        # hiding it again afterward leaves a real, painted flash (#306)
         floating_show_guard = QtAdsFloatingShowGuard()
         shared_tray_settings().enabled_changed.connect(self.__on_tray_enabled_changed)  # type: ignore[attr-defined]
         self.__on_tray_enabled_changed(shared_tray_settings().enabled)
@@ -394,7 +394,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # with no `trust=` of its own (#358) -- attaching it here is the whole of the agent's wiring
         DEFAULT_CHECKSUM_TRUST.attach(checksum_trust_path())
         # the discard job resolves its deleter when it runs, through this process-wide provider (#298):
-        # installed before the queue is restored, so a discard rebuilt from the saved queue honours the
+        # installed before the queue is restored, so a discard rebuilt from the saved queue honors the
         # Recycle Bin setting exactly as one enqueued from the dialog does -- a job the registry rebuilt
         # has no window to be handed a deleter through, and coming back to a plain unlink is no restore
         DEFAULT_DELETER_PROVIDER.install(configured_deleter)
@@ -540,7 +540,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # and can't distinguish "explicitly Light" from "Default, currently resolving to Light".
         # Constructed *before* the session is restored below because constructing it is what applies
         # the saved theme: restoring first would build every restored document's chrome against a
-        # palette about to be replaced, leaving it to catch up afterwards (#304).
+        # palette about to be replaced, leaving it to catch up afterward (#304).
         self.__theme_model: Final = ThemeModel(self.__theme_settings.mode)
 
         self.__session: Final = DocumentSessionSettings()
@@ -1056,7 +1056,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         A public method rather than an inline dialog, so a test replaces the question on the instance.
 
         :param roots: the roots to ask about.
-        :returns: the folder given to each root and the roots skipped; ``None`` when the dialog was cancelled.
+        :returns: the folder given to each root and the roots skipped; ``None`` when the dialog was canceled.
         """
         dialog = MapRootsDialog(roots, self)
         if dialog.exec() != MapRootsDialog.DialogCode.Accepted:
@@ -1133,7 +1133,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         Each save is guarded (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`,
         #146): an I/O failure raises a retry/cancel dialog rather than aborting the whole sweep with a
-        traceback. Cancelling one stops the sweep -- the user chose not to keep saving -- leaving the
+        traceback. Canceling one stops the sweep -- the user chose not to keep saving -- leaving the
         remaining dirty documents untouched.
         """
         for model in self.__documents_dock.open_document_models():
@@ -1430,7 +1430,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__pending_saves_indicator = PendingSavesIndicator(self.__task_queue_widget.model)
         self.__pending_saves_indicator.clicked.connect(self.__show_pending_saves)
         self.statusBar().addPermanentWidget(self.__pending_saves_indicator)
-        # the local node's word, rightmost (#506): "Local Node: Running", or "Local Node: Stopped" greyed out
+        # the local node's word, rightmost (#506): "Local Node: Running", or "Local Node: Stopped" grayed out
         self.__node_status_indicator = NodeStatusIndicator(self.__node_host)
         self.statusBar().addPermanentWidget(self.__node_status_indicator)
 
@@ -1573,7 +1573,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         it is just another splitter pane, sized from its content's hint -- and an *empty* documents area
         hints small while a `LogWidget`'s table hints large, so revealing both bottom docks on a fresh
         install squeezed the documents down to under a sixth of the window (measured offscreen). Which
-        is backwards: the strip under the thing it is about is exactly what :meth:`__add_log_dock` says
+        is backward: the strip under the thing it is about is exactly what :meth:`__add_log_dock` says
         a log dock is.
 
         The split is applied while the two docks are **briefly open** -- a hidden pane has no size to
@@ -1679,7 +1679,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         [[appendices.task-queue#lifetime]]).
 
         **Applied at load, before ``restore()``.** A clear-on-restart setting turned on after the app
-        was last closed is then honoured on the very next start rather than the one after, and the
+        was last closed is then honored on the very next start rather than the one after, and the
         dropped jobs never enter the queue at all -- no ``jobs_removed`` churn, no flash of rows
         vanishing as the window opens. Which of the two held-back states unfinished work restarts in is
         *resume tasks on restart*'s to decide, not this method's: eligibility is per-job, so a newly
@@ -1941,8 +1941,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         batch guard
         (:func:`~rehuco_agent.documents.confirm_and_save_dirty.confirm_and_save_dirty`, #176) --
         the same one :meth:`~rehuco_agent.documents.documents_dock.DocumentsDock.close_all` uses. What
-        is specific here is the follow-on: a refusal (the prompt cancelled, or a failed save's
-        retry/cancel dialog cancelled, #146) aborts the app close, so the window stays open with its
+        is specific here is the follow-on: a refusal (the prompt canceled, or a failed save's
+        retry/cancel dialog canceled, #146) aborts the app close, so the window stays open with its
         edits and the session intact. Crucially, that keeps a failure from skipping the persistence
         steps below (window state, session, recents, theme) while the window closes anyway -- once the
         guard has passed, they always run.
@@ -2033,7 +2033,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # Quit from the tray menu while hidden would run this whole teardown and then leave ``exec()`` running
         # forever (#205, confirmed empirically offscreen). And a floating dock window -- a torn-out Settings, a
         # Browsers window -- is a top-level window of its own with no transient parent, so while one is on screen
-        # this window is not the last one either; closing it afterwards is a close QtAds ignores (it hides
+        # this window is not the last one either; closing it afterward is a close QtAds ignores (it hides
         # instead), and the process lives on with nothing on screen (#507, measured on the real display). Nothing
         # is freed here: quit() only ends the event loop once this event has been handled
         if (app := QApplication.instance()) is not None:  # pragma: no branch  (always exists here)
@@ -2060,7 +2060,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         Nothing is asked of the user at start: a file that is gone or unreadable is logged by the dock and
         forgotten here, so the next run does not trip over it again. Revealed like a session restore is --
-        the outer layout restored afterwards still has the last word on whether the dock ends up visible.
+        the outer layout restored afterward still has the last word on whether the dock ends up visible.
 
         One on a share or a removable drive is **not opened here** (#464): whether its device is there is not known
         until it has been asked, and the start does not wait for that. :meth:`__on_rehuco_arrived` opens it when it
@@ -2095,7 +2095,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         whose device does not answer is not shown and stays remembered as open (:meth:`__capture_session`).
 
         Reveals the Documents dock first, like every other open funnel (#268) -- see
-        :meth:`__reveal_documents_dock` for why the outer layout restored afterwards still has the last
+        :meth:`__reveal_documents_dock` for why the outer layout restored afterward still has the last
         word on whether it ends up visible.
 
         :param restore: the Session page's choices: which kinds of storage to restore documents from. Both off is
@@ -2279,7 +2279,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         Recorded into ``Open recents`` (#64) once opened, alongside :meth:`open_folder`/:meth:`open_archive`
         -- **unless** the file could not be read at all and opened as a load-failure stub
-        (:attr:`~RehuDocument.load_failed`): a missing or unparseable file is not a file you opened, so it
+        (:attr:`~RehuDocument.load_failed`): a missing or unparsable file is not a file you opened, so it
         stays out of recents even though it still yields a (locked) dock ([[data-model#write-integrity]]).
 
         The Documents dock is shown and raised first (:meth:`__reveal_documents_dock`, #268), so the
@@ -2644,7 +2644,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         Sets the flag :meth:`closeEvent` reads (and clears) before calling :meth:`close`, so the
         guarded close path -- the same one a plain window close runs -- decides whether the app can
-        actually quit; a cancelled dirty-document prompt or task-queue warning leaves the window
+        actually quit; a canceled dirty-document prompt or task-queue warning leaves the window
         (and, while tray mode is on, the tray icon) exactly as they were.
         """
         self.__quit_requested = True

@@ -22,7 +22,7 @@ class UrlCellDropFilter(QObject):
     **Watches the ancestors, not the table.** A drag is delivered to the nearest widget under the cursor
     that accepts drops, and every one of them keeps the drag until it ends -- so a table that accepted
     drops itself would take them from the Main Editor dock's scrape, and could not hand a drop on to it
-    afterwards. The table is left not accepting, and this filter is installed on each ancestor that does
+    afterward. The table is left not accepting, and this filter is installed on each ancestor that does
     (:meth:`attach`), where it sees the whole drag: it takes only a link over a URL cell, and every other
     drop, or drag, goes on to the ancestor's own handling untouched. It is installed last, so it runs
     first, which is what makes a drop aimed at a cell win over a handler that would take it for the

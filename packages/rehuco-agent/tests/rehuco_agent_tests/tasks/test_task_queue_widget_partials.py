@@ -146,14 +146,14 @@ def wait_for_question(qtbot: QtBot, asked: Asked) -> None:
 def test_a_cancel_removing_the_partial_copy_is_the_default_and_tells_the_job(
     widget: TaskQueueWidget, rig: Rig, jobs: dict[int, Mock], mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """Cancelling a move with a partial copy says where it is, offers removing it first, and has the job take it back.
+    """Canceling a move with a partial copy says where it is, offers removing it first, and has the job take it back.
 
     **Test steps:**
 
     * script a running move with a partial copy, its place answering, select it, and press Cancel
     * press Remove Partial Copy
     * check the question named the copy's place, Remove was the default, and the job was told to keep nothing and
-      cancelled; the plain question was not asked
+      canceled; the plain question was not asked
     """
     job = add_move(rig, jobs, "Move - Intro", JobState.RUNNING, PLACE)
     rig.settle()
@@ -183,7 +183,7 @@ def test_a_cancel_keeping_the_partial_copy_tells_the_job_to_keep_it(
     **Test steps:**
 
     * script a paused move with a partial copy, select it, press Cancel, and press Keep Partial Copy
-    * check the job was told to keep it, and cancelled
+    * check the job was told to keep it, and canceled
     """
     job = add_move(rig, jobs, "Move - Intro", JobState.PAUSED, PLACE)
     rig.settle()
@@ -206,7 +206,7 @@ def test_a_cancel_refused_or_closed_cancels_nothing(
     **Test steps:**
 
     * script a running move with a partial copy, select it, press Cancel and Don't Cancel; then Cancel and close it
-    * check nothing was cancelled and the job was told nothing
+    * check nothing was canceled and the job was told nothing
     """
     job = add_move(rig, jobs, "Move - Intro", JobState.RUNNING, PLACE)
     rig.settle()
@@ -227,13 +227,13 @@ def test_a_cancel_whose_copy_s_place_does_not_answer_says_it_stays(
     widget: TaskQueueWidget, rig: Rig, jobs: dict[int, Mock], mocker: MockerFixture, qtbot: QtBot
 ) -> None:
     """A copy on a share that does not answer cannot be removed: the question says it stays, offers only to cancel or
-    not -- not cancelling the default -- and the job is told to keep it.
+    not -- not canceling the default -- and the job is told to keep it.
 
     **Test steps:**
 
     * script a waiting move whose copy's place does not answer, select it, press Cancel, and press Cancel
     * check the question said the copy stays, offered Cancel and Don't Cancel with Don't Cancel the default, and the
-      job was told to keep its copy and cancelled
+      job was told to keep its copy and canceled
     """
     job = add_move(rig, jobs, "Move - Intro", JobState.WAITING, PLACE)
     rig.settle()
@@ -256,14 +256,14 @@ def test_one_question_covers_a_selection_of_moves_and_other_jobs(
     widget: TaskQueueWidget, rig: Rig, jobs: dict[int, Mock], mocker: MockerFixture, qtbot: QtBot
 ) -> None:
     """A selection gets one question: copies that answer go as chosen, one that does not stays, and a job with no
-    copy is cancelled with them.
+    copy is canceled with them.
 
     **Test steps:**
 
     * script a move whose copy's place answers, one whose does not, and a plain job; select all, press Cancel and
       Remove Partial Copy
     * check the question counted three jobs and named both copies; the first move was told to keep nothing, the
-      second to keep its copy, and all three were cancelled
+      second to keep its copy, and all three were canceled
     """
     here = add_move(rig, jobs, "Move - Intro", JobState.RUNNING, PLACE)
     away = add_move(rig, jobs, "Move - Basics", JobState.QUEUED, OTHER_PLACE)
@@ -294,7 +294,7 @@ def test_a_move_with_no_partial_copy_gets_the_plain_question(
     **Test steps:**
 
     * script a queued move with no partial copy, select it, and press Cancel, answering Yes
-    * check no scan started, and the job was cancelled
+    * check no scan started, and the job was canceled
     """
     add_move(rig, jobs, "Move - Intro", JobState.QUEUED, None)
     rig.settle()
@@ -341,7 +341,7 @@ def test_a_cancel_asked_again_while_the_first_waits_for_its_scan_is_dropped(
     **Test steps:**
 
     * script a move with a partial copy, make the scan never answer, select it, and press Cancel twice
-    * check one scan was started, and nothing was cancelled
+    * check one scan was started, and nothing was canceled
     """
     add_move(rig, jobs, "Move - Intro", JobState.RUNNING, PLACE)
     rig.settle()
@@ -393,10 +393,10 @@ def test_clearing_a_move_keeping_its_partial_copy_removes_only_the_row(
 
     **Test steps:**
 
-    * script a cancelled move with a kept partial copy, select it, press Clear, and press Keep Partial Copy
+    * script a canceled move with a kept partial copy, select it, press Clear, and press Keep Partial Copy
     * check the copy was not removed and the row was
     """
-    job = add_move(rig, jobs, "Move - Intro", JobState.CANCELLED, PLACE)
+    job = add_move(rig, jobs, "Move - Intro", JobState.CANCELED, PLACE)
     rig.settle()
     answering(mocker, {})
     asked = Asked(mocker, "Keep Partial Copy")

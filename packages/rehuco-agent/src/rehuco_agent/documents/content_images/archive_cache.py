@@ -271,7 +271,7 @@ class ArchiveCache:  # pylint: disable=too-many-instance-attributes
 
         Asked **after** the handle's lock is released and still inside the hold. That order is what
         closes the race with :meth:`__close_handles_for_rename`: a listener that fails to take the lock has
-        found a reader on it, and that reader asks here only afterwards -- when the flag the listener
+        found a reader on it, and that reader asks here only afterward -- when the flag the listener
         was called for is already up. A handle this read opened while the flag was up is covered the
         same way.
 

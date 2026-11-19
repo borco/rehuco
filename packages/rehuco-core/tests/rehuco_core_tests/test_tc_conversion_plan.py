@@ -274,7 +274,7 @@ def test_a_malformed_tc_costs_its_own_record_and_is_named(mocker: MockerFixture)
 
     **Test steps:**
 
-    * mock two resources, one holding unparseable YAML
+    * mock two resources, one holding unparsable YAML
     * plan the tree
     * verify the good resource is still planned and the bad `.tc` is named as unreadable
     """
@@ -339,7 +339,7 @@ def test_progress_reports_a_running_count(mocker: MockerFixture) -> None:
 
 def test_collision_fires_when_an_image_is_left_under_its_own_name(mocker: MockerFixture) -> None:
     """`collision` fires when the scan left an image alone because its slot was taken, and not
-    otherwise -- an image left alone for carrying a number out of range is nobody's judgement call
+    otherwise -- an image left alone for carrying a number out of range is nobody's judgment call
     and is not flagged (#288).
 
     **Test steps:**
@@ -418,9 +418,9 @@ def test_size_unparsed_fires_when_a_carried_size_will_not_parse(mocker: MockerFi
 
     **Test steps:**
 
-    * mock a `.tc` whose `original_size` is an unparseable string, and one whose value is a plain int
+    * mock a `.tc` whose `original_size` is an unparsable string, and one whose value is a plain int
     * plan the tree
-    * verify only the unparseable one is flagged
+    * verify only the unparsable one is flagged
     """
     bad = ROOT / "a/info.tc"
     good = ROOT / "b/info.tc"
@@ -822,7 +822,7 @@ def test_a_leftover_tc_beside_its_rehu_does_not_count_towards_to_convert(mocker:
 
     * mock a directory holding both a `.tc` and its same-stem `.rehu`
     * plan the tree
-    * verify it is not counted towards `to_convert`, and is counted towards `already_converted`
+    * verify it is not counted toward `to_convert`, and is counted toward `already_converted`
     """
     mock_environment(mocker, tc_files=["a/info.tc"], directories=["a"], other_files=["a/info.rehu"])
 
@@ -839,7 +839,7 @@ def test_a_standalone_rehu_with_no_tc_counts_towards_already_converted(mocker: M
 
     * mock a directory holding only a `.rehu`, no `.tc`
     * plan the tree
-    * verify it is counted towards `already_converted` and not `to_convert`
+    * verify it is counted toward `already_converted` and not `to_convert`
     """
     mock_environment(mocker, tc_files=[], directories=["a"], other_files=["a/info.rehu"])
 

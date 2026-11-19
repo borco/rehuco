@@ -9,7 +9,7 @@ default keys is still listed, so the user can give it some.
 
 - the main window's own actions are `CommandScope.WINDOW`;
 - a per-document action is `CommandScope.DOCUMENT_FOCUSED` -- one action per open document, and only the
-  focused document's fires, which is what keeps two documents from cancelling out on one key (#41);
+  focused document's fires, which is what keeps two documents from canceling out on one key (#41);
 - a per-document action the user may want from anywhere also allows `CommandScope.DOCUMENT_APP_WIDE`, under
   which the window's `DocumentCommandRouter` carries the key and passes it on to the focused document (#345);
 - a key that must work from a torn-out dock too, with one action carrying it, is `CommandScope.APP_WIDE`;

@@ -64,12 +64,12 @@ LOG_DOCK_TITLE: Final = "Log"
 """Tab titles of the two sub-docks. ``Log`` matches the window's own dock and every resource's, because
 all three are the same surface about a different subject ([[appendices.logging#surfaces]])."""
 
-RETRIABLE_STATES: Final = frozenset({JobState.FAILED, JobState.CANCELLED})
+RETRIABLE_STATES: Final = frozenset({JobState.FAILED, JobState.CANCELED})
 """The states :meth:`~rehuco_core.TaskQueue.retry` accepts -- a finished job that can be run again.
 
 ``DONE`` is deliberately absent: retrying it is not *wrong*, but offering it as a control invites
 re-running work that succeeded ([[appendices.task-queue#kept]] frames retry as the recovery for a
-failure or a cancellation)."""
+failure or a cancelation)."""
 
 PAUSABLE_STATES: Final = frozenset({JobState.QUEUED, JobState.RUNNING, JobState.WAITING})
 """The states Pause acts on: anything not yet finished that is not already held.
@@ -97,10 +97,10 @@ TASK_STATE_COLORS: Final[dict[JobState, QColor]] = {
     JobState.RUNNING: QColor(INFO_COLOR),
     JobState.DONE: QColor(DONE_COLOR),
     JobState.FAILED: QColor(ERROR_COLOR),
-    JobState.CANCELLED: QColor(ERROR_COLOR),
+    JobState.CANCELED: QColor(ERROR_COLOR),
 }
 """What a task row is tinted by (#251), from the same tokens the log dock and the inline notice banner
-use (`rehuco_agent.fields.colors`) -- ``FAILED``/``CANCELLED`` sharing :data:`~.fields.colors.ERROR_COLOR`
+use (`rehuco_agent.fields.colors`) -- ``FAILED``/``CANCELED`` sharing :data:`~.fields.colors.ERROR_COLOR`
 by decision: both are *did not finish*, and what separates a job that broke from one that was stopped
 on purpose is left to the state column's text. ``WAITING`` shares the queued color for the same kind of reason:
 both are *will run by itself*, and the glyph tells them apart.
@@ -640,7 +640,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         Read here, on the GUI thread, off :attr:`~.task_queue_model.TaskQueueModel.snapshot_taken`
         rather than from a second `TaskQueueListener` of this widget's own: ``queue_paused_changed`` is
         called on whichever thread the queue's last unfinished job stopped on, and touching a `QAction`
-        there would be a plain GUI-thread-safety bug the model's already-marshalled signal avoids.
+        there would be a plain GUI-thread-safety bug the model's already-marshaled signal avoids.
         """
         statuses = [self.__model.status_at(row) for row in range(self.__model.rowCount())]
         self.__ui.pause_all_action.setEnabled(

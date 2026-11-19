@@ -15,7 +15,7 @@ The script writes the HKCU half itself and relaunches only the HKLM half elevate
 and only when the folder definition is missing or its name changes. A drive letter that already has a definition
 keeps its GUID. The bin follows the drive LETTER, not the share: remapping a letter to another share keeps the bin.
 
-Deletions on the drive go to the bin in Explorer windows opened afterwards; restart Explorer, or sign out and in,
+Deletions on the drive go to the bin in Explorer windows opened afterward; restart Explorer, or sign out and in,
 if an open window still deletes permanently.
 
 .PARAMETER Drive

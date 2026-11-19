@@ -273,7 +273,7 @@ def test_a_blank_row_is_not_yet_a_change_but_a_typed_one_is(page: ScreenshotPatt
 
 
 def test_an_edit_makes_the_page_dirty(page: ScreenshotPatternsPage) -> None:
-    """Dirtiness is the staged list against what a scan would read, polled rather than signalled.
+    """Dirtiness is the staged list against what a scan would read, polled rather than signaled.
 
     **Test steps:**
 

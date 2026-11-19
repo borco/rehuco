@@ -15,7 +15,7 @@ ROOT_STORAGE_ICONS: Final[dict[RootStorage, str]] = {
     RootStorage.REMOVABLE: ":/icons/removable.svg",
     RootStorage.COMPACT_DISK: ":/icons/compact_disk.svg",
 }
-"""One glyph per storage; all four are present. An unreachable root keeps its glyph and is drawn greyed out -- or,
+"""One glyph per storage; all four are present. An unreachable root keeps its glyph and is drawn grayed out -- or,
 for a local folder, struck through -- rather than getting a glyph of its own."""
 
 ROOT_STORAGE_LABELS: Final[dict[RootStorage, str]] = {

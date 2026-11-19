@@ -499,7 +499,7 @@ def test_a_restored_job_is_the_job_that_was_queued() -> None:
 
 def test_a_state_predating_the_override_restores_it_as_unset() -> None:
     """A queue saved before this feature existed has no key for it, and a restored item keeps today's
-    behaviour rather than refusing to load.
+    behavior rather than refusing to load.
 
     **Test steps:**
 
@@ -587,19 +587,19 @@ def test_a_job_runs_on_the_queue_rather_than_the_caller_s_thread(mocker: MockerF
     assert status.source == REHU_PATH
 
 
-def test_a_queued_job_is_cancelled_outright_rather_than_started(mocker: MockerFixture, present: None) -> None:
-    """Cancelling a job still waiting its turn drops it without ever touching the directory -- the same
+def test_a_queued_job_is_canceled_outright_rather_than_started(mocker: MockerFixture, present: None) -> None:
+    """Canceling a job still waiting its turn drops it without ever touching the directory -- the same
     "cancel stops after the current resource" #192's import runs under, since a bulk discard is enqueued
     the same way.
 
     **Test steps:**
 
     * hold a first discard inside the operation, enqueue a second behind it and cancel that one
-    * release the first and check only it ran, with the second reported cancelled
+    * release the first and check only it ran, with the second reported canceled
     """
     del present
     # Holding the first job is what leaves the second demonstrably *waiting its turn* when it is
-    # cancelled. `queue.pause()` cannot arrange it and used to be asked to: pausing is `pause_job`
+    # canceled. `queue.pause()` cannot arrange it and used to be asked to: pausing is `pause_job`
     # applied to the jobs already enqueued ([[appendices.task-queue#pause-concept]]), never a gate a
     # later enqueue passes through, so the lone job raced the cancel and a fast runner discarded it
     # first -- the same latent flake `test_tc_import_job`'s copy of this test turned red on Windows.
@@ -607,7 +607,7 @@ def test_a_queued_job_is_cancelled_outright_rather_than_started(mocker: MockerFi
     release = Event()
 
     def hold_the_worker(*_args: Any, **_kwargs: Any) -> None:
-        """Park the worker inside the first discard until the test has cancelled the second."""
+        """Park the worker inside the first discard until the test has canceled the second."""
         running.set()
         assert release.wait(TIMEOUT)
 
@@ -626,8 +626,8 @@ def test_a_queued_job_is_cancelled_outright_rather_than_started(mocker: MockerFi
     finally:
         queue.shutdown()
 
-    assert status.state is JobState.CANCELLED
-    # the held job discarded; the cancelled one never reached `discard_conversion_backups` at all
+    assert status.state is JobState.CANCELED
+    # the held job discarded; the canceled one never reached `discard_conversion_backups` at all
     discard.assert_called_once()
     assert discard.call_args.args == (FILE_SCOPED_REHU_PATH,)
 

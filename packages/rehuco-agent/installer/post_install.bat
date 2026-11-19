@@ -3,7 +3,7 @@ REM Registers .rehu/.tc, the folder and folder-background verbs, and the archive
 REM calling the app's own --register, so the installer and the app share one registration identity
 REM ([[appendices.briefcase-packaging#windows]]). The MSI deliberately declares no document_type on
 REM Windows -- it would write a second, competing ProgID covering only .rehu, which the app's own
-REM Registry settings page (#47) could never recognise as its own.
+REM Registry settings page (#47) could never recognize as its own.
 REM
 REM Invoked by the MSI's generated run_post_install.bat, which sets ALLUSERS, INSTALLER_PATH and
 REM INSTALLER_UNATTENDED in the environment and calls this with no arguments. It runs from

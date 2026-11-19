@@ -36,7 +36,7 @@ work rather than running it all at once."*
   [[packaging-deployment#three-packages]] rejected extras precisely so that "the node has no GUI
   dependencies" stays structural rather than carefully-maintained.
 - **It is what makes the engine testable.** Concurrency is the whole risk here; being able to test
-  ordering, pausing, cancellation and teardown with no `QApplication` and no event loop is worth more
+  ordering, pausing, cancelation and teardown with no `QApplication` and no event loop is worth more
   than the one adapter class the split costs.
 
 ### 1.1 What an observer is told
@@ -82,12 +82,12 @@ unknown kind (§6.3).
 This is the answer to the question this section used to record as *no, for now*: whether a parallel lane is ever
 allowed. It said a lane over a different resource would be **a second queue, never a count on this one**, because a
 queue with a number makes the protected resource invisible. A chain keeps that property — each one names its
-resource — and generalises the second queue to a key **the job owns**, because the job is what knows which resource
+resource — and generalizes the second queue to a key **the job owns**, because the job is what knows which resource
 it would hammer. One queue still holds every row, so the dock, persistence, reordering and the exit sequence are
 unchanged.
 
 **One daemon thread per chain with work**, started when the chain first has a queued job and gone once it has been
-idle for a couple of seconds; an unchained job gets a thread of its own. Pausing, cancelling, removing and moving act
+idle for a couple of seconds; an unchained job gets a thread of its own. Pausing, canceling, removing and moving act
 on one entry whatever its chain, and `paused` is still derived from the rows. Shutdown stops every worker and joins
 them against one shared deadline, so quitting does not take longer because more chains were busy.
 
@@ -241,13 +241,13 @@ is retried for under a second before anything is reported.
 
 `pause()` asks **every unfinished job but a waiting one** to pause (§3.5); the per-job pair asks one. There is no
 separate queue-wide flag, and dispatch consults per-job state only — which
-is what lets pausing one job leave the rest running, and lets a job enqueued afterwards start
+is what lets pausing one job leave the rest running, and lets a job enqueued afterward start
 immediately. `queue.paused` is a **derived convenience** meaning *there is unfinished work and all of
 it is paused*, waiting jobs aside; it gates nothing, and it is false on a queue holding nothing unfinished, since a
 vacuous truth would read as *the queue is held*.
 
 **One request slot, not two flags.** A job is asked for at most one thing at a time and the latest
-instruction replaces the one before it: asking a cancelling job to pause *downgrades* the request,
+instruction replaces the one before it: asking a canceling job to pause *downgrades* the request,
 asking a pausing job to cancel escalates it. Two independent booleans could express *cancel and pause*,
 which is not a state anything can act on and not a state a dock can draw. What was asked is carried on
 the status as `stop_requested`, a fact separate from the state, so a watcher can be honest before the
@@ -256,8 +256,8 @@ job has obeyed.
 Three consequences, all visible from outside:
 
 - **A job that never looks at its request cannot be interrupted.** It runs to completion, and is
-  reported `done` — reversing #201's *"a cancelled job must never read as done"*. The request was not
-  acted on and the work genuinely finished; reporting it `cancelled` would describe an intention rather
+  reported `done` — reversing #201's *"a canceled job must never read as done"*. The request was not
+  acted on and the work genuinely finished; reporting it `canceled` would describe an intention rather
   than an outcome. Nothing is lost, because the request is on the status.
 - **A stop does not stop anything the moment it is asked.** The running job keeps running until it
   yields. That is why `paused` is a state of the *job*: a job that has not acted yet is genuinely still
@@ -265,7 +265,7 @@ Three consequences, all visible from outside:
 - **A stop can be taken back until the job has looked at it.** `resume()` on a running job asks, and
   the job answers: *not yet acted on* means it carries on as though nothing was asked, which is what
   makes Cancel-then-Resume a recoverable mis-click rather than a lost job. *Already stopping* means no
-  — and it is the job that knows, because reading its request is an acknowledgement and a job reads it
+  — and it is the job that knows, because reading its request is an acknowledgment and a job reads it
   in order to start tidying up.
 - **A refusal after a pause still costs only a re-entry, and the engine spends it.** The job's raise
   and the engine's recording of it are two moments with the job's own cleanup between them; a resume in
@@ -276,7 +276,7 @@ Three consequences, all visible from outside:
 
 **The bulk `resume()` never un-cancels anything.** It is the inverse of the bulk `pause()` and touches
 only jobs whose pending request is a pause; retracting a cancel is something you ask of one row.
-Sweeping a multi-selection and resurrecting a job the user cancelled ten minutes ago would be a
+Sweeping a multi-selection and resurrecting a job the user canceled ten minutes ago would be a
 surprise, and the per-job call is exactly as easy to reach. Neither bulk call touches a waiting job (§3.5).
 
 `SCHEDULED` is deliberately **not** a state: queued and scheduled are the same concept — a job waiting
@@ -315,10 +315,10 @@ until the nearest wait ends, puts every job whose wait has ended back in line, a
 waiting job holds no thread and blocks nothing behind it.
 
 **The per-job calls act on it; the bulk ones leave it alone.** `resume_job` on a waiting row is *try now* — back in line
-at once rather than when the wait ends — while pausing one holds it (`PAUSED`) and cancelling it cancels it. The bulk
+at once rather than when the wait ends — while pausing one holds it (`PAUSED`) and canceling it cancels it. The bulk
 `pause()` and `resume()` skip it, and `queue.paused` ignores it, because quitting pauses everything before the queue is
 written (§7): a save waiting for its share must come back waiting, not held. A pause or a cancel asked while the job
-is running, which then reports a wait, wins — the job ends `PAUSED` or `CANCELLED`, as asked.
+is running, which then reports a wait, wins — the job ends `PAUSED` or `CANCELED`, as asked.
 
 ## 4. A failure costs its job and nothing else
 
@@ -337,7 +337,7 @@ the sentence, the log carries the traceback, and a job's records land under the 
 
 [[[appendices.task-queue#kept]]]
 
-**Jobs leave the queue only when told to. Nothing sweeps.** A failed or cancelled job is usually
+**Jobs leave the queue only when told to. Nothing sweeps.** A failed or canceled job is usually
 retryable — a verify that ran before its generate fails for a reason that stops being true, and the fix
 is to run it again — so dropping it would throw away exactly the row a reader came back for. `remove`
 is the only way out, and `retry` puts a finished job back to `queued`, clears its message and progress,
@@ -349,7 +349,7 @@ conversion refuses to start over a leftover backup ([[acquisition-tooling#conver
 than trust the caller not to ask twice.
 
 **A job given up on while it is not running is told so, when it asked to be** (#339). A queued, paused or
-waiting job that is cancelled or removed never runs again, so it has no run left to tidy up in. A job
+waiting job that is canceled or removed never runs again, so it has no run left to tidy up in. A job
 satisfying `AbandonableTaskJob` — a second protocol, like `ReportingTaskJob` — gets one call, `abandon()`,
 with the queue's lock held, and does its taking back elsewhere: a paused verified move removes the partial
 copy it left ([[mounts-and-storage#safe-move-rename]]). Every other job is untroubled, as before; the
@@ -362,9 +362,9 @@ file), and is told before a cancel whether to keep it (`keep_partial`) or, as a 
 that does not is said to stay, for the owner to remove by hand; one that does is offered both ways, removing it the
 default.
 
-Removing the *running* job is the sharp edge. Cancellation is cooperative, so a detached job may still
+Removing the *running* job is the sharp edge. Cancelation is cooperative, so a detached job may still
 be inside `run()` for a checkpoint or two; the engine **drops its terminal notification**, because
-telling a listener that a row it deleted has just been cancelled would announce a job that, as far as
+telling a listener that a row it deleted has just been canceled would announce a job that, as far as
 anyone watching is concerned, no longer exists.
 
 ## 5. The caller's context travels to the worker
@@ -443,7 +443,7 @@ one — the class that wrote a state is the class that reads it.
 
 ### 6.2 What is written, and when
 
-**Everything persistable is written, including `done`, `failed` and `cancelled`.** Since jobs leave only
+**Everything persistable is written, including `done`, `failed` and `canceled`.** Since jobs leave only
 when removed (§4.1), dropping the finished ones at quit would be exactly the implicit removal that rule
 exists to prevent — and it would take the retryable failures with it. Each item carries `kind`, the
 captured state, the label, the state it was in, and under `message` the reason it failed or what it waits for —
@@ -552,13 +552,13 @@ Shutting the queue down **stops the engine, not the work**: it joins the workers
 job in the state it stands in. Shutdown is terminal: a queue that has been shut down refuses further work rather
 than accepting jobs that will never run. Nothing has to be released first — §3.1 means no job is ever parked waiting
 on the queue, so a queued, paused or waiting job is simply unfinished work, and comes back as it was (§6). A job
-still running, one that ignored the pause, is asked to pause again rather than cancelled, so it keeps what it needs
+still running, one that ignored the pause, is asked to pause again rather than canceled, so it keeps what it needs
 to carry on.
 
-**Until #497 shutdown cancelled everything**, and that was the bug it was written to avoid: the exit sequence wrote
-the queue down, then the shutdown cancelled each unfinished job, and the queue file — still listening — wrote the
-cancellations over it. A save waiting for its share came back cancelled, no longer the record's saved state
-([[sync#unlanded-save]]). Cancelling is the user's verb, never the quit's.
+**Until #497 shutdown canceled everything**, and that was the bug it was written to avoid: the exit sequence wrote
+the queue down, then the shutdown canceled each unfinished job, and the queue file — still listening — wrote the
+cancelations over it. A save waiting for its share came back canceled, no longer the record's saved state
+([[sync#unlanded-save]]). Canceling is the user's verb, never the quit's.
 
 The app must be closeable without anyone having to remember what they had planned, so
 the exit sequence is *pause, wait, save, shut down*: `pause()` asks every unfinished job to stop — a waiting one
@@ -600,7 +600,7 @@ bulk enqueue of thousands of jobs costs one insertion rather than one per row; a
 and only ever from an explicit Top/Up/Down/Bottom click, never from progress — is a full model reset,
 trading its row-level animation for a diff that cannot be gotten subtly wrong.
 
-**Marshalling is a nested `Marshaller(QObject)` with one payload-free signal on an explicit
+**Marshaling is a nested `Marshaler(QObject)` with one payload-free signal on an explicit
 `QueuedConnection`**, the same shape `LogBridge` uses for records. Explicit-queued is load-bearing: a
 control clicked on the GUI thread re-enters a listener method synchronously and must still take the
 queued path, which is what makes "the view follows the engine, not its own optimistic guess" mechanical
@@ -636,7 +636,7 @@ of it, which is worth a reader's attention.
 
 **The bar and its figure sit side by side, never on top of each other.** The figure keeps a fixed
 100px slot at the cell's right edge, right-aligned so two rows' numbers line up, and the bar takes what
-is left. Text centred *on* a bar was tried first and is worse than either half suggests: the color that
+is left. Text centered *on* a bar was tried first and is worse than either half suggests: the color that
 reads over the filled part is the wrong one over the empty part, so one end always loses its text — and
 no single pen fixes it, because the surface under the text moves as the job runs. Two areas, each with
 one background, is the whole fix. It is also where DownThemAll ends up from the other direction: its bar
@@ -654,7 +654,7 @@ applied to the one cell that had escaped it: **this table paints its own backgro
 box over the top is not a cell this table controls.**
 
 **The state column is icons, no words.** Nine glyphs cover every reading it ever had — the seven states,
-plus *pausing* and *cancelling* for a job that has been asked to stop and has not reached its checkpoint
+plus *pausing* and *canceling* for a job that has been asked to stop and has not reached its checkpoint
 (§3.3). Each takes the state's own color, so a row and its glyph are one signal seen twice; `PAUSED`,
 which #251 leaves untinted, draws in the row's own ink for the same reason it draws no tint. `WAITING` shares the
 queued color — both mean *will run by itself* — and draws a clock rather than a second hourglass, because waiting for
@@ -697,7 +697,7 @@ pause nobody asked for. Pause and Cancel are offered for a waiting job as for a 
 stops a save retrying by itself.
 
 **Saves have a filter and two actions of their own** (#497, [[sync#pending-saves]]). The **Pending Saves** toggle
-narrows the table to the save rows — picked out by `JobStatus.kind` (§6.1) — that are neither done nor cancelled, and a
+narrows the table to the save rows — picked out by `JobStatus.kind` (§6.1) — that are neither done nor canceled, and a
 saved layout keeps it. **Inspect Save**, on one failed or waiting save, and **Discard Save…**, on any that have not
 landed, only say which rows were asked for: what a save carries is a document's edits, which are the document's to
 show or drop, so the window acts on them. The status bar's *N pending saves*, hidden at zero, opens the dock with the
@@ -707,13 +707,13 @@ toggle on.
 because deciding *which* jobs a sweep drops is a view's business: *Clear done jobs*, *Clear failed
 jobs* and *Clear all finished jobs* filter `queue.jobs()` and call `queue.remove(*serials)`. **Clear removes
 finished rows only** (#634): an unfinished job leaves by Cancel, which asks what it asks, so *Clear* is off over a
-selection holding one and *Clear all finished jobs* leaves it. There is no *clear cancelled jobs on restart* — a
-cancelled job was stopped on purpose and is the one most likely to be retried, and *Clear all finished jobs* already
+selection holding one and *Clear all finished jobs* leaves it. There is no *clear canceled jobs on restart* — a
+canceled job was stopped on purpose and is the one most likely to be retried, and *Clear all finished jobs* already
 covers a clean slate.
 
 **Three restart-time settings, all off by default** (`Settings > Tasks`, `TasksSettings`): *clear done
 tasks*, *clear failed tasks*, and *resume tasks*. The two clears are **applied at load, before
-`restore()`** — a setting turned on after the app was last closed is honoured on the very next start
+`restore()`** — a setting turned on after the app was last closed is honored on the very next start
 rather than the one after, since deciding at quit would make the checkbox appear not to work until the
 second restart, and the dropped jobs never enter the queue at all, so there is no `jobs_removed` churn
 and no flash of rows vanishing as the window opens. *Resume tasks on restart* decides which of the two

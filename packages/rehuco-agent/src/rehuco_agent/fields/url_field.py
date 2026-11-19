@@ -61,9 +61,7 @@ class UrlField(TextField):
 
     @override
     def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
-        return self.__make_row(
-            binding, self.viewer_tab, self.__main_visible, self.__main_visible_changed, labelled=True
-        )
+        return self.__make_row(binding, self.viewer_tab, self.__main_visible, self.__main_visible_changed, labeled=True)
 
     @override
     def make_viewer_rows(self, bindings: Sequence[FieldBinding[str]]) -> Sequence[FieldViewerWidgets]:
@@ -75,7 +73,7 @@ class UrlField(TextField):
                     self.__description_tab,
                     self.__description_visible,
                     self.__description_visible_changed,
-                    labelled=False,
+                    labeled=False,
                 )
             )
         return rows
@@ -87,23 +85,23 @@ class UrlField(TextField):
         visible: bool,
         visible_changed: SignalInstance | None,
         *,
-        labelled: bool,
+        labeled: bool,
     ) -> FieldViewerWidgets:
-        """Build one placement of the row: its link, and its label when ``labelled``, shown or hidden as
+        """Build one placement of the row: its link, and its label when ``labeled``, shown or hidden as
         ``visible`` says. The Description View's link has no label and spans the full width.
 
         :param binding: the url's binding.
         :param tab: the surface the row belongs to.
         :param visible: whether the row starts shown.
         :param visible_changed: fires with the row's new visibility; ``None`` when it never changes.
-        :param labelled: whether the row carries the field's name label.
+        :param labeled: whether the row carries the field's name label.
         :returns: the row's bundle.
         """
         link = ElidedLabel()
         link.setOpenExternalLinks(True)
         self.__render(link, binding.value)
         self.bind_external(binding.changed, lambda value: self.__render(link, value))
-        label = QLabel(self.label) if labelled else None
+        label = QLabel(self.label) if labeled else None
         widgets = [link] if label is None else [label, link]
         # hidden only when off: a still-parentless widget told to show would open as a window of its own
         if not visible:
@@ -118,7 +116,7 @@ class UrlField(TextField):
             self.bind_external(visible_changed, show_row)
         # a row with no label spans the whole grid width, flush with the image strip above it, instead of
         # sitting in the content column behind an empty label column
-        return FieldViewerWidgets(tab, label, link, vertical=not labelled)
+        return FieldViewerWidgets(tab, label, link, vertical=not labeled)
 
     @staticmethod
     def __render(label: ElidedLabel, value: str) -> None:

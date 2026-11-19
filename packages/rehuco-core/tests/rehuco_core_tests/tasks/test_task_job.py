@@ -8,7 +8,7 @@ import pytest
 from rehuco_core import (
     FINISHED_JOB_STATES,
     MOVABLE_JOB_STATES,
-    JobCancelled,
+    JobCanceled,
     JobPaused,
     JobState,
     JobStatus,
@@ -35,7 +35,7 @@ def test_the_finished_states_are_the_three_a_job_never_leaves_on_its_own() -> No
     * verify the three a job can still leave are absent -- ``paused`` above all, since a paused job is
       unfinished work that comes back unfinished after a restart
     """
-    assert FINISHED_JOB_STATES == {JobState.DONE, JobState.FAILED, JobState.CANCELLED}
+    assert FINISHED_JOB_STATES == {JobState.DONE, JobState.FAILED, JobState.CANCELED}
     assert not FINISHED_JOB_STATES & {JobState.QUEUED, JobState.RUNNING, JobState.PAUSED}
 
 
@@ -59,9 +59,9 @@ def test_the_two_stops_are_separate_exceptions() -> None:
     * verify neither exception is a subclass of the other
     * verify both are ordinary exceptions a job may let escape
     """
-    assert not issubclass(JobPaused, JobCancelled)
-    assert not issubclass(JobCancelled, JobPaused)
-    assert issubclass(JobPaused, Exception) and issubclass(JobCancelled, Exception)
+    assert not issubclass(JobPaused, JobCanceled)
+    assert not issubclass(JobCanceled, JobPaused)
+    assert issubclass(JobPaused, Exception) and issubclass(JobCanceled, Exception)
 
 
 def test_a_status_starts_with_nothing_measured_nothing_wrong_and_nothing_asked() -> None:

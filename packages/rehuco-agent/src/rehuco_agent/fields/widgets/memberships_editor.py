@@ -102,7 +102,7 @@ class MembershipsEditor(ItemListEditor):
     def header_height(self) -> int:
         """The table's own column header height (`HeaderPinned`, [[plugins#field-toolkit]]).
 
-        The row's label is pinned to it rather than centred against the whole table, so ``Collections``
+        The row's label is pinned to it rather than centered against the whole table, so ``Collections``
         sits level with ``Title``/``Index`` instead of drifting down the middle of a table whose height
         is however many memberships there happen to be. The header is what the label names, and it is
         the one band whose height does not move as rows come and go.

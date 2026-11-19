@@ -172,7 +172,7 @@ def test_flow_layout_leaves_the_style_recommended_gap_by_default(qtbot: QtBot) -
     assert second.geometry().x() == first.geometry().right() + 1 + recommended
 
 
-def test_flow_layout_honours_an_explicit_spacing_of_zero(qtbot: QtBot) -> None:
+def test_flow_layout_honors_an_explicit_spacing_of_zero(qtbot: QtBot) -> None:
     """An explicit ``spacing`` is the whole gap, so items asked to sit flush actually do.
 
     Regression risk: adding the style's recommendation on top of the layout's own spacing makes a

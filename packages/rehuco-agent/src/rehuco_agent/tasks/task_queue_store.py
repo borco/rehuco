@@ -86,7 +86,7 @@ class TaskQueueStore:
     def read_items(self) -> list[TaskQueueItem]:
         """Read the saved queue off disk, without touching the queue itself.
 
-        **A file that cannot be read costs the saved queue and nothing else**: missing, unparseable,
+        **A file that cannot be read costs the saved queue and nothing else**: missing, unparsable,
         or holding something that is not a list of records, it is logged and read as empty. Startup is
         never blocked by it, and the app comes up with an empty queue rather than not at all.
 

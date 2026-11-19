@@ -350,7 +350,7 @@ class ScreenshotListModel(QAbstractTableModel):
     check box on its own (checked means shown in the lightbox), the filename, what converting would do
     to the file, the pixel dimensions, and the file size. The rows come in **two kinds** (#270) -- the
     ``<stem>NN`` set first, then the pattern-matched images that hold no slot yet, whose check box is
-    greyed (#370) and which can be neither moved nor moved past. Which kind a row is shows in where it
+    grayed (#370) and which can be neither moved nor moved past. Which kind a row is shows in where it
     sits and in which buttons light up on it; nothing decorates it (see :data:`CONVERT_ICON`).
 
     :param parent: optional Qt parent.
@@ -384,7 +384,7 @@ class ScreenshotListModel(QAbstractTableModel):
         done to it, and a ``dataChanged`` in the check-state role would read to the selector as a
         curation edit -- re-emitting a hidden set that, right after a revert or a conversion has
         seeded names no longer on disk, is a pruned one that would dirty the document. Repainting the
-        greyed boxes is the view's job, and the selector asks it to.
+        grayed boxes is the view's job, and the selector asks it to.
 
         :param read_only: whether the rows refuse every edit.
         """
@@ -509,13 +509,13 @@ class ScreenshotListModel(QAbstractTableModel):
         The check column is checkable on a **numbered** row only (#370). An un-converted image is
         taken into the set (Convert) or deleted, and nothing else: converting a picture just to delete
         it makes no sense, while curating one that holds no slot yet decides nothing worth keeping
-        apart from those two. Its check box greys, like a read-only list's, rather than taking clicks.
+        apart from those two. Its check box grays, like a read-only list's, rather than taking clicks.
         Nothing is editable, since there is no text here a user writes -- a screenshot's name is its
         position in the set, which the move buttons decide.
 
         A **read-only** list (:meth:`set_read_only`, #292) keeps every row selectable and readable and
         gives up only its check boxes: the cell loses both its checkability and its enabled state, so
-        it greys rather than sitting there taking clicks that go nowhere.
+        it grays rather than sitting there taking clicks that go nowhere.
 
         :param index: the cell asked about.
         :returns: its flags.
@@ -692,14 +692,14 @@ class ScreenshotListModel(QAbstractTableModel):
         destination = target + 1 if target > source else target
         # pragma-excluded, not omitted: Qt refuses a destination inside the moved span, which the
         # range guards above have already ruled out -- but an unbalanced begin without its end is bad
-        # enough that the contract is worth honouring rather than assumed away
+        # enough that the contract is worth honoring rather than assumed away
         if not self.beginMoveRows(QModelIndex(), source, source, QModelIndex(), destination):  # pragma: no cover
             return False
         try:
             ordered = list(self.__rows)
             ordered.insert(target, ordered.pop(source))
             renames = self.__organizer.reorder([row.path for row in ordered if row.numbered])
-            renamed = self.__relabelled(ordered, renames)
+            renamed = self.__relabeled(ordered, renames)
             self.__rows = ordered
         finally:
             self.endMoveRows()
@@ -733,7 +733,7 @@ class ScreenshotListModel(QAbstractTableModel):
                 [screenshot.path for screenshot in remaining if screenshot.numbered],
                 deleter,
             )
-            renamed = self.__relabelled(remaining, renames)
+            renamed = self.__relabeled(remaining, renames)
             self.__rows = remaining
         finally:
             self.endRemoveRows()
@@ -742,7 +742,7 @@ class ScreenshotListModel(QAbstractTableModel):
         return True
 
     @staticmethod
-    def __relabelled(rows: list[ScreenshotRow], renames: Mapping[str, str]) -> list[int]:
+    def __relabeled(rows: list[ScreenshotRow], renames: Mapping[str, str]) -> list[int]:
         """Point each renamed row at the file it is now.
 
         :param rows: the rows in the order they will be in, which is the order the names describe.
@@ -759,14 +759,14 @@ class ScreenshotListModel(QAbstractTableModel):
         return changed
 
     def __report(self, renamed: list[int]) -> None:
-        """Repaint the rows a rename relabelled, once the structural change is complete.
+        """Repaint the rows a rename relabeled, once the structural change is complete.
 
         Emitted after the ``end...Rows`` rather than inside it: a row that merely changed *name* is
         not part of the move, and a view told about it mid-transaction is being asked to read a model
         that is still rearranging itself. Sent as one span rather than one signal per row -- a rename
         walks a contiguous run of slots, so the span is what actually changed either way.
 
-        :param renamed: the positions that were relabelled.
+        :param renamed: the positions that were relabeled.
         """
         if not renamed:
             return
@@ -841,7 +841,7 @@ class ScreenshotOrdering(QObject):
         """How many rows the ordering buttons may move between -- the **numbered** prefix, not every
         row (#270).
 
-        What the column reads to grey Down and Bottom out on the last row, so the last *numbered*
+        What the column reads to gray Down and Bottom out on the last row, so the last *numbered*
         screenshot is where the set ends: an un-converted row below it is not a place to move to.
         The column being disabled outright while such a row is current is the other half of that, and
         lives in :meth:`ImageSelector.__apply_row_actions`.
@@ -964,7 +964,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
     read_only = SimpleProperty[bool](False)
     """Whether this is a **view** of the resource's images rather than an editor of them (#292): the
     rows, their metrics and the preview stay, while the check boxes, the ordering buttons, Delete and
-    Convert grey out. What a locked document's `~rehuco_agent.fields.images_field.ImagesField` sets
+    Convert gray out. What a locked document's `~rehuco_agent.fields.images_field.ImagesField` sets
     (`~rehuco_agent.fields.field.LockAware`) -- above all a legacy ``.tc``, whose images are exactly
     what its conversion is about to act on."""
 
@@ -1123,7 +1123,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         pane.addLayout(row, 1)
         # a muted standing note rather than a warning: it is true of every action here, always, so it
         # belongs under the list it describes rather than in a dialog somebody has to dismiss (#270).
-        # Disabled, not stylesheet-greyed, so the muting is the current theme's own disabled text
+        # Disabled, not stylesheet-grayed, so the muting is the current theme's own disabled text
         hint = QLabel(DESCRIPTION_HINT)
         hint.setObjectName(DESCRIPTION_HINT_NAME)
         hint.setWordWrap(True)
@@ -1134,7 +1134,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         row.addWidget(self.__ordering_actions)
         row.addWidget(self.__item_actions)
         for column in (self.__ordering_actions, self.__item_actions):
-            # the columns are button-sized and the list fills the pane, so a centred column would
+            # the columns are button-sized and the list fills the pane, so a centered column would
             # float its first button somewhere down the middle of the screenshots
             row.setAlignment(column, Qt.AlignmentFlag.AlignTop)
         return list_pane
@@ -1188,7 +1188,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
     def delete_screenshot(self, at: int) -> None:
         """Delete one screenshot from disk, closing the gap it leaves (#72).
 
-        Confirmed first when it is permanent: this removes a file and renumbers its neighbours, and
+        Confirmed first when it is permanent: this removes a file and renumbers its neighbors, and
         neither half is something a document Revert can undo -- unlike every other edit this editor
         makes, which sit in the model until a Save. A delete bound for the Recycle Bin asks nothing
         up front; if the bin then turns out to be unreachable, the `AskingDeleter` puts the permanent
@@ -1312,7 +1312,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         """Make ``path``'s row current and fire ``action`` on it, if the action is on offer there.
 
         Every request goes through the list's own actions rather than straight to the model, so what
-        greys a button out -- an un-converted row, either end of the numbered set, a legacy ``.tc``, a
+        grays a button out -- an un-converted row, either end of the numbered set, a legacy ``.tc``, a
         locked document -- refuses the viewer's key too, decided once in :meth:`__apply_row_actions`.
         Making the row current first is what recomputes those rules for it.
 
@@ -1453,8 +1453,8 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         """Run one of the model's rearrangements and report what it changed.
 
         The rows and the files move together inside the model's own transaction, so there is nothing
-        to coordinate here -- only what the *document* has to hear about afterwards. The hidden set
-        is filenames ([[data-model#image-meanings]]), and the model's relabelling is what carries it
+        to coordinate here -- only what the *document* has to hear about afterward. The hidden set
+        is filenames ([[data-model#image-meanings]]), and the model's relabeling is what carries it
         across a rename; the result is reported only when the **set** actually changed, since a pure
         reorder of two already-hidden screenshots would otherwise mark the document dirty with a
         value it already holds.
@@ -1481,7 +1481,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         return True
 
     def __apply_organizer(self) -> None:
-        """Hand the organizer and the read-only state to the model, and grey the buttons out when
+        """Hand the organizer and the read-only state to the model, and gray the buttons out when
         either of them refuses an edit.
 
         The model is where both live, because rearranging the rows *is* renaming the files, and
@@ -1494,7 +1494,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.__list_model.set_organizer(self.image_organizer)
         self.__list_model.set_read_only(self.read_only)
         # the flags changed, not the data, so the model reports nothing: the check boxes are repainted
-        # greyed (or not) from here, without a data change the selector would take for a curation edit
+        # grayed (or not) from here, without a data change the selector would take for a curation edit
         self.__list.viewport().update()
         available = self.__list_model.can_rearrange
         self.__ordering_actions.setEnabled(available)
@@ -1505,7 +1505,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         self.current_index_changed.emit()
 
     def __apply_row_actions(self) -> None:
-        """Grey out what the **current row kind** cannot do (#270).
+        """Gray out what the **current row kind** cannot do (#270).
 
         Two rules, and the row is what decides both: an un-converted row holds no position, so no
         move is offered on one; a numbered row has nothing left to convert, so Convert is not offered
@@ -1515,7 +1515,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         A resource nothing may rearrange -- no organizer, or a **read-only** list (#292) -- disables
         the *actions*, not only the columns their buttons live in: the delete and ordering actions are
         armed as shortcuts on the list itself, which a read-only document leaves enabled, so a
-        greyed button alone would still leave Del and Ctrl+Up reaching them.
+        grayed button alone would still leave Del and Ctrl+Up reaching them.
 
         This narrows, never widens: the ordering column has just recomputed its own four rules
         (first/last within the numbered set) off the same two signals, and is connected ahead of this
@@ -1738,7 +1738,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes,
         """Re-emit :attr:`hidden_changed` -- and :attr:`rows_changed`, #370 -- when a row's check box
         changed, and only then.
 
-        The role is what tells a *user* curating a screenshot apart from this widget relabelling a
+        The role is what tells a *user* curating a screenshot apart from this widget relabeling a
         row after a rename -- both are data changes on the same rows, and only the first is an edit
         to report. Seeding needs no guard at all: it resets the model, which is not a data change.
 

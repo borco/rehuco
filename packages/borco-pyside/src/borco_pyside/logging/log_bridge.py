@@ -62,13 +62,13 @@ class LogBridge(Handler):
 
     **Not a `QObject`**, though it needs a signal: `logging.Handler.emit` and ``QObject.emit`` are
     unrelated methods that happen to share a name, and a class inheriting both would silently give
-    ``logging`` the one and Qt the other. The signal lives on :class:`Marshaller` instead, which is
+    ``logging`` the one and Qt the other. The signal lives on :class:`Marshaler` instead, which is
     the whole of what Qt is needed for here.
 
     :param limit: how many entries to cache for replay; see :attr:`limit`.
     """
 
-    class Marshaller(QObject):
+    class Marshaler(QObject):
         """Carries "there is a batch waiting" across the thread boundary, and nothing else.
 
         Exists because a signal has to live on a `QObject` and this handler must not be one (see
@@ -77,10 +77,10 @@ class LogBridge(Handler):
 
         **It is the receiver of its own queued signal**, calling the bridge through a weak reference (#529).
         Connected straight to the bridge's method, the queued wake-up would be posted to the helper object
-        PySide keeps for a plain Python callable instead, which forgets the callable when this marshaller is
+        PySide keeps for a plain Python callable instead, which forgets the callable when this marshaler is
         deleted but keeps the wake-up posted, and delivers it into a bridge already freed. Posted to this
         object, it goes with it: Qt drops the events of an object it deletes. The weak reference keeps the
-        marshaller and the bridge out of a reference cycle.
+        marshaler and the bridge out of a reference cycle.
 
         Nested and undocumented outside this class rather than name-mangled, only because a mangled
         class name is not a class name Qt or the linters will accept -- nothing outside
@@ -109,7 +109,7 @@ class LogBridge(Handler):
 
     def __init__(self, *, limit: int = DEFAULT_LOG_LIMIT) -> None:
         super().__init__()
-        self.__marshaller: LogBridge.Marshaller | None = LogBridge.Marshaller(self.__dispatch)
+        self.__marshaler: LogBridge.Marshaler | None = LogBridge.Marshaler(self.__dispatch)
         self.__limit = max(1, limit)
         self.__entries: deque[LogEntry] = deque(maxlen=self.__limit)
         self.__next_serial = 0
@@ -120,22 +120,22 @@ class LogBridge(Handler):
 
     @override
     def close(self) -> None:
-        """Close the handler and delete its marshaller, so a bridge taken down is gone with its `QObject` (#529).
+        """Close the handler and delete its marshaler, so a bridge taken down is gone with its `QObject` (#529).
 
-        The delete is handed to ``deleteLater``, on the thread the marshaller lives on. A wake-up posted before
-        the close may still run first, into sinks a caller has not detached; one posted to a marshaller already
+        The delete is handed to ``deleteLater``, on the thread the marshaler lives on. A wake-up posted before
+        the close may still run first, into sinks a caller has not detached; one posted to a marshaler already
         deleted is dropped with it, so no wake-up ever reaches a bridge that has been freed. ``logging`` closes a
         handler again in its own shutdown, by when PySide may have destroyed every `QObject` Python still owned
-        along with the application, so a marshaller already gone, or already deleted, is left be.
+        along with the application, so a marshaler already gone, or already deleted, is left be.
         """
         self.acquire()
         try:
-            marshaller, self.__marshaller = self.__marshaller, None
+            marshaler, self.__marshaler = self.__marshaler, None
         finally:
             self.release()
-        if marshaller is not None:
+        if marshaler is not None:
             try:
-                marshaller.deleteLater()
+                marshaler.deleteLater()
             except RuntimeError:  # already destroyed with the application, at exit
                 pass
         super().close()
@@ -266,9 +266,9 @@ class LogBridge(Handler):
             return
         self.__next_serial += 1
         self.__entries.append(entry)
-        if not self.__batch_pending and self.__marshaller is not None:
+        if not self.__batch_pending and self.__marshaler is not None:
             self.__batch_pending = True
-            self.__marshaller.batch_ready.emit()
+            self.__marshaler.batch_ready.emit()
 
     def __dispatch(self) -> None:
         """Give every sink the entries it has not been given yet, as one batch each.

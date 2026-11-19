@@ -88,7 +88,7 @@ class ToolLocator:
         :returns: the chosen path's candidate, usable or not, so its reason can be shown; for an empty path the
             newest usable copy among ``detected``, or ``None`` when there is none. A copy found earlier that is no
             longer there -- uninstalled, or on a share that is down -- comes back :attr:`~ToolStatus.MISSING` rather
-            than usable, so a scan refuses instead of totalling ``0`` over files it never read.
+            than usable, so a scan refuses instead of totaling ``0`` over files it never read.
         """
         if configured:
             return self.inspect(descriptor, configured)

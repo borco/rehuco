@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QWidget
 
 
 class VlcSurface(QWidget):
-    """An ordinary widget showing the frame libvlc decoded last, smoothly scaled to fit and centred on black.
+    """An ordinary widget showing the frame libvlc decoded last, smoothly scaled to fit and centered on black.
 
     Ordinary on purpose: libvlc renders into memory ([[appendices.vlc#memory-rendering]]) rather than into a native
     window of its own, so this is painted by Qt like any other widget, anything may be drawn over it, and the maximized

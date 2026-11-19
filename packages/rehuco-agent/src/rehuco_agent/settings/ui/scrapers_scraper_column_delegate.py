@@ -45,8 +45,8 @@ class ScrapersScraperColumnDelegate(RowBandDelegate):
         painter.save()
         try:
             color = self.paint_band(painter, option, index)
-            # the link colour is unreadable on the highlight, so a selected row draws it in the
-            # highlighted-text colour
+            # the link color is unreadable on the highlight, so a selected row draws it in the
+            # highlighted-text color
             selected = QStyle.StateFlag.State_Selected in option.state
             document = self.__document_for(option, index, color if selected else None)
             painter.translate(option.rect.topLeft())
@@ -103,7 +103,7 @@ class ScrapersScraperColumnDelegate(RowBandDelegate):
 
         :param option: the cell's style option.
         :param index: the cell.
-        :param color: the link colour, or ``None`` for the palette's own.
+        :param color: the link color, or ``None`` for the palette's own.
         :returns: the document."""
         site_url = str(index.data(SITE_URL_ROLE))
         site_name = str(index.data(Qt.ItemDataRole.DisplayRole) or "")

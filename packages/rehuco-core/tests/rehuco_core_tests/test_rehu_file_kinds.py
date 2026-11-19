@@ -54,7 +54,7 @@ TREE: Final = {
 }
 """One directory-scoped resource's folder, holding every shape the rules distinguish: its own record and
 sidecars, a retained backup, a legacy-named image that is content (#393), content of several types, a junk name,
-a file-scoped neighbour with its own sidecar and content, a plain subdirectory and a nested resource."""
+a file-scoped neighbor with its own sidecar and content, a plain subdirectory and a nested resource."""
 
 DIRECTORIES: Final = (DIRECTORY / "sub", DIRECTORY / "nested")
 
@@ -125,12 +125,12 @@ def own(mocker: MockerFixture) -> dict[str, FileKind]:
 def test_each_entry_is_named_from_the_asking_resources_point_of_view(
     own: dict[str, FileKind], name: str, kind: FileKind
 ) -> None:
-    """Roles, not file types: the same ``.jpg`` is a screenshot, a neighbour's, or content (#266).
+    """Roles, not file types: the same ``.jpg`` is a screenshot, a neighbor's, or content (#266).
 
     **Test steps:**
 
     * classify the resource's own directory
-    * verify each entry carries the kind its name and its neighbours make it
+    * verify each entry carries the kind its name and its neighbors make it
     """
     assert own[name] is kind
 
@@ -186,7 +186,7 @@ def test_a_record_claims_only_its_own_directory(mocker: MockerFixture) -> None:
     assert kinds(DIRECTORY / "sub")["info00.jpg"] is FileKind.CONTENT
 
 
-def test_a_file_scoped_neighbour_claims_nothing_below_its_directory(mocker: MockerFixture) -> None:
+def test_a_file_scoped_neighbor_claims_nothing_below_its_directory(mocker: MockerFixture) -> None:
     """``foo.rehu`` beside ``info.rehu`` owns ``foo.*`` and ``fooNN.*`` in its own directory only: a
     ``sub/foo01.jpg`` and a ``sub/foo.checksum`` are this resource's content.
 
@@ -245,15 +245,15 @@ def test_a_directory_scoped_resource_keeps_its_folders_whatever_else_shares_them
     mocker: MockerFixture,
 ) -> None:
     """An ``info.rehu`` covers its own directory, so the folders under it are its content and nothing
-    beside it can take them -- a file-scoped neighbour claims only its same-stem siblings, and a legacy
+    beside it can take them -- a file-scoped neighbor claims only its same-stem siblings, and a legacy
     ``info.tc`` a conversion left behind is this same resource under its old name.
 
     Regression guard for the filename comparison this replaced: with an ``info.tc`` beside it, the
-    resource read its own directory as covered by a neighbour and refused to browse its own folders.
+    resource read its own directory as covered by a neighbor and refused to browse its own folders.
 
     **Test steps:**
 
-    * classify an ``info.rehu``'s own directory holding a file-scoped neighbour *and* a leftover
+    * classify an ``info.rehu``'s own directory holding a file-scoped neighbor *and* a leftover
       ``info.tc``
     * verify nothing foreign covers it
     """
@@ -391,7 +391,7 @@ def test_a_junk_glob_never_reaches_a_file_scoped_resources_whitelist(mocker: Moc
 )
 def test_each_entry_is_also_named_by_shape(mocker: MockerFixture, name: str, file_type: FileType) -> None:
     """The axis a glyph is chosen on, orthogonal to the kind: a record is a record whether it is this
-    resource's or a neighbour's (#266).
+    resource's or a neighbor's (#266).
 
     **Test steps:**
 

@@ -1,4 +1,4 @@
-"""Tests for ColorSwatchButton: a push button that is its own colour swatch (#221, #342)."""
+"""Tests for ColorSwatchButton: a push button that is its own color swatch (#221, #342)."""
 
 from PySide6.QtGui import QColor
 from pytest_mock import MockerFixture
@@ -11,7 +11,7 @@ def test_set_color_normalizes_and_shows_the_hex_text(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * set a named colour
+    * set a named color
     * verify the text and :meth:`color` both read back the normalized hex form
     """
     button = ColorSwatchButton()
@@ -32,7 +32,7 @@ def test_the_stylesheet_rule_is_scoped_to_this_buttons_own_objectname(qtbot: QtB
 
     **Test steps:**
 
-    * name the button and set a colour
+    * name the button and set a color
     * verify the stylesheet names this button's own objectName, not a bare ``QPushButton`` selector
     """
     button = ColorSwatchButton()
@@ -52,7 +52,7 @@ def test_a_button_with_no_objectname_yet_gets_no_stylesheet(qtbot: QtBot) -> Non
 
     **Test steps:**
 
-    * build a button and immediately set a colour, with no objectName given
+    * build a button and immediately set a color, with no objectName given
     * verify the text is shown but the stylesheet stays empty
     """
     button = ColorSwatchButton()
@@ -69,8 +69,8 @@ def test_the_text_color_flips_for_readability(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * set a very dark colour, then a very light one
-    * verify the stylesheet's text colour follows
+    * set a very dark color, then a very light one
+    * verify the stylesheet's text color follows
     """
     button = ColorSwatchButton()
     qtbot.addWidget(button)
@@ -83,16 +83,16 @@ def test_the_text_color_flips_for_readability(qtbot: QtBot) -> None:
     assert "color: #000000" in button.styleSheet()
 
 
-def test_clicking_opens_the_picker_on_the_staged_colour_and_stages_what_it_returns(
+def test_clicking_opens_the_picker_on_the_staged_color_and_stages_what_it_returns(
     qtbot: QtBot, mocker: MockerFixture
 ) -> None:
-    """Clicking asks the colour dialog, seeded with the current colour, and stages whatever valid
-    colour it returns.
+    """Clicking asks the color dialog, seeded with the current color, and stages whatever valid
+    color it returns.
 
     **Test steps:**
 
-    * make the dialog return a colour, click the button
-    * verify the dialog was opened on the staged colour and the button now shows the chosen one
+    * make the dialog return a color, click the button
+    * verify the dialog was opened on the staged color and the button now shows the chosen one
     """
     button = ColorSwatchButton()
     qtbot.addWidget(button)
@@ -107,13 +107,13 @@ def test_clicking_opens_the_picker_on_the_staged_colour_and_stages_what_it_retur
     assert button.color() == "#336699"
 
 
-def test_a_cancelled_pick_leaves_the_colour_unchanged(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Cancelling the dialog (an invalid returned colour) stages nothing.
+def test_a_canceled_pick_leaves_the_color_unchanged(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Canceling the dialog (an invalid returned color) stages nothing.
 
     **Test steps:**
 
-    * make the dialog return an invalid colour, click the button
-    * verify the colour is unchanged
+    * make the dialog return an invalid color, click the button
+    * verify the color is unchanged
     """
     button = ColorSwatchButton()
     qtbot.addWidget(button)
@@ -131,7 +131,7 @@ def test_settings_value_and_set_settings_value_round_trip(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * set a colour, read it back through ``settings_value``
+    * set a color, read it back through ``settings_value``
     * write a different value through ``set_settings_value``
     * verify the button shows what was written
     """

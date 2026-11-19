@@ -497,7 +497,7 @@ it could not see, the discipline the checksum sweep already follows ([[mounts-an
 
 `Tools ▸ Import Legacy Catalog…` is the wizard that runs the plan and then acts on it, over as many
 resources as the folder holds — thousands, for a real catalog. Five steps: choose a root (remembering
-recent ones); run the scan on a worker thread, cancellable; show the plan as a checkbox table, one row per
+recent ones); run the scan on a worker thread, cancelable; show the plan as a checkbox table, one row per
 resource, sortable and filterable by flag, with a header summary (*"9,847 clean · 153 flagged · 12
 blocked"*) and the `suspect_mtime` count named on its own line when it is not zero, since a wall of
 clobbered timestamps is a reason to stop and look rather than one flag among six; enqueue one
@@ -505,11 +505,11 @@ clobbered timestamps is a reason to stop and look rather than one flag among six
 with an outcome per row and **Retry Failed**. **No per-item review gate** — the conversion offers no
 choices to confirm, so a per-resource pass over thousands of items would be ceremony nobody would ever
 finish. Safety is that nothing is lost by a rename and the backup above, plus a collision leaving the later
-file untouched rather than guessing — a review pass, where one is wanted, is the images dock afterwards
+file untouched rather than guessing — a review pass, where one is wanted, is the images dock afterward
 ([[plugins#tutorial-plugin]]), deliberately, one resource at a time. A blocked row starts unchecked; checking one
 **is** the explicit per-row opt-in `rehu_exists` needs to proceed with `overwrite`, and the only such opt-in offered
 — a `stale_backup` row cannot be unblocked this way, so checking one simply enqueues a job that fails with a
-message. Cancelling mid-import cancels every job still queued outright and lets the one already running
+message. Canceling mid-import cancels every job still queued outright and lets the one already running
 finish on its own, so a resource is never left half-converted.
 
 **Converting a resource converts its checksums too** (#256). The `info.sfv` a predecessor left beside the `.tc` — a
@@ -525,7 +525,7 @@ its `.checksum`, which is what hand-converting produced before retirement existe
 directory's listing for the conversions anyway, and this is three names out of one listing — and executed as **one
 job per resource, like the conversions**, merging the stranded claim into the record and retiring the file. It sits on
 the same plan table as the conversions, because that is one resource, one job and one outcome, which is the whole of
-what a row means there; it is checked by default, since nothing blocks it and no judgement is being made; and the
+what a row means there; it is checked by default, since nothing blocks it and no judgment is being made; and the
 content-check option does not reach it, since it reads no bytes and its record lands dateless like a seeded one, which
 a later sweep settles. A `.tc` in that state gets no row of its own: the conversion ahead of it carries the manifest
 forward and retires it either way, and a second job against a path the first one renames away would be a race with
@@ -535,14 +535,14 @@ That option is **whether to check the content**, and it is **off by default** be
 Ticked, it queues a **second job per resource** — verifying the just-seeded record where a manifest made a claim, and
 generating one from disk where none did. A second job rather than more work in the first: a conversion is not safely
 interruptible, since it is renaming files, and folding a multi-hour read into it would make a catalog-wide import
-unstoppable. As its own job the hashing is pausable, cancellable and retryable, and stopping between the pair is
-harmless — the resource is converted with a dateless record, which any later sweep settles. Cancelling the import
-cancels these too, or stopping it would leave the library being read for hours afterwards. They are otherwise **not
+unstoppable. As its own job the hashing is pausable, cancelable and retryable, and stopping between the pair is
+harmless — the resource is converted with a dateless record, which any later sweep settles. Canceling the import
+cancels these too, or stopping it would leave the library being read for hours afterward. They are otherwise **not
 the wizard's to report**: their outcome is not a conversion's and belongs on no row of its table, they outlive the
 dialog, and the task queue is where a run measured in hours is watched. The result step says how many were queued, so
 *the import is finished* is not read off a page with hours of hashing still to run.
 
-A completed conversion keeps exactly one retained pair to act on afterwards — `info.tc.orig` and, where #259 applied,
+A completed conversion keeps exactly one retained pair to act on afterward — `info.tc.orig` and, where #259 applied,
 `info.sfv.orig` — and the only remedy over them is **Discard**, permanent by design: nothing about the conversion
 itself can be undone, because nothing about it was destructive in the first place. A wrong image rename is corrected
 in the images dock ([[plugins#tutorial-plugin]]), by hand, one file at a time — not by reverting the whole resource
@@ -621,7 +621,7 @@ tc4 stored size and duration as human-readable strings; the reader parses them b
 
 - **Size** — base-1000 suffixes (`B`, `KB`, `MB`, `GB`, `TB`, `PB`, `EB`); the magnitude may be **fractional**, so
   `"1.5 GB"` → `int(1.5 × 1000³)` = `1500000000` bytes. A plain integer passes through unchanged; an unknown suffix, an
-  unparseable magnitude, or a non-finite result yields **`None`** — omitted, never fabricated as `0`
+  unparsable magnitude, or a non-finite result yields **`None`** — omitted, never fabricated as `0`
   ([[field-schema#deferred-items]]).
 - **Duration** — additive `h` / `m` / `s` tokens (`"1h 23m"` → `1×3600 + 23×60` = `4980` s); each token's magnitude must
   be an **integer** digit run (a non-numeric token contributes nothing). A plain integer passes through; absent, or a
@@ -684,7 +684,7 @@ The dialog is one page:
 
 - **Site**: a drop-down of the registered scraper wizards.
 - **Root**: a drop-down of the catalog's roots; the one chosen receives the records. Each entry is drawn on two lines,
-  the root's label and, greyed beneath it, its location. A root whose layouts admit no `asset`
+  the root's label and, grayed beneath it, its location. A root whose layouts admit no `asset`
   ([[mounts-and-storage#rehuroot]]) is listed disabled, with the reason as its tooltip.
 - **Login** opens the persona browser, unautomated, so the user can sign in ([[acquisition-tooling#browser-persona]]).
 - **Start** enqueues the job and closes the dialog. It is disabled while the persona browser is open, since a profile
@@ -709,9 +709,9 @@ queue is right for.
   millisecond the microsecond order differs from the page order.
 - **A new item** is written straight to disk, its `.rehu` and its screenshots, and entered in the cache. No document
   is opened.
-- **Its licence text is saved with it**, as the record's `.rehuterms` ([[assets#licences]]): each distinct licence is
-  read once per run, keyed by the store's licence **path** (Fab: `license/cc/cc-by`), not by `license_url`, since one
-  licence arrives under different URLs and the URL may be empty. A known item's saved text is never touched by a scan.
+- **Its license text is saved with it**, as the record's `.rehuterms` ([[assets#licenses]]): each distinct license is
+  read once per run, keyed by the store's license **path** (Fab: `license/cc/cc-by`), not by `license_url`, since one
+  license arrives under different URLs and the URL may be empty. A known item's saved text is never touched by a scan.
 - **An item whose public page is gone** (Fab: `isActiveInLive` false, its listing a 404; 102 of 4,250) is still in the
   account, so it is written from the library entry alone, its unknown fields left empty and `online` left true, and
   **its source URL is the library link** (`/library/assets/<entitlement id>`) instead of the dead public one.

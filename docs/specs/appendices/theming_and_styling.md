@@ -34,7 +34,7 @@
   change — matching the old signal's once-per-switch. A single shared filter also lets any number of
   listeners subscribe without each installing its own (which would make every event in the app
   `O(listeners)`). Themed icons are **not** among those listeners any more; what is left are the
-  things that genuinely have to act on a switch rather than merely look different afterwards — QtAds'
+  things that genuinely have to act on a switch rather than merely look different afterward — QtAds'
   stylesheet pinning ([[appendices.qt-ads#stylesheet-reload]]), `MarkdownEdit`, `TypeBadge`.
 - **`ActionIconThemeHandler`** / **`GlyphActionIconThemeHandler`** — give one `QAction` the shared
   themed icon (SVG- or glyph-backed, respectively) built from a source path. Thin by design: the icon

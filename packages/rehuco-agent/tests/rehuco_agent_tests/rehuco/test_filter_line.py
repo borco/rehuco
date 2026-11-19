@@ -130,9 +130,9 @@ def test_an_unknown_field_is_reported_and_the_rest_still_applies() -> None:
     * parse free text, an unknown field and a known one
     * verify the problem names the field, and the text and the known token still apply
     """
-    parsed = parse_filter("intro colour:red type:tutorial")
+    parsed = parse_filter("intro color:red type:tutorial")
 
-    assert parsed.problems == ('Unknown field "colour"',)
+    assert parsed.problems == ('Unknown field "color"',)
     assert parsed.query == CatalogQuery(("intro",), ((CatalogField.TYPE, "tutorial"),))
 
 
@@ -144,10 +144,10 @@ def test_a_token_with_no_value_yet_is_ignored_without_a_word() -> None:
     * parse a known and an unknown name, each with nothing after its colon
     * verify no field token and no problem
     """
-    parsed = parse_filter('authors: colour:""')
+    parsed = parse_filter('authors: color:""')
 
     assert (parsed.query, parsed.problems) == (CatalogQuery(), ())
-    assert [token.name for token in parsed.tokens] == ["authors", "colour"]
+    assert [token.name for token in parsed.tokens] == ["authors", "color"]
 
 
 def test_a_columns_word_typed_now_is_an_unknown_field() -> None:

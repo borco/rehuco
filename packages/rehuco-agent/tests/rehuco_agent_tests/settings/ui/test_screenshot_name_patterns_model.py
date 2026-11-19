@@ -279,7 +279,7 @@ def test_an_invalid_index_reads_as_nothing(model: ScreenshotNamePatternsModel) -
     assert model.flags(QModelIndex()) == Qt.ItemFlag.NoItemFlags
 
 
-def test_a_blank_cell_explains_and_colours_itself(model: ScreenshotNamePatternsModel) -> None:
+def test_a_blank_cell_explains_and_colors_itself(model: ScreenshotNamePatternsModel) -> None:
     """Flagged, never refused: the cell says what is wrong and paints itself, and nothing is dropped.
 
     **Test steps:**
@@ -294,7 +294,7 @@ def test_a_blank_cell_explains_and_colours_itself(model: ScreenshotNamePatternsM
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is not None
 
 
-def test_an_uncompilable_cell_explains_and_colours_itself(model: ScreenshotNamePatternsModel) -> None:
+def test_an_uncompilable_cell_explains_and_colors_itself(model: ScreenshotNamePatternsModel) -> None:
     """A pattern that fails to compile is flagged the same way a blank one is, with its own reason.
 
     **Test steps:**
@@ -309,7 +309,7 @@ def test_an_uncompilable_cell_explains_and_colours_itself(model: ScreenshotNameP
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is not None
 
 
-def test_a_usable_cell_carries_no_tooltip_and_no_colour(model: ScreenshotNamePatternsModel) -> None:
+def test_a_usable_cell_carries_no_tooltip_and_no_color(model: ScreenshotNamePatternsModel) -> None:
     """The flag is about what a scan would refuse, so a pattern it accepts wears nothing.
 
     **Test steps:**

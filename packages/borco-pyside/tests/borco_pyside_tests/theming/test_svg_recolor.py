@@ -151,24 +151,24 @@ def test_recolored_svg_icon_with_on_color_renders_a_distinct_checked_variant(qtb
 def test_recolored_svg_icon_with_disabled_color_renders_a_distinct_disabled_variant(qtbot: QtBot) -> None:
     """Passing ``disabled_color`` gives ``Mode.Disabled`` its own color.
 
-    A custom icon engine gets no automatic disabled-greying from Qt (that fallback only applies to
+    A custom icon engine gets no automatic disabled-graying from Qt (that fallback only applies to
     the default pixmap-based engine), so without this the disabled variant would render identically
     to the enabled one -- confirmed as the actual bug behind an always-enabled-looking toolbar button.
 
     **Test steps:**
 
-    * build a recolored icon with ``color`` red and ``disabled_color`` grey
+    * build a recolored icon with ``color`` red and ``disabled_color`` gray
     * render the ``Normal``/``Off`` and ``Disabled``/``Off`` pixmaps
-    * verify ``Normal`` is red and ``Disabled`` is grey
+    * verify ``Normal`` is red and ``Disabled`` is gray
     """
     del qtbot
-    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), disabled_color=QColor("grey"))
+    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), disabled_color=QColor("gray"))
 
     normal = icon.pixmap(QSize(24, 24), QIcon.Mode.Normal, QIcon.State.Off)
     disabled = icon.pixmap(QSize(24, 24), QIcon.Mode.Disabled, QIcon.State.Off)
 
     assert normal.toImage().pixelColor(12, 12).name() == "#ff0000"
-    assert disabled.toImage().pixelColor(12, 12).name() == QColor("grey").name()
+    assert disabled.toImage().pixelColor(12, 12).name() == QColor("gray").name()
 
 
 def test_recolored_svg_icon_disabled_wins_over_checked_when_both_apply(qtbot: QtBot) -> None:
@@ -181,11 +181,11 @@ def test_recolored_svg_icon_disabled_wins_over_checked_when_both_apply(qtbot: Qt
     * verify it's the disabled color, not the checked one
     """
     del qtbot
-    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), QColor("blue"), QColor("grey"))
+    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), QColor("blue"), QColor("gray"))
 
     disabled_and_checked = icon.pixmap(QSize(24, 24), QIcon.Mode.Disabled, QIcon.State.On)
 
-    assert disabled_and_checked.toImage().pixelColor(12, 12).name() == QColor("grey").name()
+    assert disabled_and_checked.toImage().pixelColor(12, 12).name() == QColor("gray").name()
 
 
 def test_recolored_svg_icon_with_on_disabled_color_renders_a_distinct_disabled_checked_variant(qtbot: QtBot) -> None:
@@ -202,12 +202,12 @@ def test_recolored_svg_icon_with_on_disabled_color_renders_a_distinct_disabled_c
     * verify each renders its own color, not collapsed to one flat disabled look
     """
     del qtbot
-    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), QColor("blue"), QColor("grey"), QColor("purple"))
+    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), QColor("blue"), QColor("gray"), QColor("purple"))
 
     disabled_off = icon.pixmap(QSize(24, 24), QIcon.Mode.Disabled, QIcon.State.Off)
     disabled_on = icon.pixmap(QSize(24, 24), QIcon.Mode.Disabled, QIcon.State.On)
 
-    assert disabled_off.toImage().pixelColor(12, 12).name() == QColor("grey").name()
+    assert disabled_off.toImage().pixelColor(12, 12).name() == QColor("gray").name()
     assert disabled_on.toImage().pixelColor(12, 12).name() == QColor("purple").name()
 
 
@@ -221,11 +221,11 @@ def test_recolored_svg_icon_disabled_checked_falls_back_to_disabled_color(qtbot:
     * verify it renders ``disabled_color``, not ``on_color``
     """
     del qtbot
-    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), on_color=QColor("blue"), disabled_color=QColor("grey"))
+    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), on_color=QColor("blue"), disabled_color=QColor("gray"))
 
     disabled_on = icon.pixmap(QSize(24, 24), QIcon.Mode.Disabled, QIcon.State.On)
 
-    assert disabled_on.toImage().pixelColor(12, 12).name() == QColor("grey").name()
+    assert disabled_on.toImage().pixelColor(12, 12).name() == QColor("gray").name()
 
 
 def test_recolored_svg_icon_disabled_checked_falls_back_to_on_color_with_no_disabled_variant(qtbot: QtBot) -> None:
@@ -292,14 +292,14 @@ def test_engine_clone_preserves_the_disabled_variant(qtbot: QtBot) -> None:
     """
     del qtbot
     engine = RecoloredSvgIconEngine(
-        recolor_svg(SVG_WITH_RGB_FILL, QColor("green")), disabled_svg=recolor_svg(SVG_WITH_RGB_FILL, QColor("grey"))
+        recolor_svg(SVG_WITH_RGB_FILL, QColor("green")), disabled_svg=recolor_svg(SVG_WITH_RGB_FILL, QColor("gray"))
     )
 
     clone = engine.clone()
     icon = QIcon(clone)
 
     pixmap = icon.pixmap(QSize(24, 24), QIcon.Mode.Disabled, QIcon.State.Off)
-    assert pixmap.toImage().pixelColor(12, 12).name() == QColor("grey").name()
+    assert pixmap.toImage().pixelColor(12, 12).name() == QColor("gray").name()
 
 
 def test_engine_clone_preserves_the_on_disabled_variant(qtbot: QtBot) -> None:

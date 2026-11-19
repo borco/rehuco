@@ -21,7 +21,7 @@ LOOKING_TEXT: Final = "Looking…"
 NOT_FOUND_TEXT: Final = "not found"
 WARNING_PROPERTY: Final = "warning"
 WARNING_STYLESHEET: Final = f'QLineEdit[{WARNING_PROPERTY}="true"] {{ color: {WARNING_COLOR}; }}'
-"""Paints the custom path in the warning colour while nothing usable is at it -- the field toolkit's idiom."""
+"""Paints the custom path in the warning color while nothing usable is at it -- the field toolkit's idiom."""
 
 
 def summarize(candidate: ToolCandidate) -> str:
@@ -47,9 +47,9 @@ class ToolPathControl(QWidget):
     the choice with it without the page going dirty -- another install's folder when one is pinned, and the typed
     path under Custom. Its radios and its edit are inside it and so are not values of their own.
 
-    An install found but unusable is listed, greyed, with the reason, so the user sees why it was not chosen. The
+    An install found but unusable is listed, grayed, with the reason, so the user sees why it was not chosen. The
     Custom row carries the same parenthesis the found rows do, from inspecting its path, and the path is painted in
-    the warning colour while nothing usable is at it: a stored install that has gone is shown here, marked, rather
+    the warning color while nothing usable is at it: a stored install that has gone is shown here, marked, rather
     than silently dropped.
 
     :param parent: optional Qt parent.
@@ -203,7 +203,7 @@ class ToolPathControl(QWidget):
             self.__staged = "" if chosen == best_candidate(self.__candidates) else str(chosen.folder)
 
     def __on_browse_clicked(self) -> None:
-        """Pick the executable with a file dialog, leaving a cancelled pick untouched."""
+        """Pick the executable with a file dialog, leaving a canceled pick untouched."""
         path, _ = QFileDialog.getOpenFileName(self, self.browse_title, "", EXECUTABLE_FILTER)
         if path:
             self.__ui.path_edit.setText(path)

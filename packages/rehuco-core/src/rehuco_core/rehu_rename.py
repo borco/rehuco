@@ -104,7 +104,7 @@ def rehu_rename_conflict(path: Path, new_name: str) -> Path | None:
     """Whatever already occupies the destination renaming ``path`` to ``new_name`` would take.
 
     The **advisory** counterpart of :func:`rename_rehu_resource`, for a caller that wants to show a name
-    as unavailable rather than let the user pick it and be told afterwards
+    as unavailable rather than let the user pick it and be told afterward
     ([[plugins#toolkit-surfaces]]). Never touches anything: one existence check, no plan, no listing.
 
     :param path: the resource's ``.rehu`` file.
@@ -328,7 +328,7 @@ class RehuRenamer:
         would trade that for staleness with no way to detect it: the answers change under a successful
         rename (which is precisely the set of names just asked about), under the first save of a new
         document, and under anything the user does in a file manager while the editor sits open. A stale
-        *free* re-invites the failure this exists to prevent; a stale *taken* greys a name out with no
+        *free* re-invites the failure this exists to prevent; a stale *taken* grays a name out with no
         way back. The speed is the operating system's own attribute cache already doing this job, one
         layer down and with the invalidation this layer cannot see.
 

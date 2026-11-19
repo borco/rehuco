@@ -26,7 +26,7 @@ def setup_console_logging(level: int = logging.DEBUG, console_level: int = DEFAU
     :param console_level: the minimum level the console itself prints.
     """
     root = logging.getLogger()
-    # only the handler basicConfig installs here gets the console level -- levelling every handler on
+    # only the handler basicConfig installs here gets the console level -- leveling every handler on
     # the root logger would silently raise the floor of any other one already attached, which for an
     # in-app log surface is precisely the records it exists to keep
     existing = set(root.handlers)

@@ -75,7 +75,7 @@ def exporting(
     return built
 
 
-def centre_of(view: ContentImagesView, index: int) -> QPoint:
+def center_of(view: ContentImagesView, index: int) -> QPoint:
     """The middle of an image's cell, in viewport coordinates.
 
     :param view: the grid.
@@ -115,7 +115,7 @@ def press_and_drag(view: ContentImagesView, index: int) -> None:
     :param view: the grid.
     :param index: the image pressed.
     """
-    start = centre_of(view, index)
+    start = center_of(view, index)
     QTest.mousePress(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
     move_to(view, start + QPoint(3 * QApplication.startDragDistance(), 0))
 
@@ -156,7 +156,7 @@ def test_a_press_that_moves_less_than_the_drag_distance_still_selects(
     * verify no drag and the image selected
     """
     drag_class = mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
-    start = centre_of(exporting, 0)
+    start = center_of(exporting, 0)
 
     QTest.mousePress(exporting.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
     move_to(exporting, start + QPoint(1, 0))
@@ -177,7 +177,7 @@ def test_the_release_that_ends_a_drag_is_no_click(exporting: ContentImagesView, 
     * click it again and verify the click toggles it off as usual
     """
     mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
-    start = centre_of(exporting, 0)
+    start = center_of(exporting, 0)
 
     press_and_drag(exporting, 0)
     QTest.mouseRelease(exporting.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, start)
@@ -204,7 +204,7 @@ def test_a_press_off_an_image_or_with_another_button_drags_nothing(
     QTest.mousePress(exporting.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, empty)
     move_to(exporting, empty + QPoint(50, 0))
     QTest.mouseRelease(exporting.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, empty)
-    start = centre_of(exporting, 0)
+    start = center_of(exporting, 0)
     QTest.mousePress(exporting.viewport(), Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, start)
     move_to(exporting, start + QPoint(50, 0))
 
@@ -307,7 +307,7 @@ def test_the_context_menu_selects_the_image_and_offers_copy(
     RecordingMenu.shown = []
     viewport = exporting.viewport()
 
-    for point in (centre_of(exporting, 1), QPoint(5, viewport.height() - 5)):
+    for point in (center_of(exporting, 1), QPoint(5, viewport.height() - 5)):
         QApplication.sendEvent(
             viewport, QContextMenuEvent(QContextMenuEvent.Reason.Mouse, point, viewport.mapToGlobal(point))
         )
@@ -332,7 +332,7 @@ def test_the_menu_key_acts_on_the_selection_not_on_the_image_under_a_synthetic_p
     monkeypatch.setattr("rehuco_agent.documents.content_images.content_images_view.QMenu", RecordingMenu)
     RecordingMenu.shown = []
     viewport = exporting.viewport()
-    over_first = centre_of(exporting, 0)
+    over_first = center_of(exporting, 0)
 
     QApplication.sendEvent(
         viewport,

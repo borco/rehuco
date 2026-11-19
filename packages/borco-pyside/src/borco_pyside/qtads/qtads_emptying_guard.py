@@ -16,7 +16,7 @@ class QtAdsEmptyingGuard(QObject):
     the container's floating window -- ``finishDropOperation()``: hidden, its areas let go, deleted. It finds
     that window with ``floatingWidget()``, which answers the nearest floating window *above* a container, so a
     nested manager emptied inside a dock of an outer floating window deletes the **outer** window, every dock
-    in it included ([[appendices.qt-ads#nested-emptied-float]]). Nothing undoes that afterwards.
+    in it included ([[appendices.qt-ads#nested-emptied-float]]). Nothing undoes that afterward.
 
     **How.** The moment the container is left with no area -- ``dockAreasRemoved``, which QtAds emits as the area
     goes and *before* it tests the count -- a **ballast** dock is parked in an area of its own, closed, so the count

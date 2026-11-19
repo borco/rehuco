@@ -63,7 +63,7 @@ class ItemListEditor(QWidget):
     means; abandoning it is the model's own `QAbstractItemModel.removeRow`, called directly rather than
     through `ItemEditor.delete` -- an abandoned insert was never a choice the way a real delete is.
 
-    **When a blank insert is abandoned.** At once when its editor is cancelled, and at once when the
+    **When a blank insert is abandoned.** At once when its editor is canceled, and at once when the
     editor closes on a row with no second editable cell to go on to (a one-column list). Otherwise the
     editor closed because the user is heading for another cell of the row, so the row waits: it is
     abandoned only when the user *leaves* it still blank -- the current row moves to another row, or the
@@ -98,7 +98,7 @@ class ItemListEditor(QWidget):
         rows, the space every model call is already in, so a caller never has to map either.
     :param delegate: the delegate the rows are drawn and edited with -- a `RowBandDelegate` subclass, for a
         column that wants an editor of its own; a plain `RowBandDelegate` when ``None``. Given here rather than
-        set afterwards, because this widget listens to the delegate's ``closeEditor``.
+        set afterward, because this widget listens to the delegate's ``closeEditor``.
     """
 
     values_changed = Signal()
@@ -166,7 +166,7 @@ class ItemListEditor(QWidget):
         layout.addWidget(self.__ordering_actions)
         layout.addWidget(self.__item_actions)
         # the view is sized to its rows, so it is shorter than the button columns whenever it holds
-        # few of them -- and a layout centres a short item in its cell, leaving a one-entry list
+        # few of them -- and a layout centers a short item in its cell, leaving a one-entry list
         # floating with white space above it and its first row level with nothing
         for widget in (self.__view, self.__ordering_actions, self.__item_actions):
             layout.setAlignment(widget, Qt.AlignmentFlag.AlignTop)
@@ -264,7 +264,7 @@ class ItemListEditor(QWidget):
     def row_is_blank(self, row: int) -> bool:
         """Whether ``row`` holds nothing yet -- what makes an insert abandonable rather than an entry.
 
-        **Every editable cell** by default: a row is abandoned when it is cancelled or left with this
+        **Every editable cell** by default: a row is abandoned when it is canceled or left with this
         still true, so text typed into any cell keeps it, in whatever order the cells were filled. Cells
         the user cannot type into -- a checkbox, a column derived from the others -- say nothing about
         whether anything was entered, and are not read. Override where a row needs a different test.
@@ -474,7 +474,7 @@ class ItemListEditor(QWidget):
             self.__end_pending()
             return
         row = self.__pending_entry.row()
-        # cancelled, or nothing further in the row to type into, or already left: the gesture is over.
+        # canceled, or nothing further in the row to type into, or already left: the gesture is over.
         # Otherwise the editor closed because the user is heading for another cell of the same row.
         no_more_cells = len(self.__editable_cells(row)) < 2
         if hint == QAbstractItemDelegate.EndEditHint.RevertModelCache or no_more_cells or self.current_index != row:

@@ -702,7 +702,7 @@ def test_save_orders_the_active_block_and_leaves_inactive_blocks_untouched(mocke
     """The active block is ordered, led by its own ``format_version``; an inactive block is copied
     exactly as found ([[plugins#plugin-blocks]]).
 
-    An inactive block is payload this file is only custodian of, so "carried verbatim" is honoured
+    An inactive block is payload this file is only custodian of, so "carried verbatim" is honored
     literally -- reordering it would churn bytes this document has no business churning, to reorganize
     fields it does not understand.
 
@@ -3061,7 +3061,7 @@ def test_load_refuses_a_payload_with_an_over_long_integer(mocker: MockerFixture)
     Fed a real payload because that limit is a documented, platform-independent 4300 digits
     (``sys.int_info.str_digits_check_threshold``) -- unlike the recursion case below.
 
-    Not a size defence -- the real sanity caps are #88.
+    Not a size defense -- the real sanity caps are #88.
 
     **Test steps:**
 
@@ -3326,7 +3326,7 @@ def test_the_combined_reserved_key_misuse_is_refused() -> None:
 def test_reserved_key_misuse_is_refused_from_load_too(mocker: MockerFixture) -> None:
     """The same refusal applies through :meth:`RehuDocument.load`, not just direct construction --
     ``load`` doesn't catch the new raise, so it propagates to :meth:`RehuDocument.open_or_locked`
-    exactly like an unparseable file does.
+    exactly like an unparsable file does.
 
     **Test steps:**
 
@@ -3340,7 +3340,7 @@ def test_reserved_key_misuse_is_refused_from_load_too(mocker: MockerFixture) -> 
 
 def test_reserved_key_misuse_locks_the_document_via_open_or_locked(mocker: MockerFixture) -> None:
     """Routed through :meth:`RehuDocument.open_or_locked`, a reserved-key misuse becomes an
-    ``INVALID_FILE``-locked stub, the same as any other unparseable ``.rehu``
+    ``INVALID_FILE``-locked stub, the same as any other unparsable ``.rehu``
     ([[data-model#write-integrity]]) -- this is what carries the message to the agent's banner (#94)
     with no further agent-side work.
 
@@ -3753,7 +3753,7 @@ def test_open_or_locked_returns_a_missing_stub_for_a_vanished_file(mocker: Mocke
     assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.MISSING]
 
 
-def test_open_or_locked_returns_an_invalid_file_stub_for_unparseable_content(mocker: MockerFixture) -> None:
+def test_open_or_locked_returns_an_invalid_file_stub_for_unparsable_content(mocker: MockerFixture) -> None:
     """A file that cannot be parsed opens as an empty ``INVALID_FILE`` stub whose message carries the
     parser's own text ([[data-model#write-integrity]]).
 

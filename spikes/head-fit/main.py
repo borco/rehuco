@@ -15,7 +15,7 @@ so nothing lands in a package's ``pyproject.toml``::
 
 A ``SOURCE`` is an image file, a folder of images, or a ``.zip``/``.cbz`` whose image members are read
 in place. Each image with a detected face gets ``<name>.loomis.png`` in ``OUT_DIR`` with the sphere, the
-side-plane cuts, the centre line, the brow line and the nose and chin lines drawn over it, plus the
+side-plane cuts, the center line, the brow line and the nose and chin lines drawn over it, plus the
 yaw / pitch / roll it measured; ``summary.csv`` lists every input with its pose or the reason it was
 skipped. Look at the pictures, write the verdict into reference-images.md §18.15, delete this folder.
 """
@@ -51,15 +51,15 @@ HEAD_CROP_MARGIN = 1.6  # half-size of the crop, in multiples of the head points
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 # Landmark indices of the 468-point mesh used for the fit.
-GLABELLA = 9  # between the brows — the Loomis brow line runs through the sphere's centre here
+GLABELA = 9  # between the brows — the Loomis brow line runs through the sphere's center here
 CHIN = 152
 FOREHEAD = 10
 SUBNASALE = 2
 
 # Proportions, in sphere radii, from adult averages (skull top→chin ≈ 23 cm, brow→chin ≈ 12.5 cm, a
-# cranium sphere of r ≈ 9 cm): the brow line sits 0.2 r below the sphere's centre, the nose base a face
-# third (0.7 r) below the brow, the chin another third; the sides are cut 0.6 r in from the centre.
-# First run used the textbook "brow on the centre, nose base on the bottom" (brow→chin = 1.5 r) and drew
+# cranium sphere of r ≈ 9 cm): the brow line sits 0.2 r below the sphere's center, the nose base a face
+# third (0.7 r) below the brow, the chin another third; the sides are cut 0.6 r in from the center.
+# First run used the textbook "brow on the center, nose base on the bottom" (brow→chin = 1.5 r) and drew
 # the sphere visibly too small and too low on every face — see the README.
 BROW_Y = -0.2
 FACE_THIRD = 0.7
@@ -68,7 +68,7 @@ NOSE_Y = BROW_Y - FACE_THIRD
 CHIN_Y = BROW_Y - 2 * FACE_THIRD
 SIDE_CUT_X = 0.6
 SIDE_CUT_RADIUS = math.sqrt(1 - SIDE_CUT_X**2)
-FACE_FRONT_DEPTH = 0.9  # the brow point sits this far in front of the sphere's centre
+FACE_FRONT_DEPTH = 0.9  # the brow point sits this far in front of the sphere's center
 
 
 @dataclass
@@ -111,11 +111,11 @@ def head_crop(pose_landmarker: mp_vision.PoseLandmarker, image: Image.Image) -> 
     if not result.pose_landmarks:
         return None
     pts = np.array([[lm.x * w, lm.y * h] for i, lm in enumerate(result.pose_landmarks[0]) if i in POSE_HEAD_POINTS])
-    centre = pts.mean(axis=0)
+    center = pts.mean(axis=0)
     spread = max(np.ptp(pts[:, 0]), np.ptp(pts[:, 1]), 0.02 * max(w, h))
     half = HEAD_CROP_MARGIN * spread
-    x0, y0 = max(0, int(centre[0] - half)), max(0, int(centre[1] - half))
-    x1, y1 = min(w, int(centre[0] + half)), min(h, int(centre[1] + half))
+    x0, y0 = max(0, int(center[0] - half)), max(0, int(center[1] - half))
+    x1, y1 = min(w, int(center[0] + half)), min(h, int(center[1] + half))
     return x0, y0, x1, y1
 
 
@@ -170,24 +170,24 @@ def iter_sources(sources: list[Path]):
             print(f"skipping {source}: not an image, folder or zip", file=sys.stderr)
 
 
-def project(points: np.ndarray, pose: Pose, scale: float, centre_px: np.ndarray) -> np.ndarray:
+def project(points: np.ndarray, pose: Pose, scale: float, center_px: np.ndarray) -> np.ndarray:
     """Weak-perspective projection of head-local points (in radii) to pixels; returns (N, 3) with depth."""
     cam = points @ pose.rotation.T  # rotate into camera space
-    xy = np.column_stack([cam[:, 0], -cam[:, 1]]) * scale + centre_px  # image y runs down
+    xy = np.column_stack([cam[:, 0], -cam[:, 1]]) * scale + center_px  # image y runs down
     return np.column_stack([xy, cam[:, 2]])
 
 
-def polyline(draw: ImageDraw.ImageDraw, pts: np.ndarray, colour: str, width: int, *, front_only: bool) -> None:
+def polyline(draw: ImageDraw.ImageDraw, pts: np.ndarray, color: str, width: int, *, front_only: bool) -> None:
     """Draw consecutive segments; with ``front_only`` only the half facing the camera (z > 0)."""
     for a, b in zip(pts[:-1], pts[1:]):
         if front_only and (a[2] < 0 or b[2] < 0):
             continue
-        draw.line([(a[0], a[1]), (b[0], b[1])], fill=colour, width=width)
+        draw.line([(a[0], a[1]), (b[0], b[1])], fill=color, width=width)
 
 
 def great_circle(axis: str, radius: float = 1.0, offset: float = 0.0, n: int = 96) -> np.ndarray:
     t = np.linspace(0, 2 * math.pi, n)
-    if axis == "x":  # circle in the yz plane at x = offset: the centre line
+    if axis == "x":  # circle in the yz plane at x = offset: the center line
         return np.column_stack([np.full(n, offset), radius * np.cos(t), radius * np.sin(t)])
     if axis == "y":  # circle in the xz plane at y = offset: the brow line and its parallels
         return np.column_stack([radius * np.cos(t), np.full(n, offset), radius * np.sin(t)])
@@ -205,14 +205,14 @@ def draw_loomis(image: Image.Image, landmarks, pose: Pose) -> tuple[Image.Image,
     """Overlay the Loomis head on ``image``; returns the annotated image and the sphere radius in px."""
     w, h = image.size
     px = np.array([[lm.x * w, lm.y * h] for lm in landmarks])
-    brow = px[GLABELLA]
+    brow = px[GLABELA]
     chin = px[CHIN]
     # The brow→chin distance is vertical in the head frame, so yaw barely shortens it; pitch does.
     brow_to_chin = np.linalg.norm(chin - brow) / max(0.35, abs(math.cos(math.radians(pose.pitch))))
     radius = brow_to_chin / BROW_TO_CHIN_IN_RADII
-    # The brow point is on the face front, FACE_FRONT_DEPTH radii in front of the sphere's centre.
-    centre_offset = project(np.array([[0.0, BROW_Y, FACE_FRONT_DEPTH]]), pose, radius, np.zeros(2))[0, :2]
-    centre_px = brow - centre_offset
+    # The brow point is on the face front, FACE_FRONT_DEPTH radii in front of the sphere's center.
+    center_offset = project(np.array([[0.0, BROW_Y, FACE_FRONT_DEPTH]]), pose, radius, np.zeros(2))[0, :2]
+    center_px = brow - center_offset
 
     out = image.convert("RGB")
     draw = ImageDraw.Draw(out)
@@ -220,29 +220,29 @@ def draw_loomis(image: Image.Image, landmarks, pose: Pose) -> tuple[Image.Image,
 
     # Sphere outline — a sphere projects to a circle under weak perspective.
     draw.ellipse(
-        [centre_px[0] - radius, centre_px[1] - radius, centre_px[0] + radius, centre_px[1] + radius],
+        [center_px[0] - radius, center_px[1] - radius, center_px[0] + radius, center_px[1] + radius],
         outline="#00c8ff",
         width=lw,
     )
-    # Side-plane cuts, centre line, brow line.
+    # Side-plane cuts, center line, brow line.
     for sign in (-1, 1):
-        pts = project(great_circle("x", SIDE_CUT_RADIUS, sign * SIDE_CUT_X), pose, radius, centre_px)
+        pts = project(great_circle("x", SIDE_CUT_RADIUS, sign * SIDE_CUT_X), pose, radius, center_px)
         polyline(draw, pts, "#ffb000", lw, front_only=True)
-    polyline(draw, project(great_circle("x"), pose, radius, centre_px), "#ff4040", lw, front_only=True)
+    polyline(draw, project(great_circle("x"), pose, radius, center_px), "#ff4040", lw, front_only=True)
     brow_circle = great_circle("y", math.sqrt(1 - BROW_Y**2), BROW_Y)
-    polyline(draw, project(brow_circle, pose, radius, centre_px), "#40ff40", lw, front_only=True)
+    polyline(draw, project(brow_circle, pose, radius, center_px), "#40ff40", lw, front_only=True)
     # Nose base and chin as arcs on the face front, a face third apart.
     for level, half_width in ((NOSE_Y, 0.45), (CHIN_Y, 0.35)):
         arc = level_arc(min(level, -0.05), half_width)
         arc[:, 1] = level
-        polyline(draw, project(arc, pose, radius, centre_px), "#ffffff", lw, front_only=False)
+        polyline(draw, project(arc, pose, radius, center_px), "#ffffff", lw, front_only=False)
     # Jaw: from the bottom of each side cut down to the chin.
     for sign in (-1, 1):
         jaw = np.array([[sign * SIDE_CUT_X, -SIDE_CUT_RADIUS, 0.3], [sign * 0.35, CHIN_Y, 0.75]])
-        polyline(draw, project(jaw, pose, radius, centre_px), "#ffb000", lw, front_only=False)
+        polyline(draw, project(jaw, pose, radius, center_px), "#ffb000", lw, front_only=False)
 
     # Landmarks used for the fit, and the measured pose.
-    for name, idx in (("brow", GLABELLA), ("chin", CHIN), ("nose", SUBNASALE), ("top", FOREHEAD)):
+    for name, idx in (("brow", GLABELA), ("chin", CHIN), ("nose", SUBNASALE), ("top", FOREHEAD)):
         x, y = px[idx]
         draw.ellipse([x - lw, y - lw, x + lw, y + lw], fill="#ff00ff")
     font = ImageFont.load_default(size=max(14, int(h / 50)))

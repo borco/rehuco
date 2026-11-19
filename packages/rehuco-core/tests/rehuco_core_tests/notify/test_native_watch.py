@@ -275,7 +275,7 @@ def test_a_watch_given_a_coordinator_lets_go_for_a_rename_and_watches_again(tmp_
 
     * watch a folder holding a resource's folder, with a coordinator
     * rename the resource through the coordinator
-    * verify the rename landed, an overflow of the watched folder was reported, and what happens afterwards is seen
+    * verify the rename landed, an overflow of the watched folder was reported, and what happens afterward is seen
     """
     coordinator = RenameCoordinator()
     record = resource(tmp_path / "library" / "course")

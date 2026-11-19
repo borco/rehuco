@@ -94,7 +94,7 @@ def test_the_tooltip_covers_the_icons_too(qtbot: QtBot) -> None:
 
 
 def test_the_text_stays_at_the_left_edge_of_a_wide_row(qtbot: QtBot) -> None:
-    """A text capped below the row's width is not centred in the row.
+    """A text capped below the row's width is not centered in the row.
 
     **Test steps:**
 

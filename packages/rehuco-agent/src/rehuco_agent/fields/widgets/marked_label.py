@@ -20,7 +20,7 @@ TEXT_STRETCH: Final = 1000
 class MarkedLabel(QWidget):
     """An :class:`~borco_pyside.widgets.ElidedLabel` followed by one icon per marker.
 
-    The text keeps the label's own behaviour -- middle-elided to the width it is given, a link when it has a target --
+    The text keeps the label's own behavior -- middle-elided to the width it is given, a link when it has a target --
     but is capped at what the full text needs, so the icons sit right after it rather than at the row's end; when the
     row is squeezed the text elides first and the icons keep their place. The icons are recolored to the palette's
     text color, the disabled one for a disabled widget, and follow a theme switch.
@@ -40,7 +40,7 @@ class MarkedLabel(QWidget):
         self.__layout = QHBoxLayout(self)
         self.__layout.setContentsMargins(0, 0, 0, 0)
         # the text outweighs the spacer, so it takes what it needs up to its cap and the spacer takes the rest:
-        # without the spacer the capped text is centred in the share it was given
+        # without the spacer the capped text is centered in the share it was given
         self.__layout.addWidget(self.__label, TEXT_STRETCH)
         self.__layout.addStretch(1)
 

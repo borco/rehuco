@@ -25,10 +25,10 @@ class KeyListEditor(QWidget):
 
     The add and delete buttons are icon-only tool buttons that show a border only under the mouse, like a
     settings frame's Apply / Reset / Defaults. Add opens a fresh key button already recording, in the place the
-    new key will take; cancelling it (clicking elsewhere) takes it away again.
+    new key will take; canceling it (clicking elsewhere) takes it away again.
 
     It **reports** edits and never applies them: :meth:`set_keys` is the only thing that changes what it
-    shows, so its owner can ask about a conflict first and show the outcome (or nothing) afterwards.
+    shows, so its owner can ask about a conflict first and show the outcome (or nothing) afterward.
 
     :param parent: optional Qt parent.
     """
@@ -105,7 +105,7 @@ class KeyListEditor(QWidget):
         pending.setObjectName("pending_key_button")
         pending.recorded.connect(lambda sequence: self.key_recorded.emit(NEW_KEY, sequence))
         pending.recorded.connect(lambda _sequence: self.__drop_pending())
-        pending.cancelled.connect(self.__drop_pending)
+        pending.canceled.connect(self.__drop_pending)
         self.__layout.takeAt(self.__layout.count() - 1)  # the add button, re-added after
         self.__layout.addWidget(pending)
         self.__layout.addWidget(self.__add_button)

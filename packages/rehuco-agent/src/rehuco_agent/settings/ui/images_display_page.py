@@ -25,7 +25,7 @@ class ImageChoices(NamedTuple):
     :param lightbox_height: how tall a screenshot is in the maximized viewer's own thumbnail row.
     :param editor_preview_height: how tall the images editor's preview pane opens (#72).
     :param lightbox_info_visible: whether a maximized image opens with its info overlay shown (#221).
-    :param lightbox_backdrop: the colour behind a maximized image, as ``#rrggbb`` (#221).
+    :param lightbox_backdrop: the color behind a maximized image, as ``#rrggbb`` (#221).
     :param lightbox_double_click_closes: whether a double-click on the maximized image closes the
         viewer (#221).
     :param lightbox_select_last_viewed: whether closing a viewer opened from the Content Images dock
@@ -76,8 +76,8 @@ class ImagesDisplayPage(QWidget):
 
     The strip toggle here is the *starting point* only: a document remembers the strip it was last
     left showing, in its own saved layout, so toggling one inside a viewer never comes back here (#161).
-    The info-overlay box and the backdrop colour reach every open viewer on Apply, like the row height
-    (#221); the backdrop is picked from a colour dialog, the button being its own swatch.
+    The info-overlay box and the backdrop color reach every open viewer on Apply, like the row height
+    (#221); the backdrop is picked from a color dialog, the button being its own swatch.
 
     The Content Images clamp (#221) is kept consistent **in the widgets**: raising the minimum past the
     maximum pushes the maximum up with it, and lowering the maximum under the minimum pushes the
@@ -108,20 +108,20 @@ class ImagesDisplayPage(QWidget):
 
     @property
     def backdrop(self) -> str:
-        """The staged colour behind a maximized image, as ``#rrggbb``."""
+        """The staged color behind a maximized image, as ``#rrggbb``."""
         return self.__ui.lightbox_backdrop_button.color()
 
-    def set_backdrop(self, colour: str) -> None:
-        """Stage ``colour`` as the backdrop -- what the picker does with the user's choice.
+    def set_backdrop(self, color: str) -> None:
+        """Stage ``color`` as the backdrop -- what the picker does with the user's choice.
 
         **The swatch itself holds it** (`ColorSwatchButton`), rather than this page keeping it in an
         attribute beside the button: a value the settings dialog's frame snapshot cannot see is one
         whose frame never tints and whose Apply / Reset never enable, while the change still rides
         along with another frame's Apply (#342).
 
-        :param colour: the colour, as ``#rrggbb``.
+        :param color: the color, as ``#rrggbb``.
         """
-        self.__ui.lightbox_backdrop_button.set_color(colour)
+        self.__ui.lightbox_backdrop_button.set_color(color)
 
     def __on_content_min_height_changed(self, minimum: int) -> None:
         """Push the maximum up when the minimum is raised past it (#221).

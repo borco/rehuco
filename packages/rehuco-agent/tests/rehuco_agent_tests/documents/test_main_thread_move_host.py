@@ -145,7 +145,7 @@ def test_a_stop_before_the_step_starts_abandons_it(tmp_path: Path) -> None:
     **Test steps:**
 
     * from a worker, with the GUI thread not dispatching, run a step whose checkpoint raises a pause
-    * let the GUI thread dispatch afterwards
+    * let the GUI thread dispatch afterward
     * check the worker raised the pause and the step never ran
     """
     host = MainThreadMoveHost(tmp_path / "m.json")

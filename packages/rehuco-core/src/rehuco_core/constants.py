@@ -20,7 +20,7 @@ USER_SIDECAR_SUFFIX: Final = ".rehuser"
 record, holding one user's state for it (:mod:`rehuco_core.user_sidecars`)."""
 
 LICENSE_SIDECAR_SUFFIX: Final = ".rehuterms"
-"""A license sidecar's file extension ([[assets#licences]], #677) -- ``<stem>.rehuterms`` beside a record, holding the
+"""A license sidecar's file extension ([[assets#licenses]], #677) -- ``<stem>.rehuterms`` beside a record, holding the
 terms it was got under (:mod:`rehuco_core.license_terms`)."""
 
 LEGACY_SUFFIX: Final = ".tc"

@@ -17,7 +17,7 @@ WRAP_LONG_LINES_KEY: Final = "wrap_long_lines"
 
 class DescriptionEditorSettings(QObject):
     """App-wide description-editor settings (#69): the line-number margin, the visible end-of-line
-    glyph, and wrapping long lines. All three default on, matching the behaviour `MarkdownEdit`
+    glyph, and wrapping long lines. All three default on, matching the behavior `MarkdownEdit`
     hard-coded before this setting existed, so an existing install sees no change until one is
     actually flipped.
 

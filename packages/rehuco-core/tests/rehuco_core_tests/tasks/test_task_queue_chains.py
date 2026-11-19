@@ -14,7 +14,7 @@ from typing import Any, Final
 
 import pytest
 from pytest import fixture
-from rehuco_core import DISK_CHAIN, ChainRegistry, JobCancelled, JobControl, JobState, TaskJobRegistry, TaskQueue
+from rehuco_core import DISK_CHAIN, ChainRegistry, JobCanceled, JobControl, JobState, TaskJobRegistry, TaskQueue
 from rehuco_core.tasks import task_queue as task_queue_module
 
 from .test_task_queue import (  # noqa: F401  # pylint: disable=unused-import
@@ -78,7 +78,7 @@ class ChainedRecordingJob(RecordingJob):
 
 
 class SlowToCancelJob(SampleJob):
-    """A job that checkpoints until cancelled and then takes a fixed time to unwind, as a job closing files does.
+    """A job that checkpoints until canceled and then takes a fixed time to unwind, as a job closing files does.
 
     :param label: the job's label.
     :param chain: the chain it declares, or ``None`` for an unchained one.
@@ -92,7 +92,7 @@ class SlowToCancelJob(SampleJob):
         self.__unwind: Final = unwind
 
     def run(self, control: JobControl) -> None:
-        """Checkpoint until cancelled, then take the unwind time before reporting it.
+        """Checkpoint until canceled, then take the unwind time before reporting it.
 
         :param control: the engine's face to this job.
         """
@@ -101,7 +101,7 @@ class SlowToCancelJob(SampleJob):
             while True:
                 self.checkpoint()
                 sleep(0.001)
-        except JobCancelled:
+        except JobCanceled:
             sleep(self.__unwind)
             raise
 
@@ -339,7 +339,7 @@ def test_pausing_a_job_leaves_another_chains_job_running(queue: TaskQueue, liste
     assert wait_for_state(listener, running_serial, JobState.DONE)
 
 
-def test_cancelling_and_removing_act_on_one_entry_whatever_its_chain(
+def test_canceling_and_removing_act_on_one_entry_whatever_its_chain(
     queue: TaskQueue, listener: RecordingListener
 ) -> None:
     """Cancel and remove reach a job in any chain, and only that job.
@@ -348,20 +348,20 @@ def test_cancelling_and_removing_act_on_one_entry_whatever_its_chain(
 
     * hold one job running in each of two chains
     * cancel the first and remove the second, releasing both
-    * verify the first is cancelled, the second is gone, and nothing else changed
+    * verify the first is canceled, the second is gone, and nothing else changed
     """
-    cancelled, removed = ChainedJob("cancelled", A_CHAIN), ChainedJob("removed", B_CHAIN)
-    cancelled_serial = queue.enqueue(cancelled)
+    canceled, removed = ChainedJob("canceled", A_CHAIN), ChainedJob("removed", B_CHAIN)
+    canceled_serial = queue.enqueue(canceled)
     removed_serial = queue.enqueue(removed)
-    assert cancelled.entered.wait(TIMEOUT) and removed.entered.wait(TIMEOUT)
+    assert canceled.entered.wait(TIMEOUT) and removed.entered.wait(TIMEOUT)
 
-    queue.cancel(cancelled_serial)
+    queue.cancel(canceled_serial)
     queue.remove(removed_serial)
-    cancelled.release.set()
+    canceled.release.set()
     removed.release.set()
 
-    assert wait_for_state(listener, cancelled_serial, JobState.CANCELLED)
-    assert [status.serial for status in queue.jobs()] == [cancelled_serial]
+    assert wait_for_state(listener, canceled_serial, JobState.CANCELED)
+    assert [status.serial for status in queue.jobs()] == [canceled_serial]
     assert listener.removed == [(removed_serial,)]
 
 

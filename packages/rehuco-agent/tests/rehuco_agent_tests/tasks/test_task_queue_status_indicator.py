@@ -247,12 +247,12 @@ def test_worker_thread_progress_only_lands_once_the_gui_thread_is_pumped(
     queue: TaskQueue, indicator: TaskQueueStatusIndicator, deliver: Callable[[], None]
 ) -> None:
     """A report from the job's own worker thread reaches the indicator only through the model's
-    marshalled ``snapshot_taken`` -- never touched directly off that thread.
+    marshaled ``snapshot_taken`` -- never touched directly off that thread.
 
     **Test steps:**
 
     * run a job to the point its worker thread has reported progress, without pumping events
-    * verify the indicator has not moved yet -- the marshalled wake is still pending
+    * verify the indicator has not moved yet -- the marshaled wake is still pending
     * pump the event loop once
     * verify it now shows what the worker thread reported
     """

@@ -181,7 +181,7 @@ class CDockAreaWidget(QWidget):
 
     Hiding one with plain `QWidget.setVisible(False)` emits **nothing** -- no `dockAreaViewToggled`
     on the manager, no `viewToggled` on its docks, no `dockAreasRemoved` -- and its splitter hands
-    the room to its neighbours; showing it back restores the pane sizes (verified offscreen,
+    the room to its neighbors; showing it back restores the pane sizes (verified offscreen,
     [[appendices.qt-ads#area-maximize]]). `toggleView` is the route that emits."""
 
     def setCurrentIndex(self, index: int) -> None:
@@ -220,7 +220,7 @@ class CDockAreaWidget(QWidget):
 
     def openedDockWidgets(self) -> list[CDockWidget]:
         """This area's open (not closed) docks, in tab order -- the tabs a maximized dock's
-        neighbours are hidden from ([[appendices.qt-ads#area-maximize]])."""
+        neighbors are hidden from ([[appendices.qt-ads#area-maximize]])."""
 
     def dockWidgets(self) -> list[CDockWidget]:
         """Every dock in this area, open or closed, in tab order."""
@@ -389,7 +389,7 @@ class CDockWidget(QWidget):
         """Set the content widget this dock displays, per `insert_mode` (default `AutoScrollArea`)."""
 
     class eMinimumSizeHintMode:
-        """What `minimumSizeHint()` reports -- a splitter honours this when deciding how far the user
+        """What `minimumSizeHint()` reports -- a splitter honors this when deciding how far the user
         can shrink the dock, so it is what makes a floor on a dock's size actually stick."""
 
         MinimumSizeHintFromDockWidget: CDockWidget.eMinimumSizeHintMode
@@ -417,7 +417,7 @@ class CDockWidget(QWidget):
 
     def setMinimumSizeHintMode(self, mode: eMinimumSizeHintMode) -> None:
         """Choose what `minimumSizeHint()` reports (default `MinimumSizeHintFromDockWidget`), which is
-        what a containing splitter actually honours when the user drags a handle."""
+        what a containing splitter actually honors when the user drags a handle."""
 
     def dockManager(self) -> CDockManager:
         """The manager this dock is associated with -- the two-argument constructor's, or the one that
@@ -594,7 +594,7 @@ class CDockManager(CDockContainerWidget):
         """Pick which bundled stylesheet this manager applies, and reload it right now.
 
         Reloading *replaces* the manager's stylesheet, dropping anything appended to it -- so any
-        appended rules have to go back on afterwards. Pinning `Light`/`Dark` (rather than leaving
+        appended rules have to go back on afterward. Pinning `Light`/`Dark` (rather than leaving
         `FollowPalette`) also stops the runtime reload on palette changes, which is what makes that
         re-append survivable: the timing becomes the caller's
         ([[appendices.qt-ads#stylesheet-reload]])."""

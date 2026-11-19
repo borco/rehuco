@@ -278,13 +278,13 @@ def test_clicking_away_from_a_recording_key_button_cancels_it(page: ShortcutsPag
     **Test steps:**
 
     * select Open, click its key button, then send it a focus-out
-    * verify ``cancelled`` fired and the key is unchanged
+    * verify ``canceled`` fired and the key is unchanged
     """
     select(page, "Open")
     button = keys_editor(page).key_buttons()[0]
     button.click()
 
-    with qtbot.waitSignal(button.cancelled, timeout=500):
+    with qtbot.waitSignal(button.canceled, timeout=500):
         QApplication.sendEvent(button, QFocusEvent(QEvent.Type.FocusOut, Qt.FocusReason.MouseFocusReason))
 
     assert keys_editor(page).keys == (QKeySequence("Ctrl+O"),)
@@ -529,7 +529,7 @@ def test_inside_the_dialog_the_editor_keeps_its_own_header(
     assert editor_label.parentWidget() is page.editor_header
 
 
-def test_cancelling_an_added_key_takes_its_button_away(page: ShortcutsPage, qtbot: QtBot) -> None:
+def test_canceling_an_added_key_takes_its_button_away(page: ShortcutsPage, qtbot: QtBot) -> None:
     """The add button opens a recording key button; clicking elsewhere cancels it and it goes.
 
     **Test steps:**
@@ -546,7 +546,7 @@ def test_cancelling_an_added_key_takes_its_button_away(page: ShortcutsPage, qtbo
     assert pending is not None
     assert pending.is_recording
 
-    with qtbot.waitSignal(pending.cancelled, timeout=500):
+    with qtbot.waitSignal(pending.canceled, timeout=500):
         QApplication.sendEvent(pending, QFocusEvent(QEvent.Type.FocusOut, Qt.FocusReason.MouseFocusReason))
 
     assert editor.pending_button is None

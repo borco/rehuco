@@ -2,9 +2,9 @@
 
 Unlike the FFmpeg libraries (#580), which Qt binds at import, libvlc is loaded lazily: at the first player built with
 *VLC* chosen on the Videos page, from the install the Tools page resolves, through :class:`~rehuco_core.VlcLibrary`,
-which never raises. A load that failed is not kept, so a VLC set up on the Tools page afterwards is tried at the next
+which never raises. A load that failed is not kept, so a VLC set up on the Tools page afterward is tried at the next
 player. A load that succeeded is kept for the run: python-vlc binds its library once per process, so a *different* VLC
-chosen afterwards is taken at the next start, which the Videos page says (:func:`vlc_restart_needed`).
+chosen afterward is taken at the next start, which the Videos page says (:func:`vlc_restart_needed`).
 """
 
 from functools import lru_cache

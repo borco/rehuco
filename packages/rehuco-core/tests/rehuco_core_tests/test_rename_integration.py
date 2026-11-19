@@ -157,7 +157,7 @@ def rename_parked(job: HashingJob, coordinator: RenameCoordinator, record: Path,
 @mark.disk
 def test_a_real_rename_lands_mid_hash_and_the_job_survives_it(tmp_path: Path) -> None:
     """A directory really renames on disk while a queued job is really hashing a file inside it, and
-    everything a user would look at afterwards is right (#241).
+    everything a user would look at afterward is right (#241).
 
     **Test steps:**
 

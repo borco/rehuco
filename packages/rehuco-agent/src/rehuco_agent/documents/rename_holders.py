@@ -161,7 +161,7 @@ class RenameHolderReport:
         """The files a rename of the resource moves, up to :data:`HOLDER_FILE_LIMIT`.
 
         Everything under the folder for a directory-scoped resource; the files named after the record
-        for a file-scoped one -- by prefix, which may take in a coincidental neighbour, harmless for a
+        for a file-scoped one -- by prefix, which may take in a coincidental neighbor, harmless for a
         question about who holds what.
 
         :param record_path: the resource's ``.rehu`` file.

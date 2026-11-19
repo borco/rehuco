@@ -384,8 +384,8 @@ def test_browse_puts_the_chosen_folder_in_the_field(qtbot: QtBot, mocker: Mocker
     assert dialog.call_args.args[2] == ""
 
 
-def test_a_cancelled_browse_leaves_the_field_alone(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Cancelling the folder dialog changes nothing (#269).
+def test_a_canceled_browse_leaves_the_field_alone(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Canceling the folder dialog changes nothing (#269).
 
     **Test steps:**
 

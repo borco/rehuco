@@ -42,15 +42,15 @@ def empty_cache() -> Iterator[None]:
     QPixmapCache.clear()
 
 
-def write_picture(path: Path, colour: str) -> Path:
-    """Write a small flat-coloured PNG, twice as wide as it is tall.
+def write_picture(path: Path, color: str) -> Path:
+    """Write a small flat-colored PNG, twice as wide as it is tall.
 
     :param path: where to write it.
-    :param colour: its one colour.
+    :param color: its one color.
     :returns: the path.
     """
     image = QImage(40, 20, QImage.Format.Format_RGB32)
-    image.fill(QColor(colour))
+    image.fill(QColor(color))
     assert image.save(str(path))
     return path
 
@@ -74,11 +74,11 @@ def thumbnails(strip: ImageStrip) -> list[ThumbnailLabel]:
     return labels
 
 
-def colour_of(label: ThumbnailLabel) -> str:
-    """The colour in the middle of a thumbnail's picture.
+def color_of(label: ThumbnailLabel) -> str:
+    """The color in the middle of a thumbnail's picture.
 
     :param label: the thumbnail.
-    :returns: the colour's name, ``#rrggbb``.
+    :returns: the color's name, ``#rrggbb``.
     """
     image = label.pixmap().toImage()
     return image.pixelColor(image.width() // 2, image.height() // 2).name().upper()
@@ -120,7 +120,7 @@ def test_a_strip_holds_each_place_at_once_and_paints_it_when_it_is_decoded(
 
     assert len(thumbnails(strip)) == 2
     assert reported == [paths]
-    qtbot.waitUntil(lambda: [colour_of(label) for label in thumbnails(strip)] == [RED, BLUE])
+    qtbot.waitUntil(lambda: [color_of(label) for label in thumbnails(strip)] == [RED, BLUE])
     assert all(label.pixmap().height() == STRIP_HEIGHT for label in thumbnails(strip))
 
 
@@ -146,7 +146,7 @@ def test_a_file_that_will_not_decode_leaves_the_row_and_the_set(qtbot: QtBot, fo
 
     qtbot.waitUntil(lambda: len(thumbnails(strip)) == 1)
     assert reported[-1] == [good]
-    qtbot.waitUntil(lambda: colour_of(thumbnails(strip)[0]) == RED)
+    qtbot.waitUntil(lambda: color_of(thumbnails(strip)[0]) == RED)
 
 
 def test_a_strip_built_again_paints_from_the_cache_at_once(qtbot: QtBot, folder: Path) -> None:
@@ -162,16 +162,16 @@ def test_a_strip_built_again_paints_from_the_cache_at_once(qtbot: QtBot, folder:
     first = ImageStrip(height=STRIP_HEIGHT)
     qtbot.addWidget(first)
     first.set_images(paths)
-    qtbot.waitUntil(lambda: [colour_of(label) for label in thumbnails(first)] == [RED, BLUE])
+    qtbot.waitUntil(lambda: [color_of(label) for label in thumbnails(first)] == [RED, BLUE])
 
     second = ImageStrip(height=STRIP_HEIGHT)
     qtbot.addWidget(second)
     second.set_images(paths)
 
-    assert [colour_of(label) for label in thumbnails(second)] == [RED, BLUE]
+    assert [color_of(label) for label in thumbnails(second)] == [RED, BLUE]
 
 
-def test_a_rearrangement_never_paints_a_neighbours_cached_picture(qtbot: QtBot, folder: Path) -> None:
+def test_a_rearrangement_never_paints_a_neighbors_cached_picture(qtbot: QtBot, folder: Path) -> None:
     """A screenshot's name is its place, so a rearrangement swaps the files under two names. Pictures are cached
     by the file, not its name, so each name then shows the file it now holds.
 
@@ -185,7 +185,7 @@ def test_a_rearrangement_never_paints_a_neighbours_cached_picture(qtbot: QtBot, 
     strip = ImageStrip(height=STRIP_HEIGHT)
     qtbot.addWidget(strip)
     strip.set_images([first, second])
-    qtbot.waitUntil(lambda: [colour_of(label) for label in thumbnails(strip)] == [RED, BLUE])
+    qtbot.waitUntil(lambda: [color_of(label) for label in thumbnails(strip)] == [RED, BLUE])
 
     parked = folder / "parked.png"
     os.replace(first, parked)
@@ -193,7 +193,7 @@ def test_a_rearrangement_never_paints_a_neighbours_cached_picture(qtbot: QtBot, 
     os.replace(parked, second)
     strip.set_images([first, second])
 
-    qtbot.waitUntil(lambda: [colour_of(label) for label in thumbnails(strip)] == [BLUE, RED])
+    qtbot.waitUntil(lambda: [color_of(label) for label in thumbnails(strip)] == [BLUE, RED])
 
 
 def test_a_renamed_screenshot_is_shown_under_its_new_name(qtbot: QtBot, folder: Path) -> None:
@@ -210,7 +210,7 @@ def test_a_renamed_screenshot_is_shown_under_its_new_name(qtbot: QtBot, folder: 
     strip = ImageStrip(height=STRIP_HEIGHT)
     qtbot.addWidget(strip)
     strip.set_images([old])
-    qtbot.waitUntil(lambda: colour_of(thumbnails(strip)[0]) == RED)
+    qtbot.waitUntil(lambda: color_of(thumbnails(strip)[0]) == RED)
     reported: list[list[Path]] = []
     strip.images_changed.connect(reported.append)
 
@@ -241,5 +241,5 @@ def test_a_picture_landing_after_a_rebuild_paints_nothing_it_no_longer_holds(qtb
 
     other.set_images([path])
 
-    qtbot.waitUntil(lambda: colour_of(thumbnails(other)[0]) == RED)
+    qtbot.waitUntil(lambda: color_of(thumbnails(other)[0]) == RED)
     assert not thumbnails(strip)

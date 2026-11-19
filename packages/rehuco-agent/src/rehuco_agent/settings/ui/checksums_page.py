@@ -55,7 +55,7 @@ class ChecksumsPage(QWidget):
         """Persist the staged choices, onto the shared instance the next run will read.
 
         The shared object is mutated rather than replaced so that ``last_sweep_root`` -- written by the
-        sweep, edited by nothing here -- survives this Save, and so that a run enqueued afterwards sees
+        sweep, edited by nothing here -- survives this Save, and so that a run enqueued afterward sees
         the new values without reloading anything.
         """
         settings = shared_checksum_settings()

@@ -41,7 +41,7 @@ working editor teaches readers to discount the status line, which is what makes 
 - `pending cleanup` — work done; issue open only to track a gated teardown (e.g. deleting retained spike code).
   Not `deferred` (that's for work not started).
 - **Size**, one per issue — `XS` (≤30 min agent time), `S` (30–60 min), `M` (1–2 h), `L` (2–4 h), `XL`
-  (>4 h — split before starting). `retro-sized` marks a size inferred from the description afterwards
+  (>4 h — split before starting). `retro-sized` marks a size inferred from the description afterward
   rather than estimated at filing.
 - **Model**, one per issue — `sonnet`, `opusplan`, `opus`, `fable`. Work needing two of them is two
   issues, split along the core/agent seam rather than mixed into one. The issue body closes with a
@@ -94,9 +94,9 @@ findings kept in [[packaging-deployment#glibc-canary]]). Nodes must tolerate the
 (+ `pytest-mock`, `-qt`, `-cov`, `-benchmark`, `-freezer`, `-explicit`), `mkdocs`. VSCode is configured for
 ruff formatting/linting; pylint, mypy, and black are disabled there.
 
-**Check a dependency's licence before adding it** ([[packaging-deployment#licensing-policy]]): a runtime dependency of
+**Check a dependency's license before adding it** ([[packaging-deployment#licensing-policy]]): a runtime dependency of
 any package is permissive or LGPL, never GPL/AGPL or unlicensed, so every package can stay MIT; GPL is allowed only for
-a dev or build tool that is never shipped. Name the licence in the comment above it in `pyproject.toml`. Unidecode
+a dev or build tool that is never shipped. Name the license in the comment above it in `pyproject.toml`. Unidecode
 (GPL-2.0+) slipped in unchecked and sat in the agent for four months before #577 caught it.
 
 Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint`, `check-slugs`,

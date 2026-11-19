@@ -195,12 +195,12 @@ def test_the_details_leave_out_a_measures_lengths_and_a_tutorial_block_left_with
     """
     measured = payload()
     measured["tutorial"]["videos"] = {"a.mp4": {"duration": 60.0}}
-    levelled = copy.deepcopy(measured)
-    levelled["tutorial"]["level"] = ["beginner"]
+    leveled = copy.deepcopy(measured)
+    leveled["tutorial"]["level"] = ["beginner"]
 
     assert "tutorial" not in details_of(measured)
-    assert details_of(levelled)["tutorial"] == {"format_version": 2, "level": ["beginner"]}
-    assert levelled["tutorial"]["videos"] == {"a.mp4": {"duration": 60.0}}
+    assert details_of(leveled)["tutorial"] == {"format_version": 2, "level": ["beginner"]}
+    assert leveled["tutorial"]["videos"] == {"a.mp4": {"duration": 60.0}}
 
 
 def test_the_metadata_hash_and_differences_ignore_a_measures_lengths() -> None:
@@ -745,7 +745,7 @@ def test_put_paths_sets_and_removes_values() -> None:
     **Test steps:**
 
     * set the description, remove the publisher, set a list item's title
-    * mutate the value handed in afterwards
+    * mutate the value handed in afterward
     * verify the payload, untouched by the later mutation
     """
     data = payload(publisher="P", sources=[{"title": "T"}])

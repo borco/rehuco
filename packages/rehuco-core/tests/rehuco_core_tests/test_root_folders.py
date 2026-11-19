@@ -125,7 +125,7 @@ def test_a_listing_waits_for_a_rename_in_flight(library: Path) -> None:
       ``yield_wanted`` and waits for that reader
     * start a listing on a third thread: it waits, since a rename is pending
     * release the reader
-    * verify the rename landed and the listing returned afterwards, naming the folder as renamed
+    * verify the rename landed and the listing returned afterward, naming the folder as renamed
     """
     coordinator = RenameCoordinator()
     lister = lister_for(library, coordinator)
@@ -282,7 +282,7 @@ def test_a_nested_resource_is_not_covered_by_the_record_above_it(resources: Path
 
 
 def test_a_record_that_cannot_be_read_covers_nothing(resources: Path) -> None:
-    """An unparseable record is not a reason to fail the listing, or to call its files unchecked.
+    """An unparsable record is not a reason to fail the listing, or to call its files unchecked.
 
     **Test steps:**
 

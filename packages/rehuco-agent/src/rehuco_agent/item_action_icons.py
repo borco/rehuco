@@ -11,7 +11,7 @@ hide a button rather than never building it), and every button gets dressed rega
 is currently shown.
 
 Each icon is kept recolored for the current theme by an `ActionIconThemeHandler` parented to its own
-action (#104), so applying them is a single call with nothing to hold on to afterwards.
+action (#104), so applying them is a single call with nothing to hold on to afterward.
 """
 
 from typing import Final

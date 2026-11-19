@@ -29,21 +29,21 @@ strip scales it down rather than leaving it at its own size."""
 
 
 ODD_STRIP_HEIGHT = 41
-"""A strip height with no even factor to hide behind: a frame centred on the thumbnail's edge
+"""A strip height with no even factor to hide behind: a frame centered on the thumbnail's edge
 rasterizes unevenly here, where an even one can come out symmetric by luck."""
 
-FLAT_COLOUR = "#F4511E"
-"""A screenshot colour that is nothing like the palette highlight, so a test can tell the current
+FLAT_COLOR = "#F4511E"
+"""A screenshot color that is nothing like the palette highlight, so a test can tell the current
 thumbnail's frame apart from the image it is painted over."""
 
 
 def flat_pixmap() -> QPixmap:
-    """A thumbnail-sized pixmap in one flat colour.
+    """A thumbnail-sized pixmap in one flat color.
 
-    :returns: the pixmap, filled with :data:`FLAT_COLOUR`.
+    :returns: the pixmap, filled with :data:`FLAT_COLOR`.
     """
     pixmap = QPixmap(WIDE_PIXMAP, WIDE_PIXMAP)
-    pixmap.fill(QColor(FLAT_COLOUR))
+    pixmap.fill(QColor(FLAT_COLOR))
     return pixmap
 
 
@@ -97,7 +97,7 @@ def synchronous_loader(mocker: MockerFixture) -> None:
 def serve_pictures(mocker: MockerFixture, make: Callable[[], QPixmap]) -> None:
     """Have the stand-in loader hand back what ``make`` builds, for the rest of the test.
 
-    :param mocker: pytest-mock fixture, which puts the default back afterwards.
+    :param mocker: pytest-mock fixture, which puts the default back afterward.
     :param make: builds one request's picture; a null one stands for a file that will not decode.
     """
     mocker.patch.object(PICTURES, "make", make)
@@ -867,15 +867,15 @@ def test_the_current_frame_is_even_on_every_side_and_closed_at_its_corners(
 ) -> None:
     """The mark is a frame of one thickness all round, with no gap at any corner (#161).
 
-    Regression: it was stroked with a pen, which centres on the path it follows, so half of it fell
+    Regression: it was stroked with a pen, which centers on the path it follows, so half of it fell
     outside the thumbnail -- the frame came out a pixel wider on two sides than the other two, and a
     pen's default bevel join cut the corners off, letting the screenshot (or, with the row's
-    thumbnails flush, the neighbour) bleed through all four. Measured at an odd size, which is where
-    a centred stroke rasterizes unevenly.
+    thumbnails flush, the neighbor) bleed through all four. Measured at an odd size, which is where
+    a centered stroke rasterizes unevenly.
 
     **Test steps:**
 
-    * paint a thumbnail in a known flat colour at an odd size and mark it as current
+    * paint a thumbnail in a known flat color at an odd size and mark it as current
     * verify the frame is exactly ``THUMBNAIL_BORDER`` thick on all four sides
     * verify every corner pixel carries it, and the screenshot in the middle is untouched
     """
@@ -905,7 +905,7 @@ def test_the_current_frame_is_even_on_every_side_and_closed_at_its_corners(
     assert thickness(painted.pixel(middle_x, height - 1 - y) for y in range(height)) == THUMBNAIL_BORDER
     corners = ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1))
     assert [painted.pixel(x, y) for x, y in corners] == [highlight] * len(corners)
-    assert painted.pixel(middle_x, middle_y) == QColor(FLAT_COLOUR).rgb()
+    assert painted.pixel(middle_x, middle_y) == QColor(FLAT_COLOR).rgb()
 
 
 THUMBNAIL_SIDE = 50

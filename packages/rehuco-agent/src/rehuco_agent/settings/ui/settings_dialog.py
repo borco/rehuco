@@ -847,7 +847,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __refresh_current_frame_state(self) -> None:
         """Refresh the pink dirty highlight of every frame the stack is currently showing (#77), and
-        its header buttons' enablement (#342) -- an off-screen frame has nothing to update towards.
+        its header buttons' enablement (#342) -- an off-screen frame has nothing to update toward.
         """
         for page in self.__shown_pages():
             frame_filter = self.__frame_filters[cast(QWidget, page)]

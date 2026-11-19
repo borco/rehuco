@@ -20,7 +20,7 @@ class BackgroundMeasurement(QObject):
 
     Deliberately tiny, and **an interim owner**. The task-queue engine (#201) and its dock (#202) are
     where every background measurement is headed: each scan becomes a queue job, so it can be watched
-    while it runs, paused, resumed, cancelled and reordered against the checksum runs beside it (#204),
+    while it runs, paused, resumed, canceled and reordered against the checksum runs beside it (#204),
     instead of being a thing that has quietly started and can only be waited out. That also supersedes
     the app-wide *"the disk is busy"* flag tc4 carried -- one queue is a better answer than one boolean.
     What this class owes that future is the shape it already has: the measurement is a plain callable
@@ -49,7 +49,7 @@ class BackgroundMeasurement(QObject):
         """Drop the answer of every measurement started so far (#470).
 
         What the owner calls when the record the measurement was about stops being the one shown: the
-        worker still runs to the end, but its result reaches nobody, and a measurement started afterwards
+        worker still runs to the end, but its result reaches nobody, and a measurement started afterward
         is unaffected. The owner resets its own busy state, since no :attr:`finished` will.
 
         **The judgment is made on the GUI thread, not the worker's.** A result crosses threads as a queued

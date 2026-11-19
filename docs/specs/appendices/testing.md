@@ -281,14 +281,14 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   **Is a crash new?** Run master from a detached worktree over a copy of `.local_settings` and repeat the clicks
   (#631).
 - **Check what is shown**: a label against real data (#592); a drawn thing rendered and looked at, at
-  `QT_SCALE_FACTOR=1.25` too, **and on a dark theme** (an authored SVG is `#1f1f1f`: recolour it, #649); a new bar
-  widget interactive like its neighbours (#618); a picture's frame read off the picture, not the log (`testsrc2`'s
+  `QT_SCALE_FACTOR=1.25` too, **and on a dark theme** (an authored SVG is `#1f1f1f`: recolor it, #649); a new bar
+  widget interactive like its neighbors (#618); a picture's frame read off the picture, not the log (`testsrc2`'s
   burned-in time, #613); a load probed with saved progress, not at 0; a patched binary read back whole (#628).
 - **A theory is measured before it is built on** (#574), in the app's own setup (#618); three fixes on one symptom
   mean stop and measure. A mocked `Catalog` hid that `record_paths` skips a root's own folder: run a new cache lookup
   once against a copy of a real `.rehudb` (#645). Both watch backends report a rename out of the root as a delete
   (#645). A layout question is settled by an offscreen probe of each variant's geometry (#649: a width-capped widget in
-  a `QHBoxLayout` is centred in its share; a heavy stretch on it plus a trailing spacer left-aligns it).
+  a `QHBoxLayout` is centered in its share; a heavy stretch on it plus a trailing spacer left-aligns it).
 - **Where a run went**: `.local_settings\rehuco-agent.log` for a VS Code run, `%LOCALAPPDATA%\rehuco\` otherwise. Every
   run logs `starting` and `exited with code`; Windows' Application log (ids 1000–1002) holds crashes and hangs.
 
@@ -330,7 +330,7 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   started, and prove it by forcing the bad order in a throwaway test. A partial branch only some test order reaches is
   covered directly (#618). A race may not show outside the running app (#613). A parametrize id printing a set differs
   between xdist workers (hash seed): sort it (#647). A test posting through `PoolRelay` takes `qapp`: new test files
-  reshuffle the workers and expose one leaning on a neighbour's (#634).
+  reshuffle the workers and expose one leaning on a neighbor's (#634).
 - **A hang is read with stacks, before anyone ends it**: `uv run --with py-spy py-spy dump --pid <pid> [--locals]`,
   then `cdb -p <pid> -pvr -c "~*k 30; qd"` (`C:\Program Files\Windows Kits\10\Debuggers\x64`):
   `QBasicMutex::lockInternal` on one side, `PyGILState_Ensure` on another. A worker's collection freeing a live
@@ -424,7 +424,7 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
 - **A coverage gap in an untouched file is real** (#462, #344, #457): reach a defensive branch with a test, or delete a
   guard no caller can reach. An `elif` loop that can skip is a partial branch: filter in a comprehension.
 - **A bad zip by patching bytes** (#480, #484): `writestr(ZipInfo)` resets `flag_bits`, so set it in the central
-  directory entry afterwards (`PK\x01\x02` + 8 is the flag byte; encrypted is bit 0); swap a UTF-8 name's bytes for
+  directory entry afterward (`PK\x01\x02` + 8 is the flag byte; encrypted is bit 0); swap a UTF-8 name's bytes for
   invalid ones of the same length; blank the `PK\x01\x02` signature to leave the end record intact over a corrupt
   directory. Both packages keep a copy of `crafted_zips.py`.
 - **`make check-slugs` reads `[[x.y]]` in test code** (#485): `== [[widget.action]]`, a list of lists, trips it.
@@ -467,11 +467,11 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
 
 A test is proven by watching it fail on the break it guards ([[appendices.code-conventions#testing]] has its format).
 
-- **Each new test goes red on its break**, the file restored from a copy afterwards (#500, #512, #546, #547). Many at
+- **Each new test goes red on its break**, the file restored from a copy afterward (#500, #512, #546, #547). Many at
   once by a script over a list of breaks (#564): a break nothing catches is dead code or a missing test (#505: a
   redundant `rstrip`).
 - **A flake's cause** is found with a scratch `-p` plugin (#511, #545), then made red every run by holding the step it
-  races (#565, [[appendices.testing#races]]). **A crash** is bisected by a scratch module parametrised on the steps
+  races (#565, [[appendices.testing#races]]). **A crash** is bisected by a scratch module parametrized on the steps
   run (#529).
 - **Agents proving in parallel see each other's breaks** for a second: rerun the whole gate after (#497).
 - **`pytest-randomly` is not installed**: `uv run --with pytest-randomly`.

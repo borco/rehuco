@@ -147,7 +147,7 @@ def test_the_bar_takes_what_is_left_and_never_reaches_the_figure() -> None:
     **Test steps:**
 
     * ask for both rects over the shared cell
-    * verify the bar starts inside the cell, ends before the figure, and is `BAR_HEIGHT` tall and centred
+    * verify the bar starts inside the cell, ends before the figure, and is `BAR_HEIGHT` tall and centered
     """
     groove = TaskInfoDelegate.bar_rect(CELL)
     figure = TaskInfoDelegate.figure_rect(CELL)

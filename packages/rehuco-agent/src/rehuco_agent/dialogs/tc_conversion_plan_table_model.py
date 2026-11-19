@@ -49,7 +49,7 @@ STRANDED_FLAG: Final = "stranded manifest"
 """What the Flags column says of a :class:`~rehuco_core.StrandedManifestPlan` row (#259).
 
 The one word that column has to carry for such a row -- there is nothing else to flag, since a
-remediation makes no judgement calls and can be neither blocked nor collided with. Written as a flag rather
+remediation makes no judgment calls and can be neither blocked nor collided with. Written as a flag rather
 than as a row *type* column so the filter that already searches flags finds these by name."""
 
 
@@ -62,7 +62,7 @@ class TcConversionRow:
         :attr:`~rehuco_core.TcConversionPlan.blocked` row, checking it **is** the explicit per-row
         opt-in #192 requires before a blocked resource is enqueued at all.
     :param outcome: ``None`` before import has run over this row; ``"pending"`` once its job is
-        enqueued; ``"converted"``/``"retired"``/``"failed"``/``"cancelled"`` once it finishes;
+        enqueued; ``"converted"``/``"retired"``/``"failed"``/``"canceled"`` once it finishes;
         ``"skipped"`` for a row import ran without, because it was left unchecked.
     :param message: why a ``"failed"`` row failed, else ``None``.
     """

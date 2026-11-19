@@ -3,7 +3,7 @@
 The scan is mocked at :func:`~rehuco_core.scan_conversion_backups` -- `test_tc_conversion_backups_scan`
 is its subject -- but the **queue is real** and the operation is mocked one level below the job, so an
 action travels the way it does in the app: enqueued, run on the worker, read back off the job through the
-listener and marshalled onto the GUI thread. What these tests are about is which rows the dialog offers,
+listener and marshaled onto the GUI thread. What these tests are about is which rows the dialog offers,
 what the confirmation says, and that nothing destructive happens without one.
 """
 
@@ -465,7 +465,7 @@ def test_browsing_to_a_folder_scans_it(qtbot: QtBot, dialog: ConversionBackupsDi
     assert dialog.root == chosen
 
 
-def test_a_cancelled_browse_leaves_the_root_alone(
+def test_a_canceled_browse_leaves_the_root_alone(
     qtbot: QtBot, dialog: ConversionBackupsDialog, mocker: MockerFixture
 ) -> None:
     """Dismissing the file chooser is not a request to scan anything.
@@ -513,7 +513,7 @@ def test_rescanning_reads_the_folder_again(qtbot: QtBot, dialog: ConversionBacku
     assert scan.call_count == before + 1
 
 
-def test_cancelling_a_scan_stops_it_and_keeps_the_previous_rows(
+def test_canceling_a_scan_stops_it_and_keeps_the_previous_rows(
     qtbot: QtBot, dialog: ConversionBackupsDialog, scan: Any
 ) -> None:
     """A long walk over a mount has to be stoppable, and stopping it must not throw away the answer
@@ -521,8 +521,8 @@ def test_cancelling_a_scan_stops_it_and_keeps_the_previous_rows(
 
     **Test steps:**
 
-    * start a scan that blocks until cancelled, then cancel it
-    * verify the scan reports cancelled and the previous rows are still there
+    * start a scan that blocks until canceled, then cancel it
+    * verify the scan reports canceled and the previous rows are still there
     """
     started = Event()
     released = Event()
@@ -542,7 +542,7 @@ def test_cancelling_a_scan_stops_it_and_keeps_the_previous_rows(
     released.set()
     qtbot.waitUntil(lambda: scan_worker_of(dialog) is None, timeout=TIMEOUT)
 
-    assert "cancelled" in ui_of(dialog).status_label.text().lower()
+    assert "canceled" in ui_of(dialog).status_label.text().lower()
     assert len(dialog.model.rows()) == 3
 
 
@@ -630,7 +630,7 @@ def test_the_dialog_ignores_jobs_that_are_not_its_own(dialog: ConversionBackupsD
 
 
 def test_filtering_by_a_flag_reaches_the_review_pass(qtbot: QtBot, dialog: ConversionBackupsDialog) -> None:
-    """Filter to the ~1--2 % a judgement was made about, which is what #192 deliberately deferred.
+    """Filter to the ~1--2 % a judgment was made about, which is what #192 deliberately deferred.
 
     **Test steps:**
 
@@ -1060,7 +1060,7 @@ def test_clear_backups_without_asking_threads_the_fallback_into_every_enqueued_j
 def test_each_resource_is_its_own_job(
     qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, queue: TaskQueue, mocker: MockerFixture
 ) -> None:
-    """One job per resource, so cancelling stops after the current one and each operation runs under its
+    """One job per resource, so canceling stops after the current one and each operation runs under its
     own resource's log scope.
 
     **Test steps:**
@@ -1098,7 +1098,7 @@ def test_a_failed_operation_lands_on_its_own_row(
     assert all("read-only" in (row.message or "") for row in dialog.model.rows())
 
 
-def test_cancelling_a_run_stops_the_jobs_still_queued(
+def test_canceling_a_run_stops_the_jobs_still_queued(
     qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """The operation is not safely interruptible, so *cancel stops after the current resource* is the
@@ -1107,7 +1107,7 @@ def test_cancelling_a_run_stops_the_jobs_still_queued(
     **Test steps:**
 
     * hold the first job inside the worker, discard the selection, cancel, then let it finish
-    * verify rows came back cancelled and fewer resources were touched than were selected
+    * verify rows came back canceled and fewer resources were touched than were selected
     """
     del answer_yes
     # Holding the first job is what leaves the other two demonstrably queued when Cancel is clicked.
@@ -1118,7 +1118,7 @@ def test_cancelling_a_run_stops_the_jobs_still_queued(
     release = Event()
 
     def hold_the_worker(*_args: Any, **_kwargs: Any) -> Sequence[Path]:
-        """Park the worker inside the first resource until the test has cancelled the rest."""
+        """Park the worker inside the first resource until the test has canceled the rest."""
         running.set()
         assert release.wait(TIMEOUT / 1000)
         return ()
@@ -1133,8 +1133,8 @@ def test_cancelling_a_run_stops_the_jobs_still_queued(
 
     outcomes = [row.outcome for row in dialog.model.rows()]
     # the one the worker had already picked up may still finish -- that is the whole of "stops after the
-    # current resource", and asserting all three were cancelled would be asserting a race
-    assert "cancelled" in outcomes
+    # current resource", and asserting all three were canceled would be asserting a race
+    assert "canceled" in outcomes
     assert discard.call_count < len(outcomes)
 
 

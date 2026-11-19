@@ -25,7 +25,7 @@ CLAMP_NOTE: Final = (
 """Shown while the resource limit is set above the app one, naming the number that actually applies.
 
 Said rather than silently corrected: the typed value is kept, so raising the app limit later gives the
-resource logs the number they were already asked for -- but a page that showed a limit nothing honours
+resource logs the number they were already asked for -- but a page that showed a limit nothing honors
 would be lying about what its own Save did."""
 
 NO_LOG_FILES: Final = "Nothing written yet"
@@ -152,7 +152,7 @@ class LogsPage(QWidget):
         self.__show_log_file()
 
     def __show_clamp_note(self) -> None:
-        """Say when the staged resource limit is above the app one, and so cannot be honoured.
+        """Say when the staged resource limit is above the app one, and so cannot be honored.
 
         Zero needs no case of its own, and gets none: *keep everything* is never *above* a limit, so the
         comparison is false and the note stays quiet -- which is the whole of what the page owes it. What

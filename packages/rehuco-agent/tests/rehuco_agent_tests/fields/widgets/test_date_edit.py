@@ -37,7 +37,7 @@ def internal_line_edit(edit: DateEdit) -> QLineEdit:
         param("January 2026", "2026-01", id="human-month-name-then-year"),
         param("2026 Jan", "2026-01", id="human-year-then-month-abbreviation"),
         param("Jan 1, 2026", "2026-01-01", id="human-month-day-year"),
-        param("not a date", None, id="unparseable-garbage-is-rejected"),
+        param("not a date", None, id="unparsable-garbage-is-rejected"),
         param("March", None, id="bare-month-name-with-no-year-is-rejected"),
     ],
 )
@@ -51,7 +51,7 @@ def test_parse(text: str, expected: str | None) -> None:
     **Test steps:**
 
     * parse each ``text``
-    * verify it matches ``expected`` (the canonical string, or ``None`` when unparseable)
+    * verify it matches ``expected`` (the canonical string, or ``None`` when unparsable)
     """
     assert DateEdit.parse(text) == expected
 
@@ -93,7 +93,7 @@ def test_date_edit_line_edit_writes_through_once_text_parses(qtbot: QtBot) -> No
     assert edit.value == "2026-10-20"
 
 
-def test_date_edit_line_edit_does_not_write_through_unparseable_text(qtbot: QtBot) -> None:
+def test_date_edit_line_edit_does_not_write_through_unparsable_text(qtbot: QtBot) -> None:
     """Text that doesn't parse (yet, or ever) leaves ``value`` untouched.
 
     **Test steps:**

@@ -23,7 +23,7 @@ STATE_ICONS: Final[Mapping[JobState, str]] = {
     JobState.WAITING: ":/icons/task_waiting.svg",
     JobState.DONE: ":/icons/task_done.svg",
     JobState.FAILED: ":/icons/task_failed.svg",
-    JobState.CANCELLED: ":/icons/task_canceled.svg",
+    JobState.CANCELED: ":/icons/task_canceled.svg",
 }
 """One glyph per state, and all seven are present.
 
@@ -43,7 +43,7 @@ PENDING_STOP_ICONS: Final[Mapping[StopRequest, str]] = {
 A running job that has been told to pause is still honestly running
 ([[appendices.task-queue#pause-concept]]), which is why this cannot be folded into
 :data:`STATE_ICONS` -- and why an icon-only column needs its own glyph for each rather than losing the
-distinction the *Pausing…* / *Cancelling…* text used to carry."""
+distinction the *Pausing…* / *Canceling…* text used to carry."""
 
 
 def status_icon(status: JobStatus) -> str:

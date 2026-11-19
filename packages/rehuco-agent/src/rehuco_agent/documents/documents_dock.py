@@ -81,7 +81,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     document_focus_changed: Signal = Signal(object)
     """Emitted with the newly-focused document's widget (a ``DocumentWidget``), or ``None`` when
     focus leaves every document dock. Consumers read ``widget.model.label`` for its display label.
-    Typed as plain ``object`` (Python-object marshalling), not ``Signal(DocumentWidget)`` -- the
+    Typed as plain ``object`` (Python-object marshaling), not ``Signal(DocumentWidget)`` -- the
     latter has Shiboken try to cast the emitted value to a genuine C++ ``DocumentWidget*``, which
     crashes the process outright when a test registers a ``MagicMock`` stand-in dock instead of a
     real one (an established pattern elsewhere in this test suite for isolating dock bookkeeping
@@ -415,9 +415,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         own close button.
 
         Every clean document closes immediately, with no dialog and unconditionally -- even if the
-        dialog for the dirty ones is about to be cancelled. Only if any document is dirty does a
+        dialog for the dirty ones is about to be canceled. Only if any document is dirty does a
         single dialog appear, listing them with a checkbox each, exactly like
-        :meth:`MainWindow.closeEvent`. Cancelling it leaves every dirty document open and nothing
+        :meth:`MainWindow.closeEvent`. Canceling it leaves every dirty document open and nothing
         saved (the already-closed clean documents stay closed regardless). Otherwise the checked
         documents are saved, and every remaining (dirty) document closes; an unchecked one's edits
         are discarded along with the close, same as a whole-app quit. A dirty document another holder
@@ -430,8 +430,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
             else:
                 self.__remove_dock(dock)
 
-        # A refusal -- the dialog cancelled, or a checked document's save failed (an offline mount,
-        # [[mounts-and-storage#offline-mounts]]) and its retry/cancel dialog cancelled (#146) -- aborts
+        # A refusal -- the dialog canceled, or a checked document's save failed (an offline mount,
+        # [[mounts-and-storage#offline-mounts]]) and its retry/cancel dialog canceled (#146) -- aborts
         # the batch close before any dock is removed, so no document -- saved, unsaved, or
         # unchecked-and-about-to-be-discarded -- is closed out from under a failed save. Every dirty
         # dock stays open for the user to resolve. With no dirty document there is nothing to confirm
@@ -563,7 +563,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         """Hold ``key``'s document and build its dock -- **always** a dock, never an error dialog.
 
         Every open attempt yields a document view ([[data-model#write-integrity]]): a file that is
-        missing, unparseable, or refused opens as an **empty, locked** dock bound to the path
+        missing, unparsable, or refused opens as an **empty, locked** dock bound to the path
         (:meth:`DocumentRegistry.acquire`) whose lock reason names the failure, rather than a modal box the
         user dismisses with nowhere left to fix the file. Hand-fixing it and reverting retries in place
         (:meth:`RehuDocumentModel.revert`).
@@ -842,7 +842,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
 
         :param dock: the dock to close.
         :returns: ``True`` if the dock was actually closed (clean, shared, or dirty and Save/Discard was
-            chosen); ``False`` if a dirty prompt was cancelled, leaving the dock untouched.
+            chosen); ``False`` if a dirty prompt was canceled, leaving the dock untouched.
         """
         widget = self.__document_docks[dock]
         if self.__registry.release_discards_edits(widget.model) and not confirm_close(

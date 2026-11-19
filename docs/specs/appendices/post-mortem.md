@@ -76,7 +76,7 @@ doc is the detailed home and the entry here is a one-line pointer.
   the service recipe is kept on #504 as a possible later opt-in. Detail: [[nodes#two-roles]].
 - **OS byte-range locks for the record** (#503). `fcntl`/`flock` over SMB differ per client (macOS ignores them,
   Linux maps them to SMB locks only since 5.5, Windows locks are mandatory); an exclusive-create lock file is the one
-  primitive all three honour. A lock *held open* was also abandoned after the macOS client's deferred close kept a
+  primitive all three honor. A lock *held open* was also abandoned after the macOS client's deferred close kept a
   deleted lock alive for a minute. Detail: [[sync#lock-file]].
 - **A per-user sidecar rejected for splitting the record** ([[data-model#single-file]]'s earlier text). Reversed once
   per-user writes every few seconds, from several machines, were going into one shared record.

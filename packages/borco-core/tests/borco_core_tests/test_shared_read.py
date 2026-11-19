@@ -3,7 +3,7 @@
 Two kinds, deliberately. The **dispatch** is mocked like everything else in this suite: which opener
 runs on which platform is this module's own logic and a fake proves it. The **share mode** is not --
 it is a fact about the running operating system, and a mocked ``CreateFileW`` would only prove that
-the mock was called. Those tests carry ``disk`` (real I/O, no mocks) and, where the behaviour is
+the mock was called. Those tests carry ``disk`` (real I/O, no mocks) and, where the behavior is
 Windows', ``windows`` as well.
 """
 

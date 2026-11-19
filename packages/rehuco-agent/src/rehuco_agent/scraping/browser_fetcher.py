@@ -72,7 +72,7 @@ class PersonaBrowser:
     time ([[acquisition-tooling#browser-persona]]). See the module docstring for why they are not the
     same session.
 
-    One `threading.Lock` serialises every scrape, since `~.scraper_executor.ScraperExecutor` runs
+    One `threading.Lock` serializes every scrape, since `~.scraper_executor.ScraperExecutor` runs
     several at once and a persona profile is not safe to open twice at once. The login window is not
     covered by that lock -- it is a separate process the user drives, not this class's own work -- so a
     scrape attempted while it is open simply fails to start its own session, with a message naming why.

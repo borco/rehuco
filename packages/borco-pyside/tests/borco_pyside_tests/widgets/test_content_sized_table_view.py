@@ -229,7 +229,7 @@ def test_a_view_stripped_of_its_model_falls_back_to_the_one_row_floor(qtbot: QtB
     qtbot.addWidget(view)
     fill(view, 5)
     # asked while it still has rows, which is what leaves it a row height to remember; no model is
-    # also no header sections, so what is left afterwards is that one row inside the frame
+    # also no header sections, so what is left afterward is that one row inside the frame
     view.sizeHint()
     one_row = row_height(view) + 2 * view.frameWidth()
 

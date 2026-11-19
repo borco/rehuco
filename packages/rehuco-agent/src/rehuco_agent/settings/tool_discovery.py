@@ -26,7 +26,7 @@ class ToolDiscovery(QObject):
 
     **Only usable installs are recorded.** A search judges every copy it finds, and what it rejects -- a static build,
     one too old, one that does not run -- is logged once at WARNING with its folder and reason, and not kept: nobody
-    acts on an unusable row in the Tools page, and seven greyed rows hid the one that mattered (#319, #592). A path the
+    acts on an unusable row in the Tools page, and seven grayed rows hid the one that mattered (#319, #592). A path the
     user typed is judged elsewhere and shown with its reason, since they asked about that one.
 
     **A daemon thread**, with an event to stop it ([[appendices.code-conventions#worker-threads]]): a search can block

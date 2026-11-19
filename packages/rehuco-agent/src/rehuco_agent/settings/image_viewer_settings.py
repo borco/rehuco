@@ -63,7 +63,7 @@ DEFAULT_EDITOR_PREVIEW_HEIGHT: Final = PREVIEW_HEIGHT
 yet (#72). Read from `ImageSelector` for the same reason the two above are read from their widgets."""
 
 DEFAULT_LIGHTBOX_BACKDROP: Final = DEFAULT_BACKDROP
-"""The colour behind a maximized image, as ``#rrggbb`` (#221). Read from the widget that paints it,
+"""The color behind a maximized image, as ``#rrggbb`` (#221). Read from the widget that paints it,
 like the heights above."""
 
 DEFAULT_LIGHTBOX_INFO_VISIBLE: Final = False
@@ -155,7 +155,7 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
     writes nothing back."""
 
     lightbox_backdrop = SimpleProperty(DEFAULT_LIGHTBOX_BACKDROP)
-    """The colour behind a maximized image, as ``#rrggbb`` (#221); applied to every open viewer."""
+    """The color behind a maximized image, as ``#rrggbb`` (#221); applied to every open viewer."""
 
     lightbox_double_click_closes = SimpleProperty(DEFAULT_LIGHTBOX_DOUBLE_CLICK_CLOSES)
     """Whether a double-click on the maximized image closes the viewer (#221); applied to every open
@@ -203,7 +203,7 @@ class ImageViewerSettings(QObject):  # pylint: disable=too-many-instance-attribu
         self.lightbox_info_visible = cast(
             bool, settings.value(LIGHTBOX_INFO_VISIBLE_KEY, DEFAULT_LIGHTBOX_INFO_VISIBLE, type=bool)
         )
-        # a colour the widget cannot paint -- a hand-edited ini -- falls back rather than raising
+        # a color the widget cannot paint -- a hand-edited ini -- falls back rather than raising
         stored_backdrop = cast(str, settings.value(LIGHTBOX_BACKDROP_KEY, DEFAULT_LIGHTBOX_BACKDROP, type=str))
         self.lightbox_backdrop = (
             stored_backdrop if QColor.isValidColorName(stored_backdrop) else DEFAULT_LIGHTBOX_BACKDROP

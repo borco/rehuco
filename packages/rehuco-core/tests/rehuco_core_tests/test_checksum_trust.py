@@ -389,7 +389,7 @@ def test_a_trust_file_this_build_cannot_read_trusts_nothing(files: FakeFiles, te
 
 
 def test_an_entry_that_is_not_an_object_is_dropped(files: FakeFiles) -> None:
-    """One broken entry costs itself; its neighbours still read.
+    """One broken entry costs itself; its neighbors still read.
 
     **Test steps:**
 

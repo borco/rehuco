@@ -5,7 +5,7 @@ reader. ``open(path, "rb")`` reaches the CRT's ``_wsopen_s`` with ``_SH_DENYNO``
 ``FILE_SHARE_READ | FILE_SHARE_WRITE`` and, crucially, **not** ``FILE_SHARE_DELETE`` -- so while the
 handle is open, renaming or deleting that file fails with ``WinError 32``. There is no flag on
 ``open`` that changes it: the share mode is not exposed, which is why this goes to ``CreateFileW``
-directly and hands the resulting handle to the CRT afterwards.
+directly and hands the resulting handle to the CRT afterward.
 
 Measured on Windows 11 / Python 3.14.6, holding one handle and renaming three ways:
 

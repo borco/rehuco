@@ -79,7 +79,7 @@ def test_a_file_already_gone_is_not_mistaken_for_a_missing_bin(mocker: MockerFix
 
 def test_a_real_failure_is_not_mistaken_for_a_missing_bin(mocker: MockerFixture) -> None:
     """A locked file or an access-denied one is a real failure, not a bin problem (#300): it must reach
-    the caller as itself, not be relabelled `NoTrashBinError`.
+    the caller as itself, not be relabeled `NoTrashBinError`.
 
     **Test steps:**
 

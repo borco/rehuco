@@ -92,7 +92,7 @@ def test_painting_draws_the_picture_and_nothing_when_empty(qtbot: QtBot) -> None
     **Test steps:**
 
     * grab the widget with a picture, then without
-    * verify the first has pixels of the picture's colour and the second does not
+    * verify the first has pixels of the picture's color and the second does not
     """
     widget = ScaledImage()
     qtbot.addWidget(widget)

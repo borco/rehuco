@@ -78,7 +78,7 @@ def test_the_single_icon_carries_both_state_variants(make_action: QAction, mock_
 
     Qt itself picks the variant from the action's checked state, so a state change that never emits
     ``toggled`` (a dock closed via its tab's ``[x]``, or ``CDockManager.restoreState()``) still
-    shows the right colour -- this is the fix for the icon going white on such changes.
+    shows the right color -- this is the fix for the icon going white on such changes.
 
     **Test steps:**
 
@@ -268,7 +268,7 @@ def test_resync_companion_checked_state_is_a_noop_without_a_companion(
 def test_the_single_icon_carries_a_disabled_variant_too(make_action: QAction, mock_qfile: Callable[..., Any]) -> None:
     """The built icon's ``Mode.Disabled`` variant is colored from the palette's own disabled group.
 
-    A custom icon engine gets no automatic disabled-greying from Qt -- without this, a disabled
+    A custom icon engine gets no automatic disabled-graying from Qt -- without this, a disabled
     action's icon would render identically to its enabled one (the actual bug this closes).
 
     **Test steps:**

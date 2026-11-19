@@ -319,7 +319,7 @@ def test_an_unknown_placeholder_is_flagged_but_not_dropped_from_the_editor(page:
 
 def test_an_edit_makes_the_page_dirty(page: LocationTemplatesPage) -> None:
     """Dirtiness is the staged list against what this type's shared settings resolve to, polled rather
-    than signalled.
+    than signaled.
 
     **Test steps:**
 

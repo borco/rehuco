@@ -12,7 +12,7 @@ follow mid-run. It answers the same path for its whole life, which costs nothing
 **Not safely interruptible, and it does not resume.** The one call to :func:`~rehuco_core.convert_tc`
 either completes -- rolling back on its own failure -- or never starts; there is no natural division
 point inside it for :meth:`~rehuco_core.tasks.TaskJobBase.checkpoint` to divide, so a pause or cancel
-asked of a *running* one has no effect until it returns on its own. A **queued** one is cancelled
+asked of a *running* one has no effect until it returns on its own. A **queued** one is canceled
 outright and never starts at all ([[appendices.task-queue#job-responsibility]]) -- which is the whole of
 what #192's "cancel stops after the current resource" means: nothing asks a running conversion to stop
 mid-file, only the ones still waiting their turn.
@@ -60,7 +60,7 @@ class TcImportJob(TaskJobBase):
     """Convert one legacy `.tc` into a real `.rehu`, on the queue (#192).
 
     **Keeps its backups by default** (``keep_backups=True``): the wizard this job exists for never
-    offers the discard variant (#193's, deliberately, afterwards) -- retaining every backup is what
+    offers the discard variant (#193's, deliberately, afterward) -- retaining every backup is what
     makes an unattended bulk run safe at all, since nothing is deleted and any one resource can be
     reverted (#190) if the conversion made the wrong call.
 

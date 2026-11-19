@@ -201,7 +201,7 @@ def register_page(
     page back to assert on.
 
     Registration itself calls ``seed_defaults`` and ``drop_changes`` once each (#342, to capture the
-    two snapshots), so both counters are zeroed afterwards -- a test then counts only what *it*
+    two snapshots), so both counters are zeroed afterward -- a test then counts only what *it*
     triggers.
 
     :param dialog: the dialog to register into.
@@ -2777,7 +2777,7 @@ def test_a_list_editor_in_a_headed_frame_loses_its_own_restore_button(qtbot: QtB
 
 def test_applying_one_frame_saves_its_edit_alone_and_leaves_the_page_dirty(qtbot: QtBot) -> None:
     """A frame's Apply persists that frame's change and nothing else: the other frame's edit is still
-    on screen and still dirty afterwards, the page keeps its badge, and only once that frame is
+    on screen and still dirty afterward, the page keeps its badge, and only once that frame is
     applied too does the page settle.
 
     **Test steps:**

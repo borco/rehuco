@@ -152,7 +152,7 @@ def test_saving_persists_the_choice(page: SessionPage, fake_persistent_settings:
 
 
 def test_dropping_changes_re_seeds_from_storage(page: SessionPage) -> None:
-    """Cancelling puts back what is actually saved.
+    """Canceling puts back what is actually saved.
 
     **Test steps:**
 

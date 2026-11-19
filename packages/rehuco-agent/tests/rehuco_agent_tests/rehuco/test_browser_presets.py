@@ -15,7 +15,7 @@ DURATIONS = frozenset(
 COUNTS = frozenset({CatalogColumn.ADVERTISED_COUNT, CatalogColumn.CURRENT_COUNT})
 
 
-def preset_labelled(label: str, presets: tuple[BrowserPreset, ...]) -> BrowserPreset:
+def preset_labeled(label: str, presets: tuple[BrowserPreset, ...]) -> BrowserPreset:
     """The preset whose menu entry is ``label``."""
     return next(preset for preset in presets if preset.label == label)
 
@@ -64,8 +64,8 @@ def test_a_typed_preset_shows_its_types_columns_hides_the_others_and_filters_by_
     * verify each typed preset's hidden columns and ``type:`` token
     """
     presets = browser_presets()
-    tutorial = preset_labelled("Tutorial Columns", presets)
-    reference = preset_labelled("Reference Images Columns", presets)
+    tutorial = preset_labeled("Tutorial Columns", presets)
+    reference = preset_labeled("Reference Images Columns", presets)
 
     assert tutorial.hidden == COUNTS | {CatalogColumn.URL, CatalogColumn.ROOT}
     assert tutorial.filter == "type:tutorial"

@@ -743,7 +743,7 @@ def test_a_closed_cache_starts_no_more_checks(mocker: MockerFixture, timer: Magi
     **Test steps:**
 
     * read once, so a check is pending, then close the cache
-    * verify the pending check was cancelled
+    * verify the pending check was canceled
     * run it anyway and read again, and verify no second check was started
     """
     mock_zipfile(mocker)

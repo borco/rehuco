@@ -168,7 +168,7 @@ def test_a_pending_batch_is_not_replayed_twice(
 
 
 def test_clearing_the_cache_stops_a_later_attach_replaying(bridge: LogBridge, log: logging.Logger) -> None:
-    """Clearing the cache means a sink attached afterwards starts empty.
+    """Clearing the cache means a sink attached afterward starts empty.
 
     **Test steps:**
 
@@ -266,7 +266,7 @@ def test_records_logged_off_the_gui_thread_are_handed_over_on_it(
 ) -> None:
     """A worker thread's records reach the sink, and the sink is entered on the GUI thread.
 
-    Asserts the marshalling itself, not only that the records arrived: a sink touched on the
+    Asserts the marshaling itself, not only that the records arrived: a sink touched on the
     worker's thread would be a model mutated off the GUI thread.
 
     **Test steps:**
@@ -771,7 +771,7 @@ def pending_bridge() -> tuple[LogBridge, RecordingSink]:
 
 
 def test_a_closed_bridge_takes_its_queued_wake_up_with_it(qtbot: QtBot, deliver: Callable[[], None]) -> None:
-    """Closing deletes the marshaller, and the wake-up still queued for it goes with it: nothing is dispatched into
+    """Closing deletes the marshaler, and the wake-up still queued for it goes with it: nothing is dispatched into
     the dropped bridge (#529). The crash the old wiring caused shows only across tests, run in order without xdist
     -- the module's own serial run is the guard for that.
 
@@ -793,7 +793,7 @@ def test_a_closed_bridge_takes_its_queued_wake_up_with_it(qtbot: QtBot, deliver:
 
 
 def test_a_bridge_dropped_unclosed_wakes_nobody(deliver: Callable[[], None]) -> None:
-    """The marshaller holds its bridge weakly, so a bridge dropped with a wake-up queued is simply gone, and the
+    """The marshaler holds its bridge weakly, so a bridge dropped with a wake-up queued is simply gone, and the
     wake-up reaches nothing (#529).
 
     **Test steps:**
@@ -803,13 +803,13 @@ def test_a_bridge_dropped_unclosed_wakes_nobody(deliver: Callable[[], None]) -> 
     * verify the sink was handed nothing
     """
     built, sink = pending_bridge()
-    marshaller = built._LogBridge__marshaller  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    marshaler = built._LogBridge__marshaler  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     del built
     deliver()
 
     assert not sink.batches
-    marshaller.deleteLater()
+    marshaler.deleteLater()
 
 
 def test_closing_twice_and_logging_after_closing_change_nothing(deliver: Callable[[], None]) -> None:
@@ -834,19 +834,19 @@ def test_closing_twice_and_logging_after_closing_change_nothing(deliver: Callabl
     assert sink.messages == ["after"]
 
 
-def test_closing_after_the_application_destroyed_the_marshaller_raises_nothing(qtbot: QtBot) -> None:
-    """At exit ``logging`` closes the bridge after PySide destroyed the marshaller along with the application; that
+def test_closing_after_the_application_destroyed_the_marshaler_raises_nothing(qtbot: QtBot) -> None:
+    """At exit ``logging`` closes the bridge after PySide destroyed the marshaler along with the application; that
     close is no error (#529).
 
     **Test steps:**
 
-    * destroy a bridge's marshaller from under it, as the application's teardown does
+    * destroy a bridge's marshaler from under it, as the application's teardown does
     * close the bridge
     * verify nothing was raised
     """
     del qtbot
     built = LogBridge()
-    built._LogBridge__marshaller.deleteLater()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    built._LogBridge__marshaler.deleteLater()  # type: ignore[attr-defined]  # pylint: disable=protected-access
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
 
     built.close()

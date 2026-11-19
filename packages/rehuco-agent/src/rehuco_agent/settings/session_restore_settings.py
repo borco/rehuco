@@ -35,7 +35,7 @@ class SessionRestoreSettings:
 
     restore_local_documents: bool = field(default=True)
     """Reopen the previous session's documents that live on **local storage** -- a fixed drive of this machine -- on
-    startup. On by default, matching the long-standing behaviour from #21. They come back at once: their drive is
+    startup. On by default, matching the long-standing behavior from #21. They come back at once: their drive is
     there or it is not, and nothing has to be waited for (#464)."""
 
     restore_remote_documents: bool = field(default=True)

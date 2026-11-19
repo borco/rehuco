@@ -7,7 +7,7 @@ from typing import ClassVar
 from PySide6.QtGui import QColor, QPalette
 
 type CardColor = QColor | QPalette.ColorRole | Callable[[QPalette], QColor]
-"""A colour as a style names it: a fixed `QColor`, a palette role, or a function of the palette -- the last
+"""A color as a style names it: a fixed `QColor`, a palette role, or a function of the palette -- the last
 two follow a theme switch, since they are only turned into a `QColor` when the card paints."""
 
 
@@ -15,8 +15,8 @@ two follow a theme switch, since they are only turned into a `QColor` when the c
 class CardStateStyle:
     """The look of one card state: what fills the whole card, and what outlines it.
 
-    :param fill: the colour painted over the whole card (grip, frame and buttons), or ``None`` for none.
-    :param border: the card's outline colour, or ``None`` for none.
+    :param fill: the color painted over the whole card (grip, frame and buttons), or ``None`` for none.
+    :param border: the card's outline color, or ``None`` for none.
     """
 
     fill: CardColor | None = None
@@ -26,9 +26,9 @@ class CardStateStyle:
     def resolve(color: CardColor | None, palette: QPalette) -> QColor | None:
         """Turn ``color`` into a `QColor` against ``palette`` -- called at paint time, never cached.
 
-        :param color: the colour as a style names it, or ``None``.
+        :param color: the color as a style names it, or ``None``.
         :param palette: the palette of the widget being painted.
-        :returns: the colour to paint with, or ``None`` when there is none.
+        :returns: the color to paint with, or ``None`` when there is none.
         """
         if color is None or isinstance(color, QColor):
             return color
@@ -42,7 +42,7 @@ class CardStyle:
 
     Ships no state: the card holding focus is marked by its buttons alone, not by a fill or an outline, and
     every other state -- a ``flagged`` card, say -- is the app's to :meth:`register`, since this package
-    carries no app colours.
+    carries no app colors.
 
     :param states: per-instance styles, taking precedence over the class-wide :attr:`STATES`.
     """

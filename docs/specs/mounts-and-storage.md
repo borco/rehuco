@@ -94,7 +94,7 @@ renaming a `.rehuco` keeps it, and a machine that is renamed loses nothing, sinc
   share this machine mounts, or whose location names this machine, is mapped from the mount table or the drive table
   without asking; the rest are listed in a wizard with Browse and Skip per row. A skipped root stays **visible but
   disabled** — not scanned, not browsed, not served by the node — and is not asked about again; a root neither mapped
-  nor skipped (the wizard was cancelled) is asked again at the next open. *Map…* in the Roots view maps a root later,
+  nor skipped (the wizard was canceled) is asked again at the next open. *Map…* in the Roots view maps a root later,
   once the share is mounted or the folder shared, and replaces a skip. A root a machine cannot reach by nature (another
   box's local disk, not shared) sits there the same way.
 - **The `.rehuco` changes only when the roots do** — one added, removed or moved; a relabel writes the root's
@@ -119,7 +119,7 @@ it.
 
 - [#577: feat(core): the .rehuroot file — id, label, location, layouts, fallbacks; .rehuco format 4 as an ordered list of references; mappings keyed by root id; path templates with /](https://github.com/borco/rehuco/issues/577)
 - [#578: feat(agent): Add Roots — pick existing .rehuroot files or a folder with a default layout; default layouts in settings; layouts and fallbacks on the root's properties](https://github.com/borco/rehuco/issues/578)
-- [#579: feat(agent): the path row's root destinations — rename in place within the root, the verified move across roots once #339 lands, greyed with the reason otherwise](https://github.com/borco/rehuco/issues/579)
+- [#579: feat(agent): the path row's root destinations — rename in place within the root, the verified move across roots once #339 lands, grayed with the reason otherwise](https://github.com/borco/rehuco/issues/579)
 
 With a root's id, label and location inline in the `.rehuco`, the same folder listed by two catalogs is two roots:
 two ids, two mappings, two caches, and nothing that is a fact about the root — how it is laid out — has a home at
@@ -163,10 +163,10 @@ references** to such files and nothing more about a root: its role is to aggrega
   outside an optional group with no fallback **forbids** the root for that record, and the renderer says why; the
   path row offers no place in that root ([[plugins#tutorial-plugin]]). A field's own `/` opens no level.
 - **A reference whose `.rehuroot` is missing or unreadable** — a file on a share that is offline, one deleted by
-  hand — does not refuse the catalog: the root is listed greyed under its file's name, with one row saying its file
+  hand — does not refuse the catalog: the root is listed grayed under its file's name, with one row saying its file
   cannot be read and the reason as the tooltip, offering neither *Map…* nor a name to edit; the reference survives a
   save, and *Remove Root* drops it. **The cache keeps what it held of that root**, matched to it by the file, as it
-  keeps an offline root's: its records still show, greyed, and nothing scans or watches it. Only *Remove Root* clears
+  keeps an offline root's: its records still show, grayed, and nothing scans or watches it. Only *Remove Root* clears
   them; a reference this machine never read holds nothing to keep.
 - **Adding a root** is picking existing `.rehuroot` files, or a folder, which makes one with a layout chosen from the
   default root layouts the settings keep ([[plugins#rehuco-dock]]), many at once; the Roots view edits a root's
@@ -229,7 +229,7 @@ Rules:
   backend that fails falls back to polling, which also says whether the root can be reached — published as
   `RootReachable`, and written into the cache — and the backend is tried again every 30 s while it can; once it is back,
   the root is `RootStale`, since a sweep finds only the records it knew. A root that cannot be reached keeps its rows in
-  the browsers, greyed and not opened; browsing what is retained of it is [[mounts-and-storage#durable-retention]]'s.
+  the browsers, grayed and not opened; browsing what is retained of it is [[mounts-and-storage#durable-retention]]'s.
 - **The folder of a document opened from outside every root is watched too**, with the same backends: everything beneath
   a directory-scoped record's folder, a file-scoped one's folder alone, a folder already covered by another's watch not
   again.
@@ -432,7 +432,7 @@ The system chooses *how* to perform a move/rename rather than assuming:
   move wait in the queue as a save does, for as long, its row naming the end; its phase and its copy are kept, and
   the retry goes on from the first file not yet whole. The cleanup asks the source before it removes and again
   after, whatever the removal reported: a share that is off reads as *nothing there*, which a removal takes for
-  *already gone*. A rename whose check afterwards could not read its share waits in that check, and makes it again.
+  *already gone*. A rename whose check afterward could not read its share waits in that check, and makes it again.
   A failure with both ends answering is what it says: a refusal of the disk (access denied, disk full) fails, a
   verdict refuses. The check before every start lets a record whose share does not answer be tried, so the wait
   carries on by itself.
@@ -441,7 +441,7 @@ The system chooses *how* to perform a move/rename rather than assuming:
 - A **cancel** removes what the copy wrote and the folders it made, and nothing that was there before, for as long as
   the source is whole — whether the job runs or sits paused, when the queue tells it so
   ([[appendices.task-queue#kept]]). **The Tasks dock asks first** (#634): Cancel offers removing the partial copy
-  (the default) or keeping it, for a Retry to go on from; clearing a failed or cancelled move that still holds one
+  (the default) or keeping it, for a Retry to go on from; clearing a failed or canceled move that still holds one
   asks the same, since a copy left behind blocks a new move to the same place. A copy whose destination does not
   answer is never removed through it: the question says it stays, for the owner to remove by hand. A retried move
   starts over from its source check with its copy kept, and is asked about there too.

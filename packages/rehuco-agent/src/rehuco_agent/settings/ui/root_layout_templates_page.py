@@ -29,7 +29,7 @@ class RootLayoutTemplatesPage(QWidget):
     A row is the Locations grammar plus ``/`` between folder levels. **An invalid row is kept and flagged**, as on the
     per-type Locations pages, and so is a ``*`` row: the root editor always offers ``*``, so it is no template of
     the library. **Try it** shows, for each valid
-    row, the path it gives the sample record -- through the saved Location Replacements and the name sanitising, as a
+    row, the path it gives the sample record -- through the saved Location Replacements and the name sanitizing, as a
     root's destination does -- or why the root would offer no place. The preview follows the staged rows and sample,
     applied or not.
 

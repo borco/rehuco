@@ -282,7 +282,7 @@ def card(qtbot: QtBot) -> Card:
     return card
 
 
-def centre_in(card: Card, widget: QWidget) -> int:
+def center_in(card: Card, widget: QWidget) -> int:
     """The vertical middle of ``widget``, in ``card``'s coordinates.
 
     :param card: the card.
@@ -293,7 +293,7 @@ def centre_in(card: Card, widget: QWidget) -> int:
 
 
 def buttons_on_buddies(card: Card) -> bool:
-    """Whether every strip button is centred on its buddy, within a pixel.
+    """Whether every strip button is centered on its buddy, within a pixel.
 
     :param card: the card.
     :returns: whether they all are.
@@ -301,7 +301,7 @@ def buttons_on_buddies(card: Card) -> bool:
     content = card.content
     assert isinstance(content, SampleContent)
     return all(
-        abs(button.geometry().center().y() - centre_in(card, buddy)) <= 1
+        abs(button.geometry().center().y() - center_in(card, buddy)) <= 1
         for button, buddy in zip(card.strip.buttons, content.buddies(), strict=True)
     )
 
@@ -317,7 +317,7 @@ def test_buttons_are_square_at_their_natural_height(card: Card) -> None:
         assert button.width() == button.height() == button.sizeHint().height()
 
 
-def test_buttons_are_centred_on_their_buddies_right_of_the_frame(card: Card) -> None:
+def test_buttons_are_centered_on_their_buddies_right_of_the_frame(card: Card) -> None:
     """Delete sits beside the first buddy, insert beside the second, both outside the frame.
 
     **Test steps:**
@@ -1237,27 +1237,27 @@ def test_the_grip_asks_for_a_drag_only_after_a_left_press_and_a_real_move(page: 
     * verify no drag was requested, then press left and move far and verify one was
     """
     grip = page.card(0).grip
-    centre = grip.rect().center()
-    far = centre + QPoint(40, 40)
+    center = grip.rect().center()
+    far = center + QPoint(40, 40)
     with qtbot.assertNotEmitted(grip.drag_requested):
-        QTest.mousePress(grip, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, centre)
+        QTest.mousePress(grip, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, center)
         QTest.mouseMove(grip, far)
-        QTest.mouseRelease(grip, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, centre)
-        QTest.mousePress(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
-        QTest.mouseMove(grip, centre + QPoint(1, 0))
-        QTest.mouseRelease(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
+        QTest.mouseRelease(grip, Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier, center)
+        QTest.mousePress(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
+        QTest.mouseMove(grip, center + QPoint(1, 0))
+        QTest.mouseRelease(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
         QTest.mouseMove(grip, far)
     with qtbot.waitSignal(grip.drag_requested):
-        QTest.mousePress(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre)
+        QTest.mousePress(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center)
         QTest.mouseMove(grip, far)
 
 
-def test_a_style_colour_may_be_a_function_of_the_palette() -> None:
-    """A colour given as a callable is called with the palette at paint time.
+def test_a_style_color_may_be_a_function_of_the_palette() -> None:
+    """A color given as a callable is called with the palette at paint time.
 
     **Test steps:**
 
-    * resolve a fixed colour, a palette role, a function of the palette, and ``None``
+    * resolve a fixed color, a palette role, a function of the palette, and ``None``
     * verify each resolves as it should
     """
     palette = QPalette()

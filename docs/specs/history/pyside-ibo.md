@@ -80,10 +80,10 @@ What pyside-ibo's logging had, and where rehuco's `borco_pyside/logging/` differ
   Carried as `LogBridge`; the sink takes a batch, not a record, and there can be several sinks, each scoped and
   cleared independently ([[appendices.logging#routing]]). pyside-ibo had one widget, whose clear also emptied the cache.
 - **`LogModel`, `LogFilterModel`, `LogView`, the level and message delegates, `LogWidget` / `LogWindow`.** Carried.
-  Level colours are classified by `LogLevelBand.of` ([[appendices.logging#bands]]) rather than an `if` ladder that
+  Level colors are classified by `LogLevelBand.of` ([[appendices.logging#bands]]) rather than an `if` ladder that
   missed levels between the named ones, painted as a low-alpha wash so one set works in both themes, and follow-tail
   reads the scrollbar position rather than the wheel.
-- **`LogItem`**, a mutable dataclass that picked its own colour. Not carried; `LogEntry` is frozen and carries the scope
+- **`LogItem`**, a mutable dataclass that picked its own color. Not carried; `LogEntry` is frozen and carries the scope
   and a run-long serial.
 
 ## Importing its data

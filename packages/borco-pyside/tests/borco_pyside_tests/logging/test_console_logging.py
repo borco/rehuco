@@ -18,7 +18,7 @@ def configure() -> Iterator[Configure]:
     handlers**, and pytest's own logging plugin attaches several of them -- after fixture setup, right
     around the test body -- so clearing them in a fixture is too early to help; the clear has to happen
     inside the call. And the root logger is process-wide, so whatever this leaves behind would decide
-    what every later test measures: the handlers and the level are put back afterwards.
+    what every later test measures: the handlers and the level are put back afterward.
 
     :returns: a callable taking ``setup_console_logging``'s own arguments -- plus ``existing``, a
         handler to have already been attached when it runs -- and returning the root logger.
@@ -108,7 +108,7 @@ def test_the_console_level_is_settable(configure: Configure) -> None:
 def test_an_already_attached_handler_keeps_its_level(configure: Configure) -> None:
     """A handler already on the root logger is left alone -- its floor is not the console's.
 
-    Levelling every handler would raise the floor of an in-app log surface attached earlier, which is
+    Leveling every handler would raise the floor of an in-app log surface attached earlier, which is
     precisely the records it exists to keep.
 
     **Test steps:**

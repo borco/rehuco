@@ -50,7 +50,7 @@ name."""
 
 
 @dataclass(frozen=True)
-# a data-carrying row, not behaviour -- splitting it would only scatter one table row's fields
+# a data-carrying row, not behavior -- splitting it would only scatter one table row's fields
 # pylint: disable-next=too-many-instance-attributes
 class ScraperRow:
     """One row of the Scrapers settings page's table: one scraper, or one script file that loaded but

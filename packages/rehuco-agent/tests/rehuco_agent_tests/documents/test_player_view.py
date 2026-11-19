@@ -686,7 +686,7 @@ def test_a_position_before_the_video_has_buffered_is_no_progress(
 
 
 def test_a_position_after_the_player_stopped_is_no_progress(view: PlayerView, recorder: WatchProgressRecorder) -> None:
-    """A stop, or the end of a video, resets the position: reported afterwards it must not overwrite where the reader
+    """A stop, or the end of a video, resets the position: reported afterward it must not overwrite where the reader
     got to.
 
     **Test steps:**
@@ -800,7 +800,7 @@ def test_pressing_play_on_a_video_that_is_loading_pauses_it(view: PlayerView, me
 # region Stepping: previous and next load paused
 
 
-def test_previous_and_next_load_the_neighbour_paused_where_it_was_left_or_at_the_start(
+def test_previous_and_next_load_the_neighbor_paused_where_it_was_left_or_at_the_start(
     view: PlayerView, media: Media, progress: dict[str, ProgressEntry]
 ) -> None:
     """**Test steps:**

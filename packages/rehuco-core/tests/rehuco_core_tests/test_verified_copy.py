@@ -1,6 +1,6 @@
 """Tests for the verified copy (#339): the source's record must cover its content, the copy resumes per file, follows
 a rename of its record and is checked against the record, the original goes only once the copy proved out and is level
-with it, and a cancelled copy takes back what it wrote."""
+with it, and a canceled copy takes back what it wrote."""
 
 import filecmp
 import json
@@ -200,7 +200,7 @@ def test_a_folder_record_is_copied_whole_with_its_record_last(tmp_path: Path) ->
     **Test steps:**
 
     * copy a folder record into a destination folder that does not exist yet
-    * check the tree matches the source's, the ``.rehu`` is the journal's last file, the folders made are journalled
+    * check the tree matches the source's, the ``.rehu`` is the journal's last file, the folders made are journaled
       topmost first -- each spelled from the folder the record lands in -- the last progress report is the whole, and
       the checkpoint was called
     """
@@ -686,7 +686,7 @@ def test_a_lock_left_beside_the_record_keeps_its_folder(tmp_path: Path) -> None:
 
 
 def test_a_file_record_is_removed_file_by_file(tmp_path: Path) -> None:
-    """A file record's original is its set of files, each removed; its folder and its neighbours stay.
+    """A file record's original is its set of files, each removed; its folder and its neighbors stay.
 
     **Test steps:**
 
@@ -709,8 +709,8 @@ def test_a_file_record_is_removed_file_by_file(tmp_path: Path) -> None:
 
 
 # region undoing a copy
-def test_a_cancelled_copy_takes_back_what_it_wrote(tmp_path: Path) -> None:
-    """Cancelling removes the files the copy wrote and the folders it made, and nothing that was there before.
+def test_a_canceled_copy_takes_back_what_it_wrote(tmp_path: Path) -> None:
+    """Canceling removes the files the copy wrote and the folders it made, and nothing that was there before.
 
     **Test steps:**
 

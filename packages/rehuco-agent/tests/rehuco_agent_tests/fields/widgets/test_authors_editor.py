@@ -438,10 +438,10 @@ def drop_on(target: QWidget, data: QMimeData) -> bool:
     :param data: what is dragged; the caller keeps it alive.
     :returns: whether the drop was accepted.
     """
-    centre = QPointF(target.rect().center())
+    center = QPointF(target.rect().center())
     args = (Qt.DropAction.CopyAction, data, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-    QApplication.sendEvent(target, QDragEnterEvent(centre.toPoint(), *args))
-    drop = QDropEvent(centre, *args)
+    QApplication.sendEvent(target, QDragEnterEvent(center.toPoint(), *args))
+    drop = QDropEvent(center, *args)
     QApplication.sendEvent(target, drop)
     return drop.isAccepted()
 

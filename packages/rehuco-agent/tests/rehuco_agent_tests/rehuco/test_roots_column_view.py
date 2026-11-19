@@ -89,7 +89,7 @@ def test_every_column_is_drawn_by_the_roots_delegate(
 def test_painting_every_kind_of_row_draws_something(
     qtbot: QtBot, shown: tuple[RootsColumnView, RootsFolderModel]
 ) -> None:
-    """Rows paint without error: a root, a reachable and a greyed one, a folder with the arrow, a file, a selected
+    """Rows paint without error: a root, a reachable and a grayed one, a folder with the arrow, a file, a selected
     row, and the placeholder an unreachable root shows.
 
     **Test steps:**
@@ -142,7 +142,7 @@ def test_the_row_under_a_screen_point_is_found_in_whichever_column(
 
     **Test steps:**
 
-    * open the first root's column, and take the centre of a root row and of a row in the second column
+    * open the first root's column, and take the center of a root row and of a row in the second column
     * verify each point finds its row
     * verify a point far outside the view finds none
     """
@@ -164,13 +164,13 @@ def test_the_row_under_a_screen_point_is_found_in_whichever_column(
 def test_an_empty_view_has_a_first_column_with_the_model_that_answers_a_menu(
     qtbot: QtBot, tmp_path: Path, delete_at_teardown: DeleteAtTeardown
 ) -> None:
-    """With no roots ``QColumnView`` shows a bare column with no model, drawn grey and skipped by the menu's lookup
+    """With no roots ``QColumnView`` shows a bare column with no model, drawn gray and skipped by the menu's lookup
     (#570); the column of roots has the model from the start, and keeps it when roots come and go.
 
     **Test steps:**
 
     * show a view over a model with no roots
-    * verify a visible column has the model, fills its background with the base colour, and answers the lookup with
+    * verify a visible column has the model, fills its background with the base color, and answers the lookup with
       the invalid index; and again after a reset, and after a style change, each with the fill turned off first
     * add a root, and verify the column gave the model back and collapsed to no width, as the preview column
     * remove the root again and verify the first point; then that a view with no model at all is left alone, a style
@@ -296,7 +296,7 @@ def test_a_root_row_is_taller_than_a_folder_row_and_its_folder_is_in_the_model(
 
 
 class DrawnLine(NamedTuple):
-    """One line of text a painter was asked to draw: where, what, in which font and in which colour."""
+    """One line of text a painter was asked to draw: where, what, in which font and in which color."""
 
     rect: QRect
     text: str
@@ -352,7 +352,7 @@ def test_painting_a_root_row_shows_its_folder_line(shown: tuple[RootsColumnView,
     assert (name.ink.alpha(), folder.ink.alpha() < 255) == (255, True)
 
 
-def test_a_root_rows_glyph_is_centred_on_the_whole_row(
+def test_a_root_rows_glyph_is_centered_on_the_whole_row(
     mocker: MockerFixture, shown: tuple[RootsColumnView, RootsFolderModel]
 ) -> None:
     """The storage glyph sits halfway down the two-line row, beside both the name and the folder, not level with the
@@ -361,7 +361,7 @@ def test_a_root_rows_glyph_is_centred_on_the_whole_row(
     **Test steps:**
 
     * paint a root row's content into a rect taller than its two lines, with the glyph drawing captured
-    * verify the glyph's vertical centre is the rect's
+    * verify the glyph's vertical center is the rect's
     """
     view, model = shown
     delegate = RootRowDelegate(view)
@@ -523,7 +523,7 @@ def paint_root_row(
     :param delegate: the delegate.
     :param index: the root row.
     :param selected: whether the row is painted on the selection band.
-    :returns: each line of text drawn, and the colour the glyph was drawn in.
+    :returns: each line of text drawn, and the color the glyph was drawn in.
     """
     draw = mocker.patch.object(delegate, "draw_icon")
     option = QStyleOptionViewItem()

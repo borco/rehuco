@@ -12,7 +12,7 @@ from uuid import UUID
 from pytest import LogCaptureFixture, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
-    JobCancelled,
+    JobCanceled,
     JobPaused,
     MoveMode,
     MovePhase,
@@ -116,10 +116,10 @@ def test_a_rename_has_no_partial_copy(roots: dict[UUID, Path], host: MagicMock) 
     assert job.partial is None
 
 
-def test_a_running_copy_cancelled_with_its_copy_kept_leaves_it_and_a_retry_resumes(
+def test_a_running_copy_canceled_with_its_copy_kept_leaves_it_and_a_retry_resumes(
     roots: dict[UUID, Path], host: MagicMock, control: MagicMock
 ) -> None:
-    """A cancel asked to keep the copy leaves it; a retry of the cancelled row goes on from it.
+    """A cancel asked to keep the copy leaves it; a retry of the canceled row goes on from it.
 
     **Test steps:**
 
@@ -132,7 +132,7 @@ def test_a_running_copy_cancelled_with_its_copy_kept_leaves_it_and_a_retry_resum
     job.keep_partial(True)
     control.report.side_effect = lambda done, total=None: job.cancel() if done else None
 
-    with raises(JobCancelled):
+    with raises(JobCanceled):
         job.run(control)
 
     assert target_of(roots).exists()
@@ -147,7 +147,7 @@ def test_a_running_copy_cancelled_with_its_copy_kept_leaves_it_and_a_retry_resum
 def test_an_idle_copy_given_up_on_with_its_copy_kept_leaves_it(
     roots: dict[UUID, Path], host: MagicMock, control: MagicMock, mocker: MockerFixture
 ) -> None:
-    """A paused copy cancelled with its copy kept is not taken back when the queue gives it up.
+    """A paused copy canceled with its copy kept is not taken back when the queue gives it up.
 
     **Test steps:**
 
@@ -203,7 +203,7 @@ def test_a_retry_forgets_a_kept_copy_choice(roots: dict[UUID, Path], host: Magic
     job.reset()
     control.report.side_effect = lambda done, total=None: job.cancel() if done else None
 
-    with raises(JobCancelled):
+    with raises(JobCanceled):
         job.run(control)
 
     assert not roots[DESTINATION_ROOT].exists()

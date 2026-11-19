@@ -336,7 +336,7 @@ def test_a_job_handed_its_first_save_tracks_it_and_follows_a_later_path(tmp_path
     renamed = coordinator.rename(path, "carving")
     assert job.source == renamed
     assert job.replace(snapshot(renamed, description="edited"))
-    again = coordinator.rename(renamed, "modelling")
+    again = coordinator.rename(renamed, "modeling")
     assert job.source == again
     elsewhere = fake_payload(tmp_path / "elsewhere" / "info.rehu")
     assert job.replace(elsewhere)

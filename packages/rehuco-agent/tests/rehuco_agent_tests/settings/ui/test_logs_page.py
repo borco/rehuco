@@ -236,7 +236,7 @@ def test_saving_persists_both_limits(page: LogsPage, fake_persistent_settings: F
 
 
 def test_dropping_changes_re_seeds_from_the_shared_settings(page: LogsPage) -> None:
-    """Cancelling puts back what the surfaces are really keeping.
+    """Canceling puts back what the surfaces are really keeping.
 
     **Test steps:**
 
@@ -293,7 +293,7 @@ def test_says_which_limit_actually_applies_when_the_resource_one_is_higher(page:
     """A resource limit above the app one is reported rather than silently corrected.
 
     The typed value is kept, so raising the app limit later gives the resource logs the number they were
-    already asked for -- but a page showing a limit nothing honours would be lying about its own Save.
+    already asked for -- but a page showing a limit nothing honors would be lying about its own Save.
 
     **Test steps:**
 
@@ -362,7 +362,7 @@ def test_the_clamp_note_stays_quiet_at_zero(page: LogsPage) -> None:
     """*Keep everything* is never *above* the app limit, so there is nothing to hold it down to (#236).
 
     The note would otherwise be the page's loudest element in the one case where nothing is wrong: zero
-    is honoured exactly as typed, unlike the number it shares a comparison with.
+    is honored exactly as typed, unlike the number it shares a comparison with.
 
     **Test steps:**
 

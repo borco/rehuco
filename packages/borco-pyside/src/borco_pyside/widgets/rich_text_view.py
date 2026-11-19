@@ -6,9 +6,9 @@ but reports its rendered height as its size, so an enclosing scroll area does th
 
 * both scrollbars are off -- text wraps to the available width (no horizontal scroll) and the widget
   grows to its full content height (no vertical scroll);
-* an image too wide to wrap is simply clipped at the right margin, so it never spills over neighbours;
+* an image too wide to wrap is simply clipped at the right margin, so it never spills over neighbors;
 * no frame, and a selectable/copyable read-only body (``QTextBrowser``'s default interaction);
-* the background is either transparent (blends into its parent) or the window's panel colour.
+* the background is either transparent (blends into its parent) or the window's panel color.
 """
 
 from enum import Enum, auto
@@ -32,7 +32,7 @@ class RichTextView(QTextBrowser):
     change, not once per hint query.
 
     :param parent: optional Qt parent.
-    :param background: whether to paint no background (transparent) or the window panel colour.
+    :param background: whether to paint no background (transparent) or the window panel color.
     """
 
     class Background(Enum):
@@ -41,7 +41,7 @@ class RichTextView(QTextBrowser):
         NONE = auto()
         """Transparent -- the parent shows through, so the view does not stand out."""
         NORMAL = auto()
-        """The window's panel colour, matching surrounding chrome."""
+        """The window's panel color, matching surrounding chrome."""
 
     def __init__(self, parent: QWidget | None = None, background: Background = Background.NONE) -> None:
         super().__init__(parent)
@@ -62,7 +62,7 @@ class RichTextView(QTextBrowser):
         """Set the view's background fill.
 
         :param background: :attr:`Background.NONE` for transparent, :attr:`Background.NORMAL` for the
-            window panel colour.
+            window panel color.
         """
         fill = "transparent" if background is RichTextView.Background.NONE else "palette(window)"
         self.setStyleSheet(f"RichTextView {{ background: {fill}; }}")

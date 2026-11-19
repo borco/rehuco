@@ -10,7 +10,7 @@ surface may ask about, :attr:`~rehuco_core.JobStatus.resumes_where_it_stopped`
 ([[appendices.task-queue#job-responsibility]]).
 """
 
-# The widget's surface is small but its behaviours are many -- an enablement matrix, a context menu,
+# The widget's surface is small but its behaviors are many -- an enablement matrix, a context menu,
 # ten controls and two bulk ones -- and every one below is a distinct fact about it. One cohesive
 # module reads better than an arbitrary split.
 # pylint: disable=too-many-lines
@@ -444,7 +444,7 @@ def test_every_control_is_disabled_with_nothing_selected(widget: TaskQueueWidget
         (JobState.PAUSED, {"resume", "cancel", "move"}),
         (JobState.DONE, {"clear"}),
         (JobState.FAILED, {"retry", "clear"}),
-        (JobState.CANCELLED, {"retry", "clear"}),
+        (JobState.CANCELED, {"retry", "clear"}),
     ],
 )
 def test_each_state_enables_exactly_the_controls_that_can_act_on_it(
@@ -453,7 +453,7 @@ def test_each_state_enables_exactly_the_controls_that_can_act_on_it(
     """Every control is offered for exactly the states the engine would let it act on.
 
     A **running** job never moves -- it cannot be made to have started later than it did -- and a
-    finished one has no position left to matter. Retry covers only ``failed`` and ``cancelled``:
+    finished one has no position left to matter. Retry covers only ``failed`` and ``canceled``:
     re-running work that succeeded is not what it is for ([[appendices.task-queue#kept]]).
 
     **Test steps:**
@@ -918,24 +918,24 @@ def test_a_sweep_with_nothing_of_its_kind_removes_nothing(widget: TaskQueueWidge
 
 
 def test_clear_all_removes_every_finished_job_and_leaves_the_unfinished(widget: TaskQueueWidget, rig: Rig) -> None:
-    """*Clear all* removes what is finished, however it finished; an unfinished job is not cancelled by it, but left
+    """*Clear all* removes what is finished, however it finished; an unfinished job is not canceled by it, but left
     for Cancel (#634).
 
     **Test steps:**
 
-    * script a done, a failed, a cancelled and a running job
+    * script a done, a failed, a canceled and a running job
     * trigger Clear all
     * verify the engine was asked to remove the three finished ones, and to cancel nothing
     """
     rig.add("done", JobState.DONE)
     rig.add("failed", JobState.FAILED)
-    rig.add("cancelled", JobState.CANCELLED)
+    rig.add("canceled", JobState.CANCELED)
     rig.add("running", JobState.RUNNING)
     rig.settle()
 
     ui_of(widget).clear_all_action.trigger()  # type: ignore[attr-defined]
 
-    rig.queue.remove.assert_called_once_with(*rig.serials("done", "failed", "cancelled"))
+    rig.queue.remove.assert_called_once_with(*rig.serials("done", "failed", "canceled"))
     rig.queue.cancel.assert_not_called()
 
 
@@ -1491,7 +1491,7 @@ def test_a_sub_dock_maximizes_and_a_capture_reads_it_undone(widget: TaskQueueWid
     * show the shell with its Log sub-dock revealed, capture the layout
     * maximize the Log sub-dock through its tab's button
     * verify only that area is open, ``save_state`` still equals the un-maximized capture, and the
-      maximize stands afterwards
+      maximize stands afterward
     """
     widget.resize(800, 600)
     widget.show()

@@ -154,7 +154,7 @@ def test_background_none_is_transparent(qtbot: QtBot) -> None:
 
 
 def test_background_normal_uses_the_window_palette(qtbot: QtBot) -> None:
-    """Switching to ``NORMAL`` fills with the window panel colour.
+    """Switching to ``NORMAL`` fills with the window panel color.
 
     **Test steps:**
 

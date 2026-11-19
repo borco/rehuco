@@ -91,7 +91,7 @@ class StringItemListModel(QAbstractListModel):
     def duplicate(self, at: int) -> int:
         """Insert a copy of ``at`` below it -- the `ItemEditor` contract.
 
-        One insert announcement carrying the copy, rather than a blank insert filled in afterwards: the
+        One insert announcement carrying the copy, rather than a blank insert filled in afterward: the
         row never exists blank, so an `ItemListEditor` never mistakes it for an abandonable insert.
 
         :param at: the row to copy; a negative row is a no-op.

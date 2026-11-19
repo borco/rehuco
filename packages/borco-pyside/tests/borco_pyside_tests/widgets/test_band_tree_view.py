@@ -1,7 +1,7 @@
 """Tests for `BandTreeView`: a selected row's branch area painted as part of its band, its arrow in the band's text
-colour (#572).
+color (#572).
 
-Colours are read back from the painted viewport, under a palette of colours no style paints by accident.
+Colors are read back from the painted viewport, under a palette of colors no style paints by accident.
 """
 
 from typing import Final
@@ -47,11 +47,11 @@ def fixture_view(qtbot: QtBot) -> BandTreeView:
 
 
 def branch_pixels(view: BandTreeView, index: QModelIndex) -> list[QColor]:
-    """The colours of a row's branch area: everything left of its first cell.
+    """The colors of a row's branch area: everything left of its first cell.
 
     :param view: the view.
     :param index: the row.
-    :returns: every pixel's colour.
+    :returns: every pixel's color.
     """
     cell = view.visualRect(index)
     image: QImage = view.viewport().grab().toImage()
@@ -76,12 +76,12 @@ def test_a_selected_rows_branch_area_is_the_highlight_and_an_unselected_ones_is_
     assert HIGHLIGHT not in branch_pixels(view, model.index(1, 0))
 
 
-def test_the_arrow_is_drawn_in_the_text_colour_of_its_row(view: BandTreeView) -> None:
+def test_the_arrow_is_drawn_in_the_text_color_of_its_row(view: BandTreeView) -> None:
     """**Test steps:**
 
     * select the open row
-    * verify its arrow is drawn in the highlighted-text colour and not the text colour
-    * verify the closed, unselected row's arrow is drawn in the text colour
+    * verify its arrow is drawn in the highlighted-text color and not the text color
+    * verify the closed, unselected row's arrow is drawn in the text color
     * verify the plain row has no arrow at all
     """
     model = view.model()
@@ -121,7 +121,7 @@ def hover(view: BandTreeView, index: QModelIndex | None) -> None:
 
 
 def right_edge_pixel(view: BandTreeView, index: QModelIndex) -> QColor:
-    """The colour at the right edge of a row, past its text.
+    """The color at the right edge of a row, past its text.
 
     :param view: the view.
     :param index: the row.
@@ -137,7 +137,7 @@ def test_the_hovered_row_is_one_band_from_edge_to_edge(view: BandTreeView) -> No
     **Test steps:**
 
     * hover the child row, whose branch area is indented
-    * verify its branch area and its far right edge are the hover colour, and another row is not
+    * verify its branch area and its far right edge are the hover color, and another row is not
     * move to another row and verify the first is plain again
     * leave the view, by a hover leave and by a plain leave, and verify no row is hovered
     """
@@ -165,7 +165,7 @@ def test_a_selected_row_under_the_mouse_keeps_its_selection_band(view: BandTreeV
     """**Test steps:**
 
     * select a row and hover it, then hover it again
-    * verify its branch area is the highlight, not the hover colour
+    * verify its branch area is the highlight, not the hover color
     """
     model = view.model()
     view.setCurrentIndex(model.index(0, 0))

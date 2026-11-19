@@ -159,9 +159,9 @@ def test_a_move_out_of_every_root_drops_its_rows(filled: tuple[CatalogCache, Map
 
     **Test steps:**
 
-    * scan a record and its neighbour under the first root
+    * scan a record and its neighbor under the first root
     * apply a pair moving the record to a folder under no root
-    * verify one row went and the neighbour stayed
+    * verify one row went and the neighbor stayed
     """
     cache, first, _ = filled
     cache.apply_root_scan(first.root_id, [record("series/info.rehu"), record("other/info.rehu")])

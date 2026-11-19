@@ -1981,7 +1981,7 @@ def test_a_saved_pattern_change_reinstalls_the_scanner_for_a_legacy_document() -
 
 def test_a_closed_documents_model_stops_following_the_patterns() -> None:
     """The shared settings outlive every document, so the model's subscription to them is severed when
-    the model is destroyed with its dock -- a saved pattern change afterwards must not fire into the
+    the model is destroyed with its dock -- a saved pattern change afterward must not fire into the
     deleted object (the ``ConnectionList`` rationale `Field.bind_external` gives, applied here).
 
     **Test steps:**
@@ -2857,7 +2857,7 @@ def test_a_relocation_moving_the_record_re_points_the_document_once() -> None:
     path = FAKE / "sculpting" / "info.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
     model.title = "Edited"
-    renamed = path.parent.with_name("modelling")
+    renamed = path.parent.with_name("modeling")
     relocation = KeyRelocation.from_local(Relocation(((path.parent, renamed),)))
     paths: list[object] = []
     model.path_changed.connect(paths.append)  # type: ignore[attr-defined]
@@ -2916,7 +2916,7 @@ def test_the_key_follows_the_path_and_is_set_first() -> None:
     path = FAKE / "sculpting" / "info.rehu"
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
     assert model.key == ResourceKey(path)
-    renamed = path.parent.with_name("modelling")
+    renamed = path.parent.with_name("modeling")
     keys_seen: list[object] = []
     model.path_changed.connect(lambda _path: keys_seen.append(model.key))  # type: ignore[attr-defined]
 

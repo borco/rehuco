@@ -78,7 +78,7 @@ def scan_conversion_backups(
         :data:`ConversionBackupsProgress`. Whatever it raises is left to escape, so a caller can unwind
         a long scan from it.
     :param checkpoint: passed to the underlying catalog walk, which calls it once per directory before
-        listing it -- how the walk itself is cancellable before a single record has been read. Whatever
+        listing it -- how the walk itself is cancelable before a single record has been read. Whatever
         it raises is likewise left to escape.
     :returns: the scan; see :class:`ConversionBackupsTreeScan`.
     """

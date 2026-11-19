@@ -41,10 +41,10 @@ class KeySequenceRecorder(QPushButton):
     """A key button: it shows one key sequence, and records a new one when clicked -- up to four chords, Esc
     included.
 
-    Idle, it reads as a push button labelled with :attr:`sequence` (or :data:`EMPTY_TEXT`). A click, or
+    Idle, it reads as a push button labeled with :attr:`sequence` (or :data:`EMPTY_TEXT`). A click, or
     :meth:`start`, begins a recording: pressing keys builds the sequence (a bare modifier press is ignored),
     and it settles -- emits :attr:`recorded` -- once no further chord follows within :data:`SETTLE_DELAY_MS`,
-    or at once on the fourth. Clicking it again or losing focus ends it with :attr:`cancelled`; Esc cannot,
+    or at once on the fourth. Clicking it again or losing focus ends it with :attr:`canceled`; Esc cannot,
     since it is a key a user may want to bind. Either way the button goes back to showing :attr:`sequence`:
     what a recording *means* is its owner's to decide, so a recorded sequence is reported, never adopted.
 
@@ -54,7 +54,7 @@ class KeySequenceRecorder(QPushButton):
     recorded = Signal(QKeySequence)
     """The recording settled on this sequence."""
 
-    cancelled = Signal()
+    canceled = Signal()
     """The recording ended without a sequence."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -101,7 +101,7 @@ class KeySequenceRecorder(QPushButton):
         if not self.__recording:
             return
         self.__finish()
-        self.cancelled.emit()
+        self.canceled.emit()
 
     @override
     def event(self, event: QEvent) -> bool:

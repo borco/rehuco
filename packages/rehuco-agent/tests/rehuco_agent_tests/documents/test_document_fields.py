@@ -462,7 +462,7 @@ def test_a_bare_unresolved_type_is_offered_checked_but_disabled(qtbot: QtBot) ->
 
 def test_a_carried_foreign_block_type_stays_pickable(qtbot: QtBot) -> None:
     """A not-installed type the document *carries* a block for is a resurrection target
-    ([[plugins#plugin-blocks]]'s worked example), so its radio is checked and enabled, not greyed like a
+    ([[plugins#plugin-blocks]]'s worked example), so its radio is checked and enabled, not grayed like a
     bare one (#310).
 
     **Test steps:**
@@ -478,7 +478,7 @@ def test_a_carried_foreign_block_type_stays_pickable(qtbot: QtBot) -> None:
 
 def test_a_type_less_document_shows_its_placeholder_checked_and_plain(qtbot: QtBot) -> None:
     """A brand-new document's empty type is offered as the checked placeholder radio, enabled -- it is
-    the document's starting point, not a missing plugin, so it is not greyed (#310).
+    the document's starting point, not a missing plugin, so it is not grayed (#310).
 
     **Test steps:**
 
@@ -495,7 +495,7 @@ def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot:
     """After a switch, a claimed-then-abandoned inactive block reads as will-drop-on-save while a
     never-claimed foreign block reads as carried ([[plugins#plugin-blocks]]'s steps 1 vs 4, #83).
 
-    This is the "visually distinguish former-identity from foreign" the slice honours: the abandoned
+    This is the "visually distinguish former-identity from foreign" the slice honors: the abandoned
     block's provenance warns it will be deleted, the foreign block's says it is kept.
 
     **Test steps:**
@@ -967,7 +967,7 @@ def test_a_probe_that_cannot_run_computes_nothing_rather_than_zero(qtbot: QtBot,
 
 def test_a_resource_that_will_not_read_computes_no_duration_either(qtbot: QtBot, mocker: MockerFixture) -> None:
     """The same refusal reaches the duration pair through the same walk, and reads the same way here: a
-    runtime totalled over the branches that answered is not this tutorial's (#245).
+    runtime totaled over the branches that answered is not this tutorial's (#245).
 
     **Test steps:**
 

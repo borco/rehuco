@@ -59,7 +59,7 @@ def painter(qapp: Any) -> Any:
     """A painter over an off-screen pixmap -- the delegate needs a live one to be handed along.
 
     Takes ``qapp`` because a ``QPixmap`` cannot exist without a ``QGuiApplication``, and ends the
-    painter afterwards rather than leaving one active on a pixmap about to be collected.
+    painter afterward rather than leaving one active on a pixmap about to be collected.
     """
     del qapp
     pixmap = QPixmap(CELL.size())
@@ -91,7 +91,7 @@ def test_draws_the_cells_own_display_text(painter: QPainter, mocker: MockerFixtu
 
     **Test steps:**
 
-    * paint a row labelled ``"convert"``
+    * paint a row labeled ``"convert"``
     * verify that text was drawn
     """
     drawn = mocker.patch.object(QPainter, "drawText")
@@ -137,7 +137,7 @@ def test_leaves_the_painter_as_it_found_it(painter: QPainter) -> None:
 
     **Test steps:**
 
-    * note the painter's pen colour, paint a selected row, and note it again
+    * note the painter's pen color, paint a selected row, and note it again
     * assert the pen came back unchanged
     """
     option = QStyleOptionViewItem()

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 
 
 class VideoStill(QWidget):
-    """Draws one frame of a video, as large as fits and centred, on black -- what the player shows for a video that is
+    """Draws one frame of a video, as large as fits and centered, on black -- what the player shows for a video that is
     loaded but not playing, so that it holds no file ([[plugins#in-app-player]]).
 
     Takes the room it is given and asks for none: its size follows nothing, so a large frame cannot widen the dock.

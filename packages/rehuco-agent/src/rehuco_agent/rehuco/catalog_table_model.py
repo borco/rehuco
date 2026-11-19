@@ -286,7 +286,7 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         self.__declares_count: dict[str, bool] = {}
         self.__tally = _Tally()
         self.__offline: dict[UUID, str] = {}
-        """Why each root that cannot be reached cannot, by its id: its rows are greyed and say so (#511)."""
+        """Why each root that cannot be reached cannot, by its id: its rows are grayed and say so (#511)."""
         self.__servers: dict[UUID, str] = {}
         """The server each root's files are on, by its id: what the Server column shows (#627)."""
 
@@ -349,7 +349,7 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
                 self.__insert(new)
 
     def set_offline_roots(self, offline: Mapping[UUID, str]) -> None:
-        """Grey the rows of the roots that cannot be reached, each saying why when hovered (#511).
+        """Gray the rows of the roots that cannot be reached, each saying why when hovered (#511).
 
         :param offline: why each such root cannot be reached, by its id; every other root's rows are drawn as usual.
         """

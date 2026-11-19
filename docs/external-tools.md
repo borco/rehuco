@@ -1,6 +1,6 @@
 # External Tools
 
-Some programs rehuco can use do not ship with it: they are large, or their licence is one an installer of ours
+Some programs rehuco can use do not ship with it: they are large, or their license is one an installer of ours
 should not carry. You install them yourself and point the app at them. This page says where each one comes from.
 
 ## FFmpeg, for video durations {#ffmpeg}

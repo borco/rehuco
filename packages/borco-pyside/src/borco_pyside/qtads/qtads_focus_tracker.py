@@ -49,10 +49,10 @@ class QtAdsFocusTracker(QObject):  # pylint: disable=too-many-instance-attribute
     of the rules for the whole nest rather than one per level.
     This is the ``FocusHighlighting``-free equivalent of QtAds' own ``focused`` property styling.
     Also renders every tab's close button as :data:`DEFAULT_CLOSE_GLYPH`'s text (not an icon) so the
-    same stylesheet can recolour it to stay legible against the current tab's highlight.
+    same stylesheet can recolor it to stay legible against the current tab's highlight.
     Theme switches are survived by the tracker itself: QtAds *replaces* a manager's stylesheet on a
     palette flip (ADS 5.0 re-runs its own ``loadStylesheet()``), which would drop the appended block
-    -- so the tracker pins the manager's colour-scheme mode and re-applies everything on
+    -- so the tracker pins the manager's color-scheme mode and re-applies everything on
     :class:`~borco_pyside.theming.ApplicationPaletteChangeNotifier`'s ``palette_changed`` signal
     (#227, and see :meth:`__apply_stylesheet`).
 
@@ -60,9 +60,9 @@ class QtAdsFocusTracker(QObject):  # pylint: disable=too-many-instance-attribute
     alone is enough, with nothing to hold onto: Qt destroys it along with ``dock_manager``.
 
     :param dock_manager: the dock manager whose docks to track.
-    :param highlight: current dock's tab fill/border colour (see :meth:`tracked_focus_dock_stylesheet`).
-    :param label: current dock's tab label colour (see :meth:`tracked_focus_dock_stylesheet`).
-    :param title_bar: current dock's area title-bar accent colour (see
+    :param highlight: current dock's tab fill/border color (see :meth:`tracked_focus_dock_stylesheet`).
+    :param label: current dock's tab label color (see :meth:`tracked_focus_dock_stylesheet`).
+    :param title_bar: current dock's area title-bar accent color (see
         :meth:`tracked_focus_dock_stylesheet`).
     :param close_glyph: the :class:`~borco_pyside.theming.Glyph` (codepoint + font family) drawn as
         each tab close button. Defaults to :data:`DEFAULT_CLOSE_GLYPH` -- the plain Unicode ``✕`` in
@@ -88,8 +88,8 @@ class QtAdsFocusTracker(QObject):  # pylint: disable=too-many-instance-attribute
     DEFAULT_CLOSE_GLYPH: Final = Glyph("✕")
     """Default glyph shown as each tab close button's text instead of its icon: the plain Unicode
     ``✕`` (U+2715 MULTIPLICATION X), in the inherited UI font (empty :attr:`~Glyph.family`) so it
-    needs no icon font loaded. Text (not an icon) so its colour follows QSS ``color:`` -- normally the
-    tab's own foreground, and :meth:`label`'s colour on the current tab -- letting it stay legible
+    needs no icon font loaded. Text (not an icon) so its color follows QSS ``color:`` -- normally the
+    tab's own foreground, and :meth:`label`'s color on the current tab -- letting it stay legible
     against the current tab's highlighted background. A QtAds close button's icon is a fixed ``url()``
     SVG that ``color:`` cannot tint, and the style's fallback icon only recolors under some styles
     (not the native Windows one); text works everywhere. A consumer with an icon font can pass a
@@ -195,7 +195,7 @@ class QtAdsFocusTracker(QObject):  # pylint: disable=too-many-instance-attribute
         """Build the QSS styling whichever dock currently carries :data:`TRACKED_FOCUS_PROPERTY`.
 
         Mirrors QtAds' own ``FocusHighlighting`` reference styling, but off this tracker's custom
-        property rather than QtAds' ``focused`` one. Each colour is a QSS colour expression -- a
+        property rather than QtAds' ``focused`` one. Each color is a QSS color expression -- a
         ``palette(role)`` reference (theme-aware on each re-apply) or a literal ``#rrggbb``/``rgb(...)``.
 
         Also carries a plain ``#tabCloseButton`` rule zeroing every tab close button's icon size, so
@@ -203,13 +203,13 @@ class QtAdsFocusTracker(QObject):  # pylint: disable=too-many-instance-attribute
         (not just Python) because QtAds re-polishes the button on every tab activation, which would
         otherwise re-apply its 16px icon size -- the rule re-applies 0 on each such repolish instead.
 
-        :param highlight: fill/border colour of the current dock's tab. Default ``palette(highlight)``.
-        :param label: text colour of the current dock's tab label, its close button (drawn as
+        :param highlight: fill/border color of the current dock's tab. Default ``palette(highlight)``.
+        :param label: text color of the current dock's tab label, its close button (drawn as
             :data:`DEFAULT_CLOSE_GLYPH`'s text, not an icon, so this recolors it) and the
             ``#tabMaximizeButton`` a `QtAdsMaximizeHandler` draws the same way beside it. Default
             ``palette(highlighted-text)`` -- the role guaranteed to contrast ``highlight`` in both
             light and dark themes.
-        :param title_bar: colour of the accent line just below the title bar (drawn as the current
+        :param title_bar: color of the accent line just below the title bar (drawn as the current
             dock's top border). Default ``palette(highlight)``.
         :returns: a QSS string, ready for ``setStyleSheet`` (or appended to an existing one).
         """
@@ -252,7 +252,7 @@ ads--CDockWidget[{prop}="true"] {{
         ``CDockManager::eventFilter`` on an ``ApplicationPaletteChange``, swapping in its light or
         dark sheet -- so a theme switch takes the highlight rule and the close button's
         ``qproperty-iconSize: 0px`` with it, leaving no tab marked current and every tab showing
-        QtAds' own 16px close icon *and* the glyph drawn as text (#227). Re-appending afterwards
+        QtAds' own 16px close icon *and* the glyph drawn as text (#227). Re-appending afterward
         cannot be timed against that: Qt fires several palette events per switch and QtAds reloads
         off a later one than a coalescing notifier sees.
 
@@ -316,7 +316,7 @@ ads--CDockWidget[{prop}="true"] {{
         return "".join(rules)
 
     def __on_palette_changed(self) -> None:
-        """Re-pin the colour scheme to the new palette, and put this tracker's marks back on top.
+        """Re-pin the color scheme to the new palette, and put this tracker's marks back on top.
 
         Re-pinning is what swaps QtAds' light sheet for its dark one (and back): pinned, it no longer
         does that itself (:meth:`__apply_stylesheet`). The reload that follows is a full replacement,
@@ -374,7 +374,7 @@ ads--CDockWidget[{prop}="true"] {{
         current dock moves current to another still-visible one (or nothing, if none remain), so the
         remaining surface takes focus rather than the hidden one keeping it. Skipped while the
         manager is restoring state -- ``restoreState`` fires ``viewToggled`` for every reconstructed
-        dock, and :meth:`restore_state` re-selects the saved current dock explicitly afterwards.
+        dock, and :meth:`restore_state` re-selects the saved current dock explicitly afterward.
 
         :param dock: the dock whose visibility just changed.
         :param visible: the dock's new visibility.
@@ -385,7 +385,7 @@ ads--CDockWidget[{prop}="true"] {{
             self.set_current_dock(dock)
         elif dock is self.__current_dock:
             # Reached only when hiding the current dock did *not* move Qt focus into another tracked
-            # dock -- if it had, ``focusChanged`` would already have re-selected that real neighbour
+            # dock -- if it had, ``focusChanged`` would already have re-selected that real neighbor
             # (Qt moves focus synchronously, before this fires). So nothing tracked is focused now;
             # clear rather than fabricate a current dock no real focus points at.
             self.__set_current_dock(None)
@@ -413,7 +413,7 @@ ads--CDockWidget[{prop}="true"] {{
 
         Also re-runs :meth:`__style_close_button` on every tracked dock. Not because the buttons are
         new: ``restoreState`` rebuilds each affected *area* (see the class docstring), not the tabs
-        within it -- a dock's tab label, tab widget and close button are the same objects afterwards,
+        within it -- a dock's tab label, tab widget and close button are the same objects afterward,
         reparented rather than recreated, which is also why the label's ``clicked`` connection made
         in :meth:`__on_dock_widget_added` survives a restore. Measured offscreen (manager shown and
         unshown, lone and tabbed docks, #183): the button's zero icon size, glyph text, font and
@@ -554,7 +554,7 @@ ads--CDockWidget[{prop}="true"] {{
         """Render ``dock``'s tab close button as the close glyph's text rather than an icon.
 
         Shows the close glyph as text and hides QtAds' own close icon by zeroing the button's icon
-        size (rather than clearing the icon, which QtAds re-sets) -- so QSS ``color:`` recolours it,
+        size (rather than clearing the icon, which QtAds re-sets) -- so QSS ``color:`` recolors it,
         see :data:`DEFAULT_CLOSE_GLYPH`. An empty glyph family keeps the button's inherited UI font
         (right for a plain Unicode symbol). Called (deferred) on ``dockWidgetAdded``, where QtAds's
         own setup would overwrite an eager restyle, and again after a layout restore and a palette

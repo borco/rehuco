@@ -355,7 +355,7 @@ class MoveRecordJob(TaskJobBase):
             self.__keep_partial = keep
 
     def discard_partial(self) -> None:
-        """Take the copy back on a thread of its own: this job failed or was cancelled with its copy kept, and its row
+        """Take the copy back on a thread of its own: this job failed or was canceled with its copy kept, and its row
         is being cleared."""
         threading.Thread(target=self.__undo_copy, name="move-undo", daemon=True).start()
 
@@ -395,7 +395,7 @@ class MoveRecordJob(TaskJobBase):
 
     def abandon(self) -> None:
         """Take the copy back -- or, past that point, finish removing the original -- on a thread of its own: the
-        queue cancelled or removed this job while it was not running, and will never run it again
+        queue canceled or removed this job while it was not running, and will never run it again
         (:class:`~rehuco_core.tasks.AbandonableTaskJob`)."""
         threading.Thread(target=self.__give_up, name="move-undo", daemon=True).start()
 
@@ -437,7 +437,7 @@ class MoveRecordJob(TaskJobBase):
             holds its lock, or a reader did not let go of it in time.
         :raises VerifiedCopyError: with both ends answering, the record cannot be checked or holds a link, the original
             did not verify, or the copy did not; a copy's files are removed on the way out.
-        :raises JobCancelled: cancelled; a copy's files are removed on the way out, unless asked to be kept.
+        :raises JobCanceled: canceled; a copy's files are removed on the way out, unless asked to be kept.
         :raises OSError: with both ends answering, a file could not be read, written, renamed or removed.
         """
         refused = False
@@ -459,9 +459,9 @@ class MoveRecordJob(TaskJobBase):
             raise
         finally:
             with self.__state_lock:
-                cancelled, keep = self.__cancel_asked, self.__keep_partial
+                canceled, keep = self.__cancel_asked, self.__keep_partial
             # however the run ended: a cancel that arrived while it was already unwinding for a pause is still a cancel
-            if refused or (cancelled and not keep):
+            if refused or (canceled and not keep):
                 self.__undo_copy()
 
     def __run_phase(self, control: JobControl) -> None:
@@ -656,18 +656,16 @@ class MoveRecordJob(TaskJobBase):
             self.__outcome = JobOutcome(f"Moved to {destination}")
 
     def __undo_copy(self) -> None:
-        """Remove what a cancelled or refused copy wrote, while the original is still whole; log what would not go.
+        """Remove what a canceled or refused copy wrote, while the original is still whole; log what would not go.
 
-        Runs at the end of a cancelled or refused run, or on a thread of its own for a job given up on while idle.
+        Runs at the end of a canceled or refused run, or on a thread of its own for a job given up on while idle.
         """
         with self.__working:
             if not self.__holds_a_copy():
                 return
             path, destination = self.source, self.destination
             if path is None or destination is None:
-                LOG.warning(
-                    "%s: a root is not mapped here, so the cancelled move's copy was left in place.", self.label
-                )
+                LOG.warning("%s: a root is not mapped here, so the canceled move's copy was left in place.", self.label)
                 return
             if self.__offline_end((DESTINATION_SIDE,)) is not None:
                 # kept, so whoever clears the row later can still have it removed
@@ -676,7 +674,7 @@ class MoveRecordJob(TaskJobBase):
                 )
                 return
             for line in self.__copy(destination).remove_copy(self.journal):
-                LOG.warning("Could not remove %s from a cancelled move's copy.", line)
+                LOG.warning("Could not remove %s from a canceled move's copy.", line)
             self.journal = CopyJournal()
 
     def __wait_if_offline(self, error: OSError) -> None:

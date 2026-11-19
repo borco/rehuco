@@ -8,7 +8,7 @@ The engine's use of it is :mod:`test_task_queue`.
 
 import pytest
 from pytest import fixture, mark
-from rehuco_core import JobCancelled, JobControl, JobPaused, StopRequest, TaskJobBase
+from rehuco_core import JobCanceled, JobControl, JobPaused, StopRequest, TaskJobBase
 
 # region Sample classes
 
@@ -75,7 +75,7 @@ def test_a_job_with_nothing_asked_of_it_runs_through(job: CountingJob) -> None:
 
 @mark.parametrize(
     ("ask", "expected"),
-    [("pause", JobPaused), ("cancel", JobCancelled)],
+    [("pause", JobPaused), ("cancel", JobCanceled)],
 )
 def test_a_pending_request_unwinds_the_job_at_its_next_checkpoint(
     job: CountingJob, ask: str, expected: type[Exception]
@@ -101,7 +101,7 @@ def test_the_latest_instruction_replaces_the_one_before_it(job: CountingJob) -> 
     **Test steps:**
 
     * ask for a cancel, then ask for a pause
-    * run the job and verify it paused rather than cancelled
+    * run the job and verify it paused rather than canceled
     """
     job.cancel()
     job.pause()
@@ -168,7 +168,7 @@ def test_a_request_the_job_has_acted_on_cannot_be_taken_back(job: CountingJob) -
     assert not job.resume()
 
 
-def test_reading_the_request_is_an_acknowledgement(job: CountingJob) -> None:
+def test_reading_the_request_is_an_acknowledgment(job: CountingJob) -> None:
     """A job that looks in order to tidy up has been told, and the engine can no longer promise that
     nothing has begun -- so looking costs the retraction.
 
@@ -228,7 +228,7 @@ def test_reset_drops_a_request_nobody_asked_of_the_retried_job(job: CountingJob)
     * verify it ran through
     """
     job.cancel()
-    with pytest.raises(JobCancelled):
+    with pytest.raises(JobCanceled):
         job.run(NoControl())
 
     job.reset()

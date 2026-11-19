@@ -83,7 +83,7 @@ FOLDER: Final = (
     DirectoryEntry("sub", FileKind.DIRECTORY, FileType.DIRECTORY),
 )
 """One resource's folder as core would classify it: its own record and sidecars, a retained backup,
-content of four types -- one of which no record entry covers -- a junk name, a neighbour with its own
+content of four types -- one of which no record entry covers -- a junk name, a neighbor with its own
 sidecar and content, and a subfolder."""
 
 
@@ -295,7 +295,7 @@ def test_the_folders_of_another_resources_directory_are_refused(mocker: MockerFi
     assert found["info.rehu"].enabled
 
 
-def test_file_scoped_neighbours_alone_do_not_refuse_the_folders(mocker: MockerFixture) -> None:
+def test_file_scoped_neighbors_alone_do_not_refuse_the_folders(mocker: MockerFixture) -> None:
     """Only a directory-scoped record covers the ground a folder sits on: a listing full of
     ``foo.rehu``/``bar.rehu`` and no ``info.rehu`` reports nothing foreign, so the subfolder rows stay
     interactive (#254).
@@ -637,7 +637,7 @@ def test_a_folder_that_will_not_list_is_unreachable_rather_than_empty(mocker: Mo
 
 
 def test_the_root_is_reported_as_the_root(mocker: MockerFixture) -> None:
-    """What hides the parent row and greys the up action.
+    """What hides the parent row and grays the up action.
 
     **Test steps:**
 
@@ -899,7 +899,7 @@ def test_the_checksum_column_draws_no_text(mocker: MockerFixture) -> None:
 
 
 def test_the_checksum_cell_explains_its_glyph_on_hover(mocker: MockerFixture) -> None:
-    """What an icon-only column owes a reader who has not learnt the glyphs yet; every other column's
+    """What an icon-only column owes a reader who has not learned the glyphs yet; every other column's
     tooltip is the file's full path.
 
     **Test steps:**

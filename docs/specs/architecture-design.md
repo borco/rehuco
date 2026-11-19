@@ -29,7 +29,7 @@ The user has a large, heterogeneous personal media collection, kept on a NAS and
 
 - Local video tutorials (flat or nested folder structures)
 - Online tutorials (YouTube and other resources, sometimes mixed with local files)
-- Udemy course registrations (large, poorly catalogued, mixed quality)
+- Udemy course registrations (large, poorly cataloged, mixed quality)
 - Zip archives of reference images, Daz3D plugins, and 3D objects
 - Likely more categories over time
 

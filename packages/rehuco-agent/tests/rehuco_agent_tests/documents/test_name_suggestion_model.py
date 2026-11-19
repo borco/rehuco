@@ -166,7 +166,7 @@ def test_changed_does_not_fire_for_unrelated_fields(
 
 
 def test_suggestions_follow_the_document_type_pattern_list(model: RehuDocumentModel) -> None:
-    """A recognised type reads its own list from `LocationTemplatesSettings`, not another type's (#322).
+    """A recognized type reads its own list from `LocationTemplatesSettings`, not another type's (#322).
 
     **Test steps:**
 
@@ -181,7 +181,7 @@ def test_suggestions_follow_the_document_type_pattern_list(model: RehuDocumentMo
     assert NameSuggestionModel(model).suggestions() == ["Bar - Foo", "Foo"]
 
 
-def test_suggestions_fall_back_to_the_tutorial_list_for_an_unrecognised_type(model: RehuDocumentModel) -> None:
+def test_suggestions_fall_back_to_the_tutorial_list_for_an_unrecognized_type(model: RehuDocumentModel) -> None:
     """A foreign/uninstalled type falls back to the tutorial list (#322).
 
     **Test steps:**

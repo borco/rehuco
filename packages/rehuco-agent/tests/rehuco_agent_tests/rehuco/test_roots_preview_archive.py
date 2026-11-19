@@ -78,11 +78,11 @@ def wait_for_archive(qtbot: QtBot, shown: Shown) -> dict[str, str]:
 
 
 def ink(shown: Shown, name: str) -> QColor:
-    """The colour a label of the preview is drawn in.
+    """The color a label of the preview is drawn in.
 
     :param shown: the preview.
     :param name: the label's object name.
-    :returns: its window-text colour.
+    :returns: its window-text color.
     """
     label = shown.preview.findChild(QLabel, name)
     assert label is not None

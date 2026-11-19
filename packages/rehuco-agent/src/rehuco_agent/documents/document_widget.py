@@ -83,7 +83,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     The same ``DocumentWidget`` -> ``DocumentsDock`` -> ``MainWindow`` hop :attr:`status_message` makes,
     and for the same reason: opening a resource is the window's act -- it resolves the path, reveals the
     documents area and remembers the file in ``Open recents`` -- so a sub-dock three managers down
-    reports rather than reaches. Typed as plain ``object`` (Python-object marshalling) for the reason
+    reports rather than reaches. Typed as plain ``object`` (Python-object marshaling) for the reason
     ``DocumentsDock``'s own object-typed signals document."""
 
     # what an open document's window is lent: the model, its parent, the styling host and the window's three services

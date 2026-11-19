@@ -77,7 +77,7 @@ def test_the_library_is_loaded_from_the_tools_pages_vlc_once(tools: Mock, load: 
 
 
 def test_no_vlc_is_unavailable_with_the_tools_pages_reason_and_tried_again(tools: Mock, load: Mock) -> None:
-    """A load that failed is not kept: a VLC set up afterwards is taken at the next player.
+    """A load that failed is not kept: a VLC set up afterward is taken at the next player.
 
     **Test steps:**
 

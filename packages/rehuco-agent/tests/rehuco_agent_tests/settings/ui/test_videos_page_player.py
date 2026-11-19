@@ -114,7 +114,7 @@ def test_the_vlc_choice_is_offered_only_once_vlc_is_usable(qtbot: QtBot, fake_to
 
 
 def test_a_selected_vlc_stays_selected_when_it_goes_missing(qtbot: QtBot) -> None:
-    """A choice made while VLC worked stays, and says why it cannot be honoured.
+    """A choice made while VLC worked stays, and says why it cannot be honored.
 
     **Test steps:**
 
@@ -339,7 +339,7 @@ def test_the_libraries_choice_checks_its_own_tool(qtbot: QtBot, fake_tool_locato
 
 
 @mark.usefixtures("with_libraries")
-def test_a_selected_libraries_choice_stays_selected_and_says_why_it_cannot_be_honoured(qtbot: QtBot) -> None:
+def test_a_selected_libraries_choice_stays_selected_and_says_why_it_cannot_be_honored(qtbot: QtBot) -> None:
     """**Test steps:**
 
     * save the libraries as the player, build the page and check with none to be found

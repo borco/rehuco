@@ -1,5 +1,5 @@
 """Tests for the browsers' rows read off the GUI thread (#455): one read at a time, the rest merged, a superseded or
-cancelled answer dropped, and the collector paused while rows are built.
+canceled answer dropped, and the collector paused while rows are built.
 
 Every read here is a :class:`GatedReader`: a test that needs a read to be out holds its gate shut and waits for the
 read to enter, rather than hoping a sleep is long enough.
@@ -272,7 +272,7 @@ def test_an_update_naming_no_rows_reads_nothing(loader: CatalogRowsLoader, reade
     assert not reader.calls
 
 
-def test_a_cancelled_read_delivers_nothing_and_leaves_no_thread_running(
+def test_a_canceled_read_delivers_nothing_and_leaves_no_thread_running(
     qtbot: QtBot, loader: CatalogRowsLoader, reader: GatedReader, loads: list[CatalogRowsLoad]
 ) -> None:
     """A catalog closed while its read is out forgets it: the answer is dropped, what waited never starts, and the

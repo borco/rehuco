@@ -1,4 +1,4 @@
-"""Tests for the Roots view's handling of a root this machine does not map (#514): it is listed greyed with *Map...* in
+"""Tests for the Roots view's handling of a root this machine does not map (#514): it is listed grayed with *Map...* in
 its menu, which asks for a folder and maps it; removing it and adding a root report in terms of the location.
 
 The panel runs over the mock catalog of ``test_catalog_docks``, with the ``.rehuco`` served and its writes captured.
@@ -66,14 +66,14 @@ def fixture_away_dock(dock: CatalogDocks, served: dict[str, Any], saves: MagicMo
     return dock
 
 
-def test_an_unmapped_root_is_listed_greyed_and_offers_map_where_a_mapped_one_does_not(away_dock: CatalogDocks) -> None:
+def test_an_unmapped_root_is_listed_grayed_and_offers_map_where_a_mapped_one_does_not(away_dock: CatalogDocks) -> None:
     """The view lists every root of the file; the one this machine cannot find says so, and only its menu and the
     Map action are for it.
 
     **Test steps:**
 
     * open a file with a third, unmapped root, and read the view
-    * verify the rows in the file's order, the third greyed with its one row, and its menu offering Map where the
+    * verify the rows in the file's order, the third grayed with its one row, and its menu offering Map where the
       others' do not
     * select each kind of root and verify the Map action is enabled only for the unmapped one
     """
@@ -81,7 +81,7 @@ def test_an_unmapped_root_is_listed_greyed_and_offers_map_where_a_mapped_one_doe
     model = roots.roots_model
     assert [model.index(row, 0).data() for row in range(model.rowCount())] == ["tutorials", "packs", "away"]
     away = model.index(2, 0)
-    assert away.data(RootsFolderModel.GREYED_ROLE) is True
+    assert away.data(RootsFolderModel.GRAYED_ROLE) is True
     assert model.index(0, 0, away).data() == NOT_MAPPED_ROW
     assert roots.map_root_action in roots.roots_context_actions(away)
     assert roots.map_root_action not in roots.roots_context_actions(model.index(0, 0))
@@ -116,7 +116,7 @@ def test_scan_root_is_enabled_for_a_mapped_root_only(mocker: MockerFixture, away
 
 
 def test_map_asks_for_the_folder_and_maps_the_root(mocker: MockerFixture, away_dock: CatalogDocks) -> None:
-    """The folder asked for becomes the root's folder here: the row is no longer greyed, and the file is not written.
+    """The folder asked for becomes the root's folder here: the row is no longer grayed, and the file is not written.
 
     **Test steps:**
 
@@ -134,16 +134,16 @@ def test_map_asks_for_the_folder_and_maps_the_root(mocker: MockerFixture, away_d
     assert isinstance(asked, RehucoRoot)
     assert asked.root_id == AWAY_ID
     assert away_dock.catalog.root_paths()[AWAY_ID] == folder
-    assert roots.roots_model.index(2, 0).data(RootsFolderModel.GREYED_ROLE) is False
+    assert roots.roots_model.index(2, 0).data(RootsFolderModel.GRAYED_ROLE) is False
     assert not roots.map_root_action.isEnabled()
 
 
-def test_cancelling_the_folder_question_maps_nothing(mocker: MockerFixture, away_dock: CatalogDocks) -> None:
-    """A cancelled question leaves the root as it was, without a word.
+def test_canceling_the_folder_question_maps_nothing(mocker: MockerFixture, away_dock: CatalogDocks) -> None:
+    """A canceled question leaves the root as it was, without a word.
 
     **Test steps:**
 
-    * select the unmapped root and trigger Map, cancelling
+    * select the unmapped root and trigger Map, canceling
     * verify nothing was mapped and no warning shown
     """
     warning = mocker.patch(WARNING)
@@ -201,7 +201,7 @@ def test_the_map_slot_refuses_a_row_that_is_not_an_unmapped_root(
 def test_the_real_folder_question_returns_the_folder_picked(
     mocker: MockerFixture, away_dock: CatalogDocks, picked: str, expected: Path | None
 ) -> None:
-    """The system's folder dialog is the question, titled with the root's name; cancelling answers nothing.
+    """The system's folder dialog is the question, titled with the root's name; canceling answers nothing.
 
     **Test steps:**
 

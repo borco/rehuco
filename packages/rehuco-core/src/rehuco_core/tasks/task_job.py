@@ -73,11 +73,11 @@ class JobState(StrEnum):
     starts the next job ([[appendices.task-queue#failure]]). Kept rather than swept, because a failure
     is usually retryable -- see :meth:`~rehuco_core.tasks.TaskQueue.retry`."""
 
-    CANCELLED = "cancelled"
+    CANCELED = "canceled"
     """Stopped on request -- either before it ever ran, or by the job obeying one."""
 
 
-FINISHED_JOB_STATES: Final = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED})
+FINISHED_JOB_STATES: Final = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELED})
 """The states a job never leaves on its own.
 
 What :meth:`~rehuco_core.tasks.TaskQueue.retry` acts on and what everything else refuses to act on.
@@ -89,7 +89,7 @@ class StopRequest(StrEnum):
     """What a job has been asked to do about stopping ([[appendices.task-queue#pause-concept]]).
 
     **One slot, not two flags.** A job is asked for at most one thing at a time and the latest
-    instruction replaces the one before it, so asking a cancelling job to pause *downgrades* the
+    instruction replaces the one before it, so asking a canceling job to pause *downgrades* the
     request rather than leaving two contradictory ones for a checkpoint to arbitrate. Two independent
     booleans could express "cancel and pause", which is not a state anybody can act on and not a
     state any surface can draw.
@@ -120,13 +120,13 @@ A job that knows the one resource it would hammer -- a save knows its server -- 
 a family it registered (:class:`~rehuco_core.tasks.ChainRegistry`)."""
 
 
-class JobCancelled(Exception):
+class JobCanceled(Exception):
     """Raised out of a job to report that it obeyed a cancel.
 
     An exception rather than a return value: a job is a call stack several frames deep when it
     notices, and every frame between would otherwise need a "and if it said stop, stop" branch. The
-    engine catches it and records :attr:`JobState.CANCELLED`, so a job may let it escape -- and must
-    not swallow it, since a caught-and-ignored cancellation is a job that cannot be stopped at all.
+    engine catches it and records :attr:`JobState.CANCELED`, so a job may let it escape -- and must
+    not swallow it, since a caught-and-ignored cancelation is a job that cannot be stopped at all.
     """
 
 
@@ -151,7 +151,7 @@ class JobWaiting(Exception):
 class JobPaused(Exception):
     """Raised out of a job to report that it obeyed a pause.
 
-    The same shape as :class:`JobCancelled`, for the same reason, differing only in what the engine
+    The same shape as :class:`JobCanceled`, for the same reason, differing only in what the engine
     records: :attr:`JobState.PAUSED`, which is resumable rather than terminal.
 
     **Pausing returns rather than parks** ([[appendices.task-queue#cursor]]). A paused job's ``run``
@@ -318,7 +318,7 @@ class TaskJob(Protocol):
         [[appendices.task-queue#scopes]]).
 
         :param control: the engine's face to this job.
-        :raises JobCancelled: to report that it obeyed a cancel; the engine catches it.
+        :raises JobCanceled: to report that it obeyed a cancel; the engine catches it.
         :raises JobPaused: to report that it obeyed a pause; likewise.
         """
 
@@ -411,7 +411,7 @@ class AbandonableTaskJob(TaskJob, Protocol):
     """
 
     def abandon(self) -> None:
-        """Hear that the engine cancelled or removed this job while it was not running -- queued, paused or waiting
+        """Hear that the engine canceled or removed this job while it was not running -- queued, paused or waiting
         -- so it will never run again unless retried.
 
         Called on whichever thread asked, with the queue's lock held: return at once, and do the taking back
@@ -439,7 +439,7 @@ class PartialOutputJob(TaskJob, Protocol):
         """
 
     def discard_partial(self) -> None:
-        """Remove the partial output of a job that will not run again -- a failed or cancelled row being cleared --
+        """Remove the partial output of a job that will not run again -- a failed or canceled row being cleared --
         on a thread of its own; returns at once."""
 
 

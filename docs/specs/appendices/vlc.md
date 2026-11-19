@@ -9,7 +9,7 @@
 What was measured of the user's VLC 3.0.23 on Windows 11, for #319 ([[plugins#in-app-player]]). Two uses were
 measured, and one of them was dropped:
 
-- **libvlc in the player dock, through python-vlc** (section 5): what ships. python-vlc's import behaviour, the
+- **libvlc in the player dock, through python-vlc** (section 5): what ships. python-vlc's import behavior, the
   events and their threads, the snapshot that serves the paused still, what holds a file, and replaying after the end.
 - **VLC launched as a process of its own and followed over its RC interface** (sections 1–4): built in #319 and
   removed in the same issue, once it was clear a separate window could carry none of the player's overlays. Kept
@@ -37,7 +37,7 @@ vlc --no-one-instance --no-playlist-enqueue --qt-continue=0 --no-loop --no-repea
 - **`--rc-quiet`** is a Windows option (*Do not open a DOS command box interface*); it is passed only there.
 - **The playlist** is UTF-8 `.m3u8`: `#EXTM3U`, then per entry `#EXTVLCOPT:start-time=<seconds>` and the file's URI
   (`Path.as_uri()`, which escapes `#` and spaces and spells a UNC path as `file://server/share/...`). The start time
-  is honoured: an entry given `2.5` reported `get_time` 3 a second and a half after `goto`.
+  is honored: an entry given `2.5` reported `get_time` 3 a second and a half after `goto`.
 - **Cold start.** The RC port opened **12 s** after the launch on the first run, while VLC rebuilt its plugin cache,
   and **0.27 s** on later ones. Waiting for it has to be generous (30 s, as `VlcTool` allows the version read).
 
@@ -123,9 +123,9 @@ with the `new input` line twice in one answer.
 (`urllib.parse.unquote`, `url2pathname`) and comparing the paths, case-folded on Windows. A UNC path was not measured;
 the same decoding spells `file://server/share/x` as `//server/share/x`.
 
-## 4. Behaviours worth knowing
+## 4. Behaviors worth knowing
 
-[[[appendices.vlc#behaviours]]]
+[[[appendices.vlc#behaviors]]]
 
 - **An entry ending moves on by itself**, and the poll sees the next input. The last position seen of the entry left is
   within one poll interval of its length, which is why reaching the end is judged with a tolerance, as the in-app

@@ -67,7 +67,7 @@ def recolored_svg_icon(
     renders in ``color``.
 
     Pass ``disabled_color`` for a distinct **disabled** (``QIcon.Mode.Disabled``) variant. This is not
-    optional in practice for a *custom* icon engine: Qt's usual "auto-grey a disabled icon" fallback
+    optional in practice for a *custom* icon engine: Qt's usual "auto-gray a disabled icon" fallback
     (``QStyle.generatedIconPixmap``) only applies to the default pixmap-based engine, which stores a
     fixed set of mode/state pixmaps and falls back to that generator for a mode it wasn't given.
     :class:`RecoloredSvgIconEngine` renders every request instead of storing pixmaps, so it is fully

@@ -29,7 +29,7 @@ class RootLayoutsEditor(QWidget):
     or typed, the template picked from ``*`` and the Root Layout Templates the type accepts, or typed -- and the
     **fallbacks**, a text per placeholder, one fixed row for each placeholder a template may use (#637).
 
-    **A template invalid for its row's type is flagged, never refused**: its cell is coloured, with the reason as its
+    **A template invalid for its row's type is flagged, never refused**: its cell is colored, with the reason as its
     tooltip, and it is saved as typed, as the Locations pages do. ``*`` is checked against the four placeholders every
     type has, since it stands for any of them.
 

@@ -29,7 +29,7 @@ class PaletteSvgIconEngine(QIconEngine):
     unchecked state, and for the checked state whatever
     :meth:`~borco_pyside.theming.CheckedToolButtonChrome.glyph_color` measures to read against the
     chrome this style paints -- each from the ``Disabled`` color group when the mode is ``Disabled``.
-    Qt supplies no auto-grey fallback for a custom engine (``QStyle.generatedIconPixmap`` only applies
+    Qt supplies no auto-gray fallback for a custom engine (``QStyle.generatedIconPixmap`` only applies
     to the default pixmap engine), so the disabled look is this engine's own responsibility.
 
     Renderers are memoized against the palette's ``cacheKey()``, so a repaint under an unchanged

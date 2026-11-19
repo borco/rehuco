@@ -2,16 +2,16 @@
 
 **This is where the review pass lives.** #192 deliberately drops the per-item confirmation, because the
 conversion offers no choices worth confirming thousands of times; safety is that nothing was deleted.
-That safety is only real if the backups can be reviewed afterwards, which is this dialog -- filter to the
+That safety is only real if the backups can be reviewed afterward, which is this dialog -- filter to the
 handful of resources worth a closer look, then select-all-discard the rest. A conversion is
 number-preserving (#288), so nothing is lost by converting and there is nothing to revert -- discarding
 the backups is the only decision this dialog offers.
 
 **Every discard runs on the task queue**, one :class:`~rehuco_core.DiscardBackupsJob` per resource,
 whatever the selection size: it is the same code path for three rows and nine hundred, it puts each
-operation under its own resource's log scope ([[appendices.task-queue#scopes]]), and cancelling stops
+operation under its own resource's log scope ([[appendices.task-queue#scopes]]), and canceling stops
 after the current resource for free ([[appendices.task-queue#job-responsibility]]). The scan (#193's core
-module) runs on a worker thread so the dialog stays responsive and cancellable, the same shape
+module) runs on a worker thread so the dialog stays responsive and cancelable, the same shape
 `rehuco_agent.dialogs.import_legacy_catalog_wizard` uses.
 
 **Discard is the only irreversible act in the whole import flow**, and its confirmation reads that way:
@@ -105,14 +105,14 @@ SCANNING_STATUS: Final = "Scanning… {count:,} examined"
 SCAN_FAILED_STATUS: Final = "Scan failed: {message}"
 
 
-class ScanCancelled(Exception):
+class ScanCanceled(Exception):
     """Raised inside :class:`ScanWorker`'s callbacks to unwind out of
     :func:`~rehuco_core.scan_conversion_backups` when Cancel was clicked mid-scan."""
 
 
 class ScanWorker(QObject):
     """Runs :func:`~rehuco_core.scan_conversion_backups` on a worker thread, so the dialog stays
-    responsive and cancellable while it walks a folder tree that may hold thousands of resources.
+    responsive and cancelable while it walks a folder tree that may hold thousands of resources.
 
     The counterpart of `rehuco_agent.dialogs.import_legacy_catalog_wizard`'s own scan worker, and
     deliberately a second one rather than a shared base: the two walk for different things and report
@@ -125,7 +125,7 @@ class ScanWorker(QObject):
     progress = Signal(int)
     finished = Signal(object)
     failed = Signal(str)
-    cancelled = Signal()
+    canceled = Signal()
 
     def __init__(self, root: Path) -> None:
         super().__init__()
@@ -140,8 +140,8 @@ class ScanWorker(QObject):
         """Do the scan. Called on the worker thread once the owning `QThread` starts."""
         try:
             scan = scan_conversion_backups(self.__root, progress=self.__on_progress, checkpoint=self.__checkpoint)
-        except ScanCancelled:
-            self.cancelled.emit()
+        except ScanCanceled:
+            self.canceled.emit()
             return
         except Exception as error:  # pylint: disable=broad-exception-caught
             LOG.exception("The conversion-backups scan failed.")
@@ -150,19 +150,19 @@ class ScanWorker(QObject):
         self.finished.emit(scan)
 
     def __checkpoint(self) -> None:
-        """The walk's own cancellation hook, called once per directory -- before a single resource has
+        """The walk's own cancelation hook, called once per directory -- before a single resource has
         been read, which over a mount is most of the wait.
 
-        :raises ScanCancelled: a cancel was asked for.
+        :raises ScanCanceled: a cancel was asked for.
         """
         if self.__cancel_requested:
-            raise ScanCancelled
+            raise ScanCanceled
 
     def __on_progress(self, count: int) -> None:
         """The scan's own progress callback: report, or unwind if a cancel is pending.
 
         :param count: resources examined so far.
-        :raises ScanCancelled: a cancel was asked for.
+        :raises ScanCanceled: a cancel was asked for.
         """
         self.__checkpoint()
         self.progress.emit(count)
@@ -176,7 +176,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
     `~rehuco_agent.dialogs.import_legacy_catalog_wizard.ImportLegacyCatalogWizard` makes. Geometry is
     persisted in :meth:`done`, the one hook every exit path funnels through.
 
-    Attached to the queue as a :class:`~rehuco_core.TaskQueueListener` and marshalled onto the GUI thread
+    Attached to the queue as a :class:`~rehuco_core.TaskQueueListener` and marshaled onto the GUI thread
     the way `~rehuco_agent.documents.checksum_actions.ChecksumActions` is: the engine calls its listeners
     on whichever thread the change happened on ([[appendices.task-queue#observation]]), and touching a
     widget there would be a plain thread-safety bug.
@@ -185,11 +185,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
     :param parent: optional Qt parent.
     """
 
-    class Marshaller(QObject):
+    class Marshaler(QObject):
         """Carries "one of our jobs may have moved" across the thread boundary, and nothing else.
 
         Nested and undocumented outside this class for the same reason
-        :class:`~rehuco_agent.documents.checksum_actions.ChecksumActions.Marshaller` is: a mangled class
+        :class:`~rehuco_agent.documents.checksum_actions.ChecksumActions.Marshaler` is: a mangled class
         name is not one Qt or the linters will accept.
         """
 
@@ -229,8 +229,8 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         the batch settles (#246) -- rows already enqueued stay in the Tasks dock and this dialog keeps
         listening for them until every one has."""
 
-        self.__marshaller: Final = ConversionBackupsDialog.Marshaller(self)
-        self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
+        self.__marshaler: Final = ConversionBackupsDialog.Marshaler(self)
+        self.__marshaler.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
         self.__queue.add_listener(self)
 
         self.__ui.browse_button.clicked.connect(self.__on_browse)
@@ -320,7 +320,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         worth a wake: it may be the last thing a deferred detach (#246) was waiting on.
         """
         if any(serial in self.__jobs for serial in serials):
-            self.__marshaller.queue_changed.emit()
+            self.__marshaler.queue_changed.emit()
 
     def queue_paused_changed(self, paused: bool) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`."""
@@ -339,7 +339,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         previous = self.__seen.get(status.serial)
         self.__seen[status.serial] = status  # pylint: disable=unsupported-assignment-operation
         if previous is None or previous.state is not status.state:
-            self.__marshaller.queue_changed.emit()
+            self.__marshaler.queue_changed.emit()
 
     # endregion
 
@@ -385,7 +385,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__scan_worker.progress.connect(self.__on_scan_progress)
         self.__scan_worker.finished.connect(self.__on_scan_finished)
         self.__scan_worker.failed.connect(self.__on_scan_failed)
-        self.__scan_worker.cancelled.connect(self.__on_scan_cancelled)
+        self.__scan_worker.canceled.connect(self.__on_scan_canceled)
         self.__thread.finished.connect(self.__scan_worker.deleteLater)
         self.__thread.start()
         self.__update_controls()
@@ -408,9 +408,9 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__stop_scan_thread()
         self.__end_scan(SCAN_FAILED_STATUS.format(message=message))
 
-    def __on_scan_cancelled(self) -> None:
+    def __on_scan_canceled(self) -> None:
         self.__stop_scan_thread()
-        self.__end_scan("Scan cancelled.")
+        self.__end_scan("Scan canceled.")
 
     def __stop_scan_thread(self) -> None:
         """Retire the scan whose worker just reported its end, waiting for its thread to stop first.
@@ -646,7 +646,7 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
 
         Nothing about *how* a discard deletes is handed over here beyond ``job_kwargs``: a
         `DiscardBackupsJob` resolves its deleter when it runs, from the process-wide provider the window
-        installs, so a job rebuilt from the saved queue after a restart honours the Recycle Bin setting
+        installs, so a job rebuilt from the saved queue after a restart honors the Recycle Bin setting
         exactly as one enqueued here does (#298); the no-bin fallback (#301) is the one decision that
         *is* carried, since there is no window to ask from once it runs -- **Clear backups without
         asking**, or the batch's own Yes to the up-front no-bin question (#313). Without either, a
@@ -731,8 +731,8 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         """
         if status.state is JobState.DONE:
             return "discarded", None
-        if status.state is JobState.CANCELLED:
-            return "cancelled", None
+        if status.state is JobState.CANCELED:
+            return "canceled", None
         prefix = f"{NoTrashBinError.__name__}: "
         if status.message is not None and status.message.startswith(prefix):
             reason = status.message.removeprefix(prefix)

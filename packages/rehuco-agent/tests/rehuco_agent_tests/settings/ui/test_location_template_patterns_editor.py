@@ -1,4 +1,4 @@
-"""Tests for LocationTemplatePatternsEditor: the one-column patterns editor's own behaviour (#322)."""
+"""Tests for LocationTemplatePatternsEditor: the one-column patterns editor's own behavior (#322)."""
 
 # Almost line for line test_screenshot_name_patterns_editor.py's own -- the two production editors are
 # themselves a deliberate copy rather than a shared generic base (see that module's own note), so their
@@ -167,7 +167,7 @@ def test_a_click_acts_on_one_whole_pattern(editor: LocationTemplatePatternsEdito
 
     **Test steps:**
 
-    * read the view's selection behaviour and mode
+    * read the view's selection behavior and mode
     """
     view = editor.view
 

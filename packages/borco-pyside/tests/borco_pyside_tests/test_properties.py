@@ -96,7 +96,7 @@ def test_typed_property_setter_emits_its_notify_signal() -> None:
 # endregion
 
 
-# region SimpleProperty behaviour tests
+# region SimpleProperty behavior tests
 def test_property_returns_its_initial_value() -> None:
     """A freshly constructed instance reads back each property's declared initial value.
 

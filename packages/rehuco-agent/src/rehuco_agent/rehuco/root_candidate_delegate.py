@@ -111,13 +111,13 @@ class RootCandidateDelegate(QStyledItemDelegate):
 
     @staticmethod
     def __draw_lines(painter: QPainter, area: QRect, lines: list[tuple[str, bool]], text: QColor) -> None:
-        """Draw a painted row's lines one under the other, the first bold, a warning in its colour, each elided in the
+        """Draw a painted row's lines one under the other, the first bold, a warning in its color, each elided in the
         middle to the width it has.
 
         :param painter: the painter, its state the caller's to restore.
         :param area: where the first line starts, and how wide every line may be.
         :param lines: each line's text and whether it is a warning.
-        :param text: the colour of a line that is no warning.
+        :param text: the color of a line that is no warning.
         """
         spacing = painter.fontMetrics().lineSpacing()
         for row, (line, warning) in enumerate(lines):

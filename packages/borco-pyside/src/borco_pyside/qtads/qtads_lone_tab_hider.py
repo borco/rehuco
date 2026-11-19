@@ -14,7 +14,7 @@ class QtAdsLoneTabHider(QObject):
     own title saying what it is, **unless the dock has title-bar actions**, which it keeps reachable by keeping
     the bar. So a dock with actions floated alone kept a lone tab no other dock shows. Hiding just that tab keeps
     the bar and its buttons and drops the tab that names the window a second time. The tab comes back as another
-    dock joins the window or the dock docks again -- only a tab this hid, so the neighbours' tabs a maximize hides
+    dock joins the window or the dock docks again -- only a tab this hid, so the neighbors' tabs a maximize hides
     on purpose stay hidden.
 
     Every dock the manager has, and every one it adds, is watched; which of them need it is decided as each

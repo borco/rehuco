@@ -107,8 +107,8 @@ def test_nothing_is_asked_when_every_root_is_mapped(
     catalog.map_root.assert_not_called()
 
 
-def test_a_cancelled_wizard_changes_nothing(mocker: MockerFixture, window: MainWindow, catalog: Catalog) -> None:
-    """Cancelling the wizard leaves every root as it was.
+def test_a_canceled_wizard_changes_nothing(mocker: MockerFixture, window: MainWindow, catalog: Catalog) -> None:
+    """Canceling the wizard leaves every root as it was.
 
     **Test steps:**
 
@@ -224,13 +224,13 @@ def test_a_catalog_that_arrives_late_is_asked_about_once_the_loop_runs(
 def test_the_wizard_answers_with_what_the_dialog_collected(
     mocker: MockerFixture, window: MainWindow, tmp_path: Path
 ) -> None:
-    """``ask_root_mappings`` runs the dialog and returns its mapped and skipped roots, or ``None`` when cancelled.
+    """``ask_root_mappings`` runs the dialog and returns its mapped and skipped roots, or ``None`` when canceled.
 
     **Test steps:**
 
     * replace the dialog class so it runs as accepted with a known answer
     * verify the question returns that answer
-    * make it run as cancelled
+    * make it run as canceled
     * verify the question returns ``None``
     """
     dialog = mocker.patch("rehuco_agent.main_window.MapRootsDialog")

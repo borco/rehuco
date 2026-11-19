@@ -30,11 +30,11 @@ type ModelIndex = QModelIndex | QPersistentModelIndex
 class StringMapModel(QAbstractTableModel):
     """A ``str -> str`` map as editable rows of a key and a value, in the order they were given.
 
-    **A row whose key is empty, or repeats an earlier row's, is flagged, never refused**: its key cell is coloured and
+    **A row whose key is empty, or repeats an earlier row's, is flagged, never refused**: its key cell is colored and
     says why in a tooltip, and :attr:`mapping` leaves it out, so a typo is fixed in place rather than retyped.
 
     **A value can be flagged too** (#637): once :meth:`set_value_problem` is given a check, a row whose value it faults
-    has its value cell coloured with the reason as its tooltip, and is still kept.
+    has its value cell colored with the reason as its tooltip, and is still kept.
 
     **A key can repeat** once :meth:`set_repeated_keys` says so (#638): a row is then flagged only for an empty key or
     for repeating an earlier row whole, key and value, and :attr:`rows` lists the rows that count, in order.

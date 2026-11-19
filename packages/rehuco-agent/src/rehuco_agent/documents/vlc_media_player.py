@@ -398,7 +398,7 @@ class VlcMediaPlayer(QObject):
     def close(self) -> None:
         """Let libvlc's objects go: stop, detach the events, release the media, the player and the instance.
 
-        What the view does as it drops the engine; nothing is usable afterwards.
+        What the view does as it drops the engine; nothing is usable afterward.
         """
         if self.__closed:
             return

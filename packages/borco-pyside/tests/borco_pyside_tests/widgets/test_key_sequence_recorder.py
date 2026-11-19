@@ -72,7 +72,7 @@ def test_a_keypad_key_is_distinct_from_the_plain_one(qtbot: QtBot, recorder: Key
 
 
 def test_esc_is_recorded_as_a_key(qtbot: QtBot, recorder: KeySequenceRecorder) -> None:
-    """Esc records instead of cancelling.
+    """Esc records instead of canceling.
 
     **Test steps:**
 
@@ -130,7 +130,7 @@ def test_a_second_click_cancels_and_shows_the_sequence_again(qtbot: QtBot, recor
     **Test steps:**
 
     * give the button a sequence, click it, press a key, click it again
-    * verify ``cancelled`` fired, ``recorded`` never did, and the text is the sequence's
+    * verify ``canceled`` fired, ``recorded`` never did, and the text is the sequence's
     """
     recorded: list[QKeySequence] = []
     recorder.recorded.connect(recorded.append)
@@ -139,7 +139,7 @@ def test_a_second_click_cancels_and_shows_the_sequence_again(qtbot: QtBot, recor
     assert recorder.is_recording
     press(recorder, Qt.Key.Key_A)
 
-    with qtbot.waitSignal(recorder.cancelled, timeout=500):
+    with qtbot.waitSignal(recorder.canceled, timeout=500):
         recorder.click()
     qtbot.wait(50)
 
@@ -180,11 +180,11 @@ def test_losing_focus_cancels(qtbot: QtBot, recorder: KeySequenceRecorder) -> No
     **Test steps:**
 
     * start, then send a focus-out
-    * verify ``cancelled`` fired
+    * verify ``canceled`` fired
     """
     recorder.start()
 
-    with qtbot.waitSignal(recorder.cancelled, timeout=500):
+    with qtbot.waitSignal(recorder.canceled, timeout=500):
         QApplication.sendEvent(recorder, QFocusEvent(QEvent.Type.FocusOut, Qt.FocusReason.OtherFocusReason))
 
 
@@ -209,20 +209,20 @@ def test_a_shortcut_override_is_accepted_while_recording(recorder: KeySequenceRe
     assert recording.isAccepted()
 
 
-def test_cancelling_an_idle_button_does_nothing(recorder: KeySequenceRecorder) -> None:
+def test_canceling_an_idle_button_does_nothing(recorder: KeySequenceRecorder) -> None:
     """``cancel`` is for a recording in progress; idle it emits nothing.
 
     **Test steps:**
 
     * cancel a button that is not recording
-    * verify no ``cancelled`` signal and it is still idle
+    * verify no ``canceled`` signal and it is still idle
     """
-    cancelled: list[bool] = []
-    recorder.cancelled.connect(lambda: cancelled.append(True))
+    canceled: list[bool] = []
+    recorder.canceled.connect(lambda: canceled.append(True))
 
     recorder.cancel()
 
-    assert not cancelled
+    assert not canceled
     assert not recorder.is_recording
 
 

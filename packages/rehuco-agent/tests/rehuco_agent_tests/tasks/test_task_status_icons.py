@@ -48,12 +48,12 @@ def test_a_pending_stop_wins_over_the_state_it_is_still_in(stop: StopRequest) ->
 
 
 def test_a_pending_stop_reads_the_same_whatever_state_it_was_asked_in() -> None:
-    """A *queued* job can be asked to cancel too, and reads as cancelling like a running one.
+    """A *queued* job can be asked to cancel too, and reads as canceling like a running one.
 
     **Test steps:**
 
     * look up a queued job asked to cancel
-    * verify it answers the cancelling glyph, not the queued one
+    * verify it answers the canceling glyph, not the queued one
     """
     assert status_icon(status(JobState.QUEUED, StopRequest.CANCEL)) == PENDING_STOP_ICONS[StopRequest.CANCEL]
 

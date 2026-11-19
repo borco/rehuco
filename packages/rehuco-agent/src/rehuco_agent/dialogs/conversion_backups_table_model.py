@@ -77,7 +77,7 @@ class ConversionBackupsRow:
     :param backups: what this resource still holds (#190).
     :param checked: whether this row is selected for the next action.
     :param outcome: ``None`` before an action has run over this row; ``"pending"`` once its job is
-        enqueued; ``"discarded"``/``"failed"``/``"cancelled"`` once it finishes.
+        enqueued; ``"discarded"``/``"failed"``/``"canceled"`` once it finishes.
     :param message: why a ``"failed"`` row did not happen, else ``None``.
     """
 

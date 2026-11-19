@@ -237,7 +237,7 @@ deliberately not reproduced. What survives of them is above; the rest is impleme
 **Status: proposed.**
 
 Nothing sidecar-shaped can answer a query across packs. The cross-pack index — one roaring bitmap per tag
-over dense image ids for filtering, a binary-quantized approximate-nearest-neighbour index over embeddings
+over dense image ids for filtering, a binary-quantized approximate-nearest-neighbor index over embeddings
 for similarity and text queries, full-text search over tags — is **`.rehudb`-class** ([[data-model#local-file-trio]]):
 a node-local derived cache, disposable, and **built by reading sidecars, never by running models**. That is
 what makes "rebuildable cache" true here: delete it and it is back in an hour, because the expensive part
@@ -247,7 +247,7 @@ implementation ([[implementation-plan]]).
 A query such as "jumping female with sword" is a bitmap intersection as a cheap prefilter, a join to person
 regions with the right attributes, a rerank by embedding similarity against the encoded query text, fused
 with a pure-embedding lane so a mis-tagged image still surfaces. Pure embedding search is bad at exact
-filters; pure keyword search is bad at "woman leaning backwards over something"; the fusion is the design.
+filters; pure keyword search is bad at "woman leaning backward over something"; the fusion is the design.
 
 ## §18.7 The inference package
 
@@ -427,12 +427,12 @@ practice mode is deferred ([[reference-images#practice-sessions]]).
     Unicode normalization — is not recognized, and is acquired as a duplicate. A drag out of this app is never
     affected, since it carries the scanner's own path.
 - **Pinterest-like search** — a fuzzy text box; empty text picks a random starting image. Clicking an image
-  shows it large together with similar images, so browsing is a walk through neighbourhoods rather than a
+  shows it large together with similar images, so browsing is a walk through neighborhoods rather than a
   result list. "Similar" needs no model at query time (the embeddings are stored); text needs the encoder or
   the tag fallback ([[reference-images#node-requirements]]).
 - **Practice mode** — a prompt selects a pool; random images from it are shown quickly, like a drawing class
   ([[reference-images#practice-sessions]]). The last few runs are remembered per user so an image can be
-  favorited or used as a "similar" seed afterwards. Display transforms that cost nothing and help — random
+  favorited or used as a "similar" seed afterward. Display transforms that cost nothing and help — random
   horizontal flip, grayscale, value posterization — belong here.
 - **Favorites** — per image, per user ([[reference-images#layers]]).
 - **Blur** — off by default, an app-wide toggle with a keyboard shortcut, remembered per user. Detection
@@ -729,7 +729,7 @@ computed by the index build over sidecar rows rather than by the scan, in order 
    every person box in that scope is that actor, at a confidence set by how many faces confirmed it; two or
    three means the lanes below choose among them; many means no prior. This lane alone covers most back
    views in the collection.
-3. **Shoot neighbourhood** — natural-order neighbours with high image-embedding similarity and a constant
+3. **Shoot neighborhood** — natural-order neighbors with high image-embedding similarity and a constant
    background are one shoot, and identity flows along the run without the loop-closure test a sequence needs.
 4. **Body appearance** — a person re-identification embedding over the person box (clothing, build, skin,
    hair from behind; OSNet/TransReID-class candidates, license-checked), or more cheaply the general image
@@ -839,10 +839,10 @@ stays until #588 takes over the geometry.
 
 **Verdict so far (#586, 2026-10-30, `spikes/head-fit/`).** On four public-domain portraits — a frontal, two
 three-quarter views (one a painting), one near-frontal under a beret — the yaw, pitch and roll from MediaPipe's
-transformation matrix read right by eye, and the centre line and brow line followed the face every time: the
-pose is a starting point, not the job. The textbook proportion (brow line through the sphere's centre, nose
+transformation matrix read right by eye, and the center line and brow line followed the face every time: the
+pose is a starting point, not the job. The textbook proportion (brow line through the sphere's center, nose
 base on its bottom) drew the sphere too small and too low on every skull; adult averages — the brow 0.2 r
-below the centre, face thirds of 0.7 r — fixed it in one pass, and what remains is exactly what a scale or
+below the center, face thirds of 0.7 r — fixed it in one pass, and what remains is exactly what a scale or
 incline handle corrects. **Over the collection's own packs** (every 7th–11th image of one archive each, 33–40 per pack): an
 expressions pack found 24 of 33 faces with yaw to 43° and pitch to 38° and fitted every one of them well; a
 from-above pack, 6 of 40. Two full-figure packs — a male turnaround and a sword pack of 4000–8400 px images —

@@ -132,7 +132,7 @@ class UnboundedSpinBox(QAbstractSpinBox):
         the empty state (``None``) once the line edit is emptied.
 
         A blank line edit is treated as an explicit reset, not "incomplete typing" -- distinct from
-        genuinely unparseable non-empty text (e.g. a bare ``-`` mid-typing), which is left unwritten so
+        genuinely unparsable non-empty text (e.g. a bare ``-`` mid-typing), which is left unwritten so
         mid-keystroke typing is never clobbered.
 
         :param text: the line edit's current text.

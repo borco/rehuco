@@ -667,7 +667,7 @@ def log_legacy_seed(seed: LegacySeed) -> None:
     A summary carries the counts; this is where a reader finds out *which* line and *why*, on the
     resource's own log ([[appendices.logging#scopes]]). It runs once in a resource's life -- whether the
     seed came from a verify (#243), from an import (#256) or from a remediation (#259) -- so the detail
-    costs nothing afterwards,
+    costs nothing afterward,
     and both callers say it the same way because it is the same event.
 
     :param seed: what the manifest contributed.

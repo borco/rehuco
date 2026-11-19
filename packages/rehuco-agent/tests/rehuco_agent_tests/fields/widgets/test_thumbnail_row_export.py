@@ -56,7 +56,7 @@ def shown_row(qtbot: QtBot, source: PathImageSource, exporter: ImageExporter | N
     return row
 
 
-def centre(row: ThumbnailRow, index: int) -> QPoint:
+def center(row: ThumbnailRow, index: int) -> QPoint:
     """The middle of a thumbnail, in the viewport's coordinates.
 
     :param row: the row.
@@ -95,7 +95,7 @@ def test_dragging_a_thumbnail_drags_its_image_out_and_the_release_that_follows_n
     row = shown_row(qtbot, pictures, ImageExporter(tmp_path / "staged", lambda: ID))
     activated: list[int] = []
     row.activated_index.connect(activated.append)
-    point = centre(row, 1)
+    point = center(row, 1)
 
     drag_from(row, point)
     QTest.mouseRelease(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
@@ -129,12 +129,12 @@ def test_a_thumbnail_dragged_on_a_high_dpi_screen_is_measured_in_logical_pixels(
     thumbnail = mocker.patch.object(ThumbnailRow, "thumbnail", return_value=small)
     drag = drag_class.return_value
 
-    drag_from(row, centre(row, 0))
+    drag_from(row, center(row, 0))
     (kept,) = drag.setPixmap.call_args.args
     (hot_spot,) = drag.setHotSpot.call_args.args
-    QTest.mouseRelease(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre(row, 0))
+    QTest.mouseRelease(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center(row, 0))
     thumbnail.return_value = large
-    drag_from(row, centre(row, 0))
+    drag_from(row, center(row, 0))
     (shrunk,) = drag.setPixmap.call_args.args
     (shrunk_hot_spot,) = drag.setHotSpot.call_args.args
 
@@ -160,10 +160,10 @@ def test_a_plain_click_still_activates_a_thumbnail(
     row = shown_row(qtbot, pictures, ImageExporter(tmp_path / "staged", lambda: ID))
     activated: list[int] = []
     row.activated_index.connect(activated.append)
-    drag_from(row, centre(row, 0))
-    QTest.mouseRelease(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre(row, 0))
+    drag_from(row, center(row, 0))
+    QTest.mouseRelease(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center(row, 0))
 
-    QTest.mouseClick(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre(row, 1))
+    QTest.mouseClick(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center(row, 1))
 
     assert activated == [1]
     drag_class.return_value.exec.assert_called_once()
@@ -182,8 +182,8 @@ def test_a_row_with_no_exporter_or_pressed_on_a_gap_drags_nothing(
     """
     drag_class = mocker.patch("rehuco_agent.fields.widgets.image_export.QDrag")
     row = shown_row(qtbot, pictures, None)
-    drag_from(row, centre(row, 0))
-    QTest.mouseRelease(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, centre(row, 0))
+    drag_from(row, center(row, 0))
+    QTest.mouseRelease(row.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, center(row, 0))
     row.set_exporter(ImageExporter(tmp_path / "staged", lambda: ID))
 
     drag_from(row, QPoint(row.viewport().width() - 2, 5))

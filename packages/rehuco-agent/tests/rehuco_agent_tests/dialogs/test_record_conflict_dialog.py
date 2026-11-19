@@ -426,7 +426,7 @@ def test_save_and_discard_close_the_dialog_with_their_choice(
     assert dialog.resolution is resolution
 
 
-def test_cancel_closes_the_dialog_as_cancelled(qtbot: QtBot) -> None:
+def test_cancel_closes_the_dialog_as_canceled(qtbot: QtBot) -> None:
     """Cancel leaves the edits unsaved: the dialog is rejected and says so.
 
     **Test steps:**
@@ -445,7 +445,7 @@ def test_cancel_closes_the_dialog_as_cancelled(qtbot: QtBot) -> None:
     assert dialog.resolution is ConflictResolution.CANCEL
 
 
-def test_escape_closes_the_dialog_as_cancelled(qtbot: QtBot) -> None:
+def test_escape_closes_the_dialog_as_canceled(qtbot: QtBot) -> None:
     """Esc is the keyboard's Cancel, never a silent Save.
 
     **Test steps:**

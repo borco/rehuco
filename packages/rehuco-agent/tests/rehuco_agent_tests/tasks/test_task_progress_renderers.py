@@ -74,7 +74,7 @@ def test_resources_are_counted_and_named(done: int, total: int | None, expected:
     ],
 )
 def test_an_unregistered_unit_falls_back_to_the_bare_numbers(done: int, total: int | None, expected: str) -> None:
-    """A unit this build has never heard of still shows its honest figures, unlabelled -- better than
+    """A unit this build has never heard of still shows its honest figures, unlabeled -- better than
     nothing, and better than inventing a name for them.
 
     **Test steps:**

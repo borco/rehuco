@@ -93,7 +93,7 @@ class DocumentSessionRestore:
         **A path whose file is gone is not asked for here** (#464): ``MainWindow`` has already found out which
         remembered documents are there -- a fixed local drive answers at once, and a share or removable drive is
         asked on a thread and reaches :meth:`restore_late` once it answers -- and passes ``only``, so no empty locked
-        ``missing`` dock is made for a delete between sessions. A path that is there but has become unparseable
+        ``missing`` dock is made for a delete between sessions. A path that is there but has become unparsable
         still reopens as an empty, **locked** dock materialized in its place ([[data-model#write-integrity]]) once
         its tab is actually shown, not skipped and not a dialog per file. Until then the tab shows no lock
         marker and does not count as missing -- knowing either would take the very read this defers. The outer layout

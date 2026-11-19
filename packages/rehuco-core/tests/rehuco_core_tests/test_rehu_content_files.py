@@ -506,7 +506,7 @@ def test_a_nested_legacy_record_takes_its_whole_directory_out(mocker: MockerFixt
     assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
-def test_a_file_scoped_neighbour_takes_its_same_stem_siblings_out(mocker: MockerFixture) -> None:
+def test_a_file_scoped_neighbor_takes_its_same_stem_siblings_out(mocker: MockerFixture) -> None:
     """A named ``foo.rehu`` describes its same-stem siblings, so they are its and not the directory's
     (#254).
 
@@ -532,7 +532,7 @@ def test_a_conversions_retained_backups_are_not_the_resources_content(mocker: Mo
 
     A bulk import retains every ``.orig`` ([[acquisition-tooling#convert-mechanics]]), so counting them
     would bake each converted resource's own backups into its first checksum baseline -- and discarding
-    them afterwards would report a missing file for every resource in the catalog.
+    them afterward would report a missing file for every resource in the catalog.
 
     **Test steps:**
 
@@ -1241,7 +1241,7 @@ def test_the_deepest_record_along_the_path_is_the_one_that_covers(mocker: Mocker
     }
 
 
-def test_a_file_scoped_neighbour_covers_its_same_stem_sibling(mocker: MockerFixture) -> None:
+def test_a_file_scoped_neighbor_covers_its_same_stem_sibling(mocker: MockerFixture) -> None:
     """The file-level half: a ``foo.rehu`` beside the file takes it, and spells it as it already is.
 
     Narrower than the directory-scoped record in the same directory, which is why it wins over one.
@@ -1579,7 +1579,7 @@ def test_the_measured_size_follows_the_exclusion_list_it_is_handed(mocker: Mocke
 
 
 def test_a_file_scoped_resource_weighs_its_own_archive_alone(mocker: MockerFixture) -> None:
-    """A file-scoped ``foo.rehu`` measures ``foo.zip`` and nothing else -- its neighbours are out of
+    """A file-scoped ``foo.rehu`` measures ``foo.zip`` and nothing else -- its neighbors are out of
     scope before any exclusion is consulted, so emptying the pattern list cannot reach them (#226).
 
     **Test steps:**

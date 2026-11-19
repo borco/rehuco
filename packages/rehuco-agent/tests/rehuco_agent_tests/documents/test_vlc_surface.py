@@ -33,8 +33,8 @@ def test_with_no_frame_the_surface_is_black(qtbot: QtBot) -> None:
     assert QColor(picture.pixel(100, 50)) == QColor(0, 0, 0)
 
 
-def test_a_frame_is_painted_to_fit_and_centred_on_black(qtbot: QtBot) -> None:
-    """A 4:3 frame on a 2:1 surface fills the height, centred, with black at both sides.
+def test_a_frame_is_painted_to_fit_and_centered_on_black(qtbot: QtBot) -> None:
+    """A 4:3 frame on a 2:1 surface fills the height, centered, with black at both sides.
 
     **Test steps:**
 
@@ -60,7 +60,7 @@ def test_a_frame_is_scaled_smoothly(qtbot: QtBot) -> None:
     **Test steps:**
 
     * show a 2x1 frame, black then white, on a 200x100 surface
-    * verify the seam between them is grey, which only a smoothed scale draws
+    * verify the seam between them is gray, which only a smoothed scale draws
     """
     surface = shown(qtbot)
     frame = QImage(2, 1, QImage.Format.Format_RGB32)

@@ -54,7 +54,7 @@ class ScreenshotPatternsPage(QWidget):
     shipped defaults rather than to *recognize nothing* -- but an **uncompilable row is kept**, flagged,
     so a typo is fixed in place rather than retyped (#322): only the effective set a scan reads skips it.
     That rule lives in `ScreenshotPatternsSettings`, not in the editor, which holds whatever was typed;
-    the page reloads itself from the stored result afterwards, so what it shows is always what the next
+    the page reloads itself from the stored result afterward, so what it shows is always what the next
     Apply would keep.
 
     :param parent: optional Qt parent.
@@ -93,7 +93,7 @@ class ScreenshotPatternsPage(QWidget):
         """Push the staged patterns and try-it samples into the shared settings object, persist them,
         and show the result.
 
-        Both are reloaded from what was stored afterwards rather than left as typed: normalization can
+        Both are reloaded from what was stored afterward rather than left as typed: normalization can
         change them -- a blank row is dropped, and emptying a list restores the shipped one -- and a page
         still showing what was typed would disagree with what the next Apply would keep.
         """

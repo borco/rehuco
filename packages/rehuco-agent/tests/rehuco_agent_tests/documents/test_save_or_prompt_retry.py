@@ -108,7 +108,7 @@ def test_falls_back_to_untitled_when_the_model_has_no_label(mocker: MockerFixtur
     assert "Untitled" in critical.call_args.args[2]
 
 
-@mark.parametrize("landed", [True, False], ids=["landed", "cancelled"])
+@mark.parametrize("landed", [True, False], ids=["landed", "canceled"])
 def test_with_the_windows_save_jobs_the_save_is_a_job_waited_for(
     mocker: MockerFixture, parent: QWidget, landed: bool
 ) -> None:
@@ -117,7 +117,7 @@ def test_with_the_windows_save_jobs_the_save_is_a_job_waited_for(
 
     **Test steps:**
 
-    * stand in a model, and save jobs whose wait answers that the save landed, or was cancelled
+    * stand in a model, and save jobs whose wait answers that the save landed, or was canceled
     * call ``save_or_prompt_retry`` with them
     * verify it answered what they did, they were asked for this model, and the model did not save itself
     """
@@ -196,7 +196,7 @@ def test_a_conflict_resolved_by_discarding_reverts(mocker: MockerFixture, parent
     model.resolve_conflict.assert_not_called()
 
 
-def test_a_cancelled_conflict_aborts(mocker: MockerFixture, parent: QWidget, tmp_path: Path) -> None:
+def test_a_canceled_conflict_aborts(mocker: MockerFixture, parent: QWidget, tmp_path: Path) -> None:
     """Cancel leaves the edits unsaved, so whatever the save was gating must not go on.
 
     **Test steps:**

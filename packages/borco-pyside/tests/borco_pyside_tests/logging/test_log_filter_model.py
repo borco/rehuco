@@ -123,7 +123,7 @@ def test_each_band_can_be_shown_alone(proxy: LogFilterModel) -> None:
 
 
 def test_bands_are_independent_of_each_other(proxy: LogFilterModel) -> None:
-    """Showing two bands with a hidden one between them is a state the filter honours.
+    """Showing two bands with a hidden one between them is a state the filter honors.
 
     **Test steps:**
 

@@ -47,7 +47,7 @@ def test_a_proc_octal_escape_is_a_space() -> None:
 
 
 def test_a_proc_filesystem_type_is_lower_case() -> None:
-    """The type is normalised so the module's lookup sets, which are lower case, match.
+    """The type is normalized so the module's lookup sets, which are lower case, match.
 
     **Test steps:**
 

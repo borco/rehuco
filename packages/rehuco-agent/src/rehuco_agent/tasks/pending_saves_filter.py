@@ -15,7 +15,7 @@ from .task_queue_model import TaskQueueModel
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
 
-SETTLED_SAVE_STATES: Final = frozenset({JobState.DONE, JobState.CANCELLED})
+SETTLED_SAVE_STATES: Final = frozenset({JobState.DONE, JobState.CANCELED})
 """The states in which a save is no longer pending: it landed, or it was dropped on purpose.
 
 ``FAILED`` is deliberately absent: a failed save's edits are still only in memory, which is exactly what a

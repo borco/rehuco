@@ -26,7 +26,7 @@ class NodeBlock:
     `NodeHost` the main window owns (#506).
 
     **Not a widget**, for the reason `TrayBlock` gives: the block itself is a plain ``QFrame`` declared in the
-    page's ``.ui``, and what lives here is the behaviour -- the half that reads and writes storage.
+    page's ``.ui``, and what lives here is the behavior -- the half that reads and writes storage.
 
     Staged in the checkbox until :meth:`save_changes` pushes it into the shared `NodeSettings`, whose
     ``enabled_changed`` the host follows to start or stop the node at once.

@@ -15,7 +15,7 @@ def test_the_playlist_opens_on_the_clicked_video() -> None:
     """**Test steps:**
 
     * open a playlist of three videos on the second
-    * verify the second is current and both neighbours exist
+    * verify the second is current and both neighbors exist
     """
     playlist = PlayerPlaylist(VIDEOS, "02.mp4")
 
@@ -101,7 +101,7 @@ def test_a_step_of_zero_moves_nothing() -> None:
     assert PlayerPlaylist(VIDEOS, "02.mp4").step(0) is None
 
 
-def test_a_single_video_has_neither_neighbour() -> None:
+def test_a_single_video_has_neither_neighbor() -> None:
     """**Test steps:**
 
     * open a playlist of one video

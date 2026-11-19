@@ -65,7 +65,7 @@ def test_add_root_names_its_file_after_the_location_whatever_the_label(tmp_path:
 
     **Test steps:**
 
-    * add a root labelled with characters no file name keeps
+    * add a root labeled with characters no file name keeps
     * verify the label as given and the file named after the location
     """
     row = home.add_root("//nas/data_14t/DATA1/Courses", "Courses: 2026")
@@ -127,7 +127,7 @@ def test_adding_a_root_needs_the_rehuco_saved_first() -> None:
     ],
 )
 def test_default_label_is_the_locations_last_segment(location: str, label: str) -> None:
-    """With no label given, a root is labelled by its location's last segment.
+    """With no label given, a root is labeled by its location's last segment.
 
     **Test steps:**
 

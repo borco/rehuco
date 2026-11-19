@@ -335,16 +335,16 @@ def test_a_stale_or_returning_root_is_listed_again_and_no_other(
 # region A root out of reach
 
 
-def test_a_root_out_of_reach_is_written_into_the_cache_and_greys_its_rows(
+def test_a_root_out_of_reach_is_written_into_the_cache_and_grays_its_rows(
     qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
 ) -> None:
-    """What a notifier says of its root's folder is written into the cache, and the browsers grey its rows, which say
+    """What a notifier says of its root's folder is written into the cache, and the browsers gray its rows, which say
     why; once it is back they draw as usual again (#511).
 
     **Test steps:**
 
     * report the first root out of reach
-    * verify the catalog says so, after the cache holds it, and the row is greyed and says why
+    * verify the catalog says so, after the cache holds it, and the row is grayed and says why
     * report it back
     * verify the catalog lists no root out of reach and the row says nothing of it
     """
@@ -416,13 +416,13 @@ def test_the_roots_out_of_reach_are_read_from_the_cache_when_the_roots_change(
     qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
 ) -> None:
     """Which roots cannot be reached is kept in the cache -- by a notifier, or a scan, before the browsers were there to
-    hear it -- so a file opened again greys them from the start (#511).
+    hear it -- so a file opened again grays them from the start (#511).
 
     **Test steps:**
 
     * write the first root out of reach into the cache alone: verify the browser does not know it yet
     * open the file again and wait for its rows
-    * verify its browser greys the root
+    * verify its browser grays the root
     """
     dock, _ = followed
     cache = dock.catalog._RootCatalog__catalog  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -435,17 +435,17 @@ def test_the_roots_out_of_reach_are_read_from_the_cache_when_the_roots_change(
     assert first_browser(dock).model.offline_reason(FIRST_ROOT) == offline_reason(dock)
 
 
-def test_a_browser_added_while_a_root_is_out_of_reach_greys_it_too(
+def test_a_browser_added_while_a_root_is_out_of_reach_grays_it_too(
     qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
 ) -> None:
-    """A browser added after a root went out of reach greys that root's rows from the start, not from the next read
+    """A browser added after a root went out of reach grays that root's rows from the start, not from the next read
     of the rows (#511).
 
     **Test steps:**
 
-    * write the first root out of reach and open the file again, so the existing browser greys it
+    * write the first root out of reach and open the file again, so the existing browser grays it
     * add a browser
-    * verify the new browser greys the root as well
+    * verify the new browser grays the root as well
     """
     dock, _ = followed
     cache = dock.catalog._RootCatalog__catalog  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -463,7 +463,7 @@ def test_a_browser_added_while_a_root_is_out_of_reach_greys_it_too(
 def test_a_cache_that_cannot_be_read_lists_no_root_out_of_reach(
     watched: tuple[CatalogDocks, ResourceEvents, MagicMock], catalog: Mock, caplog: LogCaptureFixture
 ) -> None:
-    """Greying is a courtesy: a cache that cannot say which roots are out of reach greys none, and the failure is
+    """Graying is a courtesy: a cache that cannot say which roots are out of reach grays none, and the failure is
     logged (#511).
 
     **Test steps:**

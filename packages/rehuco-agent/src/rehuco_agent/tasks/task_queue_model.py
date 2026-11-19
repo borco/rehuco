@@ -28,7 +28,7 @@ STATE_LABELS: Final = {
     JobState.WAITING: "Waiting",
     JobState.DONE: "Done",
     JobState.FAILED: "Failed",
-    JobState.CANCELLED: "Cancelled",
+    JobState.CANCELED: "Canceled",
 }
 """What a bare state reads as, before :func:`state_text` folds in a pending stop."""
 
@@ -38,14 +38,14 @@ def state_text(status: JobStatus) -> str:
 
     ``stop_requested`` is deliberately independent of ``state`` -- a running job that has been asked to
     stop but has not yet looked at the request is still, honestly, running
-    ([[appendices.task-queue#pause-concept]]). *Cancelling…* / *Pausing…* is therefore drawn from the
+    ([[appendices.task-queue#pause-concept]]). *Canceling…* / *Pausing…* is therefore drawn from the
     pair, never from a third flag this model would have to keep in step with the other two.
 
     :param status: the job to describe.
     :returns: the text a row's state column shows.
     """
     if status.stop_requested is StopRequest.CANCEL:
-        return "Cancelling…"
+        return "Canceling…"
     if status.stop_requested is StopRequest.PAUSE:
         return "Pausing…"
     return STATE_LABELS.get(status.state, status.state)
@@ -94,7 +94,7 @@ class TaskQueueModel(QAbstractTableModel):
     `Protocol` it satisfies: a `QAbstractTableModel` and a `Protocol` share no metaclass Shiboken will
     accept.
 
-    **Marshalling is a nested `Marshaller(QObject)` with one payload-free signal on an explicit
+    **Marshaling is a nested `Marshaler(QObject)` with one payload-free signal on an explicit
     `QueuedConnection`**, the shape :class:`~borco_pyside.logging.LogBridge` uses. Explicit-queued is
     load-bearing: a control clicked on the GUI thread re-enters a listener method synchronously and
     must still take the queued path, which is what makes "the view follows the engine, not its own
@@ -112,13 +112,13 @@ class TaskQueueModel(QAbstractTableModel):
     of becoming a second `TaskQueueListener` of its own: `queue_paused_changed` is called on whichever
     thread the queue's own last unfinished job stopped on, and touching a `QAction` there would be a
     plain GUI-thread-safety bug. This signal is only ever emitted from :meth:`__resnapshot`, which the
-    marshaller's queued connection already guarantees runs on the GUI thread."""
+    marshaler's queued connection already guarantees runs on the GUI thread."""
 
-    class Marshaller(QObject):
+    class Marshaler(QObject):
         """Carries "the queue changed" across the thread boundary, and nothing else.
 
         Nested and undocumented outside this class for the same reason
-        :class:`~borco_pyside.logging.LogBridge.Marshaller` is: a mangled class name is not one Qt or
+        :class:`~borco_pyside.logging.LogBridge.Marshaler` is: a mangled class name is not one Qt or
         the linters will accept, and nothing outside :class:`TaskQueueModel` has a reason to build one.
         """
 
@@ -136,8 +136,8 @@ class TaskQueueModel(QAbstractTableModel):
     def __init__(self, queue: TaskQueue, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
-        self.__marshaller: Final = TaskQueueModel.Marshaller(self)
-        self.__marshaller.snapshot_due.connect(self.__resnapshot, Qt.ConnectionType.QueuedConnection)
+        self.__marshaler: Final = TaskQueueModel.Marshaler(self)
+        self.__marshaler.snapshot_due.connect(self.__resnapshot, Qt.ConnectionType.QueuedConnection)
         self.__pending = False
         self.__rows: list[JobStatus] = list(queue.jobs())
 
@@ -205,7 +205,7 @@ class TaskQueueModel(QAbstractTableModel):
         if self.__pending:
             return
         self.__pending = True
-        self.__marshaller.snapshot_due.emit()
+        self.__marshaler.snapshot_due.emit()
 
     def __resnapshot(self) -> None:
         """Replace the held rows with a fresh :meth:`~rehuco_core.TaskQueue.jobs`.

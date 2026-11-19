@@ -23,7 +23,7 @@ class RootLayoutListModel(QAbstractListModel):
     """The default root layouts, one row each, showing and editing its name; its maps ride along, edited beside the
     list (:meth:`set_maps`).
 
-    **An empty name is flagged, never refused**, as a replacement rule's empty text is: the row is coloured and says
+    **An empty name is flagged, never refused**, as a replacement rule's empty text is: the row is colored and says
     why, and it is saved as it is. A new row starts unnamed, with the maps of a root made from a folder by
     default. **Order is the Add Roots dialog's combo order**, so the moves are real edits.
 

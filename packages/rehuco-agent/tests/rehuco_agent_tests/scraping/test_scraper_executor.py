@@ -69,7 +69,7 @@ def test_two_jobs_submitted_together_both_complete(qtbot: QtBot, delete_at_teard
     * verify both results arrive -- which is only possible if both scrapers reached the barrier,
       i.e. ran at the same time rather than one after the other
     * verify each result was delivered on the main thread, though the scrape ran on a pool thread,
-      to a plain callable receiver -- the marshalled hand-off, not `AutoConnection`
+      to a plain callable receiver -- the marshaled hand-off, not `AutoConnection`
     """
     barrier = threading.Barrier(2)
     result_a = ScrapeResult(fields={"title": "A"}, description=None, images=())

@@ -283,7 +283,7 @@ def test_an_invalid_index_reads_as_nothing(model: LocationTemplatePatternsModel)
     assert model.flags(QModelIndex()) == Qt.ItemFlag.NoItemFlags
 
 
-def test_a_blank_cell_explains_and_colours_itself(model: LocationTemplatePatternsModel) -> None:
+def test_a_blank_cell_explains_and_colors_itself(model: LocationTemplatePatternsModel) -> None:
     """Flagged, never refused: the cell says what is wrong and paints itself, and nothing is dropped.
 
     **Test steps:**
@@ -298,7 +298,7 @@ def test_a_blank_cell_explains_and_colours_itself(model: LocationTemplatePattern
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is not None
 
 
-def test_a_cell_naming_an_unknown_placeholder_explains_and_colours_itself(
+def test_a_cell_naming_an_unknown_placeholder_explains_and_colors_itself(
     model: LocationTemplatePatternsModel,
 ) -> None:
     """A pattern naming a placeholder outside the known four is flagged the same way a blank one is,
@@ -336,7 +336,7 @@ def test_a_wider_placeholder_set_accepts_what_the_default_one_flags(model: Locat
     assert model.invalid_reason(0) == ""
 
 
-def test_a_usable_cell_carries_no_tooltip_and_no_colour(model: LocationTemplatePatternsModel) -> None:
+def test_a_usable_cell_carries_no_tooltip_and_no_color(model: LocationTemplatePatternsModel) -> None:
     """The flag is about what a suggestion would refuse, so a pattern it accepts wears nothing.
 
     **Test steps:**

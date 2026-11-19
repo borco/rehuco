@@ -250,7 +250,7 @@ class ContentFileScanner:
 
     __SCREENSHOT_NAME_PATTERN: Final = re.compile(r"^(?P<record>.*)\d{2}$")
     """Splits a candidate screenshot's stem into the record it would belong to and its two-digit index --
-    the same ``<record>NN`` shape `rehuco_core.rehu_screenshots` matches, read backwards because the
+    the same ``<record>NN`` shape `rehuco_core.rehu_screenshots` matches, read backward because the
     record is what has to be looked up. Greedy, so ``info0000`` decomposes to ``info00`` + ``00`` and
     matches only a record actually named ``info00``."""
 
@@ -302,7 +302,7 @@ class ContentFileScanner:
 
         One directory at a time, descending: read a directory, take the records *it* holds, keep the
         files none of them claims, then do the same for each subdirectory. Deliberately not a flattened
-        ``rglob`` with the records pooled afterwards -- a record's screenshots and manifest are its
+        ``rglob`` with the records pooled afterward -- a record's screenshots and manifest are its
         siblings, so the only records that can speak for a file are the ones in its own directory, and a
         pooled set would get that wrong (the root's ``info.rehu`` claiming a ``bar/info00.jpg`` that has
         no record of its own). Reading per directory makes the sibling rule structural rather than a
@@ -436,7 +436,7 @@ class ContentFileScanner:
         conversion backup held on one's behalf.
 
         Every record counts, wherever it sits and whichever format it is (#250) -- the scanning
-        resource's, a nested one's, a file-scoped neighbour's, and the legacy ``.tc`` a conversion has not
+        resource's, a nested one's, a file-scoped neighbor's, and the legacy ``.tc`` a conversion has not
         reached yet. A screenshot or a manifest counts only where a record of that name sits
         beside it, so the same ``info00.jpg`` is bookkeeping next to an ``info.rehu`` and a normal file
         in a directory that has none. A ``.orig`` backup counts wherever it sits and against no record at

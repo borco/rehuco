@@ -17,7 +17,7 @@ derive from its ancestors, so renaming a folder renames a whole loaded subtree b
 
 **An unreachable folder says so** (#245): its column holds one row naming what is wrong, never an empty list.
 
-**A root this machine does not map** (#514) is still a row, in the file's order: greyed, with one child row saying so,
+**A root this machine does not map** (#514) is still a row, in the file's order: grayed, with one child row saying so,
 and never listed -- there is no folder to ask for. Moving, renaming and removing it work as for any root.
 """
 
@@ -105,7 +105,7 @@ class RootsFolderModel(QAbstractItemModel):
       record that covers it last found it (#457); ``None`` when no record covers the file.
       :attr:`BOOKKEEPING_ROLE`: whether the file is a record, a checksum file or a screenshot, which no record
       checksums.
-    * :attr:`GREYED_ROLE`: whether the row is drawn greyed out -- a placeholder, a root this machine does not map,
+    * :attr:`GRAYED_ROLE`: whether the row is drawn grayed out -- a placeholder, a root this machine does not map,
       or an unreachable root whose storage is not local. An unreachable **local** root is struck through instead
       (``FontRole``): a local folder that will not list has been deleted, where a share or a drive is merely away.
 
@@ -126,7 +126,7 @@ class RootsFolderModel(QAbstractItemModel):
     nothing to compare with, so no folder appeared in it."""
 
     ICON_PATH_ROLE: Final = int(Qt.ItemDataRole.UserRole)
-    GREYED_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 1
+    GRAYED_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 1
     SIZE_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 2
     MODIFIED_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 3
     PATH_ROLE: Final = int(Qt.ItemDataRole.UserRole) + 4
@@ -861,7 +861,7 @@ class RootsFolderModel(QAbstractItemModel):
                 return node.checksum
             case RootsFolderModel.BOOKKEEPING_ROLE:
                 return node.bookkeeping
-            case RootsFolderModel.GREYED_ROLE:
+            case RootsFolderModel.GRAYED_ROLE:
                 return (
                     node.kind in PLACEHOLDER_KINDS
                     or isinstance(root, RehucoRoot)

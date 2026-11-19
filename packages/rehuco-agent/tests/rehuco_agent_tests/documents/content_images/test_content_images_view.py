@@ -150,7 +150,7 @@ def test_a_double_click_on_an_image_reports_its_position(
     **Test steps:**
 
     * pack two members behind a banner and let the pack settle
-    * double-click the second image's centre, the banner and the empty space below; right-double-click
+    * double-click the second image's center, the banner and the empty space below; right-double-click
       the image
     * verify one activation, for position one, which is now the selection
     """
@@ -161,14 +161,14 @@ def test_a_double_click_on_an_image_reports_its_position(
     assert table is not None
     assert table.rows[0].banner is not None
     x, y, w, h = table.rects[1]
-    centre = QPoint(x + w // 2, y + h // 2)
+    center = QPoint(x + w // 2, y + h // 2)
     activated: list[int] = []
     view.image_activated.connect(activated.append)
 
-    qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+    qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
     qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(5, table.rows[0].y + 2))
     qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(5, table.height + 20))
-    qtbot.mouseDClick(view.viewport(), Qt.MouseButton.RightButton, pos=centre)
+    qtbot.mouseDClick(view.viewport(), Qt.MouseButton.RightButton, pos=center)
 
     assert activated == [1]
     assert view.selected == 1
@@ -189,13 +189,13 @@ def test_a_single_click_selects_and_a_second_deselects(
     settle(qtbot, view, content_model)
     table = view.layout_table
     assert table is not None
-    centres = [QPoint(x + w // 2, y + h // 2) for x, y, w, h in table.rects]
+    centers = [QPoint(x + w // 2, y + h // 2) for x, y, w, h in table.rects]
     selections: list[object] = []
     activated: list[int] = []
     view.selection_changed.connect(selections.append)
     view.image_activated.connect(activated.append)
 
-    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centres[0])
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centers[0])
     assert view.selected == 0
     # the selected cell carries the highlight ring, painted over its edge
     x, y, _, _ = table.rects[0]
@@ -203,9 +203,9 @@ def test_a_single_click_selects_and_a_second_deselects(
         view.grab().toImage().pixelColor(x + 1, y + 1).name()
         == view.palette().color(QPalette.ColorRole.Highlight).name()
     )
-    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centres[1])
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centers[1])
     assert view.selected == 1
-    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centres[1])
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centers[1])
 
     assert view.selected is None
     assert selections == [0, 1, None]
@@ -234,14 +234,14 @@ def test_a_real_double_click_opens_without_disturbing_the_selection(
     table = view.layout_table
     assert table is not None
     x, y, w, h = table.rects[0]
-    centre = QPoint(x + w // 2, y + h // 2)
+    center = QPoint(x + w // 2, y + h // 2)
     activated: list[int] = []
     view.image_activated.connect(activated.append)
 
     def double_click_first() -> None:
-        qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
-        qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
-        qtbot.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+        qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
+        qtbot.mouseDClick(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
+        qtbot.mouseRelease(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
 
     double_click_first()
     assert activated == [0]
@@ -256,10 +256,10 @@ def test_a_real_double_click_opens_without_disturbing_the_selection(
     assert activated == [0, 0, 0]
     assert view.selected == 0
 
-    qtbot.mouseClick(view.viewport(), Qt.MouseButton.RightButton, pos=centre)
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.RightButton, pos=center)
     qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=QPoint(5, table.height + 20))
     assert view.selected == 0
-    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centre)
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=center)
     assert view.selected is None
 
 
@@ -384,20 +384,20 @@ def test_the_status_names_the_selected_image_else_the_hovered_one(
     settle(qtbot, view, content_model)
     table = view.layout_table
     assert table is not None
-    centres = [QPoint(x + w // 2, y + h // 2) for x, y, w, h in table.rects]
+    centers = [QPoint(x + w // 2, y + h // 2) for x, y, w, h in table.rects]
     reported: list[str] = []
     view.status_changed.connect(reported.append)
 
     # off the images first: a pointer already resting on the first image from an earlier test
     # would make the move to it a no-op
     qtbot.mouseMove(view.viewport(), QPoint(5, table.height + 20))
-    qtbot.mouseMove(view.viewport(), centres[0])
+    qtbot.mouseMove(view.viewport(), centers[0])
     qtbot.waitUntil(lambda: reported[-1:] == ["pack.zip/a.png"])
 
-    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centres[1])
+    qtbot.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, pos=centers[1])
     assert view.status_text() == "pack.zip/b.png"
     qtbot.mouseMove(view.viewport(), QPoint(5, table.height + 20))
-    qtbot.mouseMove(view.viewport(), centres[0])
+    qtbot.mouseMove(view.viewport(), centers[0])
     qtbot.wait(20)
     assert view.status_text() == "pack.zip/b.png"
     assert reported[-1] == "pack.zip/b.png"
@@ -743,7 +743,7 @@ def test_the_keyboard_moves_the_selection_folds_the_group_and_clears(
     view: ContentImagesView, content_model: ContentImagesModel, qtbot: QtBot
 ) -> None:
     """LEFT/RIGHT step the selection along the shown sequence (the first image with none selected,
-    stopping at the ends), UP/DOWN move to the nearest image in the neighbouring row, ``-`` and ``+``
+    stopping at the ends), UP/DOWN move to the nearest image in the neighboring row, ``-`` and ``+``
     collapse and expand the current group -- the selection's, else the first on screen -- and ESC
     clears the selection; an unrelated key passes on (#221).
 
@@ -1048,7 +1048,7 @@ def test_hidden_previews_leave_only_the_banners(
 def test_a_thumbnail_is_fitted_into_its_cell_never_stretched(
     view: ContentImagesView, content_model: ContentImagesModel, loader: ThumbnailLoader, qtbot: QtBot
 ) -> None:
-    """A thumbnail whose proportions disagree with its cell is drawn fitted and centred inside it,
+    """A thumbnail whose proportions disagree with its cell is drawn fitted and centered inside it,
     leaving the cell's backdrop either side, rather than stretched to the cell.
 
     Regression: a portrait pack whose headers read landscape was drawn stretched into landscape cells.
@@ -1056,7 +1056,7 @@ def test_a_thumbnail_is_fitted_into_its_cell_never_stretched(
     **Test steps:**
 
     * pack one member whose header says wide but whose pixels decode tall, and let the thumbnail land
-    * verify the cell's left and right margins carry the backdrop, and its centre the image
+    * verify the cell's left and right margins carry the backdrop, and its center the image
     """
     tall_pixels = ContentImageEntry(PACK, "tall.png", TALL[0] * 1000 + TALL[1], 0)
     content_model.set_entries([tall_pixels], REHU_DIRECTORY)

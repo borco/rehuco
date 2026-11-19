@@ -685,12 +685,12 @@ def test_an_unknown_field_is_reported_on_the_line(browser: TableBrowser) -> None
     * set a line it can apply
     * verify the warning is gone and the tooltip is the grammar alone
     """
-    browser.set_filter_text("colour:red")
+    browser.set_filter_text("color:red")
 
-    assert browser.filter_problems == ('Unknown field "colour"',)
-    warning = next(action for action in browser.filter_edit.actions() if action.toolTip() == 'Unknown field "colour"')
+    assert browser.filter_problems == ('Unknown field "color"',)
+    warning = next(action for action in browser.filter_edit.actions() if action.toolTip() == 'Unknown field "color"')
     assert warning.isVisible()
-    assert browser.filter_edit.toolTip().startswith('Unknown field "colour"\n\n')
+    assert browser.filter_edit.toolTip().startswith('Unknown field "color"\n\n')
 
     browser.set_filter_text("type:tutorial")
 

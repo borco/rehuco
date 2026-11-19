@@ -325,7 +325,7 @@ def test_an_invalid_index_reads_as_nothing(model: LocationReplacementsModel) -> 
     assert model.flags(QModelIndex()) == Qt.ItemFlag.NoItemFlags
 
 
-def test_an_empty_text_cell_explains_and_colours_itself(model: LocationReplacementsModel) -> None:
+def test_an_empty_text_cell_explains_and_colors_itself(model: LocationReplacementsModel) -> None:
     """Flagged, never refused: the text cell says what is wrong and paints itself.
 
     **Test steps:**
@@ -340,7 +340,7 @@ def test_an_empty_text_cell_explains_and_colours_itself(model: LocationReplaceme
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is not None
 
 
-def test_an_unparsable_regex_text_cell_explains_and_colours_itself(model: LocationReplacementsModel) -> None:
+def test_an_unparsable_regex_text_cell_explains_and_colors_itself(model: LocationReplacementsModel) -> None:
     """Checking Regexp over text that does not parse flags the text cell, not the checkbox cell.
 
     **Test steps:**
@@ -371,7 +371,7 @@ def test_an_empty_replacement_cell_is_never_flagged(model: LocationReplacementsM
     assert model.data(index, Qt.ItemDataRole.ForegroundRole) is None
 
 
-def test_a_usable_cell_carries_no_tooltip_and_no_colour(model: LocationReplacementsModel) -> None:
+def test_a_usable_cell_carries_no_tooltip_and_no_color(model: LocationReplacementsModel) -> None:
     """A row with text wears nothing.
 
     **Test steps:**

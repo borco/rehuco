@@ -380,7 +380,7 @@ def test_what_waits_for_a_read_runs_once_it_arrives(
 def test_a_model_let_go_takes_nothing_from_its_read(
     mocker: MockerFixture, build: Callable[..., RehuDocumentModel], held_reads: HeldReads
 ) -> None:
-    """A model its last holder let go of takes nothing from a read that arrives afterwards, and runs nothing that waited
+    """A model its last holder let go of takes nothing from a read that arrives afterward, and runs nothing that waited
     for it.
 
     **Test steps:**

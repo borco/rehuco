@@ -43,7 +43,7 @@ class StartupPresence(QObject):
 
     __relayed: Signal = Signal(object, object)
     """Emitted from a scan thread with each answer; its slot runs on the GUI thread (the connection is queued because
-    the sender's thread is not the receiver's), which is where the stale-answer judgement belongs."""
+    the sender's thread is not the receiver's), which is where the stale-answer judgment belongs."""
 
     def __init__(self, paths: Iterable[Path], parent: QObject | None = None) -> None:
         super().__init__(parent)

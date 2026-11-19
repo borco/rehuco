@@ -28,7 +28,7 @@ file(TO_CMAKE_PATH "${VENV_SITE_PACKAGES}" VENV_SITE_PACKAGES_FWDSLASH)
 set(Python3_FIND_VIRTUALENV FIRST)
 set(Python3_EXECUTABLE "${VENV_PYTHON}")
 # Development.Embed = link Python as host (not extension module). Interpreter is requested too
-# because FindPython honours the Python3_EXECUTABLE hint only for that component: without it, the
+# because FindPython honors the Python3_EXECUTABLE hint only for that component: without it, the
 # Development lookup searches on its own and takes whatever Python comes first -- a scoop global
 # 3.15 linked a launcher whose venv is 3.14, which then fails on the first compiled extension.
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Embed)

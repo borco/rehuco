@@ -17,7 +17,7 @@ call. What is deliberately **not** shared is the recursion: this never descends,
 one directory and lets the reader walk.
 
 **Coverage is exclusive here too** (#254). A file a *file-scoped* record in this directory claims is
-:data:`FileKind.FOREIGN_SIDECAR`'s neighbour rather than this resource's content -- reported as
+:data:`FileKind.FOREIGN_SIDECAR`'s neighbor rather than this resource's content -- reported as
 :data:`FileKind.FOREIGN_CONTENT`, which is the one kind the boolean walk has no name for: those bytes are
 somebody's content, just not this record's, so a surface reporting on *this* record has nothing to say
 about them.
@@ -60,7 +60,7 @@ from .user_sidecars import user_sidecar_owner
 SCREENSHOT_STEM_PATTERN: Final = re.compile(r"^(?P<record>.*)\d{2}$")
 """Splits a candidate screenshot's stem into the record it would belong to and its two-digit index.
 
-The same ``<record>NN`` shape :mod:`rehuco_core.rehu_screenshots` matches, read backwards because the
+The same ``<record>NN`` shape :mod:`rehuco_core.rehu_screenshots` matches, read backward because the
 record is what has to be looked up -- and the same expression
 :class:`~rehuco_core.rehu_content_files.ContentFileScanner` reads it with. Greedy, so ``info0000``
 decomposes to ``info00`` + ``00`` and matches only a record actually named ``info00``."""
@@ -96,7 +96,7 @@ class FileKind(StrEnum):
     whoever's it is. Per-user state, not content, and not checksummed."""
 
     OWN_LICENSE = "own_license"
-    """This record's ``<record>.rehuterms``, the license text it was got under ([[assets#licences]], #677).
+    """This record's ``<record>.rehuterms``, the license text it was got under ([[assets#licenses]], #677).
     Bookkeeping, not content, and not checksummed."""
 
     FOREIGN_SIDECAR = "foreign_sidecar"
@@ -105,7 +105,7 @@ class FileKind(StrEnum):
 
     FOREIGN_CONTENT = "foreign_content"
     """A file a foreign *file-scoped* record covers -- its same-stem sibling (#254). Content, but not
-    this record's, which is why it is neither :data:`CONTENT` nor any flavour of bookkeeping."""
+    this record's, which is why it is neither :data:`CONTENT` nor any flavor of bookkeeping."""
 
     CONVERSION_BACKUP = "conversion_backup"
     """A retained ``.orig`` a conversion left behind (#253). Excluded on its name alone, because a
@@ -219,7 +219,7 @@ class DirectoryClassifier:
 
     :param record_path: the asking resource's own record, ``.rehu`` or ``.tc``. Its directory is the
         resource's, which is what makes a record found *here* this resource's own rather than a
-        neighbour's.
+        neighbor's.
     :param excluded_patterns: filename globs that take a file out of content, matched
         case-insensitively against the name -- the caller's, the same set the content walk is handed.
     """
@@ -330,12 +330,12 @@ class DirectoryClassifier:
         """Name one file, in the order the rules override one another.
 
         A backup first, because it is the one thing excluded on its name alone and against no record
-        (#253). Then a record -- this resource's own or a neighbour's. Then a per-user sidecar, named after its record
+        (#253). Then a record -- this resource's own or a neighbor's. Then a per-user sidecar, named after its record
         and never anything else, whether or not the record is there (#513); a license sidecar likewise (#677). Then the
         sibling rules, which need to know *which* record claims the name, since ``foo00.jpg`` is this record's
         screenshot beside ``foo.rehu`` and a foreign one beside ``bar.rehu``. Then coverage (#254), in the three
         shapes that take content out of this record's: a **file-scoped** record's content is its
-        same-stem siblings and nothing else, a neighbouring file-scoped record takes its own stem, and a
+        same-stem siblings and nothing else, a neighboring file-scoped record takes its own stem, and a
         directory belonging to a foreign directory-scoped record is that record's wholesale. Then the
         junk globs, and whatever survives is content.
 
@@ -425,7 +425,7 @@ class DirectoryClassifier:
         its own directory, this answers ``None`` without looking: the subdirectories there are its
         content ([[data-model#resource-scoping]]), and nothing beside it can take them -- a file-scoped
         ``foo.rehu`` claims only its same-stem siblings, and a legacy ``info.tc`` a conversion left
-        behind *is* this same resource under its old name rather than a neighbour. Comparing filenames
+        behind *is* this same resource under its old name rather than a neighbor. Comparing filenames
         instead would have an ``info.rehu`` refuse to browse its own folders the moment a conversion
         left its ``info.tc`` beside it.
 

@@ -24,7 +24,7 @@ def confirm_close(parent: QWidget, model: RehuDocumentModel, pending_saves: Pend
     :param model: the dirty document model about to be closed.
     :param pending_saves: the window's save jobs, as :func:`~.save_or_prompt_retry.save_or_prompt_retry` takes them.
     :returns: ``True`` if the close should proceed (Discard was chosen, or Save was chosen and succeeded), ``False`` if
-        it was cancelled -- either at this prompt, or at the retry/cancel dialog a failed save raises (#146), so a
+        it was canceled -- either at this prompt, or at the retry/cancel dialog a failed save raises (#146), so a
         document whose save fails is never closed out from under its unsaved edits.
     """
     buttons = QMessageBox.StandardButton

@@ -188,8 +188,8 @@ def test_a_failed_save_tells_its_document_why(rig: Rig, parent: QWidget, mocker:
     assert rig.model.pending_save == f"Save failed: {FAIL_REASON}"
 
 
-def test_a_cancelled_save_tells_its_document_it_did_not_land(rig: Rig, parent: QWidget) -> None:
-    """A cancelled row tells its document its save is over, with no conflict.
+def test_a_canceled_save_tells_its_document_it_did_not_land(rig: Rig, parent: QWidget) -> None:
+    """A canceled row tells its document its save is over, with no conflict.
 
     **Test steps:**
 
@@ -198,15 +198,15 @@ def test_a_cancelled_save_tells_its_document_it_did_not_land(rig: Rig, parent: Q
     """
     rig.owner.save(parent, rig.model)
 
-    rig.land(rig.serial_of_save(), JobState.CANCELLED)
+    rig.land(rig.serial_of_save(), JobState.CANCELED)
 
     rig.model.fail_save.assert_called_once_with(None)
     assert rig.model.pending_save == ""
 
 
-@mark.parametrize("state", [JobState.FAILED, JobState.CANCELLED])
+@mark.parametrize("state", [JobState.FAILED, JobState.CANCELED])
 def test_a_save_that_did_not_land_with_no_open_document_tells_nobody(rig: Rig, state: JobState) -> None:
-    """A save of a record nobody has open fails or is cancelled with nothing to tell.
+    """A save of a record nobody has open fails or is canceled with nothing to tell.
 
     **Test steps:**
 

@@ -62,7 +62,7 @@ def saves(rig: Rig, widget: TaskQueueWidget) -> None:
     hear of them.
 
     In this order: ``plain`` (a finished job that is not a save), ``failed save``, ``landed save``, ``dropped save``
-    (cancelled), ``plain failed``, ``waiting save``, ``paused`` (not a save), ``blocker`` (running, not a save) and
+    (canceled), ``plain failed``, ``waiting save``, ``paused`` (not a save), ``blocker`` (running, not a save) and
     ``queued save``.
 
     :param rig: the rig.
@@ -72,7 +72,7 @@ def saves(rig: Rig, widget: TaskQueueWidget) -> None:
     rig.add("plain", JobState.DONE)
     rig.add("failed save", JobState.FAILED, message="OSError: the disk is full", kind=SAVE_RECORD_KIND)
     rig.add("landed save", JobState.DONE, kind=SAVE_RECORD_KIND)
-    rig.add("dropped save", JobState.CANCELLED, kind=SAVE_RECORD_KIND)
+    rig.add("dropped save", JobState.CANCELED, kind=SAVE_RECORD_KIND)
     rig.add("plain failed", JobState.FAILED, message="ValueError: nope")
     rig.add("waiting save", JobState.WAITING, message=WAITING_REASON, kind=SAVE_RECORD_KIND)
     rig.add("paused", JobState.PAUSED)
@@ -338,7 +338,7 @@ def test_discard_is_offered_while_the_selection_holds_a_save_not_landed(widget: 
 
     * script every kind of row
     * select each save not landed, and one beside a job that is not a save, and verify Discard is enabled
-    * select a landed save, a cancelled one, and jobs that are not saves, and verify it is disabled
+    * select a landed save, a canceled one, and jobs that are not saves, and verify it is disabled
     """
     del saves
     action = ui_of(widget).discard_save_action  # type: ignore[attr-defined]
@@ -477,7 +477,7 @@ def test_a_filtered_current_row_points_the_log_at_its_own_job(
 def test_cancel_sends_the_pending_saves_to_their_owner_and_cancels_the_rest(
     widget: TaskQueueWidget, rig: Rig, saves: None, mocker: MockerFixture
 ) -> None:
-    """Cancelling a save not landed is a Drop the save owner asks about: Cancel hands those rows to it, and asks
+    """Canceling a save not landed is a Drop the save owner asks about: Cancel hands those rows to it, and asks
     its own question only about the rest, which it cancels.
 
     **Test steps:**
@@ -504,13 +504,13 @@ def test_cancel_over_only_pending_saves_asks_its_own_question_about_nothing(
     widget: TaskQueueWidget, rig: Rig, saves: None, mocker: MockerFixture
 ) -> None:
     """A Cancel of saves not landed alone leaves this dock nothing to confirm: the owner asks, and nothing is
-    cancelled here.
+    canceled here.
 
     **Test steps:**
 
     * script every kind of row, and select the failed and the waiting save
     * trigger Cancel
-    * verify ``discard_saves_requested`` carried both, no question was asked here, and nothing was cancelled
+    * verify ``discard_saves_requested`` carried both, no question was asked here, and nothing was canceled
     """
     del saves
     asked = emitted(widget.discard_saves_requested)
@@ -592,7 +592,7 @@ def test_the_sweeps_leave_a_failed_save_alone(widget: TaskQueueWidget, rig: Rig,
 
 
 def test_clear_all_leaves_every_pending_save_alone(widget: TaskQueueWidget, rig: Rig, saves: None) -> None:
-    """Clear All removes the finished rows but the saves not landed: those are neither cancelled nor removed, and no
+    """Clear All removes the finished rows but the saves not landed: those are neither canceled nor removed, and no
     Drop is asked of the owner.
 
     **Test steps:**
@@ -618,10 +618,10 @@ def test_clear_all_leaves_every_pending_save_alone(widget: TaskQueueWidget, rig:
 # region a waiting job among the controls
 
 
-def test_a_waiting_save_can_be_paused_cancelled_tried_now_moved_inspected_and_discarded(
+def test_a_waiting_save_can_be_paused_canceled_tried_now_moved_inspected_and_discarded(
     widget: TaskQueueWidget, saves: None
 ) -> None:
-    """Pointing at a waiting save and pausing it is how a reader stops it retrying by itself; it can be cancelled,
+    """Pointing at a waiting save and pausing it is how a reader stops it retrying by itself; it can be canceled,
     tried now, moved, cleared, inspected and discarded too -- but not retried, since it has not failed.
 
     **Test steps:**

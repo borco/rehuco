@@ -63,7 +63,7 @@
          <string>Clear failed tasks</string>
         </property>
         <property name="toolTip">
-         <string>A cancelled task is never cleared this way -- it was stopped on purpose and is the one most likely to be retried.</string>
+         <string>A canceled task is never cleared this way -- it was stopped on purpose and is the one most likely to be retried.</string>
         </property>
        </widget>
       </item>
