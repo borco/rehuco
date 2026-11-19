@@ -166,8 +166,10 @@ it.
 
 - **It is the match key for a rescan.** A store renames items and serves one item under several URLs; the id is the
   one thing that stays.
-- **The cache indexes `(site, site_id)`**, where the site is the scraper's `site_name`
-  ([[acquisition-tooling#scraper-registry]]), so finding the record for a listing is one lookup and never a walk.
+- **The cache indexes `(site, site_id)`**, where the site is the source's `publisher`, which a scraper fills with
+  its `site_name` ([[acquisition-tooling#scraper-registry]]), compared ignoring case, so finding the record for a
+  listing is one lookup and never a walk. A source has no site key of its own: a publisher edited by hand stops the
+  match.
 - **An item owned on two stores is one record with two sources**, each with its own id, as a tutorial sold on two
   platforms already is.
 
