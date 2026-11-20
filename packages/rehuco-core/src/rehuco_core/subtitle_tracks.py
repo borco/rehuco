@@ -57,7 +57,7 @@ class SubtitleTrack:
 
 @dataclass(frozen=True)
 class SubtitlePreferences:
-    """Which languages the keys visit, and in what order -- the Videos page's list.
+    """Which languages the keys visit, and in what order -- the Videos / Player page's list.
 
     :param entries: language names and :data:`UNKNOWN_ENTRY`, the most preferred first.
     :param show_all: whether a track the list does not name is visited too, after those it does.

@@ -73,7 +73,7 @@ def fixture_load(mocker: MockerFixture) -> Mock:
 
 
 def choose(player: str, build: Path | None = None) -> None:
-    """Set the Videos page's player and the Tools page's FFmpeg libraries path.
+    """Set the Videos / Player page's player and the Tools page's FFmpeg libraries path.
 
     :param player: the player chosen.
     :param build: the folder of the build, or ``None`` for none set up.

@@ -32,7 +32,7 @@ class VlcTool(ToolDescriptor):
     ID = "vlc"
     LABEL = "VLC"
     PURPOSE = "Decodes video in the app's player with the user's own VLC: deinterlaced, and AV1 on any graphics card."
-    FEATURES = "The In-app player with VLC's libraries choice on the Videos page."
+    FEATURES = "The In-app player with VLC's libraries choice on the Videos ▸ Player page."
     NOT_BUNDLED_BECAUSE = "It is GPL, and the app ships no GPL code."
     DOCS_ANCHOR = "vlc"
     EXECUTABLES = ("vlc",)

@@ -1,5 +1,5 @@
-"""Videos settings page: which backend measures a duration, over which files, where a video opens, and how watching
-is tracked (#225, #316, #318, #521)."""
+"""Videos / Player settings page: where a video opens, how watching is tracked, where the maximized player goes and
+how its subtitles are chosen (#316, #318, #574, #618, #692)."""
 
 from dataclasses import dataclass
 from typing import Final, override
@@ -7,15 +7,7 @@ from typing import Final, override
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import QRadioButton, QWidget
-from rehuco_core import (
-    FFMPEG_LIBRARIES_TOOL,
-    FFMPEG_TOOL,
-    VIDEO_EXTENSIONS,
-    VLC_TOOL,
-    FfprobeDurationProbe,
-    MediaInfoDurationProbe,
-    ToolDescriptor,
-)
+from rehuco_core import FFMPEG_LIBRARIES_TOOL, VLC_TOOL, ToolDescriptor
 
 from ...documents.latest_runner import LatestRunner
 from ...fields.widgets.overlay_surface import OverlayMode
@@ -31,20 +23,10 @@ from ..videos_settings import (
     PLAYERS,
     VLC_PLAYER,
     VideosSettings,
-    normalize_extensions,
     normalize_subtitle_languages,
     shared_videos_settings,
 )
-from .videos_page_ui import Ui_VideosPage
-
-AVAILABLE_TEMPLATE: Final = "{label} is ready."
-"""How a usable backend reports itself -- named rather than a bare "ready", since the message has to say
-*which* of the two was checked."""
-
-CHECKING_TEXT: Final = "Checking FFmpeg…"
-NEEDS_FFMPEG_TOOLTIP: Final = "Needs FFmpeg -- set it up in Tools."
-CHECK_TAG: Final = "ffmpeg"
-CHECK_FAILED_TEMPLATE: Final = "Checking FFmpeg failed: {error}"
+from .videos_player_page_ui import Ui_VideosPlayerPage
 
 NEEDS_VLC_TOOLTIP: Final = "Needs VLC -- set it up in Tools."
 NEEDS_LIBRARIES_TOOLTIP: Final = "Needs FFmpeg libraries -- set them up in Tools."
@@ -87,35 +69,30 @@ class PlayerChoice:
         return self.checked and self.reason is not None
 
 
-class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
-    """Configure how a tutorial's videos are measured (#224's parameters, made the user's).
+class VideosPlayerPage(QWidget):
+    """Configure where a tutorial's videos play and how watching them is tracked.
 
-    Five blocks, the first and the third one per parameter `rehuco_core.rehu_content_duration.content_duration` takes:
+    Four blocks:
 
-    - **Duration probe** -- which backend reads a container. *FFmpeg (external)* is offered once FFmpeg is usable,
-      and where FFmpeg is lives on the Tools page ([[packaging-deployment#external-tools]], #521), which a link
-      here opens. A choice already made stays selected when its tool later goes missing, and the page says why
-      rather than switching ([[appendices.settings-pages#persisting-changes]]).
     - **Playback** -- where a double-clicked video opens: the app's own player, or VLC once one is set up on the
-      Tools page, which a link here opens when it is not. Gated like the FFmpeg choice, and a choice already made
-      stays selected when its VLC goes missing, with the reason shown; the Files sub-dock plays in the app's own
-      player meanwhile ([[plugins#in-app-player]], #318).
-    - **Video extensions** -- which files a scan measures, a `StringListEditor` (#231) wearing this app's
-      icons, exactly as the reference-images list on `ImagesFilesPage` is.
+      Tools page, which a link here opens when it is not. A choice already made stays selected when its VLC goes
+      missing, with the reason shown; the Files sub-dock plays in the app's own player meanwhile
+      ([[plugins#in-app-player]], #318).
     - **Watch progress** -- the two auto-viewed rules and the size match for renamed files, which core's
       progress write takes as parameters ([[field-schema#watch-progress]], #316).
+    - **Maximized player** -- the surface the player goes over when its video is double-clicked (#574).
     - **Subtitles** (#618) -- whether a rehu's videos start with them shown, and the list of languages the subtitle
       keys visit, with a choice between that list alone and every track the video has ([[plugins#in-app-player]]).
 
-    **The selected backend reports whether it can actually run**, before anyone presses Compute: a scan under an
-    unusable one raises rather than measuring ``0`` ([[field-schema#duration-size]]) -- so this page is where that
-    is visible instead of showing up as a row that refuses to compute. Asking about FFmpeg runs it, so it runs on
-    the thread pool, each time the page is shown: a tool installed, updated or unmounted since is seen then.
+    **The selected player reports whether its tool can actually run**, before anyone double-clicks a video. Asking
+    about VLC or the FFmpeg libraries runs it, so it runs on the thread pool, each time the page is shown: a tool
+    installed, updated or unmounted since is seen then.
+
+    A sibling of `VideosProbePage` and `VideosExtensionsPage` under the "Videos" group (#692), all three over the
+    one `VideosSettings`: each stages and saves only its own fields.
 
     Edits are staged in the widgets until :meth:`save_changes` pushes them into the shared
-    `VideosSettings` and persists them; from then on that is what the next duration scan reads. Nothing
-    re-measures on save -- a measurement is only ever filled by an explicit action -- so this page has no
-    live-update wiring to drive.
+    `VideosSettings` and persists them.
 
     :param parent: optional Qt parent.
     """
@@ -123,21 +100,15 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
     tools_requested = Signal()
     """The user followed the link to the Tools page."""
 
-    availability_checked = Signal()
-    """FFmpeg's availability was asked of the locator and the page now shows the answer."""
-
     player_checked = Signal()
     """The availability of VLC and of the FFmpeg libraries was asked of the locator and the page now shows the
     answers."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.__ui: Final = Ui_VideosPage()
+        self.__ui: Final = Ui_VideosPlayerPage()
         self.__ui.setupUi(self)
         self.__asked = False
-        self.__ffmpeg_checked = False
-        self.__ffmpeg_reason: str | None = None
-        self.__checker: Final = LatestRunner(self)
         self.__pending: set[str] = set()
         self.__maximize_buttons: Final = {
             OverlayMode.DOCUMENT_OVERLAY: self.__ui.maximize_document_radio_button,
@@ -159,22 +130,13 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
             )
         else:
             self.__ui.ffmpeg_libraries_player_radio_button.hide()
-        # the probes name themselves: LABEL exists so the choice on screen tracks the registry rather
-        # than a second copy of the same two names living in the .ui
-        self.__ui.mediainfo_probe_radio_button.setText(MediaInfoDurationProbe.LABEL)
-        self.__ui.ffprobe_probe_radio_button.setText(FfprobeDurationProbe.LABEL)
-        self.__ui.extensions_editor.defaults = VIDEO_EXTENSIONS
-        apply_item_action_icons(self.__ui.extensions_editor)
         self.__ui.subtitle_languages_editor.defaults = DEFAULT_SUBTITLE_LANGUAGES
         apply_item_action_icons(self.__ui.subtitle_languages_editor)
 
-        self.__ui.ffprobe_probe_radio_button.toggled.connect(self.__on_probe_toggled)
         for choice in self.__choices:
             choice.radio.toggled.connect(self.__on_player_toggled)
             choice.checker.read.connect(self.__on_player_checked)
-        self.__ui.tools_link_label.linkActivated.connect(self.__on_tools_link_activated)
         self.__ui.player_tools_link_label.linkActivated.connect(self.__on_tools_link_activated)
-        self.__checker.read.connect(self.__on_checked)
         shared_tools_settings().tool_changed.connect(self.__on_tool_changed)
 
         self.drop_changes()
@@ -183,11 +145,7 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         """Whether any staged choice differs from what the shared settings currently hold."""
         settings = shared_videos_settings()
         return (
-            self.__staged_engine() != settings.engine
-            or self.__staged_player() != settings.player
-            # normalized before the comparison, so a row saving would drop anyway is not yet a change
-            # and auto-apply does not tear a fresh insert out from under its open cell (#53)
-            or normalize_extensions(self.__ui.extensions_editor.values) != settings.video_extensions
+            self.__staged_player() != settings.player
             or self.__ui.mark_file_viewed_check_box.isChecked() != settings.mark_file_viewed_at_end
             or self.__ui.mark_tutorial_viewed_check_box.isChecked() != settings.mark_tutorial_viewed_on_last_file
             or self.__ui.match_renamed_by_size_check_box.isChecked() != settings.match_renamed_by_size
@@ -201,14 +159,11 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         """Push the staged choices into the shared settings object, persist them, and show the result.
 
         The page reloads itself from the saved values afterward rather than leaving them as typed:
-        normalization can change the extension list -- a blank or duplicated entry is dropped, ``MP4``
-        becomes ``.mp4``, and emptying it restores the shipped formats -- and a page still showing what
-        was typed would disagree with what the next scan measures.
+        normalization can change the language list -- a blank or duplicated entry is dropped -- and a page still
+        showing what was typed would disagree with what the subtitle keys visit.
         """
         settings = shared_videos_settings()
-        settings.engine = self.__staged_engine()
         settings.player = self.__staged_player()
-        settings.extensions = normalize_extensions(self.__ui.extensions_editor.values)
         settings.mark_file_viewed_at_end = self.__ui.mark_file_viewed_check_box.isChecked()
         settings.mark_tutorial_viewed_on_last_file = self.__ui.mark_tutorial_viewed_check_box.isChecked()
         settings.match_renamed_by_size = self.__ui.match_renamed_by_size_check_box.isChecked()
@@ -219,6 +174,7 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         settings.save(persistent_settings())
         self.drop_changes()
 
+    # pylint: disable=duplicate-code  # the three Videos pages stage and show alike
     def drop_changes(self) -> None:
         """Discard the staged edits, re-seeding every widget from the shared settings."""
         self.__show(shared_videos_settings())
@@ -229,8 +185,8 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
 
     @override
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802  (Qt API name)
-        """Ask whether FFmpeg and VLC are usable the first time the page is shown; after that the Tools settings say
-        when either may have changed.
+        """Ask whether VLC and the FFmpeg libraries are usable the first time the page is shown; after that the Tools
+        settings say when either may have changed.
 
         :param event: the show event.
         """
@@ -238,16 +194,17 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         if not self.__asked:
             self.refresh_availability()
 
+    # pylint: enable=duplicate-code
+
     def refresh_availability(self) -> None:
-        """Ask whether the saved FFmpeg and VLC can be used, off the GUI thread; the page follows the answers.
+        """Ask whether the saved VLC and FFmpeg libraries can be used, off the GUI thread; the page follows the
+        answers.
 
         Nothing is searched for: an empty path means the best install `ToolDiscovery` recorded, and only a custom
         path is looked at, which reads its version once.
         """
         self.__asked = True
         tools = shared_tools_settings()
-        path, installs = tools.path(FFMPEG_TOOL.ID), tools.detection(FFMPEG_TOOL.ID).installs
-        self.__checker.start(CHECK_TAG, lambda: FfprobeDurationProbe(path, installs).unavailable_reason())
         self.__pending = {choice.player for choice in self.__choices}
         for choice in self.__choices:
             choice.checker.start(choice.player, lambda tool=choice.tool: tools.unusable_reason(tool))
@@ -257,17 +214,12 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :param settings: the values to show -- the shared object's saved ones, or a fresh one's defaults.
         """
-        if settings.engine == FfprobeDurationProbe.NAME:
-            self.__ui.ffprobe_probe_radio_button.setChecked(True)
-        else:
-            self.__ui.mediainfo_probe_radio_button.setChecked(True)
         for choice in self.__choices:
             if settings.player == choice.player:
                 choice.radio.setChecked(True)
                 break
         else:
             self.__ui.in_app_player_radio_button.setChecked(True)
-        self.__ui.extensions_editor.values = settings.video_extensions
         self.__ui.mark_file_viewed_check_box.setChecked(settings.mark_file_viewed_at_end)
         self.__ui.mark_tutorial_viewed_check_box.setChecked(settings.mark_tutorial_viewed_on_last_file)
         self.__ui.match_renamed_by_size_check_box.setChecked(settings.match_renamed_by_size)
@@ -276,23 +228,10 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.subtitles_all_radio_button.setChecked(settings.subtitles_show_all)
         self.__ui.subtitles_selected_radio_button.setChecked(not settings.subtitles_show_all)
         self.__ui.subtitle_languages_editor.values = settings.subtitle_languages
-        self.__update_probe_controls()
         self.__update_player_controls()
 
-    def __staged_engine(self) -> str:
-        """The backend currently selected in the radio buttons.
-
-        Read off the one radio, the way `DescriptionsPage` reads its engine: two mutually exclusive
-        radios in one parent are never both off, so the other one needs no test of its own.
-
-        :returns: the selected probe's :attr:`~rehuco_core.DurationProbe.NAME`.
-        """
-        if self.__ui.ffprobe_probe_radio_button.isChecked():
-            return FfprobeDurationProbe.NAME
-        return MediaInfoDurationProbe.NAME
-
     def __staged_player(self) -> str:
-        """The player currently selected in the radio buttons, read off the one radio as :meth:`__staged_engine` is.
+        """The player currently selected in the radio buttons.
 
         :returns: the name of the checked radio's player; ``IN_APP_PLAYER`` when no gated one is.
         """
@@ -305,26 +244,12 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         return next(mode for mode, button in self.__maximize_buttons.items() if button.isChecked())
 
-    def __update_probe_controls(self) -> None:
-        """Offer the FFmpeg choice only while it can be had, point to the Tools page when it cannot, and re-check the
-        status.
-
-        The choice is **disabled rather than hidden**, and a selected one stays enabled: a backend chosen while
-        FFmpeg worked is still what the next scan will use, so it is shown, with the reason, not quietly replaced.
-        """
-        radio = self.__ui.ffprobe_probe_radio_button
-        usable = self.__ffmpeg_checked and self.__ffmpeg_reason is None
-        radio.setEnabled(usable or radio.isChecked())
-        radio.setToolTip("" if radio.isEnabled() else NEEDS_FFMPEG_TOOLTIP)
-        self.__ui.tools_link_label.setVisible(self.__ffmpeg_checked and self.__ffmpeg_reason is not None)
-        self.__show_availability()
-
     def __update_player_controls(self) -> None:
         """Offer VLC and the FFmpeg libraries only while they can be had, and say why when the staged choice cannot be
         honored, or when it waits for the next start.
 
-        As :meth:`__update_probe_controls` does for FFmpeg: **disabled rather than hidden**, a selected one stays
-        enabled, and the reason sits beside it -- the Files sub-dock plays in the app's own player meanwhile.
+        **Disabled rather than hidden**, a selected one stays enabled, and the reason sits beside it -- the Files
+        sub-dock plays in the app's own player meanwhile.
         """
         for choice in self.__choices:
             choice.radio.setEnabled((choice.checked and not choice.unusable) or choice.radio.isChecked())
@@ -357,39 +282,13 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
             return RESTART_TEXT if vlc_restart_needed() else ""
         return RESTART_TEXT if wanted != (libraries.loaded_from is not None) else ""
 
-    def __show_availability(self) -> None:
-        """Report whether the staged backend can run here, in the words the probe itself gives."""
-        if self.__staged_engine() == FfprobeDurationProbe.NAME:
-            if not self.__ffmpeg_checked:
-                self.__ui.availability_label.setText(CHECKING_TEXT)
-                return
-            reason, label = self.__ffmpeg_reason, FfprobeDurationProbe.LABEL
-        else:
-            reason, label = MediaInfoDurationProbe().unavailable_reason(), MediaInfoDurationProbe.LABEL
-        self.__ui.availability_label.setText(reason if reason is not None else AVAILABLE_TEMPLATE.format(label=label))
-
     def __on_tool_changed(self, tool_id: str) -> None:
-        """Ask again when FFmpeg's path or detection changed, if the page has asked at all.
+        """Ask again when VLC's or the FFmpeg libraries' path or detection changed, if the page has asked at all.
 
         :param tool_id: the tool that changed.
         """
-        if tool_id in (FFMPEG_TOOL.ID, VLC_TOOL.ID, FFMPEG_LIBRARIES_TOOL.ID) and self.__asked:
+        if tool_id in (VLC_TOOL.ID, FFMPEG_LIBRARIES_TOOL.ID) and self.__asked:
             self.refresh_availability()
-
-    def __on_checked(self, tag: str, result: object) -> None:
-        """Take the answer of the FFmpeg check.
-
-        :param tag: unused; this runner does one kind of work.
-        :param result: the reason FFmpeg cannot be used, ``None`` when it can, or the error the check raised.
-        """
-        del tag
-        self.__ffmpeg_checked = True
-        if isinstance(result, Exception):
-            self.__ffmpeg_reason = CHECK_FAILED_TEMPLATE.format(error=result)
-        else:
-            self.__ffmpeg_reason = result if isinstance(result, str) else None
-        self.__update_probe_controls()
-        self.availability_checked.emit()
 
     def __on_player_checked(self, tag: str, result: object) -> None:
         """Take the answer of one tool's check.
@@ -415,18 +314,6 @@ class VideosPage(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         del checked
         self.__update_player_controls()
-
-    def __on_probe_toggled(self, checked: bool) -> None:
-        """Follow the backend choice.
-
-        Connected only to ``ffprobe_probe_radio_button.toggled`` -- with exactly two mutually exclusive
-        radios, that alone fires once per switch either way.
-
-        :param checked: whether the ffprobe radio is now checked; unused (the staged state is read back
-            rather than inferred from which signal reported the switch).
-        """
-        del checked
-        self.__update_probe_controls()
 
     def __on_tools_link_activated(self, link: str) -> None:
         """Open the Tools page.

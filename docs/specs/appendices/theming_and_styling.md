@@ -81,7 +81,7 @@ rendered as a bare, unrecognizable solid bar rather than a calendar shape at all
 **Investigation:**
 
 - Confirmed `Phosphor-Duotone.ttf` is **not** an OpenType color font: a raw byte search of the file
-  found no `COLR`/`CPAL`/`SVG `/`CBDT`/`sbix` table tag, only the plain outline `glyf` table every
+  found no `COLR`/`CPAL`/`SVG`/`CBDT`/`sbix` table tag, only the plain outline `glyf` table every
   other Phosphor weight uses. There is no embedded per-region alpha/color data a renderer could pick
   up in the first place.
 - Rendered several codepoints through the Duotone family directly: the star glyph (`\uE46A`)

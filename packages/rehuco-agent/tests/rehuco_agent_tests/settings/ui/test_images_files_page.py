@@ -151,7 +151,7 @@ def test_the_extension_editors_reset_fills_the_list_with_the_shipped_formats(pag
     assert listed_extensions(page) == CONTENT_IMAGE_EXTENSIONS
 
 
-# Mirrors test_videos_page.py's icon/dirty pair exactly -- kept as a separate copy rather than a
+# Mirrors test_videos_extensions_page.py's icon/dirty pair exactly -- kept as a separate copy rather than a
 # shared import, matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 def test_every_extension_editor_action_wears_one_of_this_apps_icons(page: ImagesFilesPage) -> None:

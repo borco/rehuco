@@ -1,10 +1,11 @@
 """The libvlc this run's player dock can decode with, loaded when first asked for (#319, [[plugins#in-app-player]]).
 
 Unlike the FFmpeg libraries (#580), which Qt binds at import, libvlc is loaded lazily: at the first player built with
-*VLC* chosen on the Videos page, from the install the Tools page resolves, through :class:`~rehuco_core.VlcLibrary`,
-which never raises. A load that failed is not kept, so a VLC set up on the Tools page afterward is tried at the next
-player. A load that succeeded is kept for the run: python-vlc binds its library once per process, so a *different* VLC
-chosen afterward is taken at the next start, which the Videos page says (:func:`vlc_restart_needed`).
+*VLC* chosen on the Videos / Player page, from the install the Tools page resolves, through
+:class:`~rehuco_core.VlcLibrary`, which never raises. A load that failed is not kept, so a VLC set up on the Tools page
+afterward is tried at the next player. A load that succeeded is kept for the run: python-vlc binds its library once per
+process, so a *different* VLC chosen afterward is taken at the next start, which the Videos / Player page says
+(:func:`vlc_restart_needed`).
 """
 
 from functools import lru_cache

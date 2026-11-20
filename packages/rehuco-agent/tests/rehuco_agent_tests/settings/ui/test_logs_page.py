@@ -30,7 +30,7 @@ FAKE_LOG_PATH: Final = str(Path("/fake/borco/rehuco-agent/rehuco-agent.log"))
 
 
 # region fixtures
-# Mirrors test_videos_page.py's (and conftest.py's) FakeSettings exactly -- kept as a separate copy
+# Mirrors test_videos_probe_page.py's (and conftest.py's) FakeSettings exactly -- kept as a separate copy
 # rather than a shared import, matching this codebase's settings-test convention.
 # unsupported-assignment-operation: a false positive on the plain dict below, seen only once this module
 # imports from PySide6.QtCore -- the same astroid misreading conftest.py's FakeSettings notes.

@@ -28,7 +28,9 @@ SETTINGS_PAGE_CLASSES: Final = (
     "SystemIntegrationPage",
     "TasksPage",
     "ToolsPage",
-    "VideosPage",
+    "VideosExtensionsPage",
+    "VideosPlayerPage",
+    "VideosProbePage",
 )
 """The settings pages `MainWindow` registers, by their names in :mod:`rehuco_agent.main_window`."""
 
@@ -44,7 +46,7 @@ class StubSettingsPage(QWidget):
     """An empty settings page: what `MainWindow` registers in a test of anything but its settings pages (#545)."""
 
     tools_requested = Signal()
-    """What `VideosPage` has, which `MainWindow` connects."""
+    """What `VideosProbePage` and `VideosPlayerPage` have, which `MainWindow` connects."""
 
     def __init__(self, *_args: object) -> None:
         super().__init__()

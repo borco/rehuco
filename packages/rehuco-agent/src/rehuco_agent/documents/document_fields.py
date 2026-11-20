@@ -526,7 +526,7 @@ def build_document_form(
         length in the record (#316): one probe pass answers both, so the Files dock's shares need no second one.
 
         Reads the same excluded-name list the size scan does, so the two measure one content set (#226).
-        The probe backend and the video-extension list are the Videos settings page's (#225), read here
+        The probe backend and the video-extension list are the Videos settings pages' (#225), read here
         at every measurement, so either edited in Settings takes effect on the next Compute without
         rebuilding the form.
 

@@ -26,10 +26,10 @@ class PlayerSubtitles(QObject):
     silent stretch of a video shows none. A paused video has a still on screen, and the engine's refreshed frame
     (:attr:`VlcMediaPlayer.still_refreshed`) replaces it, so a change shows at once.
 
-    **Which tracks the keys visit** is the Videos page's list of languages (:class:`~rehuco_core.SubtitlePreferences`);
-    **what shows when a video starts** is this rehu's :attr:`choice`, which travels with the player's layout, or the
-    page's default (on or off) for a rehu that has none. Both are handed to the engine before each video
-    (:meth:`prepare`), which applies the choice when libvlc has listed the tracks.
+    **Which tracks the keys visit** is the Videos / Player page's list of languages
+    (:class:`~rehuco_core.SubtitlePreferences`); **what shows when a video starts** is this rehu's :attr:`choice`, which
+    travels with the player's layout, or the page's default (on or off) for a rehu that has none. Both are handed to the
+    engine before each video (:meth:`prepare`), which applies the choice when libvlc has listed the tracks.
 
     :param ui: the player's generated UI, whose three subtitle actions this connects.
     :param engine: the engine the keys drive.

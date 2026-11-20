@@ -19,7 +19,7 @@ class FfmpegTool(ToolDescriptor):
     ID = "ffmpeg"
     LABEL = "FFmpeg"
     PURPOSE = "Reads a video's length and frame size."
-    FEATURES = "The duration probe on the Videos page."
+    FEATURES = "The duration probe on the Videos ▸ Duration Probe page."
     NOT_BUNDLED_BECAUSE = "A full build is large, and the builds that include every codec are GPL."
     DOCS_ANCHOR = "ffmpeg"
     EXECUTABLES = ("ffmpeg", "ffprobe")

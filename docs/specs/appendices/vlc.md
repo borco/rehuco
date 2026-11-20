@@ -58,7 +58,7 @@ each poll until the entry asked for is the one named.
 
 [[[appendices.vlc#rc-protocol]]]
 
-- **No greeting, no prompt.** With `--rc-quiet` nothing is sent on connect, and no `> ` prompt follows an answer.
+- **No greeting, no prompt.** With `--rc-quiet` nothing is sent on connect, and no `>` prompt follows an answer.
 - **Lines end in `\r\n`.** A command is a line ending in `\n`; several can be sent at once and answer in order.
 - **Every command ends its answer with `<command>: returned 0 (no error)`.** `get_time`, `get_length` and `is_playing`
   are the exceptions: they answer a bare integer.
@@ -295,8 +295,8 @@ beside it (#618).
   new still.
 - **The language is in the description, as an English name**: `Track 3 - [French]` for `clip.fr.srt`, from the file
   name; a bare `clip.vtt` is `Track 1`, with none. `media.tracks_get()`, which would give ISO codes, **segfaulted**
-  here, so the description is what the player reads. libvlc's table of language names is not exposed; the Videos page
-  ships its own list of ISO 639-1 names to choose from.
+  here, so the description is what the player reads. libvlc's table of language names is not exposed; the Videos ›
+  Player page ships its own list of ISO 639-1 names to choose from.
 - **`--sub-language=fr` and `--no-spu` are libvlc's own** way of choosing at start (French was selected; none was), but
   they apply to the instance, not a rehu, so the player chooses itself once the list is settled
   ([[plugins#in-app-player]]).

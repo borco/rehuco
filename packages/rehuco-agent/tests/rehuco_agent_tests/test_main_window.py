@@ -100,7 +100,9 @@ from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.system_integration_page import SystemIntegrationPage
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.tools_page import ToolsPage
-from rehuco_agent.settings.ui.videos_page import VideosPage
+from rehuco_agent.settings.ui.videos_extensions_page import VideosExtensionsPage
+from rehuco_agent.settings.ui.videos_player_page import VideosPlayerPage
+from rehuco_agent.settings.ui.videos_probe_page import VideosProbePage
 from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
 from rehuco_agent.tray_icon import TrayIcon
 from rehuco_core import (
@@ -631,13 +633,14 @@ def test_registers_the_files_page(qtbot: QtBot) -> None:
 
 
 @mark.usefixtures("real_settings_pages")
-def test_registers_the_videos_page(qtbot: QtBot) -> None:
-    """The Videos page (#225) is registered into the settings dialog.
+def test_registers_the_videos_pages(qtbot: QtBot) -> None:
+    """The Videos pages (#225, #692) are registered into the settings dialog.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds a ``VideosPage``
+    * verify the settings dialog's page stack holds a ``VideosProbePage``, a ``VideosExtensionsPage`` and a
+      ``VideosPlayerPage``
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -647,18 +650,19 @@ def test_registers_the_videos_page(qtbot: QtBot) -> None:
     # each page is shown through a scroll area of its own (#229), so read it back out of one
     stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
     pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert any(isinstance(page, VideosPage) for page in pages)
+    for page_class in (VideosProbePage, VideosExtensionsPage, VideosPlayerPage):
+        assert any(isinstance(page, page_class) for page in pages), page_class.__name__
 
 
 @mark.usefixtures("real_settings_pages")
-def test_the_videos_page_link_shows_the_tools_page(qtbot: QtBot) -> None:
-    """The link under the duration probe opens Tools (#521).
+def test_the_videos_pages_links_show_the_tools_page(qtbot: QtBot) -> None:
+    """The link under the duration probe and the one under the player choice both open Tools (#521, #692).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * make the Videos page ask for the Tools page
-    * verify the dialog shows the Tools page
+    * make each of the two Videos pages that has a link ask for the Tools page
+    * verify the dialog shows the Tools page each time
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -666,17 +670,18 @@ def test_the_videos_page_link_shows_the_tools_page(qtbot: QtBot) -> None:
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
     pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    videos_page = next(page for page in pages if isinstance(page, VideosPage))
     tools_page = next(page for page in pages if isinstance(page, ToolsPage))
 
-    videos_page.tools_requested.emit()
+    for page_class in (VideosProbePage, VideosPlayerPage):
+        settings_dialog.show_page("Videos")
+        next(page for page in pages if isinstance(page, page_class)).tools_requested.emit()
 
-    assert dialog_ui.page_stack.currentWidget().widget() is tools_page
+        assert dialog_ui.page_stack.currentWidget().widget() is tools_page
 
 
 def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
-    """Every page is a top-level row, except the ones grouped under "Images" (#277, #294, #298), "Locations" (#322)
-    and "Roots" (#637), and the rows are in alphabetical order.
+    """Every page is a top-level row, except the ones grouped under "Images" (#277, #294, #298), "Locations" (#322),
+    "Roots" (#637) and "Videos" (#692), and the rows are in alphabetical order.
 
     The pages that used to nest under "Plugins" are among the top-level ones, so a reader looking for
     "Videos" no longer has to know it is a plugin's setting to find it. Order is registration order
@@ -687,11 +692,12 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify only "Images", "Locations" and "Roots" have children, the cross-platform pages are all top-level
-      rows, and the whole top-level list is sorted case-insensitively
+    * verify only "Images", "Locations", "Roots" and "Videos" have children, the cross-platform pages are all
+      top-level rows, and the whole top-level list is sorted case-insensitively
     * verify "Images" nests exactly Display, Content Extensions and Sidecar Names, in that order
     * verify "Locations" nests one page per installed plugin main key and Root Layout Templates, alphabetically by title
     * verify "Roots" nests New Root Presets and Root Catalog
+    * verify "Videos" nests Duration Probe, Extensions and Player, in that order
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -700,7 +706,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     items = [model.item(row) for row in range(model.rowCount())]
     titles = [item.text() for item in items]
-    grouped_row_counts = {"Images": 3, "Locations": len(DEFAULT_PLUGIN_REGISTRY.main_keys) + 1, "Roots": 2}
+    grouped_row_counts = {"Images": 3, "Locations": len(DEFAULT_PLUGIN_REGISTRY.main_keys) + 1, "Roots": 2, "Videos": 3}
     assert [item.rowCount() for item in items] == [grouped_row_counts.get(title, 0) for title in titles]
     assert set(titles) >= {
         "Checksums",
@@ -733,6 +739,13 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     assert [roots_item.child(row).text() for row in range(roots_item.rowCount())] == [
         "New Root Presets",
         "Root Catalog",
+    ]
+
+    videos_item = items[titles.index("Videos")]
+    assert [videos_item.child(row).text() for row in range(videos_item.rowCount())] == [
+        "Duration Probe",
+        "Extensions",
+        "Player",
     ]
 
 

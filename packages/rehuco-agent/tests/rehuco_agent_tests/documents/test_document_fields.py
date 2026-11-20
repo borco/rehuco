@@ -878,7 +878,7 @@ def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusio
 ) -> None:
     """The duration pair's Compute measures *this* document's videos, reading the same excluded-name list
     the size scan does -- one content set, decided once (#224, #226) -- under the backend and the video
-    formats the Videos settings page holds (#225).
+    formats the Videos / Extensions settings page holds (#225).
 
     **Test steps:**
 

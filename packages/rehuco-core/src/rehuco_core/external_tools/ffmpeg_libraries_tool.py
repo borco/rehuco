@@ -39,7 +39,7 @@ class FfmpegLibrariesTool(ToolDescriptor):
     ID = "ffmpeg_libraries"
     LABEL = "FFmpeg libraries"
     PURPOSE = "Decodes video in the app's player with a shared FFmpeg build, so AV1 plays on any graphics card."
-    FEATURES = "The Qt with external FFmpeg libraries choice on the Videos page."
+    FEATURES = "The Qt with external FFmpeg libraries choice on the Videos ▸ Player page."
     NOT_BUNDLED_BECAUSE = "Qt's own FFmpeg has no software AV1 decoder, and a build that has one is large."
     DOCS_ANCHOR = "ffmpeg-libraries"
     EXECUTABLES = ()

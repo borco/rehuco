@@ -539,7 +539,8 @@ each OS keeps it, how its version is read, its minimum and its blocklist. A `Too
 candidates, each with a version and a status. One **Tools** settings page ([[appendices.settings-pages#tools-page]])
 sets them all up. The tracer had one tool, **FFmpeg** (`ffmpeg` and `ffprobe` in one folder, the duration probe's
 external backend, [[field-schema#duration-size]]); **VLC** (the `vlc` executable and, what the app uses of it, its
-`libvlc` shared library, the Videos page's in-app VLC engine, #318, #319) joined it, and the conversion `ffmpeg` (#520) arrives with the feature that needs it.
+`libvlc` shared library, the Videos › Player page's in-app VLC engine, #318, #319) joined it, and the conversion
+`ffmpeg` (#520) arrives with the feature that needs it.
 
 - **The app never downloads a tool.** The docs site's [External Tools](../external-tools.md) page says where each one
   comes from, one section per tool under a fixed anchor (`#ffmpeg`, `#vlc`, `#ffmpeg-libraries`); each tool's frame links
@@ -585,8 +586,8 @@ external backend, [[field-schema#duration-size]]); **VLC** (the `vlc` executable
   loads the five libraries and writes its answer to the `--output` file, since the packaged exe prints nowhere and a
   build that crashes the process it loads into must not be the agent. The agent loads a build, by full path in
   `avutil`, `swresample`, `swscale`, `avcodec`, `avformat` order, only from `__main__` at start, ahead of the import of
-  Qt Multimedia, and only when the Videos page chose it (`PlaybackLibraries`); a build that is gone or will not load
-  leaves Qt's own in use, with the reason kept for the Videos page and the log. Qt's own folder, on `PATH` in a
+  Qt Multimedia, and only when the Videos › Player page chose it (`PlaybackLibraries`); a build that is gone or will not
+  load leaves Qt's own in use, with the reason kept for that page and the log. Qt's own folder, on `PATH` in a
   development environment, is never listed as a build.
 - **Paths are machine-local, never remotely settable** ([[discovery-trust-access#remote-admin]]). A node locates its own
   tools through the same `ToolLocator`, configured from its own config, and never sees the agent's paths.
