@@ -512,11 +512,11 @@ def test_a_click_reports_the_video_of_a_row_or_of_a_line_of_its_notes_and_a_fold
     assert note.args == ["a.mp4"]
 
 
-def test_a_compact_view_shows_the_name_and_the_progress_alone(qtbot: QtBot, model: RehuDocumentModel) -> None:
+def test_a_compact_view_shows_the_name_the_progress_and_the_length(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """**Test steps:**
 
     * show a compact view
-    * verify it has no header, and the favorite and length columns are hidden while the name and progress are not
+    * verify it has no header, and the favorite column is hidden while the name, progress and length are not
     """
     view = VideoTreeView(model, compact=True)
     qtbot.addWidget(view)
@@ -524,7 +524,7 @@ def test_a_compact_view_shows_the_name_and_the_progress_alone(qtbot: QtBot, mode
     tree = tree_of(view)
 
     assert tree.isHeaderHidden()
-    assert [tree.isColumnHidden(column) for column in range(4)] == [False, False, True, True]
+    assert [tree.isColumnHidden(column) for column in range(4)] == [False, False, True, False]
 
 
 def test_a_view_over_another_ones_rows_shows_them_and_leaves_them_to_their_owner(
