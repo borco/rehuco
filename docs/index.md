@@ -20,6 +20,8 @@ The desktop app, `rehuco-agent`, is the only program here. Either:
 **Alpha.** The app is in daily use on a real library, but the file formats and the packages' APIs still change
 between releases, sometimes with no migration, so keep backups of anything you point it at.
 
+**Developed with the help of AI.**
+
 ## What it is
 
 A personal media catalog for the things you collect to learn from and work with — video tutorials,
