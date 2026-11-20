@@ -47,6 +47,17 @@ class PlayerLevels(QObject):
         """The playback rate the combo shows."""
         return float(self.__combo.currentData())
 
+    @speed.setter
+    def speed(self, rate: float | None) -> None:
+        """Show a playback rate on the combo, which its change then gives the player; ``None`` or one the combo does
+        not offer leaves it as it is.
+
+        :param rate: the playback rate, one of :data:`SPEEDS`.
+        """
+        index = self.__combo.findData(rate) if rate is not None else -1
+        if index >= 0:
+            self.__combo.setCurrentIndex(index)
+
     def change_volume(self, delta: float) -> None:
         """Raise or lower the volume one step, within the scale.
 

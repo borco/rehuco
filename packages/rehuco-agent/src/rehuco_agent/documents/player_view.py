@@ -293,13 +293,12 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         return self.__stage.mode
 
     def save_state(self) -> bytes:
-        """Encode the video and the stage -- what shows beside the picture, and where it splits -- for the dock's entry
-        in the layout.
+        """Encode the video, the speed (#697) and the stage -- what shows and where it splits -- for the dock's entry.
 
         :returns: the state, restorable by :meth:`restore_state`.
         """
         return self.__stage.save_state(
-            self.__key if self.__key is not None else self.__held_key, self.__subtitles.choice
+            self.__key if self.__key is not None else self.__held_key, self.__subtitles.choice, self.__levels.speed
         )
 
     def restore_state(self, state: bytes) -> None:
@@ -310,6 +309,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         video = self.__stage.restore_state(state)
         self.__subtitles.choice = self.__stage.subtitles_in(state)
+        self.__levels.speed = PlayerStage.speed_in(state)
         if video is not None:
             self.__held_key = video
             if self.__key is not None or self.__intent is not None:

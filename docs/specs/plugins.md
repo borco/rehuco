@@ -1287,6 +1287,10 @@ Left and Right jump five seconds, Ctrl+Left and Ctrl+Right load the previous and
 start and Ctrl+End goes to the end -- which finishes the video and loads the next -- Up and Down change the volume, and Ctrl+Up and Ctrl+Down, or `]` and `[`, change the speed — and the slider, the combo and the buttons take
 no focus, so an arrow is never theirs.
 
+**The speed is the document's** (#697): one for all its videos, whether one is chosen, double-clicked, stepped to or
+reached by the end of the one before, docked or maximized. It is kept in the player dock's saved state, as the subtitle
+choice is, so it comes back with the session ([[plugins#session-restore]]); a speed the combo does not offer is ignored.
+
 **Dragging the slider's handle shows the frame at the handle in the main picture** (#613; no second decoder, so
 no thumbnail above the bar, owner). The bar reports the handle at most four times a second, each report a seek, and
 the clock follows it. A video that plays is held paused and silent for the drag, its button still offering to pause,

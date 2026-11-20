@@ -23,6 +23,7 @@ INFO_STATE_KEY: Final = "info"
 TREE_STATE_KEY: Final = "tree"
 NOTES_STATE_KEY: Final = "notes"
 SUBTITLES_STATE_KEY: Final = "subtitles"
+SPEED_STATE_KEY: Final = "speed"
 """The rest of the player's entry: the video it is on, and which of the panels beside the picture show (#576)."""
 
 STAGE_STATE_KEY: Final = "stage_split"
@@ -263,12 +264,15 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
 
     # endregion
 
-    def save_state(self, video: str | None, subtitles: SubtitleChoice | None = None) -> bytes:
+    def save_state(
+        self, video: str | None, subtitles: SubtitleChoice | None = None, speed: float | None = None
+    ) -> bytes:
         """Encode where the stage splits between the picture and the panels beside it, which of them show, the
-        video the player is on, and what the reader chose of the subtitles (#618).
+        video the player is on, what the reader chose of the subtitles (#618), and the playback speed (#697).
 
         :param video: the video's content key, or ``None`` for none.
         :param subtitles: the choice, or ``None`` while none was made, which the settings' default stands for.
+        :param speed: the playback rate, or ``None`` to leave it out.
         :returns: the state, restorable by :meth:`restore_state`.
         """
         ui = self.__ui
@@ -281,7 +285,23 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
         }
         if subtitles is not None:
             state[SUBTITLES_STATE_KEY] = subtitles.to_state()
+        if speed is not None:
+            state[SPEED_STATE_KEY] = speed
         return cbor2.dumps(state)
+
+    @staticmethod
+    def speed_in(state: bytes) -> float | None:
+        """The playback speed :meth:`save_state` encoded.
+
+        :param state: the blob.
+        :returns: the speed, or ``None`` when there is none or the blob cannot be read.
+        """
+        try:
+            loaded = cbor2.loads(state)
+        except cbor2.CBORDecodeError:
+            return None
+        speed = loaded.get(SPEED_STATE_KEY) if isinstance(loaded, dict) else None
+        return float(speed) if isinstance(speed, (int, float)) and not isinstance(speed, bool) else None
 
     @staticmethod
     def subtitles_in(state: bytes) -> SubtitleChoice | None:

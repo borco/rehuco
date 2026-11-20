@@ -7,6 +7,7 @@ playing methods patched (``player_view_support``).
 from pathlib import Path
 from types import SimpleNamespace
 
+import cbor2
 from borco_pyside.shortcuts import Command
 from pytest import mark, param
 from pytest_mock import MockerFixture
@@ -32,6 +33,7 @@ from rehuco_agent.documents import player_notices
 from rehuco_agent.documents.player_format_notes import INTERLACED_NOTICE
 from rehuco_agent.documents.player_levels import SPEEDS, VOLUME_STEP
 from rehuco_agent.documents.player_notices import AV1_LIBRARIES_HINT, AV1_NOTICE
+from rehuco_agent.documents.player_stage import SPEED_STATE_KEY
 from rehuco_agent.documents.player_view import ERROR_NOTICE, PlayerView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.watch_progress_recorder import WatchProgressRecorder
@@ -212,6 +214,50 @@ def test_a_speed_chosen_before_any_video_plays_asks_no_player(view: PlayerView, 
 
     assert speed_combo_of(view).currentIndex() == SPEEDS.index(1.25)
     media.set_rate.assert_not_called()
+
+
+def test_the_speed_is_saved_with_the_player_and_restored_into_the_engine(view: PlayerView, media: Media) -> None:
+    """**Test steps:**
+
+    * step the speed up to 1.25 and save the player's state
+    * verify the state carries 1.25
+    * restore it into a player at the default speed, and play a video
+    * verify the combo shows 1.25 and the engine was given it
+    """
+    action_of(view, "speed_up_action").trigger()
+    state = view.save_state()
+    assert cbor2.loads(state)[SPEED_STATE_KEY] == 1.25
+
+    speed_combo_of(view).setCurrentIndex(SPEEDS.index(1.0))
+    view.restore_state(state)
+    start_playing(view)
+
+    assert speed_combo_of(view).currentIndex() == SPEEDS.index(1.25)
+    assert media.set_rate.call_args.args == (1.25,)
+
+
+@mark.parametrize(
+    "state",
+    [
+        param(cbor2.dumps({}), id="none saved"),
+        param(cbor2.dumps({SPEED_STATE_KEY: "fast"}), id="not a number"),
+        param(cbor2.dumps({SPEED_STATE_KEY: True}), id="a bool"),
+        param(cbor2.dumps({SPEED_STATE_KEY: 3.0}), id="not offered"),
+        param(b"not cbor", id="unreadable"),
+        param(cbor2.dumps([1]), id="not a map"),
+    ],
+)
+def test_a_speed_the_state_does_not_hold_leaves_the_combo_as_it_is(view: PlayerView, state: bytes) -> None:
+    """**Test steps:**
+
+    * step the speed up to 1.25, and restore a state with no usable speed
+    * verify the combo still shows 1.25
+    """
+    action_of(view, "speed_up_action").trigger()
+
+    view.restore_state(state)
+
+    assert speed_combo_of(view).currentIndex() == SPEEDS.index(1.25)
 
 
 # endregion
