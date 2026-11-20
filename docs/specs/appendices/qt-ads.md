@@ -803,11 +803,7 @@ transition stays the desktop's.
 
 ## 12. A per-tab maximize is a userland hide/show, and every capture has to undo it
 
-
-
 [[[appendices.qt-ads#area-maximize]]]
-
-
 
 QtAds has no "maximize this dock" (#341): `closeOtherAreas()` *closes* the siblings — their docks read
 closed and their toggle actions un-check — and the `showMaximized` family is plain `QWidget` window
@@ -824,16 +820,12 @@ container only, so a dock in a floating window is reached through `area.dockCont
 and fills that window, leaving the main one alone. Everything below was measured offscreen against the
 installed binding.
 
-
-
 **Hiding an area is signal-silent.** `CDockAreaWidget.setVisible(False)` and back emit nothing at all:
 no `dockAreaViewToggled` on the manager, no `viewToggled` on any of the area's docks, no
 `dockAreasAdded`/`dockAreasRemoved`. `toggleView` is the route that emits. So no dock reads closed,
 nothing else in the app reacts, and `openedDockAreas()` (which filters on `isHidden()`) simply stops
 listing the hidden ones — which is also why the handler needs no re-entrancy guard against its own
 hides, and why a document's `viewToggled`-driven size stash never sees them.
-
-
 
 **A capture taken while maximized is poisoned.** `saveState()` serializes the hidden panes' splitter
 `Sizes` at zero (`800 0` for a two-pane split), and restoring that blob later gives a sliver, not the
@@ -853,8 +845,6 @@ manager is on screen, for the sizes it records to be ones a layout pass has sett
 reports it, so a capture in between keeps it; a dock no longer open by that name restores nothing, and a maximize of the
 reader's overtakes it.
 
-
-
 **Exit first, then the change.** Any structural change on the manager — an area added or removed (a
 dock dragged out or docked in), a dock added or removed, a dock or an area shown or hidden by a toggle
 (`viewToggled`, `dockAreaViewToggled`) — restores synchronously from the signal, so whatever the app
@@ -867,8 +857,6 @@ reparented ([[appendices.qt-ads#restore-current-split]]); a refused blob touches
 maximize correctly survives one. One consumer still needs its own call: `DocumentSubDocks.__on_view_toggled`
 is connected as each dock is built, before the handler could be, so it calls `restore()` itself ahead of
 its size stash rather than trusting slot order.
-
-
 
 **The button is the app's, inserted into the tab beside QtAds' own close button.** A Python-subclassed
 tab through the factory crashes ([[appendices.qt-ads#custom-tab-widget]]), so a plain `QPushButton` — the

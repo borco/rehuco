@@ -58,7 +58,7 @@ each poll until the entry asked for is the one named.
 
 [[[appendices.vlc#rc-protocol]]]
 
-- **No greeting, no prompt.** With `--rc-quiet` nothing is sent on connect, and no `> ` prompt follows an answer.
+- **No greeting, no prompt.** With `--rc-quiet` nothing is sent on connect, and no `>` prompt follows an answer.
 - **Lines end in `\r\n`.** A command is a line ending in `\n`; several can be sent at once and answer in order.
 - **Every command ends its answer with `<command>: returned 0 (no error)`.** `get_time`, `get_length` and `is_playing`
   are the exceptions: they answer a bare integer.

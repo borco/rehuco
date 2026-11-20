@@ -772,8 +772,8 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     text is the browser's remembered filter; a `columns:` word an earlier build saved in it is dropped as it loads. A
     folder's context menu in Roots — *Show only rehu in this folder* — sets `folder:"<root label>/<relative path>"`
     on the current browser, click-to-filter links set the same tokens on it ([[plugins#filter-urls]]), and an
-    **Authors** cell's context menu (#460) offers *Filter by <author>* for each author of its row, read from the
-    record rather than split from the cell, or *Clear the filter by <author>* for one the line already names; each
+    **Authors** cell's context menu (#460) offers *Filter by \<author\>* for each author of its row, read from the
+    record rather than split from the cell, or *Clear the filter by \<author\>* for one the line already names; each
     **replaces** that field's token and keeps the rest of the line. The current browser is the focused one, else the
     one focused last, and a link with no browser open opens a default one to carry it. Roots and the browsers are
     otherwise independent.
@@ -781,7 +781,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     those matching both ([[plugins#saved-searches]]). The Tag Browser sets the line as a link does
     ([[plugins#tag-browser]]).
   - **New Table Browser** offers presets on its menu (#400) — a click on it is *Default* (the common columns); then
-    one *<Type> Columns* entry per type that contributes columns (`catalog_type_fields`), today *Tutorial Columns* and
+    one *\<Type\> Columns* entry per type that contributes columns (`catalog_type_fields`), today *Tutorial Columns* and
     *Reference Images Columns*: that type's columns shown, every other type's hidden, a `type:` token on the line, and
     the browser named after the type. A type with no column of its own is not offered. A preset only picks the
     starting header state, filter and name; the browser is then an ordinary one and remembers no preset.
