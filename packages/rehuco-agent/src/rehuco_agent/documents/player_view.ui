@@ -57,9 +57,9 @@
         <verstretch>1</verstretch>
        </sizepolicy>
       </property>
-      <widget class="QVideoWidget" name="video_widget" native="true"/>
-      <widget class="VlcSurface" name="vlc_surface" native="true"/>
-      <widget class="VideoStill" name="still_widget" native="true"/>
+      <widget class="QVideoWidget" name="video_widget"/>
+      <widget class="VlcSurface" name="vlc_surface"/>
+      <widget class="VideoStill" name="still_widget"/>
      </widget>
      <widget class="QSplitter" name="side_splitter">
       <property name="orientation">
@@ -176,6 +176,25 @@
        <widget class="QLabel" name="time_label">
         <property name="text">
          <string notr="true">0:00 / 0:00</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QToolButton" name="continuous_play_button">
+        <property name="focusPolicy">
+         <enum>Qt::FocusPolicy::NoFocus</enum>
+        </property>
+        <property name="toolTip">
+         <string>Continuous play: when a video ends, the next one starts from its beginning; unchecked, the video stops at its end.</string>
+        </property>
+        <property name="text">
+         <string>Continuous play</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="autoRaise">
+         <bool>true</bool>
         </property>
        </widget>
       </item>

@@ -1,6 +1,10 @@
 """The tutorial's in-app video player: a Qt Multimedia or libvlc engine, a transport bar and the player's keys
 ([[plugins#in-app-player]], #317, #319)."""
 
+# one widget and the state machine of the one video it holds -- selecting, holding the file, playing, dragging, what
+# the engine reports -- whose regions share every field; a split would pass that state across modules for no gain
+# pylint: disable=too-many-lines
+
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -88,7 +92,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
     every five seconds; the moments that matter are flushed at once -- pause, a seek, switching video, :meth:`stop`.
     Nothing is recorded for a video that was only loaded, so stepping through a tutorial leaves its progress, and the
     video watched last, as they were. Reaching the end records the full length, which is what marks the video viewed
-    (:func:`~rehuco_core.reached_end`), and loads the next.
+    (:func:`~rehuco_core.reached_end`), and plays the next from 0, or stops there: continuous play off, or no next.
 
     **Keys** are the catalog's ``document.player.*`` commands, armed while focus is anywhere inside this widget, or in
     the overlay it is maximized in; the seek slider, the speed combo and the buttons take no focus, so the arrows are
@@ -502,15 +506,16 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__show_bookmarks()
         self.video_changed.emit(video.key)
 
-    def __step(self, delta: int) -> bool:
-        """Load the video ``delta`` places on in the playlist, paused, unless that is past either end.
+    def __step(self, delta: int, *, play: bool = False) -> bool:
+        """Load the video ``delta`` places on, paused where left or (``play``) playing from 0, unless past an end.
 
         :param delta: how many videos forward, or back when negative.
+        :param play: whether to play it from its beginning.
         :returns: whether there was a video there.
         """
         if self.__playlist is None or self.__playlist.step(delta) is None:
             return False
-        self.__select(self.__playlist, play=False)
+        self.__select(self.__playlist, play, 0.0 if play else None)
         return True
 
     def __close_video(self) -> None:
@@ -642,6 +647,9 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
                 self.__played = True
                 self.__format_notes.arm()
         else:
+            if 0 < self.__bar.duration_ms <= self.__position_ms:
+                # at its end, where playing to it can leave a video: play it again from the start
+                self.__position_ms = 0
             self.__open(Session.PLAY)
 
     def __pause(self) -> None:
@@ -666,10 +674,15 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__show_position(self.__position_ms)
         self.__bar.show_playing(False)
 
-    def __finish_video(self) -> None:
-        """Record the whole video as watched, then load the next; after the last, stop and let go of its file.
+    def __finish_video(self, *, ended: bool = False) -> None:
+        """Record the whole video as watched, then move on; the player is never closed by it.
 
-        What the end of a video does, and what the key for it does to one not at its end."""
+        The key for it loads the next paused. A video that ``ended`` by playing starts the next from 0 while continuous
+        play is on (#693). With continuous play off, and after the last video however it was finished, the video stays
+        selected, stopped at its end (:meth:`__hold_at_end`).
+
+        :param ended: whether the video played to its end.
+        """
         if self.__key is None:  # pragma: no cover  (the action is disabled until a video is selected)
             return
         length = self.__duration_seconds()
@@ -678,8 +691,22 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__recorder.flush()
         # it has ended: there is no position left to record, and the reset the stop reports is no progress
         self.__state = QMediaPlayer.PlaybackState.StoppedState
-        if not self.__step(1):
-            self.stop()
+        if (ended and not self.__bar.continuous_play) or not self.__step(1, play=ended):
+            self.__hold_at_end()
+
+    def __hold_at_end(self) -> None:
+        """Stop a finished video with none to move on to (#693): it stays selected, the bar at its end and its file let
+        go, as a pause leaves it, so the bar can take it back anywhere in it. One that played keeps its last frame; one
+        the key finished keeps the picture it had."""
+        if self.__session is Session.PLAY and self.__engine.vlc:
+            self.__ui.still_widget.set_image(self.__still_now())
+            self.__stage.show_still()
+        elif self.__session is Session.PLAY:
+            self.__stage.hold()
+        self.__position_ms = self.__bar.duration_ms
+        self.__release()
+        self.__show_position(self.__position_ms)
+        self.__bar.show_playing(False)
 
     def __seek_by(self, delta_ms: int) -> None:
         """Jump ``delta_ms`` from where the video is, within the video.
@@ -850,7 +877,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
                 self.__played = True
                 self.__format_notes.arm()
         elif status == QMediaPlayer.MediaStatus.EndOfMedia and self.__session is Session.PLAY:
-            self.__finish_video()
+            self.__finish_video(ended=True)
 
     def __on_error(self, _error: QMediaPlayer.Error, message: str) -> None:
         """Say what stopped the video.
@@ -894,8 +921,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__stage.show_engine(self.__engine.surface, self.__engine.vlc, self.__position_ms)
 
     def __on_still(self, image: QImage) -> None:
-        """Take the picture libvlc made of a paused load or a seek, and let the file go once a drag is not holding it
-        open -- what a frame from Qt's sink does.
+        """Take libvlc's picture of a paused load or a seek, and let the file go unless a drag holds it open.
 
         :param image: the still at the position asked for.
         """
@@ -905,8 +931,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__release()
 
     def __still_now(self) -> QImage | None:
-        """libvlc's last frame, as a video is paused under it, taken while the file is still held -- Qt's video widget
-        keeps its own instead.
+        """libvlc's last frame, taken as a video is paused under it; Qt's video widget keeps its own.
 
         :returns: the image, or ``None`` when there is none to take.
         """
@@ -914,8 +939,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         return cast(VlcMediaPlayer, player).grab_still() if player is not None and self.__ready else None
 
     def __on_grab_timeout(self) -> None:
-        """Let go of a video that gave no frame to show, without one. The timer runs for a paused load alone: playing
-        or letting go stops it."""
+        """Let go of a video that gave no frame to show; the timer runs for a paused load alone."""
         self.__release()
 
     # endregion
@@ -965,8 +989,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.note_requested.emit(self.__key, self.__current_position_ms() / 1000)
 
     def __show_position(self, position_ms: int) -> None:
-        """Show where the video is on the bar, and tell the info panel the video's state, which it shows while it is
-        shown.
+        """Show where the video is on the bar, and tell the info panel the video's state.
 
         :param position_ms: the position.
         """
@@ -974,8 +997,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__stage.show_info(self.__playlist, self.__bar.duration_ms, position_ms, self.__engine.vlc)
 
     def __on_picture_double_clicked(self, modifiers: Qt.KeyboardModifier) -> None:
-        """Maximize the player, or put it back -- a double-click on the picture; with no video, there is nothing to
-        maximize.
+        """Maximize the player, or put it back -- a double-click on the picture; with no video, nothing to maximize.
 
         :param modifiers: the keys held, which pick the surface over the Videos / Player page's choice, as for an image.
         """
