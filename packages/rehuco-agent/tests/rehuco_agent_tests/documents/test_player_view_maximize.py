@@ -183,7 +183,7 @@ def test_the_videos_page_names_the_surface(
 ) -> None:
     """**Test steps:**
 
-    * set the Videos page's surface, load a video, double-click its picture
+    * set the Videos / Player page's surface, load a video, double-click its picture
     * verify the overlay covers the document, the main window's client area, or the whole screen as a window
     """
     shared_videos_settings().maximize_mode = mode
@@ -208,7 +208,7 @@ def test_a_key_held_at_the_double_click_picks_the_surface_over_the_setting(
 ) -> None:
     """**Test steps:**
 
-    * with the document named on the Videos page, double-click the picture holding Ctrl
+    * with the document named on the Videos / Player page, double-click the picture holding Ctrl
     * verify the player is maximized over the main window
     """
     load_paused(host.view, model, "02.mp4")

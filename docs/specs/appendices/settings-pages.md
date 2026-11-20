@@ -87,18 +87,21 @@ and Tasks docks get.
 
 [[[appendices.settings-pages#category-groups]]]
 
-**Today the tree is a flat list, in alphabetical order, with three groups** (#277, #294, #298, #322, #637):
-"Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Files" (`FilesPage`, #226,
-#291, #298), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
+**Today the tree is a flat list, in alphabetical order, with four groups** (#277, #294, #298, #322, #637, #692):
+"Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Files" (`FilesPage`, #226, #291, #298),
+"Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
 "Roots" (a group, below), "Session" (`SessionPage`, #65), "Shortcuts" (`ShortcutsPage`, #344),
-"System Integration", "Tasks" (`TasksPage`, #202), "Tools" (`ToolsPage`, #521) and "Videos" (`VideosPage`, #225).
+"System Integration", "Tasks" (`TasksPage`, #202), "Tools" (`ToolsPage`, #521) and "Videos" (a group, below).
 "Images" nests three children: "Display" (`ImagesDisplayPage`), "Content Extensions" (`ImagesFilesPage`) and
 "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287). "Locations" nests a page per resource type
 (`LocationTemplatesPage`, #322) and "Root Layout Templates" (`RootLayoutTemplatesPage`, #637), in alphabetical order.
 "Roots" nests "New Root Presets" (`NewRootPresetsPage`, #637) and "Root Catalog" (`RootCatalogPage`, #457); the saved
-path of the last page shown for the second is `Roots/Root Catalog`.
+path of the last page shown for the second is `Roots/Root Catalog`. "Videos" nests "Duration Probe"
+(`VideosProbePage`, #225), "Extensions" (`VideosExtensionsPage`) and "Player" (`VideosPlayerPage`), split from the one
+page it was by #692 along its frames; they share the one `VideosSettings`, each staging and saving only its own fields, and a last-shown
+page saved as plain `Videos` opens the group.
 
-Four settings the 0.4.0 video and root work adds to existing pages: **Videos** gains a *Playback* block (#318):
+Four settings the 0.4.0 video and root work adds to existing pages: **Videos › Player** gains a *Playback* block (#318):
 *Qt (bundled FFmpeg)*, the default and the player SHIFT+double-click always opens, *Qt with external FFmpeg libraries*
 (Windows only, #580) and *VLC (your own, in the app)* (#319, applied to the next video selected -- unless another VLC's
 library was already loaded this run, which python-vlc binds once, and the same *next start* note shows -- where the
@@ -106,7 +109,7 @@ FFmpeg libraries always wait for a restart since Qt binds them at import), the l
 *FFmpeg (external)* is,
 saved as `player` and read by the Files sub-dock at each double-click, so a change of player reaches open documents.
 The libraries are loaded at start, so choosing them (or leaving them) says *Takes effect at the next start*, and a
-start that could not load a chosen build says why beside the choice. **Videos** also gains a *Maximized player* frame —
+start that could not load a chosen build says why beside the choice. **Videos › Player** also gains a *Maximized player* frame —
 the document, the main window or full screen, the lightbox's three surfaces with the same SHIFT, CTRL and CTRL+SHIFT
 overrides, chosen separately for the player and saved as `maximize_mode` (#574, [[plugins#player-maximized]]); the next
 maximize uses a change, an open one is not moved. A *Subtitles (VLC)* frame (#618) holds *Show subtitles when a
@@ -255,7 +258,7 @@ would read and overwrite the developer's real settings file, and leak toggle sta
 
 Kept dormant since #277 until "Images" needed a tier of its own (#294). The tree is **two levels deep
 at most**: `add_page("Images", "Content Extensions", page)` nests the page's row under that group's row, creating
-the group's row on first use; the two-argument `add_page("Videos", page)` — what every other caller
+the group's row on first use; the two-argument `add_page("Files", page)` — what every other caller
 uses — leaves it a top-level row of its own. Group names are plural: a group holds pages.
 
 A group row **carries no page of its own** — it is a header. Selecting it shows everything under it at
@@ -319,7 +322,8 @@ The dialog shell dispatches, it never interprets:
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
 - **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesDisplayPage`, "Images/Display";
-  `ImagesFilesPage`, "Images/Content Extensions"; `FilesPage`, "Files"; `VideosPage`, "Videos") —
+  `ImagesFilesPage`, "Images/Content Extensions"; `FilesPage`, "Files"; `VideosProbePage`, "Videos/Duration Probe";
+  `VideosExtensionsPage`, "Videos/Extensions"; `VideosPlayerPage`, "Videos/Player") —
   edits live in local widget/draft state until `save_changes()` pushes them somewhere permanent;
   `drop_changes()` discards the draft and reloads the fields from whatever is currently saved (a
   revert, not a no-op). `ImagesDisplayPage` writes the **two** settings objects the single "Images"
@@ -395,10 +399,11 @@ pair went because the empty-list fallback already draws that distinction — a l
 are simply not read: an installation that had set a custom list gets the shipped formats back and sets it
 again, which was the cheaper trade than carrying a compatibility path for a preference two clicks deep.
 
-`VideosPage` reloads itself after saving for the same reason, over the same rule: its video-extension
+`VideosExtensionsPage` reloads itself after saving for the same reason, over the same rule: its video-extension
 list normalizes exactly as the reference-images one does, and the two share it
 (`settings/extension_lists.py`) rather than each restating a rule that differs only in which set an
-emptied list falls back to. Its other block is the **duration probe** ([[field-schema#duration-size]]), which adds two things neither list
+emptied list falls back to; `VideosPlayerPage` reloads itself for its language list. `VideosProbePage` holds the
+**duration probe** ([[field-schema#duration-size]]), which adds two things neither list
 page needs. First, **the backend's `engine` name is stored** and an unrecognized one (an `.ini` written by a newer
 version) selects the default rather than raising, the way `ImageViewerSettings` already treats an unrecognized
 `mode`; the external one is offered as *FFmpeg (external)* but stored as `ffprobe`, a name that never changes, since
@@ -438,7 +443,7 @@ say — *Looking…*, nothing found, or a typed path that could not be looked at
 follows the discovery as it records. **Detect** asks it to search that tool again. A listed install was judged when it
 was found, so choosing it reads nothing; only a custom path is looked at here, since the user typed it, and its version
 is read on a pool thread ([[appendices.code-conventions#worker-threads]]). The settings object is reactive, so the
-Videos page follows a tool changing. The radios and the path text are inside one `ValueControl`, whose value is that
+Videos pages follow a tool changing. The radios and the path text are inside one `ValueControl`, whose value is that
 string -- so they are not values of their own, and Apply writes the detections with the paths.
 
 The "System Integration" page has no local settings dataclass of its own: Register/Unregister and the crash

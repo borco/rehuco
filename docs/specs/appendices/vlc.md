@@ -295,8 +295,8 @@ beside it (#618).
   new still.
 - **The language is in the description, as an English name**: `Track 3 - [French]` for `clip.fr.srt`, from the file
   name; a bare `clip.vtt` is `Track 1`, with none. `media.tracks_get()`, which would give ISO codes, **segfaulted**
-  here, so the description is what the player reads. libvlc's table of language names is not exposed; the Videos page
-  ships its own list of ISO 639-1 names to choose from.
+  here, so the description is what the player reads. libvlc's table of language names is not exposed; the Videos ›
+  Player page ships its own list of ISO 639-1 names to choose from.
 - **`--sub-language=fr` and `--no-spu` are libvlc's own** way of choosing at start (French was selected; none was), but
   they apply to the instance, not a rehu, so the player chooses itself once the list is settled
   ([[plugins#in-app-player]]).

@@ -81,7 +81,7 @@ class PlayerMaximizer(QObject):
     def toggle(self, modifiers: Qt.KeyboardModifier) -> None:
         """Maximize the player, or put it back when it is maximized -- what a double-click on the picture does.
 
-        :param modifiers: the keys held, which pick the surface over the Videos page's choice as they do for an image.
+        :param modifiers: the keys held, which pick the surface over the Videos / Player page's choice, as for an image.
         """
         if self.__overlay is not None:
             self.restore()

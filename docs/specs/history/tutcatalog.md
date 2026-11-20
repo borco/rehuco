@@ -43,7 +43,7 @@ decision; **TBD** is a gap not yet decided or filed.
 | `.sfv` checksums (cfv) | Yes | Built, as rehuco's own `.checksum` records; a legacy `.sfv` is read to seed them, never written |
 | Metadata scraping | External script | Built — ArtStation and Udemy built in, a user script supported |
 | Per-machine config: folder roots | `.tutcatalogrc` | Built — roots live in the `.rehuco` file |
-| Per-machine config: video extensions, tool paths | `.tutcatalogrc` | Built as app settings (Videos page) |
+| Per-machine config: video extensions, tool paths | `.tutcatalogrc` | Built as app settings (Videos › Extensions, Tools) |
 
 ## Importing its data
 

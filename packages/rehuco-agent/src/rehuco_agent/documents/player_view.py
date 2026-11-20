@@ -45,7 +45,7 @@ LIST_TAG: Final = "list"
 """What the runner that lists the tutorial's videos answers under."""
 
 VLC_FALLBACK_TEMPLATE: Final = "Playing with Qt: {reason}"
-"""What the player says when VLC is chosen on the Videos page and its libvlc could not be used (#319)."""
+"""What the player says when VLC is chosen on the Videos / Player page and its libvlc could not be used (#319)."""
 ERROR_NOTICE: Final = "This video could not be played."
 LIST_ERROR_NOTICE: Final = "This tutorial's videos could not be listed."
 NO_VIDEOS_NOTICE: Final = "This tutorial has no videos."
@@ -369,7 +369,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__update_actions()
 
     def __ensure_player(self) -> Engine:
-        """The engine for the Videos page's choice as it is now, built or rebuilt by `PlayerEngine`.
+        """The engine for the Videos / Player page's choice as it is now, built or rebuilt by `PlayerEngine`.
 
         :returns: the player.
         """
@@ -977,7 +977,7 @@ class PlayerView(QWidget):  # pylint: disable=too-many-instance-attributes
         """Maximize the player, or put it back -- a double-click on the picture; with no video, there is nothing to
         maximize.
 
-        :param modifiers: the keys held, which pick the surface over the Videos page's choice as they do for an image.
+        :param modifiers: the keys held, which pick the surface over the Videos / Player page's choice, as for an image.
         """
         if self.__key is not None or self.__stage.mode is not None:
             self.__stage.maximizer.toggle(modifiers)

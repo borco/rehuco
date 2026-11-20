@@ -146,7 +146,9 @@ from .settings.ui.shortcuts_page import ShortcutsPage
 from .settings.ui.system_integration_page import SystemIntegrationPage
 from .settings.ui.tasks_page import TasksPage
 from .settings.ui.tools_page import ToolsPage
-from .settings.ui.videos_page import VideosPage
+from .settings.ui.videos_extensions_page import VideosExtensionsPage
+from .settings.ui.videos_player_page import VideosPlayerPage
+from .settings.ui.videos_probe_page import VideosProbePage
 from .tasks import (
     PendingSavesIndicator,
     TaskQueueStatusIndicator,
@@ -1271,11 +1273,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         ``title`` property, which put the tree's labels in a dozen classes that each knew only
         themselves -- so no one place could be read, or sorted, to see the tree. `add_page` takes the
         title instead, and its second overload takes a group before it
-        (``add_page("Plugins", "Videos", VideosPage())``), which is what makes each of these one
+        (``add_page("Images", "Display", ImagesDisplayPage())``), which is what makes each of these one
         sortable line.
 
         There is no **Plugins** group any more (#277): the four pages a resource type owns --
-        Descriptions, Files, Images, Videos -- are top-level rows like the rest, because
+        Descriptions, Files, Images, Videos -- are rows of their own like the rest, because
         "Videos" is findable by its own name while "Plugins" only hides it behind a word the reader has
         to know first. The reference-images extension list is a block on Images/Content Extensions rather than a
         page of its own (#222): a page holding one list, whose subject was images, is what a reader
@@ -1295,6 +1297,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         pages covered every file or the screenshots themselves, the second lost that they are about
         images at all. "Sidecar" is the vocabulary the specs already use, kept over a plainer word
         because it names where these images live.
+
+        **Videos is a group too** (#692), as Images is: Duration Probe, Extensions and Player, the last holding the
+        four frames about playing a video, which had pushed the probe and the extensions out of sight on one page.
 
         **"Files" is a flat page, not a group** (#298): the deletion policy
         (`DeletionSettings`) used to sit on Images/File Extensions, but now also decides a
@@ -1371,9 +1376,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("System Integration", SystemIntegrationPage(self.__node_host, platform_frames))
         self.__settings_dialog.add_page("Tasks", TasksPage())
         self.__settings_dialog.add_page("Tools", ToolsPage())
-        videos_page = VideosPage()
-        videos_page.tools_requested.connect(lambda: self.__settings_dialog.show_page("Tools"))
-        self.__settings_dialog.add_page("Videos", videos_page)
+        # a group's pages keep the order they are added in: the probe first, the page with the most on it last
+        probe_page = VideosProbePage()
+        probe_page.tools_requested.connect(lambda: self.__settings_dialog.show_page("Tools"))
+        self.__settings_dialog.add_page("Videos", "Duration Probe", probe_page)
+        self.__settings_dialog.add_page("Videos", "Extensions", VideosExtensionsPage())
+        player_page = VideosPlayerPage()
+        player_page.tools_requested.connect(lambda: self.__settings_dialog.show_page("Tools"))
+        self.__settings_dialog.add_page("Videos", "Player", player_page)
 
     def __setup_docking_system(self) -> None:
         # not Final: this runs from __setup_docking_system rather than __init__, matching

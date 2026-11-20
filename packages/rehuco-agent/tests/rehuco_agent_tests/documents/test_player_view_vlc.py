@@ -89,7 +89,7 @@ def fixture_engine(mocker: MockerFixture) -> Mock:
 
 @fixture(name="vlc_chosen")
 def fixture_vlc_chosen() -> None:
-    """Choose VLC on the Videos page."""
+    """Choose VLC on the Videos / Player page."""
     shared_videos_settings().player = VLC_PLAYER
 
 
@@ -413,8 +413,8 @@ def test_a_changed_choice_rebuilds_the_engine_at_the_next_video(
     engine: Mock,
     mocker: MockerFixture,
 ) -> None:
-    """The Videos page's choice applies to the next video selected, in a document already open: Qt to libvlc, and
-    libvlc back to Qt, each engine dropped as the other is built.
+    """The Videos / Player page's choice applies to the next video selected, in a document already open: Qt to libvlc,
+    and libvlc back to Qt, each engine dropped as the other is built.
 
     **Test steps:**
 
@@ -700,7 +700,7 @@ def test_the_engine_is_handed_the_settings_list_and_default_before_a_video_opens
 ) -> None:
     """**Test steps:**
 
-    * set the Videos page's subtitles to off, Romanian then Unknown, only selected
+    * set the Videos / Player page's subtitles to off, Romanian then Unknown, only selected
     * play a video under libvlc
     * verify the engine was given that list, and the choice of no subtitles, which a rehu with none chosen starts at
     """

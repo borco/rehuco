@@ -5,15 +5,15 @@ should not carry. You install them yourself and point the app at them. This page
 
 ## FFmpeg, for video durations {#ffmpeg}
 
-A tutorial's runtime is the sum of its videos' durations. **Settings ▸ Videos ▸ Duration probe** chooses what reads
+A tutorial's runtime is the sum of its videos' durations. **Settings ▸ Videos ▸ Duration Probe** chooses what reads
 them: **MediaInfo**, which ships with the app and needs nothing installed, or **FFmpeg (external)**, which uses the
 `ffprobe` that comes with FFmpeg. The app looks for FFmpeg once, in the background, the first time it starts, and
 remembers what it found. **Settings ▸ Tools** lists every install found (on `PATH`, or installed by winget, scoop,
 Chocolatey, Homebrew or your distribution), each with its version and whether it works, and uses the newest that does
 unless you pick another. **Custom** takes a path you browse to — the `ffmpeg` or `ffprobe` file, or the folder holding
 them — and marks it *not found* if nothing usable is there. If you install
-FFmpeg later, press **Detect** to look again. The *FFmpeg (external)* choice on the Videos page is available once one
-does. Any FFmpeg from version 4.0 on works.
+FFmpeg later, press **Detect** to look again. The *FFmpeg (external)* choice on the Duration Probe page is available
+once one does. Any FFmpeg from version 4.0 on works.
 
 === "Windows"
 
@@ -42,7 +42,7 @@ Other builds are listed on [ffmpeg.org](https://ffmpeg.org/download.html).
 
 ## VLC, for playing videos in the app with VLC's own decoding {#vlc}
 
-**Settings ▸ Videos ▸ Playback** chooses what decodes a video in the app's player: Qt's bundled FFmpeg, which
+**Settings ▸ Videos ▸ Player ▸ Playback** chooses what decodes a video in the app's player: Qt's bundled FFmpeg, which
 is always there, or **VLC (your own, in the app)**, which plays everything VLC plays, deinterlaced, with AV1
 decoded in software on any graphics card. VLC's own window is not used: its library is loaded into the app's
 player dock. The app looks for VLC once, in the background, together with FFmpeg, and **Settings ▸ Tools**
@@ -80,12 +80,12 @@ that decodes AV1 itself: Nvidia RTX 30 or later, recent AMD and Intel graphics, 
 an AV1 video plays its sound with no picture. A **shared** FFmpeg build that includes the dav1d decoder fixes this:
 the app loads its libraries instead of Qt's.
 
-**Settings ▸ Videos ▸ Playback** chooses **Qt (bundled FFmpeg)** or **Qt with external FFmpeg libraries**. The
+**Settings ▸ Videos ▸ Player ▸ Playback** chooses **Qt (bundled FFmpeg)** or **Qt with external FFmpeg libraries**. The
 second is available once **Settings ▸ Tools** lists a build that works; it lists every build found, each with its
 version and whether it works, and a build that cannot be used says why: a **static** build has no libraries to load,
 another **major version** than Qt's cannot stand in for it, and a build for another processor will not load. The
 libraries are loaded when the app starts, so a change takes effect at the **next start**; if the chosen build is gone
-or fails to load, the app plays with Qt's own FFmpeg and the Videos page says why. When an AV1 video shows no
+or fails to load, the app plays with Qt's own FFmpeg and the Player page says why. When an AV1 video shows no
 picture, the player's notice offers a button to the Tools page.
 
 The build must match the FFmpeg the app's Qt was built with, by **major version**, and the machine's architecture

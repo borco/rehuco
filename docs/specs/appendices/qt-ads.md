@@ -641,8 +641,8 @@ reason.
 **The fix is placement, not cleanup.** Dock every dock into an area up front, so no floating container
 exists when `restoreState` runs and there is nothing to abandon; a floating container should only ever
 come from the user tearing a dock out, or from `restoreState` rebuilding one the user saved. rehuco's
-Settings dock used to reach floating as a *fallback* for a layout that did not restore, which is what
-#306 first had to make safe and #307 then removed outright. Deleting the container afterward would be
+Settings dock used to reach floating as a *fallback* for a layout that did not restore, which is what #306
+first had to make safe and #307 then removed outright. Deleting the container afterward would be
 chasing one instance of a general rule: nothing guarantees QtAds retires a container a restore emptied.
 Placing the dock *somewhere* is not optional — an unplaced dock is never registered with the manager,
 and `restoreState` silently skips it.

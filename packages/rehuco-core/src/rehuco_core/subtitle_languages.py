@@ -1,8 +1,8 @@
 """The languages a subtitle track may be named after, as libvlc names them ([[plugins#in-app-player]], #618).
 
 libvlc does not expose its own list: it prints a track's language as an English name in the track's description
-(``Track 3 - [French]``), taken from its ISO 639 table. This is that table's languages, which the Videos page offers
-when the user builds the list of languages to prefer.
+(``Track 3 - [French]``), taken from its ISO 639 table. This is that table's languages, which the Videos / Player page
+offers when the user builds the list of languages to prefer.
 """
 
 from typing import Final
@@ -192,4 +192,4 @@ LANGUAGES: Final = (
     "Zhuang",
     "Zulu",
 )
-"""The language names the Videos page offers, as libvlc spells them in a track's description."""
+"""The language names the Videos / Player page offers, as libvlc spells them in a track's description."""

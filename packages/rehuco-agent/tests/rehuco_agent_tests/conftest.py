@@ -818,7 +818,7 @@ def isolate_shared_videos_settings(mocker: MockerFixture) -> Iterator[None]:
     """Isolate every test from the process-wide `VideosSettings` singleton (#225).
 
     Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first builds a
-    `VideosPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded from the
+    Videos page (directly, or via ``MainWindow``) would otherwise pin an instance loaded from the
     developer's real on-disk settings for the rest of the session -- and decide, from that file, which
     backend every later test's duration scan would probe with.
 

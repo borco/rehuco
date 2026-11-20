@@ -1185,8 +1185,8 @@ Two players can fill Follow's dock: **libvlc** from the user's own VLC, set up t
 scaling — VLC 3.0.23 with `python-vlc` 3.0.21203, PySide6 and `PySide6-Addons` 6.11.1 — in a dock inside a nested
 dock manager, as a document's sub-docks are; macOS and Linux are the open half. **The dock is Qt Multimedia by
 default** (#317): nothing to install, every signal on the GUI thread, and its two gaps explained in the dock rather
-than shown black or combed. **The user's own libvlc is the other engine** (#319): chosen on the Videos page, loaded
-into the same dock through `python-vlc` once the Tools page has a VLC with its shared library, and speaking
+than shown black or combed. **The user's own libvlc is the other engine** (#319): chosen on the Videos › Player page,
+loaded into the same dock through `python-vlc` once the Tools page has a VLC with its shared library, and speaking
 `QMediaPlayer`'s language (`VlcMediaPlayer`) so the view drives either without knowing which; the choice applies to the
 next video selected, in every open document, the engine rebuilt in place. It closes both gaps,
 and it draws inside the dock, which is what lets the maximized player ([[plugins#player-maximized]]) carry it
@@ -1315,7 +1315,7 @@ its file let go at once, so until the video has played the dropdown is there but
 libvlc listed nothing for in ten seconds reads `Subs: none`. A focused notes editor takes these keys like the player's
 others ([[plugins#player-maximized]]).
 
-**Which tracks the keys visit** is the *Subtitles* frame of the Videos page
+**Which tracks the keys visit** is the *Subtitles* frame of the Videos › Player page
 ([[appendices.settings-pages#category-groups]]): a list of languages, the most preferred first, with an *Unknown* entry
 that stands for the tracks whose file names no language (a bare `.vtt`), and a choice between **show only selected
 languages** and **show all languages**. A track's language is the one libvlc prints in its description, `Track 2 -

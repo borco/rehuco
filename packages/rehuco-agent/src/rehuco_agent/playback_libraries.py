@@ -2,9 +2,9 @@
 [[plugins#in-app-player]]).
 
 Qt's FFmpeg plugin binds its libraries by name when Qt Multimedia is first imported, and the agent imports it as soon
-as the main window's module is. So the choice made on the Videos page can only be applied at the next start, from
-``__main__`` ahead of that import, and a build that cannot be loaded falls back to Qt's own with the reason kept for
-the page and the log.
+as the main window's module is. So the choice made on the Videos / Player page can only be applied at the next start,
+from ``__main__`` ahead of that import, and a build that cannot be loaded falls back to Qt's own with the reason kept
+for the page and the log.
 """
 
 import logging
@@ -40,7 +40,7 @@ class PlaybackLibraries:
 
     @property
     def requested(self) -> bool:
-        """Whether the Videos page chose the libraries when this run started."""
+        """Whether the Videos / Player page chose the libraries when this run started."""
         return self.__requested
 
     @property

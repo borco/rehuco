@@ -36,7 +36,9 @@ from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.settings_page import SettingsPage
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.tools_page import ToolsPage
-from rehuco_agent.settings.ui.videos_page import VideosPage
+from rehuco_agent.settings.ui.videos_extensions_page import VideosExtensionsPage
+from rehuco_agent.settings.ui.videos_player_page import VideosPlayerPage
+from rehuco_agent.settings.ui.videos_probe_page import VideosProbePage
 
 
 def tutorial_location_templates_page() -> LocationTemplatesPage:
@@ -61,7 +63,9 @@ PAGE_FACTORIES: list[Callable[[], SettingsPage]] = [
     SessionPage,
     TasksPage,
     ToolsPage,
-    VideosPage,
+    VideosProbePage,
+    VideosExtensionsPage,
+    VideosPlayerPage,
 ]
 """Every page `MainWindow` registers on every platform, in registration order."""
 

@@ -1,4 +1,4 @@
-"""Which engine the player dock drives: built from the Videos page's choice, rebuilt when it changes
+"""Which engine the player dock drives: built from the Videos / Player page's choice, rebuilt when it changes
 ([[plugins#in-app-player]], #317, #319)."""
 
 from collections.abc import Callable
@@ -20,13 +20,13 @@ Engine = QMediaPlayer | VlcMediaPlayer
 class PlayerEngine:
     """The engine behind one `PlayerView`, and what it was built for.
 
-    **Qt Multimedia is always there; libvlc when the Videos page chooses VLC and the Tools page's VLC loads.** The
-    choice is read each time an engine is asked for, so a change applies to the next video selected, in every open
-    document: an engine built for another choice is dropped and the chosen one built in its place. A VLC chosen but
-    not usable gives Qt, with :attr:`fallback_reason` for the banner, and is tried again at the next video, since the
-    Tools page may have been set up meanwhile. Qt's engine stands in until that try succeeds, rather than being
-    built anew at every video: each new ``QAudioOutput`` is one more chance for Qt Multimedia's own thread to wait
-    for the GIL under a signal-slot mutex (#654, [[appendices.code-conventions#worker-threads]]).
+    **Qt Multimedia is always there; libvlc when the Videos / Player page chooses VLC and the Tools page's VLC loads.**
+    The choice is read each time an engine is asked for, so a change applies to the next video selected, in every open
+    document: an engine built for another choice is dropped and the chosen one built in its place. A VLC chosen but not
+    usable gives Qt, with :attr:`fallback_reason` for the banner, and is tried again at the next video, since the Tools
+    page may have been set up meanwhile. Qt's engine stands in until that try succeeds, rather than being built anew at
+    every video: each new ``QAudioOutput`` is one more chance for Qt Multimedia's own thread to wait for the GIL under a
+    signal-slot mutex (#654, [[appendices.code-conventions#worker-threads]]).
 
     **Building is cheap and the view owns the signals**: the view hands :meth:`ensure` the callable that connects a
     new engine's signals, so the view's state machine never knows which engine it drives.
@@ -46,7 +46,8 @@ class PlayerEngine:
         self.__vlc = False
         self.__fallback_reason: str | None = None
         self.__built_for: str | None = None
-        """The Videos page's choice the engine was built for; another choice rebuilds it at the next selection."""
+        """The Videos / Player page's choice the engine was built for; another choice rebuilds it at the next
+        selection."""
 
     @property
     def player(self) -> Engine | None:
