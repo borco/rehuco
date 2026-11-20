@@ -53,11 +53,9 @@ def entry(pid: int, handle: int, object_type: int = FILE_TYPE) -> folder_holders
     :param object_type: its object type.
     :returns: the row.
     """
-    row = folder_holders.HandleEntry()
-    row.UniqueProcessId = pid
-    row.HandleValue = handle
-    row.ObjectTypeIndex = object_type
-    return row
+    # Fields by keyword, not by assignment: pylint records an assigned attribute on HandleEntry itself and checks its
+    # name against snake_case when linting folder_holders.py, where no suppression in this file reaches.
+    return folder_holders.HandleEntry(UniqueProcessId=pid, HandleValue=handle, ObjectTypeIndex=object_type)
 
 
 @fixture(name="walk")

@@ -8,6 +8,13 @@ from pathlib import Path
 from typing import Final
 
 from selenium import webdriver
+
+# The drivers come from their own modules, not `webdriver.Firefox` and the like: selenium resolves those through a
+# lazy module `__getattr__`, which pylint reads as not callable on Windows and as callable on Linux, so a suppression
+# there is wrong on one of the two.
+from selenium.webdriver.chrome.webdriver import WebDriver as ChromeDriver
+from selenium.webdriver.edge.webdriver import WebDriver as EdgeDriver
+from selenium.webdriver.firefox.webdriver import WebDriver as FirefoxDriver
 from selenium.webdriver.remote.webdriver import WebDriver
 
 from ..settings.scrapers_settings import Browser
@@ -132,7 +139,7 @@ def start_firefox(*, headless: bool, profile_folder: Path) -> WebDriver:
         options.add_argument(FIREFOX_HEADLESS_ARG)
     options.add_argument("-profile")
     options.add_argument(str(profile_folder))
-    return webdriver.Firefox(options=options)  # pylint: disable=not-callable  # selenium's own stubs confuse pylint
+    return FirefoxDriver(options=options)
 
 
 def start_chromium(browser: Browser, *, headless: bool, profile_folder: Path) -> WebDriver:
@@ -140,10 +147,10 @@ def start_chromium(browser: Browser, *, headless: bool, profile_folder: Path) ->
     if browser is Browser.CHROME:
         chrome_options = webdriver.ChromeOptions()
         add_chromium_arguments(chrome_options, headless=headless, profile_folder=profile_folder)
-        return webdriver.Chrome(options=chrome_options)  # pylint: disable=not-callable  # see start_firefox
+        return ChromeDriver(options=chrome_options)
     edge_options = webdriver.EdgeOptions()
     add_chromium_arguments(edge_options, headless=headless, profile_folder=profile_folder)
-    return webdriver.Edge(options=edge_options)  # pylint: disable=not-callable  # see start_firefox
+    return EdgeDriver(options=edge_options)
 
 
 def add_chromium_arguments(

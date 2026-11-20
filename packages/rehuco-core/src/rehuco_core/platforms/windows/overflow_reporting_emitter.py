@@ -60,6 +60,5 @@ class OverflowReportingEmitter(WindowsApiEmitter):
             raise
         on_overflow = self.on_overflow
         if not events and self.should_keep_running() and on_overflow is not None:
-            # pylint: disable-next=not-callable  # inferred from the class default, past the guard above
             on_overflow()
         return events

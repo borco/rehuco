@@ -24,14 +24,14 @@ def test_firefox_is_started_on_the_profile_folder_via_the_profile_argument(mocke
 
     **Test steps:**
 
-    * stand in for `webdriver.Firefox` and the profile folder's creation
+    * stand in for `FirefoxDriver` and the profile folder's creation
     * start a non-headless Firefox driver
     * verify the arguments and that the folder was created
     """
     mkdir = mocker.patch.object(Path, "mkdir")
     options_cls = mocker.patch("rehuco_agent.scraping.browser_drivers.webdriver.FirefoxOptions")
     options = options_cls.return_value
-    firefox = mocker.patch("rehuco_agent.scraping.browser_drivers.webdriver.Firefox")
+    firefox = mocker.patch("rehuco_agent.scraping.browser_drivers.FirefoxDriver")
 
     start_driver(Browser.FIREFOX, headless=False, profile_folder=PROFILE_FOLDER)
 
@@ -47,14 +47,14 @@ def test_firefox_headless_adds_the_headless_argument(mocker: MockerFixture) -> N
 
     **Test steps:**
 
-    * stand in for `webdriver.Firefox`
+    * stand in for `FirefoxDriver`
     * start a headless Firefox driver
     * verify the headless argument was added
     """
     mocker.patch.object(Path, "mkdir")
     options_cls = mocker.patch("rehuco_agent.scraping.browser_drivers.webdriver.FirefoxOptions")
     options = options_cls.return_value
-    mocker.patch("rehuco_agent.scraping.browser_drivers.webdriver.Firefox")
+    mocker.patch("rehuco_agent.scraping.browser_drivers.FirefoxDriver")
 
     start_driver(Browser.FIREFOX, headless=True, profile_folder=PROFILE_FOLDER)
 
@@ -66,14 +66,14 @@ def test_chrome_is_started_with_user_data_dir(mocker: MockerFixture) -> None:
 
     **Test steps:**
 
-    * stand in for `webdriver.Chrome`
+    * stand in for `ChromeDriver`
     * start a headless Chrome driver
     * verify the user-data-dir and headless arguments
     """
     mocker.patch.object(Path, "mkdir")
     options_cls = mocker.patch("rehuco_agent.scraping.browser_drivers.webdriver.ChromeOptions")
     options = options_cls.return_value
-    chrome = mocker.patch("rehuco_agent.scraping.browser_drivers.webdriver.Chrome")
+    chrome = mocker.patch("rehuco_agent.scraping.browser_drivers.ChromeDriver")
 
     start_driver(Browser.CHROME, headless=True, profile_folder=PROFILE_FOLDER)
 
@@ -87,14 +87,14 @@ def test_edge_is_started_with_user_data_dir(mocker: MockerFixture) -> None:
 
     **Test steps:**
 
-    * stand in for `webdriver.Edge`
+    * stand in for `EdgeDriver`
     * start a non-headless Edge driver
     * verify the user-data-dir argument and that no headless flag was added
     """
     mocker.patch.object(Path, "mkdir")
     options_cls = mocker.patch("rehuco_agent.scraping.browser_drivers.webdriver.EdgeOptions")
     options = options_cls.return_value
-    edge = mocker.patch("rehuco_agent.scraping.browser_drivers.webdriver.Edge")
+    edge = mocker.patch("rehuco_agent.scraping.browser_drivers.EdgeDriver")
 
     start_driver(Browser.EDGE, headless=False, profile_folder=PROFILE_FOLDER)
 
