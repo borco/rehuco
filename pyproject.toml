@@ -66,7 +66,10 @@ exclude_dirs = ["tests", "build", "dist"]
 # in the same statement -- logs "nosec encountered (B608), but no failed test". Only a bare nosec stays quiet.
 
 [tool.pylint.main]
-jobs = 0
+# One process, not `0` (one per core): pylint's checks of a module can depend on what another module assigns
+# (a test setting a ctypes structure's fields makes them attributes of its class), but only when both are linted in
+# the same process. With workers, which modules share one changes from run to run, and so did the findings.
+jobs = 1
 recursive = true
 extension-pkg-allow-list = ["PySide6", "shiboken6"]
 load-plugins = ["pylint_qt"]
