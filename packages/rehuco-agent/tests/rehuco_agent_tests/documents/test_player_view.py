@@ -898,42 +898,48 @@ def test_stepping_off_the_ends_does_nothing(view: PlayerView, media: Media) -> N
 # region The end of a video, to the start, to the end
 
 
-def test_reaching_the_end_records_the_whole_video_and_loads_the_next_paused(
-    view: PlayerView, media: Media, recorder: WatchProgressRecorder
+def test_reaching_the_end_records_the_whole_video_and_plays_the_next_from_its_start(
+    view: PlayerView, media: Media, recorder: WatchProgressRecorder, progress: dict[str, ProgressEntry]
 ) -> None:
-    """The full length is what makes the recorder mark the video viewed; the next video is loaded, not played.
+    """The full length is what makes the recorder mark the video viewed; continuous play, on by default, starts the
+    next video from 0 even when it has a recorded position (#693).
 
     **Test steps:**
 
-    * play the first video and let it reach its end
-    * verify its whole length was noted and flushed, and the second was opened and paused, not played
+    * record a position for the second video, play the first and let it reach its end
+    * verify its whole length was noted and flushed, and the second was opened and played
+    * verify it is not sought to its recorded position once it buffers
     """
+    progress["02.mp4"] = ProgressEntry(30.0, 100.0)
     player = start_playing(view, "01.mp4")
     recorder.reset_mock()  # type: ignore[attr-defined]
     media.set_source.reset_mock()
     media.play.reset_mock()
+    media.set_position.reset_mock()
 
     player.mediaStatusChanged.emit(QMediaPlayer.MediaStatus.EndOfMedia)
+    player.mediaStatusChanged.emit(QMediaPlayer.MediaStatus.BufferedMedia)
 
     expected = [call.position("01.mp4", 100.0, 100.0), call.flush()]
     assert recorder.mock_calls[:2] == expected  # type: ignore[attr-defined]
     media.set_source.assert_called_with(QUrl.fromLocalFile(str(path_of("02.mp4"))))
-    media.play.assert_not_called()
-    media.pause.assert_called()
+    media.play.assert_called_once_with()
+    media.set_position.assert_not_called()
     assert label_text(view, "title_label") == "02.mp4"
 
 
-def test_the_last_video_ending_stops_the_playback_and_lets_go_of_its_file(
+def test_the_last_video_ending_stops_at_its_end_and_lets_go_of_its_file(
     view: PlayerView, media: Media, recorder: WatchProgressRecorder
 ) -> None:
     """The last video is the end of the list: nothing wraps round to the first, and with nothing left to play the file
-    is let go, so the folder can be renamed (the OS refuses while a video is open in it).
+    is let go, so the folder can be renamed (the OS refuses while a video is open in it). It stays selected, stopped
+    at its end, with continuous play on too (#693).
 
     **Test steps:**
 
     * play the last video and let it reach its end
     * verify it was recorded as watched, with no position of the reset the stop reports
-    * verify the source was cleared and the player shows nothing
+    * verify the source was cleared, and the video is still the one selected, the bar at its end
     """
     player = start_playing(view, "03.mp4")
     recorder.reset_mock()  # type: ignore[attr-defined]
@@ -941,11 +947,51 @@ def test_the_last_video_ending_stops_the_playback_and_lets_go_of_its_file(
 
     player.mediaStatusChanged.emit(QMediaPlayer.MediaStatus.EndOfMedia)
 
-    expected = [call.position("03.mp4", 100.0, 100.0), call.flush(), call.flush()]
+    expected = [call.position("03.mp4", 100.0, 100.0), call.flush()]
     assert recorder.mock_calls == expected  # type: ignore[attr-defined]
     media.set_source.assert_called_once_with(QUrl())
-    assert label_text(view, "title_label") == ""
-    assert action_of(view, "play_pause_action").isEnabled() is False
+    assert label_text(view, "title_label") == "03.mp4"
+    assert slider_of(view).value() == LENGTH_MS
+    assert action_of(view, "play_pause_action").isEnabled() is True
+
+
+def test_to_the_end_on_the_last_video_leaves_it_selected_at_its_end(
+    view: PlayerView, media: Media, model: RehuDocumentModel, recorder: WatchProgressRecorder
+) -> None:
+    """The key never closes the player either (#693): a last video that plays is stopped at its end, and one that was
+    only loaded has its bar moved there, the picture it had kept.
+
+    **Test steps:**
+
+    * play the last video, show a frame of it, and press to-the-end
+    * verify it was recorded as watched, its file let go, and it is still selected on its frame, the bar at its end
+    * load the last video paused again, let it go, and press to-the-end
+    * verify it is still selected, the bar at its end, and nothing was opened
+    """
+    start_playing(view, "03.mp4")
+    show_first_frame(view)
+    recorder.reset_mock()  # type: ignore[attr-defined]
+    media.set_source.reset_mock()
+
+    action_of(view, "to_end_action").trigger()
+
+    expected = [call.position("03.mp4", 100.0, 100.0), call.flush()]
+    assert recorder.mock_calls == expected  # type: ignore[attr-defined]
+    media.set_source.assert_called_once_with(QUrl())
+    assert label_text(view, "title_label") == "03.mp4"
+    assert shown_of(view) is not still_of(view)
+    assert slider_of(view).value() == LENGTH_MS
+    assert action_of(view, "play_pause_action").isEnabled() is True
+
+    load_paused(view, model, "03.mp4")
+    sink_of(view).videoFrameChanged.emit(picture())
+    media.set_source.reset_mock()
+
+    action_of(view, "to_end_action").trigger()
+
+    media.set_source.assert_not_called()
+    assert label_text(view, "title_label") == "03.mp4"
+    assert slider_of(view).value() == LENGTH_MS
 
 
 def test_an_end_of_a_video_of_unknown_length_claims_nothing(

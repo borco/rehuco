@@ -51,6 +51,7 @@ MAXIMIZE_MODE_KEY: Final = "maximize_mode"
 SUBTITLES_ON_KEY: Final = "subtitles_on"
 SUBTITLE_LANGUAGES_KEY: Final = "subtitle_languages"
 SUBTITLES_SHOW_ALL_KEY: Final = "subtitles_show_all"
+CONTINUOUS_PLAY_KEY: Final = "continuous_play"
 
 IN_APP_PLAYER: Final = "in_app"
 """The player dock a document hosts ([[plugins#in-app-player]])."""
@@ -212,6 +213,10 @@ class VideosSettings:  # pylint: disable=too-many-instance-attributes
     subtitles_show_all: bool = True
     """Whether the keys also visit the tracks :attr:`subtitle_languages` does not name, after those it does."""
 
+    continuous_play: bool = True
+    """Whether a video that plays to its end is followed by the next, playing from its beginning (#693). Kept by the
+    player's bar button, not by the Videos / Player page; read at each end, so a change applies to every open player."""
+
     @property
     def subtitle_preferences(self) -> SubtitlePreferences:
         """The subtitle list as the player's engine takes it (#618)."""
@@ -269,6 +274,7 @@ class VideosSettings:  # pylint: disable=too-many-instance-attributes
         self.subtitles_on = cast(bool, settings.value(SUBTITLES_ON_KEY, True, type=bool))
         self.subtitle_languages = normalize_subtitle_languages(settings.value(SUBTITLE_LANGUAGES_KEY))
         self.subtitles_show_all = cast(bool, settings.value(SUBTITLES_SHOW_ALL_KEY, True, type=bool))
+        self.continuous_play = cast(bool, settings.value(CONTINUOUS_PLAY_KEY, True, type=bool))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -287,6 +293,7 @@ class VideosSettings:  # pylint: disable=too-many-instance-attributes
         settings.setValue(SUBTITLES_ON_KEY, self.subtitles_on)
         settings.setValue(SUBTITLE_LANGUAGES_KEY, list(self.subtitle_languages))
         settings.setValue(SUBTITLES_SHOW_ALL_KEY, self.subtitles_show_all)
+        settings.setValue(CONTINUOUS_PLAY_KEY, self.continuous_play)
         settings.endGroup()
 
 
@@ -302,3 +309,15 @@ def shared_videos_settings() -> VideosSettings:
     settings = VideosSettings()
     settings.load(persistent_settings())
     return settings
+
+
+def keep_continuous_play(checked: bool) -> None:
+    """Set whether a video's end is followed by the next, and keep it at once: the player's button has no page to save
+    it (#693).
+
+    :param checked: the new value; a value the settings already hold is not written again.
+    """
+    settings = shared_videos_settings()
+    if settings.continuous_play != checked:
+        settings.continuous_play = checked
+        settings.save(persistent_settings())

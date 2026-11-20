@@ -264,15 +264,13 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
 
     # endregion
 
-    def save_state(
-        self, video: str | None, subtitles: SubtitleChoice | None = None, speed: float | None = None
-    ) -> bytes:
+    def save_state(self, video: str | None, subtitles: SubtitleChoice | None, speed: float) -> bytes:
         """Encode where the stage splits between the picture and the panels beside it, which of them show, the
         video the player is on, what the reader chose of the subtitles (#618), and the playback speed (#697).
 
         :param video: the video's content key, or ``None`` for none.
         :param subtitles: the choice, or ``None`` while none was made, which the settings' default stands for.
-        :param speed: the playback rate, or ``None`` to leave it out.
+        :param speed: the playback rate.
         :returns: the state, restorable by :meth:`restore_state`.
         """
         ui = self.__ui
@@ -282,11 +280,10 @@ class PlayerStage(QObject):  # pylint: disable=too-many-instance-attributes
             INFO_STATE_KEY: ui.info_action.isChecked(),
             TREE_STATE_KEY: ui.tree_action.isChecked(),
             NOTES_STATE_KEY: ui.notes_action.isChecked(),
+            SPEED_STATE_KEY: speed,
         }
         if subtitles is not None:
             state[SUBTITLES_STATE_KEY] = subtitles.to_state()
-        if speed is not None:
-            state[SPEED_STATE_KEY] = speed
         return cbor2.dumps(state)
 
     @staticmethod

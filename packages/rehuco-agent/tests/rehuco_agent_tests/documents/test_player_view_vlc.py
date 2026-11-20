@@ -266,6 +266,42 @@ def test_a_pause_under_libvlc_keeps_the_file_and_resumes_on_the_same_frame(
     assert shown_of(view).objectName() == "vlc_surface"
 
 
+def test_an_end_with_continuous_play_off_shows_libvlcs_last_frame_and_lets_go(
+    qtbot: QtBot,
+    model: RehuDocumentModel,
+    recorder: WatchProgressRecorder,
+    library: Mock,
+    engine: Mock,
+    vlc_chosen: None,
+) -> None:
+    """libvlc's surface goes with the file, so the video stopped at its end (#693) shows a still of its last frame.
+
+    **Test steps:**
+
+    * turn continuous play off, play under libvlc, let it buffer, then end
+    * verify the still was taken and shown, and the engine stopped and its source cleared
+    """
+    del library, vlc_chosen
+    shared_videos_settings().continuous_play = False
+    image = QImage(4, 3, QImage.Format.Format_RGB32)
+    image.fill(0xFF112233)
+    engine.grab_still.return_value = image
+    view = make_view(qtbot, model, recorder)
+    view.jump("01.mp4")
+    deliver(engine, "mediaStatusChanged", QMediaPlayer.MediaStatus.BufferedMedia)
+    deliver(engine, "playbackStateChanged", QMediaPlayer.PlaybackState.PlayingState)
+    engine.setSource.reset_mock()
+
+    deliver(engine, "mediaStatusChanged", QMediaPlayer.MediaStatus.EndOfMedia)
+
+    engine.grab_still.assert_called_once_with()
+    engine.stop.assert_called_once_with()
+    engine.setSource.assert_called_once_with(QUrl())
+    assert still_of(view).image is not None
+    assert shown_of(view).objectName() == "still_widget"
+    assert view.current_key == "01.mp4"
+
+
 def test_a_paused_load_shows_libvlcs_still_and_lets_go(
     qtbot: QtBot,
     model: RehuDocumentModel,

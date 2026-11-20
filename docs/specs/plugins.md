@@ -1284,7 +1284,7 @@ video, so opening a tutorial never loads FFmpeg. Its transport bar is previous, 
 seek slider that follows the position and seeks on a click or a drag, and a speed combo from 0.5 to 2. Its keys are
 commands in the catalog, armed while focus is anywhere inside the player and nowhere else — Space plays and pauses,
 Left and Right jump five seconds, Ctrl+Left and Ctrl+Right load the previous and next video, Ctrl+Home plays from the
-start and Ctrl+End goes to the end -- which finishes the video and loads the next -- Up and Down change the volume, and Ctrl+Up and Ctrl+Down, or `]` and `[`, change the speed — and the slider, the combo and the buttons take
+start and Ctrl+End goes to the end -- which finishes the video and loads the next paused -- Up and Down change the volume, and Ctrl+Up and Ctrl+Down, or `]` and `[`, change the speed — and the slider, the combo and the buttons take
 no focus, so an arrow is never theirs.
 
 **The speed is the document's** (#697): one for all its videos, whether one is chosen, double-clicked, stepped to or
@@ -1346,9 +1346,15 @@ video this user watched last (`last_video`, [[field-schema#watch-progress]]), th
 and next stop at both ends, as the image lightbox does, and load their video **paused** by the same rule. A video
 starts from where it was left, or from the beginning when it was watched to the end -- viewed, or left within a
 second or so of its length -- so it can be watched again without dragging the bar back. A double-click is the only
-thing that plays at once. Reaching the end records the video's whole length, which is what marks it viewed when the
-setting is on, and loads the next paused; after the last video the player stops and shows nothing. Ctrl+End does the
-same for a video that is not at its end, and Ctrl+Home moves to 0, playing or paused.
+thing that plays at once, and the end of a video while continuous play is on. Reaching the end records the video's whole
+length, which is what marks it viewed when the setting is on. **Continuous play** is a checkable button on the bar,
+checked by default and kept as one app-wide setting with no key of its own (#693): checked, the next video starts
+playing from its beginning, even when it has a recorded position; unchecked, the video stays selected, stopped at its
+end on its last frame with its file let go, as a pause leaves it, so the bar can take it back anywhere in it, and play
+starts it again from 0. The last video stops at its end the same way, whatever the button says. Ctrl+End records a
+video that is not at its end as watched too, but loads the next **paused**; on the last video it leaves it selected
+with the bar at its end, the picture it had kept. The end of a video never closes the player. Ctrl+Home moves to 0,
+playing or paused.
 
 **A video that is only loaded records nothing.** Progress, the video watched last and the Files dock's percentages
 change only once a video has played, so looking through the videos leaves the record as it was.

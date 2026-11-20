@@ -3,7 +3,7 @@
 
 from typing import Final
 
-from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon
+from borco_pyside.theming import GlyphActionIconThemeHandler, themed_glyph_icon, themed_svg_icon
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QToolButton, QWidget
@@ -39,6 +39,7 @@ from ..glyphs import (
     PLAYER_PLAY_GLYPH,
     PLAYER_PREVIOUS_GLYPH,
 )
+from ..settings.videos_settings import keep_continuous_play, shared_videos_settings
 from .clock_text import clock_text
 from .player_view_ui import Ui_PlayerView
 
@@ -46,6 +47,9 @@ ADD_NOTE_AT_TEMPLATE: Final = "Add note at {clock}"
 """The *Add note at* action's text and tooltip, with the clock of where the video is."""
 
 ADD_NOTE_AT_TOOLTIP: Final = "Add a note to the video at {clock}."
+
+CONTINUOUS_PLAY_ICON_RESOURCE: Final = ":/icons/play_continuous.svg"
+"""The continuous-play button's icon (#693), which colors itself from the theme and the button's checked state."""
 
 SCRUB_INTERVAL_MS: Final = 250
 """The least time between two of a drag's moves reaching the player: a few seeks a second (#613)."""
@@ -142,6 +146,15 @@ class PlayerBar(QObject):
             (ui.restore_button, ui.restore_action),
         ):
             self.__mirror(button, action)
+        ui.continuous_play_button.setIcon(themed_svg_icon(CONTINUOUS_PLAY_ICON_RESOURCE))
+        ui.continuous_play_button.setChecked(self.continuous_play)
+        ui.continuous_play_button.toggled.connect(self.__on_continuous_toggled)
+
+    @property
+    def continuous_play(self) -> bool:
+        """Whether a video that plays to its end is followed by the next one (#693): the app-wide setting, which every
+        player's button shows."""
+        return shared_videos_settings().continuous_play
 
     @property
     def duration_ms(self) -> int:
@@ -219,6 +232,15 @@ class PlayerBar(QObject):
             action.setEnabled(selected)
         ui.previous_action.setEnabled(has_previous)
         ui.next_action.setEnabled(has_next)
+        # another document's player may have changed the setting since this one showed it
+        ui.continuous_play_button.setChecked(self.continuous_play)
+
+    def __on_continuous_toggled(self, checked: bool) -> None:
+        """Keep the reader's choice of continuous play for every player and the next start.
+
+        :param checked: whether the button is checked.
+        """
+        keep_continuous_play(checked)
 
     @staticmethod
     def __mirror(button: QToolButton, action: QAction) -> None:
