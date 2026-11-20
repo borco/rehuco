@@ -256,12 +256,13 @@ def test_dropping_changes_and_seeding_defaults_move_the_player_choice(qtbot: QtB
     assert page.is_dirty() is True
 
 
+@mark.usefixtures("with_libraries")
 def test_showing_the_page_checks_the_players_tools_once(qtbot: QtBot, fake_tool_locator: Any) -> None:
     """The page asks about VLC and the FFmpeg libraries the first time it is shown, and not again on a later show.
 
     **Test steps:**
 
-    * show the page, hide it and show it again
+    * on a platform that offers the libraries choice, show the page, hide it and show it again
     * verify the locator was asked once about each of the two tools
     """
     page = VideosPlayerPage()
