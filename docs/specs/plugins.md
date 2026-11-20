@@ -1553,9 +1553,10 @@ and rebinds it; which are shown is session state, not saved:
 
 - **`I` — info**: the video's key, its pixel size (from `videos`, else the frame the engine shows), its length, its
   position with its progress, and where it stands in the playlist (`[30/123]`), in the window's own colors.
-- **`T` — tree** (#575): a second view over the Tree sub-dock's rows, the name and the progress alone with no header,
-  the current video marked and brought into view as the panel is shown. Clicks are the dock's: a click shows that
-  video's notes without loading it, a double-click plays it, a bookmark row from its time.
+- **`T` — tree** (#575): a second view over the Tree sub-dock's rows, the name, the progress and the
+  length (the dock's Length column) with no header, the current video marked and brought into view as the panel is
+  shown. Clicks are the dock's: a click shows that video's notes without loading it, a double-click plays it, a
+  bookmark row from its time.
 - **`N` — notes** (#575): a second view of the notes, under the info, with no button: **F2** (*Edit notes*, a command of
   the player's like the rest) shows it if hidden, starts editing and puts the keyboard in the editor, and ends editing
   when pressed again, as **Esc** does. It and the Notes dock are one model ([[plugins#video-notes-dock]]): the same

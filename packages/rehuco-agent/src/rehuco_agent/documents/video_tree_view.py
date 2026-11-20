@@ -58,7 +58,8 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
     :param resource_events: the app's change feed to follow; a private one when not given.
     :param tree: the rows to show when another view's are to be shown again (#575); that view detaches them, and a
         view of its own is made when not given.
-    :param compact: whether to show the name and the progress alone, with no header: the player's ``T`` panel.
+    :param compact: whether to show the name, the progress and the length, with no header and no favorite column: the
+        player's ``T`` panel.
     """
 
     video_activated = Signal(str, object)
@@ -110,8 +111,7 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
         if compact:
             view.setHeaderHidden(True)
-            for column in (FAVORITE_COLUMN, LENGTH_COLUMN):
-                view.setColumnHidden(column, True)
+            view.setColumnHidden(FAVORITE_COLUMN, True)
         view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         view.doubleClicked.connect(self.__on_double_clicked)
         view.clicked.connect(self.__on_clicked)
