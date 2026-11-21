@@ -2,8 +2,8 @@
 
 Two kinds here. The **classification** (:func:`device_of`) is fed a mount table or a patched drive classifier, so no
 real table or drive is read -- except for the Windows facts that are about the running OS, which carry ``windows``.
-The **verdicts** (:func:`presence_of`, ``_judge``) have the stat, the volume check and the server probe replaced.
-``socket.create_connection`` is always replaced -- no test touches the network. The scan is in
+The **verdicts** (:func:`presence_of`, :meth:`Presence.judge`) have the stat, the volume check and the server probe
+replaced. ``socket.create_connection`` is always replaced -- no test touches the network. The scan is in
 ``test_path_presence_scan.py``.
 """
 
@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from borco_core import path_presence
 from borco_core.path_presence import REACH_TIMEOUT, Device, Presence, StorageKind, device_of, presence_of
 from borco_core.platforms.linux.mount_table import Mount
 from pytest import mark
@@ -353,54 +352,57 @@ def test_windows_a_letter_nothing_is_mapped_to_is_removable() -> None:
     assert device_of(Path(f"{unused_drive()}\\file.rehu")).kind is StorageKind.REMOVABLE
 
 
-# --- _exists / _volume_present / _reachable ----------------------------------------------------------------------
+# --- the stat / Device.volume_present / Device.reachable --------------------------------------------------------
 
 
 @mark.disk
-def test_exists_tells_present_from_absent(tmp_path: Path) -> None:
-    """A stat that finds the file says ``True``; one that finds nothing, or a file where a folder should be, ``False``.
+def test_a_local_stat_tells_present_from_gone(tmp_path: Path) -> None:
+    """A stat that finds the file is presence; one that finds nothing, or a file where a folder should be, is gone.
 
     **Test steps:**
 
-    * stat a file, a missing file, and a path below a file
-    * verify ``True``, ``False`` and ``False``
+    * judge a file, a missing file, and a path below a file, all on a local device
+    * verify present, gone and gone
     """
     present = tmp_path / "file"
     present.write_bytes(b"x")
+    paths = (present, tmp_path / "missing", present / "below")
 
-    assert path_presence._exists(present) is True  # pylint: disable=protected-access
-    assert path_presence._exists(tmp_path / "missing") is False  # pylint: disable=protected-access
-    assert path_presence._exists(present / "below") is False  # pylint: disable=protected-access
+    verdicts = [Presence.judge(path, local(), lambda: True) for path in paths]
+
+    assert verdicts == [Presence.PRESENT, Presence.GONE, Presence.GONE]
 
 
-def test_exists_without_a_verdict_is_none(mocker: MockerFixture) -> None:
+def test_a_stat_without_a_verdict_is_no_absence(mocker: MockerFixture) -> None:
     """A permission error is not an absence.
 
     **Test steps:**
 
     * make the stat raise a permission error
-    * verify the answer is ``None``
+    * verify a local path is judged offline, not gone
     """
     mocker.patch(f"{MODULE}.os.stat", side_effect=PermissionError)
 
-    assert path_presence._exists(FILE) is None  # pylint: disable=protected-access
+    assert Presence.judge(FILE, local(), lambda: True) is Presence.OFFLINE
 
 
-@pytest.mark.parametrize(("found", "expected"), [(True, True), (False, False), (None, False)])
+@pytest.mark.parametrize(
+    ("stat_error", "expected"), [(None, True), (FileNotFoundError, False), (PermissionError, False)]
+)
 def test_windows_a_volume_is_present_when_its_root_exists(
-    mocker: MockerFixture, found: bool | None, expected: bool
+    mocker: MockerFixture, stat_error: type[OSError] | None, expected: bool
 ) -> None:
     """On Windows the volume is there when its drive root can be stat-ed; no verdict is not presence.
 
     **Test steps:**
 
-    * force Windows and make the stat of the root answer ``True``, ``False`` or no verdict
-    * verify the volume is present only for ``True``
+    * force Windows and make the stat of the root succeed, find nothing, or give no verdict
+    * verify the volume is present only when the stat succeeded
     """
     mocker.patch(f"{MODULE}.sys.platform", "win32")
-    mocker.patch(f"{MODULE}._exists", return_value=found)
+    mocker.patch(f"{MODULE}.os.stat", side_effect=stat_error)
 
-    assert path_presence._volume_present(Path("/vol")) is expected  # pylint: disable=protected-access
+    assert Device(StorageKind.REMOVABLE, Path("/vol")).volume_present() is expected
 
 
 @pytest.mark.parametrize("mounted", [True, False])
@@ -415,7 +417,7 @@ def test_posix_a_volume_is_present_when_it_is_a_mount_point(mocker: MockerFixtur
     mocker.patch(f"{MODULE}.sys.platform", "linux")
     mocker.patch(f"{MODULE}.os.path.ismount", return_value=mounted)
 
-    assert path_presence._volume_present(Path("/vol")) is mounted  # pylint: disable=protected-access
+    assert Device(StorageKind.REMOVABLE, Path("/vol")).volume_present() is mounted
 
 
 @pytest.mark.parametrize("device", [network(host=None), network(port=None), local()])
@@ -427,7 +429,7 @@ def test_reachable_where_there_is_no_server_to_ask(probe: Probe, device: Device)
     * ask about devices with no host, no port, and a local one
     * verify each is reachable and no connection was made
     """
-    assert path_presence._reachable(device) is True  # pylint: disable=protected-access
+    assert device.reachable() is True
     assert not probe.calls
 
 
@@ -439,7 +441,7 @@ def test_reachable_when_the_server_accepts(probe: Probe) -> None:
     * ask about a server whose connection succeeds
     * verify it is reachable and was asked once, on its port, with the timeout
     """
-    assert path_presence._reachable(network()) is True  # pylint: disable=protected-access
+    assert network().reachable() is True
     assert probe.calls == [(("nas", 445), REACH_TIMEOUT)]
 
 
@@ -453,7 +455,7 @@ def test_unreachable_when_the_connection_fails(probe: Probe) -> None:
     """
     probe.error = TimeoutError()
 
-    assert path_presence._reachable(network()) is False  # pylint: disable=protected-access
+    assert network().reachable() is False
 
 
 def test_a_server_that_never_answers_is_given_up_on_at_the_timeout(unanswering_server: UnansweringServer) -> None:
@@ -470,14 +472,14 @@ def test_a_server_that_never_answers_is_given_up_on_at_the_timeout(unanswering_s
     device = network(host=unanswering_server.host, port=unanswering_server.port)
 
     started = time.monotonic()
-    reachable = path_presence._reachable(device)  # pylint: disable=protected-access
+    reachable = device.reachable()
     waited = time.monotonic() - started
 
     assert reachable is False
     assert REACH_TIMEOUT * 0.9 <= waited < min(REACH_TIMEOUT + 2.0, TIMEOUT)
 
 
-# --- _judge / presence_of ---------------------------------------------------------------------------------------
+# --- Presence.judge / presence_of -------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -491,10 +493,10 @@ def test_judge_local(mocker: MockerFixture, found: bool | None, verdict: Presenc
     * judge a path on a local device with the stat answering ``True``, ``False`` or no verdict
     * verify present, gone, and offline, with the server check never called
     """
-    mocker.patch(f"{MODULE}._exists", return_value=found)
+    mocker.patch.object(Presence, "_Presence__exists", return_value=found)
     reachable = mocker.Mock(return_value=True)
 
-    assert path_presence._judge(FILE, local(), reachable) is verdict  # pylint: disable=protected-access
+    assert Presence.judge(FILE, local(), reachable) is verdict
     reachable.assert_not_called()
 
 
@@ -506,9 +508,9 @@ def test_judge_an_unreachable_server_is_offline(mocker: MockerFixture) -> None:
     * judge a network path whose server check says no
     * verify offline and no stat
     """
-    stat = mocker.patch(f"{MODULE}._exists")
+    stat = mocker.patch.object(Presence, "_Presence__exists")
 
-    assert path_presence._judge(FILE, network(), lambda: False) is Presence.OFFLINE  # pylint: disable=protected-access
+    assert Presence.judge(FILE, network(), lambda: False) is Presence.OFFLINE
     stat.assert_not_called()
 
 
@@ -523,9 +525,9 @@ def test_judge_a_reachable_server_with_a_verdict_or_none(
     * judge a network path on a reachable server with the stat answering ``True`` or no verdict
     * verify present and offline
     """
-    mocker.patch(f"{MODULE}._exists", return_value=found)
+    mocker.patch.object(Presence, "_Presence__exists", return_value=found)
 
-    assert path_presence._judge(FILE, network(), lambda: True) is verdict  # pylint: disable=protected-access
+    assert Presence.judge(FILE, network(), lambda: True) is verdict
 
 
 def test_judge_a_file_missing_from_a_disc_is_never_gone(mocker: MockerFixture) -> None:
@@ -536,11 +538,11 @@ def test_judge_a_file_missing_from_a_disc_is_never_gone(mocker: MockerFixture) -
     * judge an absent path on an optical device whose volume reads as present
     * verify offline
     """
-    mocker.patch(f"{MODULE}._exists", return_value=False)
-    mocker.patch(f"{MODULE}._volume_present", return_value=True)
+    mocker.patch.object(Presence, "_Presence__exists", return_value=False)
+    mocker.patch.object(Device, "volume_present", return_value=True)
     disc = Device(StorageKind.OPTICAL, Path("/media/cd"))
 
-    assert path_presence._judge(FILE, disc, lambda: True) is Presence.OFFLINE  # pylint: disable=protected-access
+    assert Presence.judge(FILE, disc, lambda: True) is Presence.OFFLINE
 
 
 def test_judge_a_missing_volume_is_offline(mocker: MockerFixture) -> None:
@@ -551,11 +553,11 @@ def test_judge_a_missing_volume_is_offline(mocker: MockerFixture) -> None:
     * judge an absent path on a removable device whose volume is absent
     * verify offline
     """
-    mocker.patch(f"{MODULE}._exists", return_value=False)
-    mocker.patch(f"{MODULE}._volume_present", return_value=False)
+    mocker.patch.object(Presence, "_Presence__exists", return_value=False)
+    mocker.patch.object(Device, "volume_present", return_value=False)
     usb = Device(StorageKind.REMOVABLE, Path("/Volumes/USB"))
 
-    assert path_presence._judge(FILE, usb, lambda: True) is Presence.OFFLINE  # pylint: disable=protected-access
+    assert Presence.judge(FILE, usb, lambda: True) is Presence.OFFLINE
 
 
 @pytest.mark.parametrize("device", [Device(StorageKind.REMOVABLE, Path("/Volumes/USB")), network()])
@@ -567,10 +569,10 @@ def test_judge_a_file_missing_from_a_present_volume_is_gone(mocker: MockerFixtur
     * judge an absent path on a removable and on a network device whose volume is present
     * verify gone
     """
-    mocker.patch(f"{MODULE}._exists", return_value=False)
-    mocker.patch(f"{MODULE}._volume_present", return_value=True)
+    mocker.patch.object(Presence, "_Presence__exists", return_value=False)
+    mocker.patch.object(Device, "volume_present", return_value=True)
 
-    assert path_presence._judge(FILE, device, lambda: True) is Presence.GONE  # pylint: disable=protected-access
+    assert Presence.judge(FILE, device, lambda: True) is Presence.GONE
 
 
 def test_presence_of_classifies_the_path_when_not_told(mocker: MockerFixture) -> None:
@@ -583,7 +585,7 @@ def test_presence_of_classifies_the_path_when_not_told(mocker: MockerFixture) ->
     * verify the answer is present and the classifier got the path and the table
     """
     classify = mocker.patch(f"{MODULE}.device_of", return_value=local())
-    mocker.patch(f"{MODULE}._exists", return_value=True)
+    mocker.patch.object(Presence, "_Presence__exists", return_value=True)
     mounts = [NAS_MOUNT]
 
     assert presence_of(FILE, mounts) is Presence.PRESENT

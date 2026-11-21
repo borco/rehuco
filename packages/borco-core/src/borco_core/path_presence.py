@@ -86,6 +86,7 @@ REACH_TIMEOUT: Final = 0.3
 about 5 ms; a switched-off one never does, and this is what makes the difference between 0.3 s and 21 s."""
 
 SMB_PORT: Final = 445
+"""The port an SMB server listens on, which a Windows share's server is asked on."""
 
 UNPROBED_HOSTS: Final = frozenset({"wsl.localhost", "wsl$"})
 """Windows hosts that are not SMB servers, so port 445 says nothing about them."""
@@ -114,19 +115,12 @@ class StorageKind(StrEnum):
     """A disc: what is in the drive is whatever was last put in it, so a file missing from it is never gone."""
 
 
-class Presence(StrEnum):
-    """What is known about a remembered path."""
-
-    PRESENT = "present"
-    GONE = "gone"
-    OFFLINE = "offline"
-
-
 @dataclass(frozen=True)
 class Device:
     """The storage under a path."""
 
     kind: StorageKind
+    """What the storage is."""
 
     root: Path
     """Where the volume starts: ``D:\\``, ``\\\\nas\\share\\``, ``/Volumes/USB``. Also what groups paths that share a
@@ -144,17 +138,187 @@ class Device:
         """Whether this is a fixed local drive -- the only kind a missing file is proof of absence on, unasked."""
         return self.kind is StorageKind.LOCAL
 
+    @classmethod
+    def of(cls, path: Path, mounts: Sequence[Mount] | None = None) -> Device:
+        """The storage under ``path``, from local state only -- never a network call.
+
+        :param path: an absolute path; it need not exist.
+        :param mounts: the mount table, for a caller classifying many paths (POSIX only); ``None`` reads it.
+        :returns: the device.
+        """
+        if sys.platform == "win32":
+            return cls.__windows(path)
+        return cls.__posix(path, read_mounts() if mounts is None else mounts)
+
+    def reachable(self) -> bool:
+        """Whether this device's server accepts a connection within :data:`REACH_TIMEOUT`.
+
+        :returns: whether it answered; ``True`` where there is no server to ask.
+        """
+        if self.host is None or self.port is None:
+            return True
+        try:
+            with socket.create_connection((self.host, self.port), timeout=REACH_TIMEOUT):
+                return True
+        except OSError:
+            return False
+
+    def volume_present(self) -> bool:
+        """Whether the volume itself is there -- the drive letter exists, the folder is a mount point.
+
+        :returns: whether it is there.
+        """
+        if sys.platform != "win32":
+            return os.path.ismount(self.root)
+        try:
+            os.stat(self.root)
+        except OSError:
+            return False
+        return True
+
+    @classmethod
+    def __windows(cls, path: Path) -> Device:  # win32-only
+        """Classify a Windows path by its anchor: a UNC share, or a drive letter.
+
+        :param path: an absolute path.
+        :returns: the device.
+        """
+        anchor = path.anchor
+        if not path.drive:
+            # ``\folder\file``: no drive at all means the current one, which is whatever the process runs from -- local
+            return cls(StorageKind.LOCAL, Path(anchor))
+        if anchor.startswith("\\\\"):
+            # never GetDriveTypeW here: on a switched-off host it blocks 21 s (see platforms.windows.drives)
+            return cls.__windows_network(Path(anchor), anchor.strip("\\").split("\\", 1)[0])
+
+        # pylint: disable-next=import-outside-toplevel
+        from .platforms.windows import drives
+
+        kind = drives.drive_type(anchor)
+        if kind == drives.DRIVE_REMOTE:
+            share = drives.mapped_share(anchor.rstrip("\\"))
+            return cls.__windows_network(Path(anchor), share.strip("\\").split("\\", 1)[0] if share else None)
+        if kind == drives.DRIVE_CDROM:
+            return cls(StorageKind.OPTICAL, Path(anchor))
+        if kind in (drives.DRIVE_FIXED, drives.DRIVE_RAMDISK):
+            return cls(StorageKind.LOCAL, Path(anchor))
+        # removable, or no drive at all behind the letter -- which is what an unplugged one looks like
+        return cls(StorageKind.REMOVABLE, Path(anchor))
+
+    @classmethod
+    def __windows_network(cls, root: Path, host: str | None) -> Device:
+        """A Windows network volume: SMB on :data:`SMB_PORT`, unless the host is not an SMB server.
+
+        :param root: where the volume starts.
+        :param host: its server, ``None`` when nothing names it.
+        :returns: the device.
+        """
+        port = None if host is None or host.lower() in UNPROBED_HOSTS else SMB_PORT
+        return cls(StorageKind.NETWORK, root, host, port)
+
+    @classmethod
+    def __posix(cls, path: Path, mounts: Sequence[Mount]) -> Device:
+        """Classify a POSIX path by the mount holding it, else by the removable container it sits under.
+
+        :param path: an absolute path.
+        :param mounts: the mount table.
+        :returns: the device.
+        """
+        holding = [mount for mount in mounts if path.is_relative_to(mount.point)]
+        best = max(holding, key=lambda mount: len(mount.point.parts), default=None)
+        if best is not None and best.is_network:
+            return cls(StorageKind.NETWORK, best.point, best.host, best.port)
+        if best is not None and best.is_optical:
+            return cls(StorageKind.OPTICAL, best.point)
+        volume = cls.__removable_volume(path)
+        if volume is not None:
+            return cls(StorageKind.REMOVABLE, volume)
+        return cls(StorageKind.LOCAL, Path(path.anchor))
+
+    @staticmethod
+    def __removable_volume(path: Path) -> Path | None:
+        """The volume folder ``path`` sits under in a removable container, or ``None`` outside every container.
+
+        ``/Volumes/USB/x`` and ``/mnt/nas/x`` name their volume one level down; ``/run/media/<user>/<label>/x`` two. The
+        one container that is ambiguous is ``/media``, which older systems use without a user level: it takes two levels
+        only when the first is the current user's name.
+
+        :param path: an absolute POSIX path.
+        :returns: the volume's folder, or ``None``.
+        """
+        for container in REMOVABLE_CONTAINERS:
+            if not path.is_relative_to(container):
+                continue
+            parts = path.relative_to(container).parts
+            levels = 1
+            if container in USER_LEVEL_CONTAINERS and (
+                container == "/run/media" or parts[:1] == (os.environ.get("USER"),)
+            ):
+                levels = 2
+            return Path(container, *parts[:levels]) if len(parts) >= levels else None
+        return None
+
+
+class Presence(StrEnum):
+    """What is known about a remembered path."""
+
+    PRESENT = "present"
+    """The file is there."""
+
+    GONE = "gone"
+    """The device answered and the file is not on it: safe to forget."""
+
+    OFFLINE = "offline"
+    """The device did not answer, or its answer is no verdict: keep the entry, ask again."""
+
+    @classmethod
+    def judge(cls, path: Path, device: Device, reachable: Callable[[], bool]) -> Presence:
+        """The verdict for one path on its device.
+
+        :param path: the path.
+        :param device: its device.
+        :param reachable: whether its server answers, passed in so a scan asks it once per server.
+        :returns: the verdict.
+        """
+        if device.is_local:
+            found = cls.__exists(path)
+            return cls.OFFLINE if found is None else cls.PRESENT if found else cls.GONE
+        if not reachable():
+            return cls.OFFLINE
+        found = cls.__exists(path)
+        if found is None:
+            return cls.OFFLINE
+        if found:
+            return cls.PRESENT
+        if device.kind is StorageKind.OPTICAL or not device.volume_present():
+            return cls.OFFLINE
+        return cls.GONE
+
+    @staticmethod
+    def __exists(path: Path) -> bool | None:
+        """Whether ``path`` exists, as a plain ``stat`` says: ``Path.exists()`` folds every ``OSError`` into ``False``.
+
+        :param path: the path.
+        :returns: ``True`` or ``False``; ``None`` when the operating system gave no verdict (a permission error, an
+            unusable name), which is not the same as absent.
+        """
+        try:
+            os.stat(path)
+        except FileNotFoundError, NotADirectoryError:
+            return False
+        except OSError:
+            return None
+        return True
+
 
 def device_of(path: Path, mounts: Sequence[Mount] | None = None) -> Device:
-    """The storage under ``path``, from local state only -- never a network call.
+    """The storage under ``path``, from local state only -- never a network call (:meth:`Device.of`).
 
     :param path: an absolute path; it need not exist.
     :param mounts: the mount table, for a caller classifying many paths (POSIX only); ``None`` reads it.
     :returns: the device.
     """
-    if sys.platform == "win32":
-        return _windows_device(path)
-    return _posix_device(path, read_mounts() if mounts is None else mounts)
+    return Device.of(path, mounts)
 
 
 def presence_of(path: Path, mounts: Sequence[Mount] | None = None, *, device: Device | None = None) -> Presence:
@@ -170,118 +334,7 @@ def presence_of(path: Path, mounts: Sequence[Mount] | None = None, *, device: De
     :returns: the verdict.
     """
     device = device_of(path, mounts) if device is None else device
-    return _judge(path, device, lambda: _reachable(device))
-
-
-def _windows_device(path: Path) -> Device:
-    """Classify a Windows path by its anchor: a UNC share, or a drive letter."""
-    anchor = path.anchor
-    if not path.drive:
-        # ``\folder\file``: no drive at all means the current one, which is whatever the process runs from -- local
-        return Device(StorageKind.LOCAL, Path(anchor))
-    if anchor.startswith("\\\\"):
-        # never GetDriveTypeW here: on a switched-off host it blocks 21 s (see platforms.windows.drives)
-        return _network_device(Path(anchor), anchor.strip("\\").split("\\", 1)[0])
-
-    # pylint: disable-next=import-outside-toplevel
-    from .platforms.windows import drives
-
-    kind = drives.drive_type(anchor)
-    if kind == drives.DRIVE_REMOTE:
-        share = drives.mapped_share(anchor.rstrip("\\"))
-        return _network_device(Path(anchor), share.strip("\\").split("\\", 1)[0] if share else None)
-    if kind == drives.DRIVE_CDROM:
-        return Device(StorageKind.OPTICAL, Path(anchor))
-    if kind in (drives.DRIVE_FIXED, drives.DRIVE_RAMDISK):
-        return Device(StorageKind.LOCAL, Path(anchor))
-    # removable, or no drive at all behind the letter -- which is what an unplugged one looks like
-    return Device(StorageKind.REMOVABLE, Path(anchor))
-
-
-def _network_device(root: Path, host: str | None) -> Device:
-    """A Windows network volume: SMB on 445, unless the host is not an SMB server."""
-    port = None if host is None or host.lower() in UNPROBED_HOSTS else SMB_PORT
-    return Device(StorageKind.NETWORK, root, host, port)
-
-
-def _posix_device(path: Path, mounts: Sequence[Mount]) -> Device:
-    """Classify a POSIX path by the mount holding it, else by the removable container it sits under."""
-    holding = [mount for mount in mounts if path.is_relative_to(mount.point)]
-    best = max(holding, key=lambda mount: len(mount.point.parts), default=None)
-    if best is not None and best.is_network:
-        return Device(StorageKind.NETWORK, best.point, best.host, best.port)
-    if best is not None and best.is_optical:
-        return Device(StorageKind.OPTICAL, best.point)
-    volume = _removable_volume(path)
-    if volume is not None:
-        return Device(StorageKind.REMOVABLE, volume)
-    return Device(StorageKind.LOCAL, Path(path.anchor))
-
-
-def _removable_volume(path: Path) -> Path | None:
-    """The volume folder ``path`` sits under in a removable container, or ``None`` outside every container.
-
-    ``/Volumes/USB/x`` and ``/mnt/nas/x`` name their volume one level down; ``/run/media/<user>/<label>/x`` two. The one
-    container that is ambiguous is ``/media``, which older systems use without a user level: it takes two levels only
-    when the first is the current user's name.
-    """
-    for container in REMOVABLE_CONTAINERS:
-        if not path.is_relative_to(container):
-            continue
-        parts = path.relative_to(container).parts
-        levels = 1
-        if container in USER_LEVEL_CONTAINERS and (container == "/run/media" or parts[:1] == (os.environ.get("USER"),)):
-            levels = 2
-        return Path(container, *parts[:levels]) if len(parts) >= levels else None
-    return None
-
-
-def _exists(path: Path) -> bool | None:
-    """Whether ``path`` exists: ``True``/``False``, or ``None`` when the operating system gave no verdict (a
-    permission error, an unusable name) -- which is not the same as absent."""
-    try:
-        os.stat(path)  # a plain stat, because Path.exists() folds every OSError into False
-    except FileNotFoundError, NotADirectoryError:
-        return False
-    except OSError:
-        return None
-    return True
-
-
-def _volume_present(root: Path) -> bool:
-    """Whether the volume itself is there -- the drive letter exists, the folder is a mount point."""
-    if sys.platform == "win32":
-        return _exists(root) is True
-    return os.path.ismount(root)
-
-
-def _reachable(device: Device) -> bool:
-    """Whether the device's server accepts a connection within :data:`REACH_TIMEOUT`; ``True`` where there is no
-    server to ask."""
-    if device.host is None or device.port is None:
-        return True
-    try:
-        with socket.create_connection((device.host, device.port), timeout=REACH_TIMEOUT):
-            return True
-    except OSError:
-        return False
-
-
-def _judge(path: Path, device: Device, reachable: Callable[[], bool]) -> Presence:
-    """The verdict for one path on its device, with the server check passed in so a scan asks it once per server."""
-    if device.is_local:
-        found = _exists(path)
-        return Presence.OFFLINE if found is None else Presence.PRESENT if found else Presence.GONE
-    if not reachable():
-        return Presence.OFFLINE
-    found = _exists(path)
-    if found is None:
-        return Presence.OFFLINE
-    if found:
-        return Presence.PRESENT
-    if device.kind is StorageKind.OPTICAL or not _volume_present(device.root):
-        return Presence.OFFLINE
-    return Presence.GONE
+    return Presence.judge(path, device, device.reachable)
 
 
 class PresenceScan:
@@ -315,7 +368,8 @@ class PresenceScan:
 
     def stop(self) -> None:
         """Deliver no more answers. Does not wait for, or interrupt, a call still blocked in the operating system:
-        that thread is a daemon, and the process leaves without it."""
+        that thread is a daemon, and the process leaves without it.
+        """
         self.__stopped.set()
 
     @property
@@ -332,7 +386,7 @@ class PresenceScan:
                 return
             device = device_of(path, mounts)
             if device.is_local:
-                self.__answer(path, _judge(path, device, lambda: True))
+                self.__answer(path, Presence.judge(path, device, lambda: True))
             else:
                 groups.setdefault(device.root, []).append((path, device))
         for index, members in enumerate(groups.values()):
@@ -341,20 +395,31 @@ class PresenceScan:
             ).start()
 
     def __run_group(self, members: list[tuple[Path, Device]]) -> None:
-        """One volume's paths: ask its server once, then judge each."""
+        """One volume's paths: ask its server once, then judge each.
+
+        :param members: the volume's paths, each with its device.
+        """
         answer: list[bool] = []
 
         def reachable() -> bool:
+            """Whether the volume's server answers, asked the first time only.
+
+            :returns: its answer.
+            """
             if not answer:
-                answer.append(_reachable(members[0][1]))
+                answer.append(members[0][1].reachable())
             return answer[0]
 
         for path, device in members:
             if self.stopped:
                 return
-            self.__answer(path, _judge(path, device, reachable))
+            self.__answer(path, Presence.judge(path, device, reachable))
 
     def __answer(self, path: Path, presence: Presence) -> None:
-        """Deliver one answer, unless the scan was stopped while it was being worked out."""
+        """Deliver one answer, unless the scan was stopped while it was being worked out.
+
+        :param path: the path.
+        :param presence: its verdict.
+        """
         if not self.stopped:
             self.__on_answer(path, presence)

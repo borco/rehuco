@@ -47,13 +47,13 @@ def waiting(widget: DocumentWidget) -> WaitingOverlay | None:
 
 
 def test_a_view_of_a_document_waiting_for_its_storage_is_stood_in_for(widget: DocumentWidget) -> None:
-    """The session's view comes back on its surface at once, as a turning arc saying what is being restored and what
+    """The session's view comes back on its surface at once, as a surface saying what is being restored and what
     it waits for, and is reported as a view reopened is.
 
     **Test steps:**
 
     * say the document's storage was asked, and restore a view
-    * verify an overlay stands on the view's surface, turning, saying all three things, and was reported
+    * verify an overlay stands on the view's surface, saying all three things, and was reported
     * verify no viewer is open, and the view is still what is remembered
     """
     curated(widget, [])
@@ -66,7 +66,6 @@ def test_a_view_of_a_document_waiting_for_its_storage_is_stood_in_for(widget: Do
     overlay = waiting(widget)
     assert overlay is not None
     assert overlay.mode is OverlayMode.DOCUMENT_OVERLAY
-    assert overlay.busy
     assert overlay.text.split("\n") == [
         RESTORING_VIEWER_MESSAGE,
         WAITING_STORAGE_MESSAGE.format(path=RECORD),
@@ -96,14 +95,12 @@ def test_a_view_held_before_its_document_waits_is_stood_in_for_once_it_does(widg
 
 
 def test_what_it_says_follows_the_storage(widget: DocumentWidget) -> None:
-    """A storage that does not answer stops the arc and is said; asked again it turns again; answered, the view is
-    still being restored until it opens.
+    """A storage that does not answer is said; answered, the view is still being restored until it opens.
 
     **Test steps:**
 
-    * stand the overlay in, then say the storage did not answer; verify the words and the arc stopped
-    * say it was asked again, and verify the arc turns
-    * say the wait is over, and verify it still stands, turning, saying only what is restored
+    * stand the overlay in, then say the storage did not answer; verify the words
+    * say the wait is over, and verify it still stands, saying only what is restored
     """
     curated(widget, [])
     widget.model.storage_wait = StorageWait.ASKING
@@ -113,17 +110,11 @@ def test_what_it_says_follows_the_storage(widget: DocumentWidget) -> None:
 
     widget.model.storage_wait = StorageWait.OFFLINE
 
-    assert not overlay.busy
     assert overlay.text.split("\n")[1] == OFFLINE_STORAGE_MESSAGE.format(path=RECORD)
-
-    widget.model.storage_wait = StorageWait.ASKING
-
-    assert overlay.busy
 
     widget.model.storage_wait = None
 
     assert waiting(widget) is overlay
-    assert overlay.busy
     assert overlay.text.split("\n") == [RESTORING_VIEWER_MESSAGE, LEAVE_MAXIMIZED_HINT]
 
 

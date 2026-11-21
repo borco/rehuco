@@ -2,7 +2,6 @@
 
 from .action_button_column import ActionButtonColumn
 from .band_tree_view import BandTreeView
-from .busy_spinner import BusySpinner
 from .card_list import (
     CARD_LIST_COMMANDS,
     BuddyButtonStrip,
@@ -56,6 +55,7 @@ from .string_item_list_model import StringItemListModel
 from .string_list_editor import StringListEditor
 from .tool_bar_stretch import ToolBarStretch
 from .unbounded_spin_box import UnboundedSpinBox
+from .waiting_spinner import WaitingSpinner
 from .wrapping_check_box import WrappingCheckBox
 from .wrapping_label import WrappingLabel
 
@@ -65,7 +65,6 @@ __all__ = [
     "ActionButtonColumn",
     "BandTreeView",
     "BuddyButtonStrip",
-    "BusySpinner",
     "Card",
     "CardContent",
     "CardGhost",
@@ -110,6 +109,7 @@ __all__ = [
     "StringListEditor",
     "ToolBarStretch",
     "UnboundedSpinBox",
+    "WaitingSpinner",
     "WrappingCheckBox",
     "WrappingLabel",
     "drop_slot",

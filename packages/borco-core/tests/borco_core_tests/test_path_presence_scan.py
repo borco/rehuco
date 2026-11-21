@@ -301,7 +301,7 @@ def test_scan_stopped_mid_classification_delivers_nothing_more(mocker: MockerFix
         scan.stop()
         return True
 
-    mocker.patch(f"{MODULE}._exists", side_effect=stat)
+    mocker.patch.object(Presence, "_Presence__exists", side_effect=stat)
 
     scan.start()
     join_scan_threads()
@@ -329,7 +329,7 @@ def test_scan_stopped_mid_group_delivers_nothing_more(mocker: MockerFixture, pro
         scan.stop()
         return True
 
-    mocker.patch(f"{MODULE}._exists", side_effect=stat)
+    mocker.patch.object(Presence, "_Presence__exists", side_effect=stat)
 
     scan.start()
     join_scan_threads()

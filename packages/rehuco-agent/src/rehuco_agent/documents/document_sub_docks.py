@@ -1354,7 +1354,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         elif wait is StorageWait.OFFLINE:
             lines.append(OFFLINE_STORAGE_MESSAGE.format(path=self.__model.path))
         lines.append(LEAVE_MAXIMIZED_HINT)
-        self.__waiting_overlay.say("\n".join(lines), busy=wait is not StorageWait.OFFLINE)
+        self.__waiting_overlay.say("\n".join(lines))
 
     def __on_waiting_overlay_closed(self, overlay: WaitingOverlay) -> None:
         """The reader dismissed what stood in for the held view: they left the maximized view, so it is let go of.

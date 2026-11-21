@@ -370,7 +370,7 @@ the held dock, and the reader decides the rest:
 - **The file is gone:** the file was deleted, as a local one found gone at start was: its dock is closed and the
   recents and the session forget it. Nothing of it had been read or edited.
 
-A maximized view the session remembers for a held document is stood in for on its surface by a turning arc that says
+A maximized view the session remembers for a held document is stood in for on its surface by a notice that says
 what is being restored and what it waits for ([[plugins#session-restore]]). The log says how many documents were
 restored, how many of them wait, and what each one's storage answered.
 

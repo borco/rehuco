@@ -161,4 +161,4 @@ def fake_exists(mocker: MockerFixture, found: dict[Path, bool | None]) -> None:
     :param mocker: pytest-mock fixture.
     :param found: ``True``, ``False`` or ``None`` (no verdict) per path.
     """
-    mocker.patch(f"{MODULE}._exists", side_effect=lambda path: found[path])
+    mocker.patch.object(Presence, "_Presence__exists", side_effect=lambda path: found[path])
