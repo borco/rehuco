@@ -5,7 +5,7 @@ from typing import Any
 
 from borco_pyside.widgets import StringListEditor
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox
+from PySide6.QtWidgets import QCheckBox, QSpinBox
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -28,7 +28,7 @@ from rehuco_agent.settings.move_settings import (
 from rehuco_agent.settings.ui import files_page
 from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
-from rehuco_core import EXCLUDED_FILE_PATTERNS
+from rehuco_core import DEFAULT_JOIN_LIMIT, DEFAULT_SPLIT_LIMIT, EXCLUDED_FILE_PATTERNS, MIN_SPLIT_LIMIT
 
 
 # region fixtures
@@ -299,6 +299,85 @@ def test_a_verify_choice_is_staged_saved_and_dropped(
 
     page.seed_defaults()
     assert box.isChecked() is default
+    assert page.is_dirty()
+
+
+# endregion
+
+# region the bucket limits (#680)
+
+
+def spin_box(page: FilesPage, name: str) -> QSpinBox:
+    """One of the page's spin boxes, by object name.
+
+    :param page: the page under test.
+    :param name: the box's object name.
+    :returns: the spin box.
+    """
+    box = page.findChild(QSpinBox, name)
+    assert isinstance(box, QSpinBox)
+    return box
+
+
+def test_the_bucket_limits_start_as_shipped_and_the_split_never_under_its_floor(page: FilesPage) -> None:
+    """A fresh install splits above 200 and joins at 100; the split box goes no lower than 50, and the join box no
+    higher than half the split.
+
+    **Test steps:**
+
+    * build the page over no saved settings
+    * verify both values, the split box's minimum, and the join box's maximum
+    """
+    split, join = spin_box(page, "split_limit_spin_box"), spin_box(page, "join_limit_spin_box")
+
+    assert (split.value(), join.value()) == (DEFAULT_SPLIT_LIMIT, DEFAULT_JOIN_LIMIT)
+    assert split.minimum() == MIN_SPLIT_LIMIT
+    assert join.maximum() == DEFAULT_SPLIT_LIMIT // 2
+
+
+def test_the_join_limit_follows_a_lowered_split_limit(page: FilesPage) -> None:
+    """Lowering the split limit lowers how high the join limit may go, and with it a join limit over that.
+
+    **Test steps:**
+
+    * lower the split limit to 120
+    * verify the join box's maximum and value are 60
+    """
+    spin_box(page, "split_limit_spin_box").setValue(120)
+
+    join = spin_box(page, "join_limit_spin_box")
+    assert (join.maximum(), join.value()) == (60, 60)
+
+
+def test_the_bucket_limits_are_staged_saved_and_dropped(
+    page: FilesPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """A changed limit makes the page dirty; Reset drops it, Apply saves and persists both.
+
+    **Test steps:**
+
+    * change the split limit, check the page is dirty, reset, and check it is back and clean
+    * change both, apply, and check the shared settings and a reload hold them
+    * seed the defaults and check both are back, the page dirty
+    """
+    split, join = spin_box(page, "split_limit_spin_box"), spin_box(page, "join_limit_spin_box")
+    split.setValue(500)
+    assert page.is_dirty()
+    page.drop_changes()
+    assert split.value() == DEFAULT_SPLIT_LIMIT
+    assert not page.is_dirty()
+
+    split.setValue(500)
+    join.setValue(150)
+    page.save_changes()
+
+    assert (shared_move_settings().split_limit, shared_move_settings().join_limit) == (500, 150)
+    reloaded = MoveSettings()
+    reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert (reloaded.split_limit, reloaded.join_limit) == (500, 150)
+
+    page.seed_defaults()
+    assert (split.value(), join.value()) == (DEFAULT_SPLIT_LIMIT, DEFAULT_JOIN_LIMIT)
     assert page.is_dirty()
 
 

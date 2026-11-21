@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 from uuid import UUID
 
-from rehuco_core import RecordMoveHosting
+from rehuco_core import DEFAULT_SPLIT_LIMIT, RecordMoveHosting
 
 from rehuco_core_tests.test_move_record_job import (  # noqa: F401  # pylint: disable=unused-import
     SOURCE_ROOT,
@@ -18,7 +18,8 @@ from rehuco_core_tests.test_move_record_job import (  # noqa: F401  # pylint: di
 
 
 def test_with_no_host_installed_a_step_runs_here() -> None:
-    """The stand-in maps no root, knows of no save, and runs a step at once, after its checkpoint.
+    """The stand-in maps no root, knows of no save, splits at the shipped limit (#680), and runs a step at once, after
+    its checkpoint.
 
     **Test steps:**
 
@@ -32,6 +33,7 @@ def test_with_no_host_installed_a_step_runs_here() -> None:
 
     assert hosting.root_folder(SOURCE_ROOT) is None
     assert not hosting.save_pending(Path("/r/info.rehu"))
+    assert hosting.split_limit() == DEFAULT_SPLIT_LIMIT
     assert calls == ["checkpoint", "step"]
 
 
@@ -45,10 +47,12 @@ def test_an_installed_host_answers_for_every_move(host: MagicMock, roots: dict[U
     """
     hosting = RecordMoveHosting()
     hosting.install(host)
+    host.split_limit.return_value = 75
     step = MagicMock()
 
     assert hosting.root_folder(SOURCE_ROOT) == roots[SOURCE_ROOT]
     assert not hosting.save_pending(Path("/r/info.rehu"))
+    assert hosting.split_limit() == 75
     hosting.run_step(step, MagicMock())
     hosting.install(None)
 

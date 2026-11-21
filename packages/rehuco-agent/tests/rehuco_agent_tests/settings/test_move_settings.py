@@ -1,10 +1,12 @@
-"""Tests for MoveSettings announcing a save (#649)."""
+"""Tests for MoveSettings announcing a save (#649), and its bucket limits (#680)."""
 
 from unittest.mock import Mock
 
 from PySide6.QtCore import QSettings
+from pytest import mark, param
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.move_settings import MoveSettings
+from rehuco_core import DEFAULT_JOIN_LIMIT, DEFAULT_SPLIT_LIMIT, MIN_SPLIT_LIMIT
 
 
 def test_saving_announces_a_change(qtbot: QtBot) -> None:
@@ -39,3 +41,56 @@ def test_loading_announces_nothing(qtbot: QtBot) -> None:
 
     with qtbot.assertNotEmitted(settings.changed):
         settings.load(store)
+
+
+def stored(values: dict[str, object]) -> Mock:
+    """A stand-in store holding ``values`` and the factory values for every other key.
+
+    :param values: what it holds, by key.
+    :returns: the store.
+    """
+    store = Mock(spec=QSettings)
+    store.value.side_effect = lambda key, default, **_: values.get(key, default)
+    return store
+
+
+def test_the_bucket_limits_round_trip_and_ship_at_200_and_100() -> None:
+    """A fresh object holds the shipped limits, and what is saved loads back (#680).
+
+    **Test steps:**
+
+    * read a fresh object's limits, then load a store holding 500 and 150
+    * verify the shipped pair, then the stored pair
+    """
+    settings = MoveSettings()
+    assert (settings.split_limit, settings.join_limit) == (DEFAULT_SPLIT_LIMIT, DEFAULT_JOIN_LIMIT)
+
+    settings.load(stored({"split_limit": "500", "join_limit": 150}))
+
+    assert (settings.split_limit, settings.join_limit) == (500, 150)
+
+
+@mark.parametrize(
+    "values, expected",
+    [
+        param({"split_limit": 10}, (MIN_SPLIT_LIMIT, MIN_SPLIT_LIMIT // 2), id="a-split-under-its-floor"),
+        param({"join_limit": 150}, (DEFAULT_SPLIT_LIMIT, DEFAULT_SPLIT_LIMIT // 2), id="a-join-over-half"),
+        param({"split_limit": "many", "join_limit": None}, (DEFAULT_SPLIT_LIMIT, DEFAULT_JOIN_LIMIT), id="no-numbers"),
+    ],
+)
+def test_stored_bucket_limits_are_clamped_as_a_move_uses_them(
+    values: dict[str, object], expected: tuple[int, int]
+) -> None:
+    """A split limit under 50, a join limit over half the split, or a value that is no number loads as a move uses
+    it (#680).
+
+    **Test steps:**
+
+    * load each store
+    * verify the limits
+    """
+    settings = MoveSettings()
+
+    settings.load(stored(values))
+
+    assert (settings.split_limit, settings.join_limit) == expected

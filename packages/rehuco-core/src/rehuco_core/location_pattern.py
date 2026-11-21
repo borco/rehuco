@@ -19,20 +19,27 @@ from typing import Final
 
 from .rehu_document import AuthorEntry, author_name
 
-KNOWN_PLACEHOLDERS: Final = frozenset({"title", "publisher", "authors", "year"})
-"""The four fields every type's pattern may interpolate ([[field-schema#field-mapping]]), regardless of
-which plugin it belongs to -- :func:`known_placeholders_for` is what a type's *full* set is, this plus
-whichever :data:`PLUGIN_PLACEHOLDERS` entries that type's declared fields back (#349)."""
+KNOWN_PLACEHOLDERS: Final = frozenset({"title", "publisher", "authors", "year", "site", "site_id"})
+"""The fields every type's pattern may interpolate ([[field-schema#field-mapping]]), regardless of which plugin it
+belongs to -- :func:`known_placeholders_for` is what a type's *full* set is, this plus whichever
+:data:`PLUGIN_PLACEHOLDERS` entries that type's declared fields back (#349). ``{site}`` is the primary source's
+publisher, which a scraper fills with its site's name, and ``{site_id}`` that source's id for the item
+([[assets#site-id]], #680)."""
+
+BUCKETS_PLACEHOLDER: Final = "buckets"
+"""The placeholder a root's layout may name and nothing else ([[mounts-and-storage#buckets]], #680): it renders no
+value but the prefix buckets of the level after it, so a rename pattern, which names one level, refuses it."""
 
 PLUGIN_PLACEHOLDERS: Final[Mapping[str, str]] = {"count": "advertised_count"}
-"""Placeholders beyond the base four, each gated on the type actually declaring the field it renders
+"""Placeholders beyond the base set, each gated on the type actually declaring the field it renders
 (#349) -- ``{count}`` needs ``advertised_count``, so it is offered on a reference-images pattern and
 refused on a tutorial one, without either page's declaration knowing the other's shape. Keyed by
 placeholder name, which is what a pattern spells and what :func:`known_placeholders_for` returns."""
 
-PLACEHOLDERS: Final = ("title", "publisher", "authors", "year", "count")
-"""Every placeholder a template of any type may name, in the order a page shows them: :data:`KNOWN_PLACEHOLDERS` and
-the :data:`PLUGIN_PLACEHOLDERS` names (#637)."""
+PLACEHOLDERS: Final = ("title", "publisher", "authors", "year", "count", "site", "site_id")
+"""Every placeholder a template of any type may name for a value, in the order a page shows them:
+:data:`KNOWN_PLACEHOLDERS` and the :data:`PLUGIN_PLACEHOLDERS` names (#637). :data:`BUCKETS_PLACEHOLDER` names no
+value, so it is not one of them."""
 
 BLANK_PATTERN_PROBLEM: Final = "A pattern is a format string interpolating {title} / {publisher} / {authors} / {year}."
 MALFORMED_PATTERN_PROBLEM: Final = (
@@ -85,6 +92,21 @@ class LocationPattern:
     def problem(self) -> str:
         """Why this pattern cannot render, or ``""`` when it can."""
         return self.__problem
+
+    @property
+    def placeholders(self) -> frozenset[str]:
+        """Every placeholder the pattern names; none for an invalid one."""
+        if self.__problem:
+            return frozenset()
+        return frozenset(name for names in self.__placeholders for name in names)
+
+    @property
+    def optional_placeholders(self) -> frozenset[str]:
+        """The placeholders the pattern names inside a ``{{ ... }}`` group; none for an invalid one."""
+        if self.__problem:
+            return frozenset()
+        parts = zip(self.__parts, self.__placeholders, strict=True)
+        return frozenset(name for (_, optional), names in parts if optional for name in names)
 
     def render(self, values: Mapping[str, str], fallbacks: Mapping[str, str] | None = None) -> str:
         """Interpolate ``values``, emitting each optional group only when every placeholder inside it has
@@ -269,17 +291,25 @@ def render_location_pattern(
     return LocationPattern(pattern, known_placeholders).render(values)
 
 
-def location_values(
-    title: str, publisher: str, authors: Sequence[AuthorEntry], released: str | None, advertised_count: str | None
+# one argument per field a pattern reads: grouping them would put a second record shape beside RehuDocument
+def location_values(  # pylint: disable=too-many-arguments
+    title: str,
+    publisher: str,
+    authors: Sequence[AuthorEntry],
+    released: str | None,
+    advertised_count: str | None,
+    *,
+    site_id: str | None = None,
 ) -> dict[str, str]:
     """A record's fields as a pattern reads them, every placeholder present -- the one spelling the rename
     suggestions and a root's layouts share.
 
     :param title: the record's title.
-    :param publisher: its publisher.
+    :param publisher: its publisher, which is also its site (#675).
     :param authors: its author entries, joined by ``", "`` under their names.
     :param released: its release date, whose first four characters are the year; ``None`` leaves the year empty.
     :param advertised_count: its advertised count, ``None`` when it has none.
+    :param site_id: the store's id for it, ``None`` when it has none (#680).
     :returns: the values, keyed by placeholder name.
     """
     return {
@@ -288,4 +318,6 @@ def location_values(
         "authors": ", ".join(author_name(entry) for entry in authors),
         "year": (released or "")[:4],
         "count": advertised_count or "",
+        "site": publisher,
+        "site_id": site_id or "",
     }

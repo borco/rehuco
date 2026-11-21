@@ -21,6 +21,23 @@ def sanitize_name(raw: str) -> str | None:
     return name if name and is_valid_filename(name) else None
 
 
+HIDDEN_NAME_PREFIX: Final = "."
+"""What no location may start with (#680): a name hidden on a share and on macOS, and the first character of the names
+the prefix buckets keep for themselves (:mod:`rehuco_core.prefix_buckets`)."""
+
+LEADING_DOT_PROBLEM: Final = "A location never starts with a dot."
+
+
+def location_name_problem(name: str) -> str:
+    """Why ``name`` may not be made a location, or ``""`` when it may (#680) -- the one spelling of the rule a root's
+    layouts, the rename suggestions and a typed rename share. A name a record already has is never refused by it.
+
+    :param name: a sanitized name, one level of a location.
+    :returns: :data:`LEADING_DOT_PROBLEM`, or ``""``.
+    """
+    return LEADING_DOT_PROBLEM if name.startswith(HIDDEN_NAME_PREFIX) else ""
+
+
 LOCATION_STEM_SEPARATOR: Final = "--"
 """What joins a location's segments in the name of its root file."""
 

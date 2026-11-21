@@ -8,7 +8,7 @@ from rehuco_agent.rehuco.root_layouts_editor import RootLayoutsEditor
 from rehuco_agent.rehuco.string_map_editor import MapChoicesDelegate, StringMapEditor
 from rehuco_agent.rehuco.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
 from rehuco_agent.settings.root_layout_templates_settings import shared_root_layout_templates_settings
-from rehuco_core import DEFAULT_PLUGIN_REGISTRY, PLACEHOLDERS
+from rehuco_core import BUCKETS_LAST_PROBLEM, DEFAULT_PLUGIN_REGISTRY, PLACEHOLDERS
 
 LIBRARY = ("{authors}/{title}", "{publisher}/{title}{{ ({count})}}", "{author}/{title}")
 """A library of templates: one every type accepts, one only a type with a count does, one naming no placeholder."""
@@ -214,16 +214,34 @@ def test_a_template_invalid_for_its_type_is_flagged_and_still_saved_as_typed(edi
     assert editor.layouts == typed
 
 
+def test_a_buckets_level_is_any_types_and_a_misplaced_one_is_flagged(editor: RootLayoutsEditor) -> None:
+    """Every type's template may name ``{buckets}``, as a level of its own before another; as the last level it is
+    flagged with the reason (#680).
+
+    **Test steps:**
+
+    * set a ``*`` template bucketing its last level, and a ``tutorial`` one ending in ``{buckets}``
+    * verify the first is not flagged and the second is, its tooltip the reason
+    """
+    layouts, _ = tables(editor)
+    editor.set_values({"*": ("{site}/{buckets}/{site_id}",), "tutorial": ("{title}/{buckets}",)}, {})
+
+    good, misplaced = (layouts.model.index(row, VALUE_COLUMN) for row in range(2))
+
+    assert good.data(Qt.ItemDataRole.ToolTipRole) in (None, "")
+    assert misplaced.data(Qt.ItemDataRole.ToolTipRole) == BUCKETS_LAST_PROBLEM
+
+
 def test_the_fallbacks_are_one_fixed_row_per_placeholder_and_only_what_is_filled_is_kept(
     editor: RootLayoutsEditor,
 ) -> None:
-    """The fallbacks table always lists the five placeholders, whatever the root holds, with only *When empty*
-    editable; an empty one is not written, and a key of no placeholder is dropped (#637).
+    """The fallbacks table always lists the placeholders that name a field, whatever the root holds, with only *When
+    empty* editable; an empty one is not written, and a key of no placeholder is dropped (#637).
 
     **Test steps:**
 
     * show fallbacks of authors and of a key that is no placeholder
-    * verify five rows named as the placeholders, the key column read-only and the value column editable
+    * verify one row per placeholder, the key column read-only and the value column editable
     * verify only the authors fallback is read back, and that an empty cell leaves it out again
     """
     _, fallbacks = tables(editor)

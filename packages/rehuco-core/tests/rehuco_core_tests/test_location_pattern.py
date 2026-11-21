@@ -5,6 +5,7 @@
 from pytest import mark
 from rehuco_core import (
     BLANK_PATTERN_PROBLEM,
+    BUCKETS_PLACEHOLDER,
     EMPTY_GROUP_PROBLEM,
     KNOWN_PLACEHOLDERS,
     MALFORMED_PATTERN_PROBLEM,
@@ -64,7 +65,7 @@ def test_a_malformed_placeholder_is_refused(pattern: str) -> None:
     ids=["blank", "positional", "unknown", "unknown-in-group", "swapped-bracket"],
 )
 def test_a_placeholder_outside_the_known_four_is_refused_by_name(pattern: str, name: str) -> None:
-    """A placeholder outside the four known fields is refused, not silently interpolated as empty --
+    """A placeholder outside the known fields is refused, not silently interpolated as empty --
     inside a group as much as outside one -- and the problem names it as written, so a slip like a ``]`` typed
     inside the braces is seen."""
     assert location_pattern_problem(pattern) == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name=name)
@@ -109,12 +110,12 @@ def test_a_well_formed_pattern_is_valid(pattern: str) -> None:
 
 
 def test_count_is_refused_by_default_but_accepted_when_declared() -> None:
-    """``{count}`` is not one of the base four, so it is refused unless the caller's known-placeholder
+    """``{count}`` is not one of the base set, so it is refused unless the caller's known-placeholder
     set includes it -- gated on the type declaring ``advertised_count`` (#349).
 
     **Test steps:**
 
-    * check ``{count}`` against the default (base-four) known placeholders
+    * check ``{count}`` against the default (base) known placeholders
     * check it again against a set that includes ``count``
     """
     assert location_pattern_problem("{title} ({count})") == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name="count")
@@ -127,8 +128,8 @@ def test_count_is_refused_by_default_but_accepted_when_declared() -> None:
 # region known_placeholders_for
 
 
-def test_known_placeholders_for_is_the_base_four_without_advertised_count() -> None:
-    """A type that declares no count field gets only the base four (#349)."""
+def test_known_placeholders_for_is_the_base_set_without_advertised_count() -> None:
+    """A type that declares no count field gets only the base set (#349)."""
     assert known_placeholders_for(("rating", "favorite")) == KNOWN_PLACEHOLDERS
 
 
@@ -237,26 +238,72 @@ def test_missing_names_each_blank_placeholder_outside_a_group_once() -> None:
 
 
 def test_location_values_spell_a_records_fields_as_placeholders() -> None:
-    """Authors join under their names, the year is the release date's first four characters, and an absent date or
-    count is empty.
+    """Authors join under their names, the year is the release date's first four characters, the site is the
+    publisher, and an absent date, count or site id is empty (#680).
 
     **Test steps:**
 
-    * build the values of a record with mixed author entries, a date and a count, then of one with neither
+    * build the values of a record with mixed author entries, a date, a count and a site id, then of one with none
     * verify each placeholder's value
     """
-    full = location_values("Intro", "Acme", ["Jane", {"name": "John"}], "2025-03-01", "900+")
+    full = location_values("Intro", "Acme", ["Jane", {"name": "John"}], "2025-03-01", "900+", site_id="a1b2")
     empty = location_values("Intro", "", [], None, None)
 
-    assert full == {"title": "Intro", "publisher": "Acme", "authors": "Jane, John", "year": "2025", "count": "900+"}
-    assert empty == {"title": "Intro", "publisher": "", "authors": "", "year": "", "count": ""}
+    assert full == {
+        "title": "Intro",
+        "publisher": "Acme",
+        "authors": "Jane, John",
+        "year": "2025",
+        "count": "900+",
+        "site": "Acme",
+        "site_id": "a1b2",
+    }
+    assert empty == {
+        "title": "Intro",
+        "publisher": "",
+        "authors": "",
+        "year": "",
+        "count": "",
+        "site": "",
+        "site_id": "",
+    }
+
+
+def test_a_pattern_says_which_placeholders_it_names_and_which_are_optional() -> None:
+    """A valid pattern names its placeholders, those inside a group apart; an invalid one names none (#680).
+
+    **Test steps:**
+
+    * parse ``{authors}/{title}{{ [{year}]}}``, then a pattern with an unknown placeholder
+    * verify the three names and the year as optional, then nothing for the invalid one
+    """
+    valid = LocationPattern("{authors}/{title}{{ [{year}]}}")
+    invalid = LocationPattern("{title}/{series}")
+
+    assert valid.placeholders == {"authors", "title", "year"}
+    assert valid.optional_placeholders == {"year"}
+    assert not invalid.placeholders
+    assert not invalid.optional_placeholders
+
+
+def test_buckets_is_no_rename_patterns_placeholder() -> None:
+    """``{buckets}`` names no value, so a rename pattern refuses it and only a root's layout takes it (#680).
+
+    **Test steps:**
+
+    * parse ``{buckets}/{title}`` under the base placeholders
+    * verify the unknown-placeholder problem names it
+    """
+    problem = LocationPattern("{buckets}/{title}").problem
+
+    assert problem == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name=BUCKETS_PLACEHOLDER)
 
 
 # endregion
 
 
 def test_placeholders_list_every_placeholder_once_in_display_order() -> None:
-    """``PLACEHOLDERS`` is the known four and the plugin ones, each once (#637).
+    """``PLACEHOLDERS`` is the known ones and the plugin ones, each once (#637).
 
     **Test steps:**
 

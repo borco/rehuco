@@ -59,7 +59,7 @@ def test_the_library_and_the_sample_round_trip_through_storage() -> None:
     * verify both are read back, and that the sample is stored one key per field
     """
     store = FakeSettings()
-    sample = ("A Title", "A Publisher", "Jane Doe, John Roe", "1999", "12")
+    sample = ("A Title", "A Publisher", "Jane Doe, John Roe", "1999", "12", "0a1b")
     saved = RootLayoutTemplatesSettings()
     saved.templates = ("{authors}/{title}", "{publisher}/{title}")
     saved.sample = sample

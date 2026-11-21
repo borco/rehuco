@@ -819,3 +819,139 @@ def test_the_current_place_is_not_added_when_one_of_the_templates_puts_the_recor
         (PurePosixPath("Jane/Foo"), False),
         (PurePosixPath("Foo"), True),
     ]
+
+
+# region bucketed places (#680)
+
+BUCKETED_TITLES: Final = {"*": ("{authors}/{buckets}/{title}",)}
+"""A layout filing every type under its authors, its titles in prefix buckets."""
+
+
+@mark.parametrize(
+    "record", [param(("Jane", "foo.rehu"), id="no-bucket-yet"), param(("jane", "F", "foo.rehu"), id="in-its-bucket")]
+)
+def test_a_record_in_any_chain_of_its_buckets_is_at_its_bucketed_place(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals, record: tuple[str, ...]
+) -> None:
+    """A bucketed place is where the record sits when its folders are the place's with any chain of its buckets,
+    read off no disk; it is shown with its buckets as an ellipsis.
+
+    **Test steps:**
+
+    * open a record straight in its author's folder, then in its title's bucket, under a bucketed layout
+    * check the one place is marked there, bucketed at its title, and shown with an ellipsis
+    """
+    root = root_at(tmp_path, BUCKETED_TITLES)
+    place(authored, tmp_path.joinpath(*record))
+
+    (destination,) = NameSuggestionModel(authored, catalog_of(signals, root)).root_destinations()
+
+    assert (destination.relative, destination.bucketed, destination.here) == (PurePosixPath("Jane/Foo"), (1,), True)
+    assert destination.shown == PurePosixPath("Jane/…/Foo")
+
+
+def test_a_record_out_of_its_buckets_is_not_at_its_bucketed_place(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """A record in a folder that is not one of its buckets is offered the bucketed place, beside where it sits.
+
+    **Test steps:**
+
+    * open a record in a bucket of another letter under a bucketed layout
+    * check the place where it sits, then the bucketed one, not there
+    """
+    root = root_at(tmp_path, BUCKETED_TITLES)
+    place(authored, tmp_path / "Jane" / "x" / "foo.rehu")
+
+    current, bucketed = NameSuggestionModel(authored, catalog_of(signals, root)).root_destinations()
+
+    assert current.here and not bucketed.here
+    assert bucketed.bucketed == (1,)
+
+
+def test_a_bucketed_place_under_another_root_is_never_where_the_record_sits(
+    tmp_path: Path, authored: RehuDocumentModel, signals: RootsSignals
+) -> None:
+    """Only the record's own root can hold it: another root's bucketed place is offered, not marked there.
+
+    **Test steps:**
+
+    * open a record at ``Jane/foo.rehu`` under one root, with another root bucketing the same way
+    * check the other root's place is not there
+    """
+    own = root_at(tmp_path / "own", BUCKETED_TITLES)
+    other = root_at(tmp_path / "other", BUCKETED_TITLES)
+    place(authored, own.path / "Jane" / "foo.rehu")
+
+    _, elsewhere = NameSuggestionModel(authored, catalog_of(signals, own, other)).root_destinations()
+
+    assert elsewhere.root_id == other.root_id and not elsewhere.here
+
+
+@mark.parametrize(
+    "layouts, where",
+    [
+        param(BUCKETED_TITLES, (("Jane", "f", "foo.rehu"), True), id="its-name-bucketed-and-there"),
+        param(BUCKETED_TITLES, (("Jane", "x", "foo.rehu"), False), id="not-there"),
+        param(
+            {"*": ("{buckets}/{authors}/{title}",)}, (("j", "Jane", "foo.rehu"), False), id="an-outer-level-bucketed"
+        ),
+        param(BY_AUTHOR, (("Jane", "foo.rehu"), False), id="no-buckets"),
+    ],
+)
+def test_a_bucket_home_is_the_place_that_buckets_the_records_own_name(
+    tmp_path: Path,
+    authored: RehuDocumentModel,
+    signals: RootsSignals,
+    layouts: Layouts,
+    where: tuple[tuple[str, ...], bool],
+) -> None:
+    """A rename moves the record to its new name's bucket only where the place it sits at buckets its own name.
+
+    **Test steps:**
+
+    * open a record under each layout, at a place or not, and whether that place is its bucket home
+    * check whether it has a bucket home, and that it is the place it sits at
+    """
+    record, home = where
+    root = root_at(tmp_path, layouts)
+    place(authored, tmp_path.joinpath(*record))
+
+    found = NameSuggestionModel(authored, catalog_of(signals, root)).bucket_home()
+
+    assert (found is not None) is home
+    assert found is None or (found.here and found.same_root)
+
+
+def test_a_suggestion_starting_with_a_dot_is_not_offered(model: RehuDocumentModel) -> None:
+    """No location starts with a dot: a pattern rendering one is not offered (#680).
+
+    **Test steps:**
+
+    * give the record a title starting with a dot
+    * verify the title alone is not offered, and the one led by the publisher is
+    """
+    model.title = ".hidden"
+
+    suggestions = NameSuggestionModel(model).suggestions()
+
+    assert ".hidden" not in suggestions
+    assert "Bar - .hidden" in suggestions
+
+
+def test_a_suggestion_names_the_records_site_and_site_id(model: RehuDocumentModel) -> None:
+    """``{site}`` is the publisher and ``{site_id}`` the primary source's id (#680).
+
+    **Test steps:**
+
+    * store a pattern naming both, and give the record a site id
+    * verify the suggestion
+    """
+    settings = shared_location_templates_settings()
+    settings.patterns = {**settings.patterns, "tutorial": ("{site} {site_id}",)}
+    model.document.site_id = "a1b2"
+
+    assert NameSuggestionModel(model).suggestions() == ["Bar a1b2"]
+
+
+# endregion

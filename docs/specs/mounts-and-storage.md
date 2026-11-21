@@ -150,8 +150,10 @@ references** to such files and nothing more about a root: its role is to aggrega
 - **`layouts`** says where a record of each type lives under this root: a map from a resource type's main key, or
   `*` for any type not named, to a **list of path templates** (#638; a plain string reads as a list of one, and a save
   writes lists) — each the Locations grammar ([[plugins#tutorial-plugin]]'s
-  placeholders, `{{ … }}` optional groups, `{count}` where the type declares it, the Location Replacements applied
-  after) **plus `/` as a level separator**, each segment sanitized as a name is today and the separators kept. The
+  placeholders, `{site}` and `{site_id}` among them, `{{ … }}` optional groups, `{count}` where the type declares it,
+  the Location Replacements applied after) **plus `/` as a level separator** and **`{buckets}`, a level spreading the
+  next over prefix buckets** ([[mounts-and-storage#buckets]]), each segment sanitized as a name is today and the
+  separators kept; a segment that starts with a dot refuses the layout for that record (#680). The
   value `*` means *keep the record's current folder name*, at the root's top, under the record's own root too (#643);
   the place the record sits at is a row of its own in the path row. **The list's order is the order the path row
   offers the places in**: a template that cannot render for a record is skipped, and two rendering one place offer it
@@ -496,58 +498,94 @@ renames its entries with its files (#339); a folder record's are relative to its
 - [#680: feat(core): {bucket}, {site} and {site_id} placeholders, with prefix buckets](https://github.com/borco/rehuco/issues/680)
 - [#681: feat: a rebalance job for prefix buckets](https://github.com/borco/rehuco/issues/681)
 
-**Not built.** A store library ([[assets]]) is thousands of file records, each a `.rehu` and a few screenshots, with
-no folder of its own. Left flat that is tens of thousands of files in one directory, which every file manager and
-every share handles badly. So a layout ([[mounts-and-storage#rehuroot]]) may spread them over **buckets named by the
-start of the record's name, one character more per level**:
+A store library ([[assets]]) is thousands of file records, each a `.rehu` and a few screenshots, with no folder of its
+own. Left flat that is tens of thousands of files in one directory, which every file manager and every share handles
+badly. So a layout ([[mounts-and-storage#rehuroot]]) may spread a level over **buckets named by the start of its
+entries' names, one character more per level** (#680):
 
 ```text
 fab/
+  .rehubuckets
   0/
+    .rehubuckets
     00/
     01/
-      01a/
-      01b/
+      01abc.rehu
   a/
-    a0/
-    a1/
+    a0f3.rehu
 ```
 
-- **A folder holds records until it passes the limit, then it splits.** Each record moves into the child folder named
-  by one more character of its own name: those in `a/` into `a/a0/`, `a/a1/` and so on.
-- **The rule is the same at every level**, the layout's own folder included. A small library stays flat, and only the
-  crowded prefixes grow deeper.
-- **A record's place follows from its name and the folders that exist**: the deepest existing folder whose name starts
-  the record's. Nothing is looked up and nothing is stored about where a record went.
-- **Names compare case-folded**, as root folders do. A record whose name is shorter than a folder's prefix stays in
-  the parent.
-- **The limit is a setting**, 200 by default and **never under 50**: below that the tree deepens without any folder
-  becoming easier to read.
+**It is one more placeholder in the Locations grammar**, not a second placement system: `{buckets}`, **a level of its
+own, which spreads the level after it** -- a record, or a folder of records -- over prefix buckets. Any type's layout
+may name it, as often as it likes, but never inside an optional group, never as the last level, and never right after
+another `{buckets}`; a rename pattern, which names one level, refuses it. Beside it, `{site}` is the primary source's
+publisher, which a scraper fills with its site's name ([[assets#site-id]]), and `{site_id}` that source's id. These are
+all layouts the owner uses:
 
-**It is three placeholders in the Locations grammar**, not a second placement system: `{bucket}`, which renders as the
-bucket path for the record's name; `{site}`, the primary source's site; and `{site_id}`, that source's id
-([[assets#site-id]]). A library root's layout is then `{"asset": ["{site}/{bucket}/{site_id}"]}`, and any type may use
-`{bucket}`.
+| Layout | What is bucketed |
+| --- | --- |
+| `{site}/{buckets}/{site_id}` | a store library's records, by their ids |
+| `TUTORIALS/{buckets}/{title}{{ - {authors}}}` | records, by their titles |
+| `AUTHORS/{buckets}/{authors} - {title}` | records, by their authors |
+| `{publisher}/{buckets}/{authors}/{title}` | author folders, each moved whole with its records |
+| `{site}/{buckets}/{authors}/{buckets}/{title}` | author folders, then the titles inside each |
+
+- **A folder that has been split holds a marker**, an empty file `.rehubuckets`. An unmarked folder holds entries; a
+  marked one at depth *n* -- its own prefix *n* characters, the layout's folder 0 -- holds buckets named by *n+1*
+  characters, and only those entries too short to descend, which can never be named like a bucket. A **folder** named
+  `.rehubuckets` keeps its parent a plain folder that is never split; a marker file's content is ignored.
+- **A folder holds entries until it passes the limit, then it splits.** Each entry long enough moves into the bucket of
+  one more character of its name, and every bucket that then holds more than the limit splits the same way. A small
+  library stays flat, and only the crowded prefixes grow deeper.
+- **A bucket is built aside, then renamed into place.** Only a folder whose name is a bucket's own length could be
+  taken for one, so before the marker is written each such folder moves into a temporary bucket,
+  `.rehubuckets-tmp-<prefix>-<token>`, which is renamed to its prefix once the marker is there: a tutorial folder `ab`
+  in a crowded `a/` ends at `a/ab/ab`. A folder holding a temporary bucket is a split under way.
+- **Every step is one rename through the rename barrier** ([[mounts-and-storage#safe-move-rename]]): a file record
+  with its sidecars, a folder record, or a folder with every record beneath it. So a stop between two steps leaves
+  every record whole and in one place, the cache and an open document follow each move as they follow any rename, and
+  settling the folder again from the disk alone finishes the split. A record locked by a write elsewhere, or a reader
+  slow to let go, makes the split wait, as a move waits.
+- **An entry's place follows from its name and the folders there are**: down every split folder to the bucket of one
+  more of its characters, made when it is missing; a bucket being built is landed in under its temporary name. Nothing
+  is looked up and nothing is stored about where an entry went.
+- **Names compare case-folded**, as root folders do. A prefix no folder may be named by -- one ending in a dot or a
+  space, or one the sanitize step would change -- makes no bucket: its entries stay where they are.
+- **The limits are on the Files page**, under *Moving records*: a folder splits **above** 200 entries by default,
+  **never under 50**, below which the tree deepens without any folder becoming easier to read; and a split folder is
+  joined back **at or below** 100 by default, never above half the split limit, so a folder never splits and joins
+  back over one record. Each move asks the split limit as it settles, never captured.
+- **No location starts with a dot**, buckets or not: a level rendering one refuses the layout for that record, a
+  rename suggestion rendering one is not offered, and a typed rename to one is refused. That keeps every name clear of
+  the marker and the temporary buckets; a name a record already has is never refused.
+
+**The split is a move's last step.** The path row ([[plugins#tutorial-plugin]]) draws a bucketed place without reading
+the disk, its buckets as `…` (`Fab: fab/…/01abc`), and counts the record as already there when its folders are the
+place's with any chain of its buckets. A click always queues a move ([[mounts-and-storage#safe-move-rename]]), even an
+unverified rename: the move reads the buckets as it starts moving and keeps them, so a stopped copy goes on into the
+same folder; once the record landed, a kept *split* phase settles each bucketed level the place went into, innermost
+first, since an outer split moves the inner levels' folders whole. **A rename where the record's own name is bucketed
+is such a move**: `ab/ab123` renamed to `ac123` lands in `ac/ac123`, never `ab/ac123`.
 
 **Naming a record by its store id is what makes buckets cheap.** An id never collides, where two items of one
 publisher can share a title; it never changes, so correcting a title moves nothing; and an id made of hex digits
 splits every level into sixteen even parts. A layout that names records by title still works: a rename then moves the
-record's few files, possibly into another bucket, which is an ordinary rename. Nobody browses a library root by
-folder; the browser dock is how a record is found.
+record's few files, possibly into another bucket. Nobody browses a library root by folder; the browser dock is how a
+record is found.
 
 ### §9.14.1 Rebalancing is a job
 
 [[[mounts-and-storage#bucket-rebalance]]]
 
-Changing the limit leaves the tree wrong for the new value, so the change enqueues a **rebalance job** for each root
-with a bucketed layout; it can also be started by hand from the Roots view.
+**Not built** (#681). Changing the limits leaves the tree wrong for the new values, so the change enqueues a
+**rebalance job** for each root with a bucketed layout; it can also be started by hand from the Roots view.
 
-- **Limit lowered** (1000 to 50): every folder over the limit is split, and its children again, until none is.
-- **Limit raised** (50 to 1000): child folders are folded back into their parent wherever the whole subtree fits under
-  the limit.
+- **Split limit lowered** (1000 to 50): every folder over the limit is split, and its buckets again, until none is.
+- **Join limit raised**: a split folder whose whole subtree holds the join limit or fewer is joined back -- its
+  buckets' entries moved up, the buckets and its marker removed.
 - **The cache's paths are updated with each move**, as a record's move updates them.
-- **Splitting happens as records arrive; folding happens only here.** A folder near the limit would otherwise split
-  and fold with every record added and removed.
+- **Splitting happens as records arrive; joining happens only here**, and only at or below the join limit, half the
+  split limit at most: a folder near the limit would otherwise split and join with every record added and removed.
 
 **A rebalance and a library scan never move files at the same time.** Both run on one chain of the task queue
 ([[appendices.task-queue#serial]]), so a rebalance enqueued during a scan runs when the scan ends. To have it sooner

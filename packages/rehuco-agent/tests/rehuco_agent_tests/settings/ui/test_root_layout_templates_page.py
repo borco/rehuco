@@ -15,7 +15,7 @@ from rehuco_agent.settings.ui import root_layout_templates_page
 from rehuco_agent.settings.ui.location_template_patterns_editor import LocationTemplatePatternsEditor
 from rehuco_agent.settings.ui.root_layout_templates_page import NO_TEMPLATES, RootLayoutTemplatesPage
 from rehuco_agent.settings.ui.settings_page import SettingsPage
-from rehuco_core import ReplacementRule
+from rehuco_core import BUCKETS_LAST_PROBLEM, ReplacementRule
 
 from rehuco_agent_tests.conftest import FakeSettings
 
@@ -72,7 +72,7 @@ def sample_edit(page: RootLayoutTemplatesPage, field: str) -> QLineEdit:
     """One field of the Try-it sample record.
 
     :param page: the page.
-    :param field: the field's name: ``title``, ``publisher``, ``authors``, ``year`` or ``count``.
+    :param field: the field's name: ``title``, ``publisher``, ``authors``, ``year``, ``count`` or ``site_id``.
     :returns: its edit.
     """
     found = page.findChild(QLineEdit, f"sample_{field}_edit")
@@ -185,7 +185,26 @@ def test_try_it_shows_the_path_each_valid_template_gives_the_sample_or_why_it_gi
     sample_edit(page, "title").setText("")
     editor(page).values = ("{{{title}}}/{{{authors}}}",)
 
-    assert result(page) == "{{{title}}}/{{{authors}}}: a folder level renders to nothing"
+    assert result(page) == "{{{title}}}/{{{authors}}}: it renders a folder with no name"
+
+
+def test_try_it_shows_buckets_unresolved_and_says_why_one_is_misplaced(page: RootLayoutTemplatesPage) -> None:
+    """A ``{buckets}`` level shows as an ellipsis, a misplaced one says why, and a level starting with a dot is said too
+    (#680).
+
+    **Test steps:**
+
+    * stage a library template, one with ``{buckets}`` last, and one over a sample whose title starts with a dot
+    * verify the place with its ellipsis, the problem, and the dot named
+    """
+    sample_edit(page, "title").setText(".Hidden")
+    editor(page).values = ("{site}/{buckets}/{site_id}", "{title}/{buckets}", "{title}")
+
+    assert result(page).splitlines() == [
+        f"{{site}}/{{buckets}}/{{site_id}} → {DEFAULT_SAMPLE[1]}/…/{DEFAULT_SAMPLE[5]}",
+        f"{{title}}/{{buckets}}: {BUCKETS_LAST_PROBLEM}",
+        "{title}: it renders a folder starting with a dot, which no location may",
+    ]
 
 
 def test_try_it_applies_the_saved_location_replacements_and_follows_their_change(page: RootLayoutTemplatesPage) -> None:

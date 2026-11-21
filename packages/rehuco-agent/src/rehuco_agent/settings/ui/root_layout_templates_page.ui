@@ -54,7 +54,7 @@
       <item>
        <widget class="WrappingLabel" name="templates_note_label">
         <property name="text">
-         <string>The root editor's Path template drop-down offers these, after *, for each type that accepts them. A template uses the Locations placeholders {title}, {publisher}, {authors} and {year}, plus {count} for a type that declares it, with {{ ... }} groups that drop out when a field inside is empty, and / between folder levels: {authors}/{title}{{ [{year}]}}. A template that does not parse, or names an unknown placeholder, is kept and shown in red, and not offered; so is a * row, which the drop-down always has. A root keeps the template it was given: editing this list changes no root.</string>
+         <string>The root editor's Path template drop-down offers these, after *, for each type that accepts them. A template uses the Locations placeholders {title}, {publisher}, {authors}, {year}, {site} and {site_id}, plus {count} for a type that declares it, with {{ ... }} groups that drop out when a field inside is empty, and / between folder levels: {authors}/{title}{{ [{year}]}}. {buckets}, a level of its own, spreads the level after it over folders named by its first characters, one more for each folder that fills up: {site}/{buckets}/{site_id}; the preview shows them as …. A template that does not parse, or names an unknown placeholder, is kept and shown in red, and not offered; so is a * row, which the drop-down always has. A root keeps the template it was given: editing this list changes no root.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -146,6 +146,16 @@
         </item>
         <item row="4" column="1">
          <widget class="QLineEdit" name="sample_count_edit"/>
+        </item>
+        <item row="5" column="0">
+         <widget class="QLabel" name="sample_site_id_label">
+          <property name="text">
+           <string>Site id</string>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="1">
+         <widget class="QLineEdit" name="sample_site_id_edit"/>
         </item>
        </layout>
       </item>

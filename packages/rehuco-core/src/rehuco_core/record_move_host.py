@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Final, Protocol
 from uuid import UUID
 
+from .prefix_buckets import DEFAULT_SPLIT_LIMIT
+
 
 class RecordMoveHost(Protocol):
     """What the app lends a move: this machine's roots, its saves, and the thread a rename runs on."""
@@ -35,6 +37,13 @@ class RecordMoveHost(Protocol):
         :param step: what to run; what it raises leaves through here.
         :param checkpoint: called while waiting for ``step`` to start; what it raises abandons ``step``, which then
             never runs.
+        """
+
+    def split_limit(self) -> int:  # pyright: ignore[reportReturnType]
+        """How many entries a folder of a bucketed layout holds before it splits, as the settings say now (#680) --
+        asked when a move settles its buckets, never captured, since it may change while the move waits.
+
+        :returns: the limit.
         """
 
 
@@ -82,6 +91,13 @@ class RecordMoveHosting:
             step()
             return
         self.__host.run_step(step, checkpoint)
+
+    def split_limit(self) -> int:
+        """See :meth:`RecordMoveHost.split_limit`; with no host installed, the default.
+
+        :returns: the limit.
+        """
+        return DEFAULT_SPLIT_LIMIT if self.__host is None else self.__host.split_limit()
 
 
 DEFAULT_RECORD_MOVE_HOST: Final = RecordMoveHosting()

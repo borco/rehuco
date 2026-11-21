@@ -9,9 +9,16 @@ from uuid import uuid4
 
 from pytest import mark, param
 from rehuco_core import (
+    BUCKETS_IN_GROUP_PROBLEM,
+    BUCKETS_LAST_PROBLEM,
+    BUCKETS_NOT_A_LEVEL_PROBLEM,
+    BUCKETS_PLACEHOLDER,
+    BUCKETS_SHOWN,
+    BUCKETS_TWICE_PROBLEM,
     DEFAULT_PLUGIN_REGISTRY,
     KNOWN_PLACEHOLDERS,
     UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE,
+    LayoutProblem,
     LocationPattern,
     Placement,
     RecordNaming,
@@ -23,7 +30,9 @@ from rehuco_core import (
     layout_placeholders,
     layout_template_problem,
     layout_templates,
+    layout_values,
     render_layout,
+    shown_place,
 )
 
 AUTHORS_THEN_TITLE: Final = "{authors}/{title}{{ [{year}]}}"
@@ -245,17 +254,19 @@ def test_a_template_that_does_not_parse_forbids_the_root_with_its_problem() -> N
     [param("ReferenceImages", True, id="a-pack-names-its-count"), param("Tutorial", False, id="a-tutorial-may-not")],
 )
 def test_a_document_is_named_by_its_type_and_fields(kind: str, counted: bool) -> None:
-    """A document's naming reads its type's main key, its fields, and ``{count}`` only where its type declares it.
+    """A document's naming reads its type's main key, its fields -- the site its publisher, the site id its primary
+    source's (#680) -- and ``{count}`` only where its type declares it.
 
     **Test steps:**
 
-    * build a document of each type, titled, authored and released, with an advertised count
+    * build a document of each type, titled, authored and released, with an advertised count and a site id
     * verify its main key, folder name and values
     * verify ``{count}`` is accepted for a reference pack only
     """
     document = RehuDocument({"core": {"id": str(uuid4()), "type": kind}})
     document.title = "Intro"
     document.publisher = "Acme"
+    document.site_id = "a1b2"
     document.authors = ["Jane", {"name": "John", "url": "https://example.com"}]
     document.released = "2025-03-01"
     document.advertised_count = "900+"
@@ -270,6 +281,8 @@ def test_a_document_is_named_by_its_type_and_fields(kind: str, counted: bool) ->
         "authors": "Jane, John",
         "year": "2025",
         "count": "900+",
+        "site": "Acme",
+        "site_id": "a1b2",
     }
     assert ("count" in record.placeholders) is counted
 
@@ -426,29 +439,236 @@ def test_an_unusable_template_says_why(template: str) -> None:
 
 
 def test_star_takes_the_base_placeholders_and_a_type_takes_its_own() -> None:
-    """``*`` may name the base four; ``reference_images`` also ``{count}``; ``tutorial`` does not (#637).
+    """``*`` may name the base set; ``reference_images`` also ``{count}``; ``tutorial`` does not; each may bucket
+    (#637, #680).
 
     **Test steps:**
 
     * ask the registry for the placeholders of ``*``, ``tutorial`` and ``reference_images``
-    * verify the base four, the base four, and the base four with ``count``
+    * verify the base set, the base set, and the base set with ``count``, each with ``buckets``
     """
     registry = DEFAULT_PLUGIN_REGISTRY
+    base = KNOWN_PLACEHOLDERS | {BUCKETS_PLACEHOLDER}
 
-    assert layout_placeholders("*", registry) == KNOWN_PLACEHOLDERS
-    assert layout_placeholders("tutorial", registry) == KNOWN_PLACEHOLDERS
-    assert layout_placeholders("reference_images", registry) == KNOWN_PLACEHOLDERS | {"count"}
+    assert layout_placeholders("*", registry) == base
+    assert layout_placeholders("tutorial", registry) == base
+    assert layout_placeholders("reference_images", registry) == base | {"count"}
 
 
-def test_render_layout_gives_none_for_a_level_that_renders_to_nothing() -> None:
-    """A level with no name has no path (#637).
+def test_render_layout_names_why_a_level_has_no_place() -> None:
+    """A level with no name has no place (#637).
 
     **Test steps:**
 
     * render ``{authors}/{title}`` with empty authors and no fallback, and ``{title}`` with a title
-    * verify ``None`` for the first, and the title as one level for the second
+    * verify the nameless-level problem for the first, and the title as one level for the second
     """
-    values = {name: "" for name in (*KNOWN_PLACEHOLDERS, "count")} | {"title": "Intro"}
+    values = layout_values({name: "" for name in (*KNOWN_PLACEHOLDERS, "count")} | {"title": "Intro"})
 
-    assert render_layout(LocationPattern("{authors}/{title}", KNOWN_PLACEHOLDERS), values, {}, ()) is None
-    assert render_layout(LocationPattern("{title}", KNOWN_PLACEHOLDERS), values, {}, ()) == PurePosixPath("Intro")
+    assert (
+        render_layout(LocationPattern("{authors}/{title}", KNOWN_PLACEHOLDERS), values, {}, ())
+        is LayoutProblem.NAMELESS_LEVEL
+    )
+    assert render_layout(LocationPattern("{title}", KNOWN_PLACEHOLDERS), values, {}, ()) == Placement(
+        PurePosixPath("Intro"), ""
+    )
+
+
+# region {buckets} (#680)
+
+BUCKETING: Final = frozenset(KNOWN_PLACEHOLDERS | {BUCKETS_PLACEHOLDER})
+"""The placeholders a layout for any type may name."""
+
+
+@mark.parametrize(
+    "template, values, relative, bucketed",
+    [
+        param(
+            "{publisher}/{buckets}/{authors}/{title}",
+            {"publisher": "Acme", "authors": "Jane", "title": "Intro"},
+            ("Acme", "Jane", "Intro"),
+            (1,),
+            id="bucketed-author-folders",
+        ),
+        param(
+            "AUTHORS/{buckets}/{authors} - {title}",
+            {"authors": "Jane", "title": "Intro"},
+            ("AUTHORS", "Jane - Intro"),
+            (1,),
+            id="bucketed-items-by-author",
+        ),
+        param(
+            "TUTORIALS/{buckets}/{title}{{ - {authors}}}",
+            {"title": "Intro"},
+            ("TUTORIALS", "Intro"),
+            (1,),
+            id="bucketed-by-title",
+        ),
+        param(
+            "{site}/{buckets}/{site_id}",
+            {"publisher": "fab", "site": "fab", "site_id": "01abc"},
+            ("fab", "01abc"),
+            (1,),
+            id="a-store-library",
+        ),
+        param(
+            "{site}/{buckets}/{authors}/{buckets}/{title}",
+            {"site": "fab", "authors": "Jane", "title": "Intro"},
+            ("fab", "Jane", "Intro"),
+            (1, 2),
+            id="two-bucketed-levels",
+        ),
+        param("{buckets}/{title}", {"title": "Intro"}, ("Intro",), (0,), id="at-the-roots-top"),
+    ],
+)
+def test_a_buckets_level_marks_the_level_after_it(
+    template: str, values: dict[str, str], relative: tuple[str, ...], bucketed: tuple[int, ...]
+) -> None:
+    """``{buckets}`` is no folder of its own: the place leaves it out and marks the level after it as bucketed.
+
+    **Test steps:**
+
+    * ask for the place a template naming ``{buckets}`` gives a record, for each shape the owner uses
+    * verify the place without its buckets, and the indices of the bucketed levels
+    """
+    answer = destinations(root({"*": template}), naming(**values), ())
+
+    assert answer == (Placement(PurePosixPath(*relative), template, bucketed),)
+
+
+@mark.parametrize(
+    "template, problem",
+    [
+        param("{{{buckets}/}}{title}", BUCKETS_IN_GROUP_PROBLEM, id="in-a-group"),
+        param("x{buckets}/{title}", BUCKETS_NOT_A_LEVEL_PROBLEM, id="part-of-a-level"),
+        param("{buckets}{buckets}/{title}", BUCKETS_NOT_A_LEVEL_PROBLEM, id="twice-in-one-level"),
+        param("{title}/{buckets}", BUCKETS_LAST_PROBLEM, id="last"),
+        param("{buckets}/{buckets}/{title}", BUCKETS_TWICE_PROBLEM, id="right-after-another"),
+    ],
+)
+def test_a_buckets_level_out_of_place_is_a_templates_problem(template: str, problem: str) -> None:
+    """``{buckets}`` is a whole level, outside every group, followed by a level that is not one too.
+
+    **Test steps:**
+
+    * ask for the problem of each misplaced ``{buckets}``, and the place a root with it gives a record
+    * verify the problem, and the refusal carrying it
+    """
+    assert layout_template_problem(template, BUCKETING) == problem
+    answer = destination(root({"*": template}), naming(title="Intro"), ())
+    assert answer == Refusal(f"Tutorials's layout for a tutorial cannot be used: {problem}")
+
+
+def test_a_usable_buckets_template_has_no_problem() -> None:
+    """A ``{buckets}`` level before a level, with spaces around it, is fine; a template naming none is too.
+
+    **Test steps:**
+
+    * ask for the problems of a spaced ``{buckets}`` level and of a plain template, under the bucketing set
+    * verify both are empty
+    """
+    assert layout_template_problem("{site}/ {buckets} /{site_id}", BUCKETING) == ""
+    assert layout_template_problem("{title}", BUCKETING) == ""
+
+
+def test_buckets_needs_a_layouts_placeholders() -> None:
+    """A template naming ``{buckets}`` under a rename pattern's placeholders refuses it by name.
+
+    **Test steps:**
+
+    * ask for the problem of a ``{buckets}`` template under the base set alone
+    * verify the unknown-placeholder problem naming it
+    """
+    problem = layout_template_problem("{buckets}/{title}", KNOWN_PLACEHOLDERS)
+
+    assert problem == UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name=BUCKETS_PLACEHOLDER)
+
+
+def test_a_level_after_buckets_that_drops_out_refuses_the_record() -> None:
+    """A bucketed level carried by an optional group the record leaves out leaves nothing to bucket.
+
+    **Test steps:**
+
+    * ask for the place ``{title}/{buckets}{{/{authors}}}`` gives a record with no authors, and with them
+    * verify the refusal, then the place with its author bucketed
+    """
+    template = "{title}/{buckets}{{/{authors}}}"
+
+    assert destination(root({"*": template}), naming(title="Intro"), ()) == Refusal(
+        "Tutorials's layout for a tutorial renders no level after {buckets}."
+    )
+    assert destinations(root({"*": template}), naming(title="Intro", authors="Jane"), ()) == (
+        Placement(PurePosixPath("Intro", "Jane"), template, (1,)),
+    )
+
+
+def test_a_bucketed_place_and_a_plain_one_are_two_places() -> None:
+    """The same path with buckets and without is offered twice: they end in different folders.
+
+    **Test steps:**
+
+    * ask a root with ``fab/{title}`` and ``fab/{buckets}/{title}`` for a record
+    * verify both places, in row order
+    """
+    answer = destinations(several(("fab/{title}", "fab/{buckets}/{title}")), naming(title="Intro"), ())
+
+    assert answer == (
+        Placement(PurePosixPath("fab", "Intro"), "fab/{title}"),
+        Placement(PurePosixPath("fab", "Intro"), "fab/{buckets}/{title}", (1,)),
+    )
+
+
+def test_a_bucketed_place_shows_its_buckets_unresolved() -> None:
+    """A place's buckets are drawn as an ellipsis before each bucketed level until they are read off the disk.
+
+    **Test steps:**
+
+    * read how a place with two bucketed levels is shown, and one with none
+    * verify the ellipsis before each bucketed level, and the plain place
+    """
+    place = Placement(PurePosixPath("fab", "Jane", "Intro"), "", (1, 2))
+
+    assert place.shown == PurePosixPath("fab", BUCKETS_SHOWN, "Jane", BUCKETS_SHOWN, "Intro")
+    assert shown_place(PurePosixPath("fab", "Intro"), ()) == PurePosixPath("fab", "Intro")
+
+
+# endregion
+
+
+@mark.parametrize("title", [".hidden", ". hidden"])
+def test_a_level_starting_with_a_dot_refuses_the_record(title: str) -> None:
+    """No location starts with a dot (#680): a level that renders to one refuses the record.
+
+    **Test steps:**
+
+    * ask for the place ``{title}`` gives a record whose title starts with a dot
+    * verify the refusal saying so
+    """
+    answer = destination(root({"*": "{title}"}), naming(title=title), ())
+
+    assert answer == Refusal(
+        "Tutorials's layout for a tutorial renders a folder starting with a dot, which no location may."
+    )
+
+
+@mark.parametrize("title", ["_inbox", "[2020] Intro", "(Remastered) Intro", "#1 Hits"])
+def test_a_level_starting_with_another_sign_is_kept(title: str) -> None:
+    """Only a dot is refused at a name's start; other signs stay (#680).
+
+    **Test steps:**
+
+    * ask for the place ``{title}`` gives a record whose title starts with an underscore, a bracket or a hash
+    * verify the title is the place
+    """
+    assert destination(root({"*": "{title}"}), naming(title=title), ()) == PurePosixPath(title)
+
+
+def test_keep_name_keeps_a_name_starting_with_a_dot() -> None:
+    """``*`` keeps the name a record has, a dot or not: the rule is for names being made.
+
+    **Test steps:**
+
+    * ask a ``*`` root for the place of a record named with a leading dot
+    * verify that name is the place
+    """
+    assert destination(root({"*": "*"}), naming(folder_name=".old"), ()) == PurePosixPath(".old")

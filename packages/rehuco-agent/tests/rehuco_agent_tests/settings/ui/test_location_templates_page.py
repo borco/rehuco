@@ -136,10 +136,10 @@ def try_it_text(page: LocationTemplatesPage) -> str:
 
 
 def sample_shown(page: LocationTemplatesPage) -> tuple[str, ...]:
-    """The sample record as the page's five fields currently show it.
+    """The sample record as the page's six fields currently show it.
 
     :param page: the page.
-    :returns: ``(title, publisher, authors, year, count)`` as typed.
+    :returns: ``(title, publisher, authors, year, count, site_id)`` as typed.
     """
     ui = page._LocationTemplatesPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     return tuple(
@@ -150,6 +150,7 @@ def sample_shown(page: LocationTemplatesPage) -> tuple[str, ...]:
             ui.sample_authors_edit,
             ui.sample_year_edit,
             ui.sample_count_edit,
+            ui.sample_site_id_edit,
         )
     )
 
@@ -276,7 +277,7 @@ def test_a_reference_images_page_shows_the_count_sample_row_and_accepts_the_plac
     model.setData(model.index(0, PATTERN_COLUMN), "{title} ({count})")
 
     assert model.invalid_reason(0) == ""
-    assert f"Sample Title ({DEFAULT_SAMPLE[-1]})" in try_it_text(page).splitlines()
+    assert f"Sample Title ({DEFAULT_SAMPLE[4]})" in try_it_text(page).splitlines()
 
 
 # endregion
@@ -786,6 +787,22 @@ def test_the_try_it_preview_leaves_out_a_pattern_that_names_nothing(page: Locati
     page._LocationTemplatesPage__ui.sample_authors_edit.setText("")  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     assert try_it_text(page) == ""
+
+
+def test_the_try_it_preview_names_the_site_and_leaves_out_a_name_starting_with_a_dot(
+    page: LocationTemplatesPage,
+) -> None:
+    """``{site}`` is the sample's publisher and ``{site_id}`` its own field; a name starting with a dot is not offered
+    on a document, so it is not shown either (#680).
+
+    **Test steps:**
+
+    * stage a pattern naming the site and its id, and one rendering a name that starts with a dot
+    * verify the preview is the first alone
+    """
+    editor_of(page).values = ("{site} {site_id}", ".{title}")
+
+    assert try_it_text(page) == f"{DEFAULT_SAMPLE[1]} {DEFAULT_SAMPLE[5]}"
 
 
 def test_the_try_it_preview_runs_through_the_saved_replacement_rules(page: LocationTemplatesPage) -> None:
