@@ -495,7 +495,7 @@ renames its entries with its files (#339); a folder record's are relative to its
 
 [[[mounts-and-storage#buckets]]]
 
-- [#680: feat(core): {bucket}, {site} and {site_id} placeholders, with prefix buckets](https://github.com/borco/rehuco/issues/680)
+- [#680: feat(core): {buckets}, {site} and {site_id} placeholders, with prefix buckets](https://github.com/borco/rehuco/issues/680)
 - [#681: feat: a rebalance job for prefix buckets](https://github.com/borco/rehuco/issues/681)
 
 A store library ([[assets]]) is thousands of file records, each a `.rehu` and a few screenshots, with no folder of its
