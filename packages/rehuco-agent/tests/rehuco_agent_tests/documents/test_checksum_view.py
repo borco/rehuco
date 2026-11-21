@@ -26,6 +26,7 @@ from rehuco_agent.documents.checksum_view import (
 )
 from rehuco_agent.documents.file_row import FileChecksumState
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.documents.storage_wait import StorageWait
 from rehuco_core import ChecksumReport, RehuDocument, TaskQueue
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
@@ -468,6 +469,34 @@ def test_a_hidden_dock_walks_nothing_until_it_is_opened(
     assert not rows.called
 
     view.show()
+    settle(qtbot, view)
+
+    assert rows.call_count == 1
+
+
+def test_a_dock_of_a_document_waiting_for_its_storage_walks_nothing_until_it_answers(
+    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, rows: Any, delete_at_teardown: DeleteAtTeardown
+) -> None:
+    """A walk of a switched-off share holds a thread until it times out, so a shown dock of a document still waiting
+    for its storage walks nothing, and catches up when the wait is over (#698).
+
+    **Test steps:**
+
+    * say the document waits for its storage, build the view and show it
+    * check no read was started: the summary does not say it is reading, and nothing was read
+    * say the wait is over, and check the deferred read happened once
+    """
+    model.storage_wait = StorageWait.ASKING
+    view = ChecksumView(model, delete_at_teardown(ChecksumActions(model, queue)))
+    qtbot.addWidget(view)
+
+    view.show()
+    qtbot.waitExposed(view)
+
+    assert view.summary != "Reading…"
+    assert not rows.called
+
+    model.storage_wait = None
     settle(qtbot, view)
 
     assert rows.call_count == 1

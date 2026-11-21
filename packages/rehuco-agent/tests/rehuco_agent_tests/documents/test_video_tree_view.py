@@ -16,6 +16,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents import video_tree_view
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.documents.storage_wait import StorageWait
 from rehuco_agent.documents.video_tree_model import KEY_ROLE, NAME_COLUMN
 from rehuco_agent.documents.video_tree_view import VideoTreeView
 from rehuco_agent.resource_events import ResourceEvents
@@ -111,6 +112,29 @@ def test_a_hidden_view_reads_nothing_until_it_is_shown(
     assert start.call_count == 0 and view.tree.rowCount() == 0
 
     view.show()
+    qtbot.waitUntil(lambda: view.tree.rowCount() == 3, timeout=TIMEOUT)
+    assert start.call_count == 1
+
+
+def test_a_view_of_a_document_waiting_for_its_storage_lists_nothing_until_it_answers(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """**Test steps:**
+
+    * say the document waits for its storage, and show its view with the lister's start watched
+    * verify nothing was listed
+    * say the wait is over, and verify the listing is caught up
+    """
+    model.storage_wait = StorageWait.ASKING
+    view = VideoTreeView(model)
+    qtbot.addWidget(view)
+    start = mocker.spy(view._VideoTreeView__lister, "start")  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    view.show()
+    qtbot.waitExposed(view)
+    assert start.call_count == 0 and view.tree.rowCount() == 0
+
+    model.storage_wait = None
     qtbot.waitUntil(lambda: view.tree.rowCount() == 3, timeout=TIMEOUT)
     assert start.call_count == 1
 

@@ -26,6 +26,7 @@ from rehuco_agent.documents.file_row import PARENT_ROW_NAME, FileRow
 from rehuco_agent.documents.files_rows import NAME_COLUMN, FilesTableModel
 from rehuco_agent.documents.files_view import LOADING_SUMMARY, NO_PATH_SUMMARY, UNREACHABLE_SUMMARY, FilesView
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.documents.storage_wait import StorageWait
 from rehuco_agent.resource_events import ResourceEvents
 from rehuco_core import (
     ChecksumRecordError,
@@ -198,6 +199,34 @@ def test_a_refresh_while_hidden_is_caught_up_when_shown(qtbot: QtBot, model: Reh
     assert listing.call_count == 0
 
     view.show()
+    settle(qtbot, view)
+
+    assert listing.call_count == 1
+
+
+def test_a_browser_of_a_document_waiting_for_its_storage_lists_nothing_until_it_answers(
+    qtbot: QtBot, model: RehuDocumentModel, listing: Any
+) -> None:
+    """A listing of a switched-off share holds a thread until it times out, so a shown browser of a document still
+    waiting for its storage lists nothing, and catches up when the wait is over (#698).
+
+    **Test steps:**
+
+    * say the document waits for its storage, and show its browser
+    * verify no listing was started: the summary does not say it is reading, and nothing was listed
+    * say the wait is over, and verify the deferred read ran once
+    """
+    model.storage_wait = StorageWait.ASKING
+    view = FilesView(model)
+    qtbot.addWidget(view)
+
+    view.show()
+    qtbot.waitExposed(view)
+
+    assert view.summary != LOADING_SUMMARY
+    assert listing.call_count == 0
+
+    model.storage_wait = None
     settle(qtbot, view)
 
     assert listing.call_count == 1

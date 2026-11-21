@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from borco_core import Presence
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMainWindow, QWidget
 from pytest import mark
 from pytest_mock import MockerFixture
@@ -16,7 +17,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_dock import LOCKED_DOCK_MARKER
 from rehuco_agent.documents.document_fields import EDITOR_IMAGES_TAB
 from rehuco_agent.documents.document_widget import DocumentWidget
-from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.documents.documents_dock import STORAGE_RETRY_MS, DocumentsDock
 from rehuco_agent.documents.maximized_restore import MaximizedStack, is_wide
 from rehuco_agent.documents.storage_wait import StorageWait
 from rehuco_agent.fields.widgets.overlay_surface import OverlayMode, OverlaySurface
@@ -665,16 +666,15 @@ def test_a_storage_that_does_not_answer_is_asked_again_when_the_document_is_reac
     assert unread(widget)
 
 
-@mark.parametrize("presence", [Presence.PRESENT, Presence.GONE])
 def test_a_background_document_whose_storage_answered_is_read_when_its_tab_is_reached(
-    mocker: MockerFixture, qtbot: QtBot, presence: Presence
+    mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """A held document behind another is let go by its storage's answer and still read only when it is reached: one
-    whose file is there, and one whose file is gone, which then says so as any vanished file does (#698).
+    """A held document behind another is let go by its storage's answer and still read only when it is reached
+    (#698).
 
     **Test steps:**
 
-    * restore a session with a held document behind the focused one, and say what its storage answered
+    * restore a session with a held document behind the focused one, and say its storage is there
     * verify it waits for nothing, and is still unread
     * open that document, and verify it was asked for its file
     """
@@ -685,7 +685,7 @@ def test_a_background_document_whose_storage_answered_is_read_when_its_tab_is_re
     dock.restore_session(session, held={SECOND})
     widget = widget_at(dock, SECOND)
 
-    dock.storage_answered(SECOND, presence)
+    dock.storage_answered(SECOND, Presence.PRESENT)
 
     assert widget.model.storage_wait is None
     assert unread(widget)
@@ -693,6 +693,83 @@ def test_a_background_document_whose_storage_answered_is_read_when_its_tab_is_re
     dock.open_document(ResourceKey(SECOND))
 
     assert not unread(widget)
+
+
+def test_a_held_document_whose_file_is_gone_has_its_dock_closed(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A share that says the file is not there makes it gone, as a local deletion is: its dock closes, with the rest
+    left as they are (#698).
+
+    **Test steps:**
+
+    * restore a session with a held document between two others, and say its file is gone
+    * verify its dock is gone and the others are in their order
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = session_of(
+        FAKE_PATH, SECOND, THIRD, row=saved_row(FAKE_PATH, SECOND, THIRD, current=FAKE_PATH), focused=FAKE_PATH
+    )
+    dock.restore_session(session, held={SECOND})
+
+    dock.storage_answered(SECOND, Presence.GONE)
+
+    assert row_of(dock) == [FAKE_PATH, THIRD]
+
+
+def retry_of(dock: DocumentsDock) -> QTimer:
+    """The area's timer asking again about storage that did not answer.
+
+    :param dock: the documents area.
+    :returns: the timer.
+    """
+    return dock._DocumentsDock__storage_retry  # type: ignore[attr-defined]
+
+
+def test_a_document_in_front_whose_storage_does_not_answer_is_asked_again_on_a_timer(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A document already in front never has its tab shown again, so its storage is asked again by the clock while it
+    stays there; one behind another is left for its tab (#698).
+
+    **Test steps:**
+
+    * show the area, restore a session whose focused document and one behind it are held, and say neither answered
+    * verify the timer runs at its interval
+    * fire it, and verify only the one in front was asked about, and says it is being asked
+    * say it is there, fire again, and verify nothing more was asked
+    * say the one behind is there, fire again, and verify the timer stopped
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.show()
+    qtbot.waitExposed(dock)
+    session = session_of(FAKE_PATH, SECOND, row=saved_row(FAKE_PATH, SECOND, current=SECOND), focused=SECOND)
+    dock.restore_session(session, held={FAKE_PATH, SECOND})
+    asked: list[Path] = []
+    dock.storage_asked.connect(asked.append)
+    dock.storage_answered(FAKE_PATH, Presence.OFFLINE)
+    dock.storage_answered(SECOND, Presence.OFFLINE)
+    timer = retry_of(dock)
+
+    assert timer.isActive()
+    assert timer.interval() == STORAGE_RETRY_MS
+
+    timer.timeout.emit()
+
+    assert asked == [SECOND]
+    assert widget_at(dock, SECOND).model.storage_wait is StorageWait.ASKING
+
+    dock.storage_answered(SECOND, Presence.PRESENT)
+    timer.timeout.emit()
+
+    assert asked == [SECOND]
+
+    dock.storage_answered(FAKE_PATH, Presence.PRESENT)
+    timer.timeout.emit()
+
+    assert not timer.isActive()
 
 
 @mark.parametrize(("wide", "read"), [(True, True), (False, False)])

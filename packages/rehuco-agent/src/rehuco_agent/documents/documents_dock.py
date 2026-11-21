@@ -18,7 +18,7 @@ from borco_pyside.qtads import (
     QtAdsPinGuard,
     remove_dock_widget,
 )
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QMainWindow, QWidget
 from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, TaskQueue
 from rehuco_core.access import LoadedRecord, ResourceKey
@@ -40,6 +40,11 @@ from .rehu_document_model import RehuDocumentModel
 from .storage_wait import StorageWait
 
 LOG: Final = logging.getLogger(__name__)
+
+STORAGE_RETRY_MS: Final = 10_000
+"""How often the storage of the document in front is asked again while it does not answer (#698).
+An answer from a live share takes tens of milliseconds and one from a dead one 0.3 s, so asking this often costs
+nothing that shows."""
 
 
 # one cohesive thing, the area of documents: what opens, closes, previews and restores one is what the window asks of it
@@ -151,6 +156,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         into the dock to focus. Seeded in :meth:`__make_new_dock`, re-keyed by a preview's switch
         (:meth:`__switch_preview`), dropped in :meth:`__remove_dock`."""
         self.__pending: Final = PendingDocks(self.__read_pending, self.__ask_storage, self)
+        self.__storage_retry: Final = QTimer(self)
+        """Asks again, while any document waits for a storage that did not answer, about each one in front (#698)."""
+        self.__storage_retry.setInterval(STORAGE_RETRY_MS)
+        self.__storage_retry.timeout.connect(self.__retry_storage)
         self.__maximized_stack: Final = MaximizedStack()
         self.__preview: DocumentDock | None = None
         """The one preview dock (#39), or ``None`` -- set by :meth:`show_in_preview` building one, cleared by
@@ -339,9 +348,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         """The storage of a document the session restored has answered (#698).
 
         A storage that is there lets the document be read: now if its tab is in front or a view of it covers more
-        than its tab, else when its tab is shown. So does one that says the file is gone, which reads into the locked
-        ``missing`` dock every vanished file gets, for the reader to close. One that did not answer leaves the document
-        locked, saying so, and is asked again the next time its tab is shown.
+        than its tab, else when its tab is shown. One that says the file is gone closes its dock: the file was deleted,
+        as a local one found gone at start is, and nothing of it was read or edited. One that did not answer leaves the
+        document locked, saying so, and has it asked again every :data:`STORAGE_RETRY_MS` while it is in front, and
+        otherwise when its tab is shown.
 
         :param path: the document's path, as the session remembers it.
         :param presence: what its storage said.
@@ -349,9 +359,13 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         dock = self.__find_dock(ResourceKey(path))
         if dock is None or not self.__pending.is_held(dock):
             return
+        if presence is Presence.GONE:
+            self.__remove_dock(dock)
+            return
         widget = self.__document_docks[dock]
         if presence is Presence.OFFLINE:
             widget.model.storage_wait = StorageWait.OFFLINE
+            self.__storage_retry.start()
             return
         widget.model.storage_wait = None
         self.__pending.release(dock, load=widget.holds_wide_view)
@@ -804,6 +818,20 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         if model.storage_wait is StorageWait.OFFLINE:
             model.storage_wait = StorageWait.ASKING
             self.storage_asked.emit(model.path)
+
+    def __retry_storage(self) -> None:
+        """Ask again about the storage of each document in front whose storage did not answer -- a maximized view of
+        it included, which only ever stands over the document in front: its tab is never shown again, so nothing else
+        would (#698). Stops once no document waits for such a storage."""
+        offline = [
+            dock for dock, widget in self.__document_docks.items() if widget.model.storage_wait is StorageWait.OFFLINE
+        ]
+        if not offline:
+            self.__storage_retry.stop()
+            return
+        for dock in offline:
+            if dock.isVisible():
+                self.__ask_storage(dock)
 
     def __read_pending(self, dock: QtAds.CDockWidget) -> None:
         """Read the real content of an unread session-restore placeholder's dock (#66).

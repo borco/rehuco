@@ -453,8 +453,9 @@ never viewed, a catalog on a server that is off or a root that did not answer co
 - **A document still waiting for its storage** ([[mounts-and-storage#offline-mounts]], #698) cannot open its view: it
   is not read yet. A surface in the view's mode stands in for it from the start, with a turning arc saying what is
   being restored and what it waits for, so the window comes back as it was left and nothing opens over the reader's
-  work when a slow share answers. The arc stops while the storage does not answer. A double-click or Esc on it leaves
-  the maximized view, which is then no longer remembered; otherwise the view takes its place once the storage has
+  work when a slow share answers. The arc stops while the storage does not answer, and turns again each time it is
+  asked again, every 10 s while the view is up. A double-click or Esc on it leaves the maximized view, which is then no
+  longer remembered; otherwise the view takes its place once the storage has
   answered and the document is read, at once for an app-window or full-screen one, with its tab for one over the
   document alone.
 - **A maximized dock.** Layouts are captured unmaximized, since a capture taken while maximized is poisoned

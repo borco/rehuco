@@ -288,26 +288,27 @@ def test_a_held_document_whose_storage_does_not_answer_stays_held(qapp: Any, sca
     assert REMOTE in lists.session.items
 
 
-def test_a_held_document_that_is_gone_keeps_its_session_entry(qapp: Any, scan_class: Any) -> None:
-    """A share that answers and does not hold a held document's file is said: the recents forget it, and the session
-    does not, since its dock is there for the reader to close (#698).
+def test_a_held_document_that_is_gone_is_forgotten_everywhere_and_said(qapp: Any, scan_class: Any) -> None:
+    """A share that answers and does not hold a held document's file is as sure as a local drive: the file is
+    forgotten from every list, as a local one gone at start is, and the answer goes out for its dock to close (#698).
 
     **Test steps:**
 
-    * name a remote path in the recents and as an open document, and ask what to restore
-    * deliver *gone*
-    * verify the answer went out, the recents dropped it and the session kept it
+    * name a remote path in the recents and as an open, focused document, and ask what to restore
+    * deliver *gone*, then *present*
+    * verify only the first answer went out, and the path is in no list
     """
     del qapp, scan_class
     lists = Lists(recents=(REMOTE,), session_open=(REMOTE,), focused=REMOTE)
     lists.remembered.documents_to_restore(SessionRestoreSettings())
 
     lists.answer(REMOTE, Presence.GONE)
+    lists.answer(REMOTE, Presence.PRESENT)
 
     assert lists.answers == [(REMOTE, Presence.GONE)]
     assert not lists.recent_files.newest_first()
-    assert REMOTE in lists.session.items
-    assert lists.session.focused_path == REMOTE
+    assert REMOTE not in lists.session.items
+    assert lists.session.focused_path is None
 
 
 def test_asking_again_goes_to_the_presence_tracker(qapp: Any, mocker: MockerFixture, scan_class: Any) -> None:
@@ -586,7 +587,7 @@ def test_a_remote_preview_is_restored_held_and_its_storages_answer_goes_out(qapp
 
     * remember a preview of a remote file, and ask what to restore
     * verify it is restored and held
-    * deliver *gone*, and verify the answer went out and the entry is kept for its dock to decide
+    * deliver *gone*, and verify the answer went out and the entry is forgotten
     """
     del qapp, scan_class
     preview = DocumentSessionSettings.Preview(REMOTE, "Preview-1", DocumentSessionSettings.Item(open=True))
@@ -597,7 +598,7 @@ def test_a_remote_preview_is_restored_held_and_its_storages_answer_goes_out(qapp
     lists.answer(REMOTE, Presence.GONE)
 
     assert lists.answers == [(REMOTE, Presence.GONE)]
-    assert lists.session.preview is preview
+    assert lists.session.preview is None
 
 
 def test_a_remote_preview_is_left_out_with_the_remote_toggle_off(qapp: Any, scan_class: Any) -> None:

@@ -126,6 +126,7 @@ class ChecksumView(QWidget):
         self.__selection.selectionChanged.connect(self.__update_enablement)
         actions.record_changed.connect(self.refresh)
         model.path_changed.connect(self.refresh)  # type: ignore[attr-defined]
+        model.storage_wait_changed.connect(self.refresh)  # type: ignore[attr-defined]
         self.refresh()
 
     def save_state(self) -> bytes:
@@ -153,12 +154,14 @@ class ChecksumView(QWidget):
         (#111): this dock starts closed, a read is a directory walk over an SMB mount
         ([[packaging-deployment#ts230-as-nas]]), and walking every opened document's whole tree for a
         table nobody is looking at is a cost paid for nothing. A refresh asked for while hidden only
-        flags the table stale, and :meth:`showEvent` catches it up.
+        flags the table stale, and :meth:`showEvent` catches it up. **Nor does one whose document waits for its
+        storage** (:attr:`~RehuDocumentModel.storage_wait`, #698): a read of a switched-off share would hold a thread
+        until it times out. The wait ending refreshes it.
 
         :param _args: whatever value the triggering notify signal carried; unused -- the path is always
             re-read from the model.
         """
-        if not self.isVisible():
+        if not self.isVisible() or self.__model.storage_wait is not None:
             self.__stale = True
             return
         self.__stale = False

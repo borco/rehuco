@@ -6,9 +6,8 @@ reopen), and the documents the session left open. This object judges every one o
 (:class:`~rehuco_agent.startup_presence.StartupPresence`) and keeps the three lists honest:
 
 - **A file that is gone is forgotten from all of them**, at once for a fixed local drive and as soon as the scan hears
-  for a share or a removable drive. "Gone" always means the device answered and does not hold the file. The one
-  exception is a session document on a device that has to be asked: it has its dock by then, so the recents forget
-  it and the session does not -- its dock says the file is missing, and the reader closes it.
+  for a share or a removable drive. "Gone" always means the device answered and does not hold the file. A session
+  document restored before its device answered has its dock closed then (:attr:`storage_answered`).
 - **A file whose device does not answer is kept**: its recents entry stays but is disabled (:meth:`unavailable`), and
   a root catalog is not opened and stays the one to reopen.
 - **A session document on a device that has to be asked is restored with the window all the same** (#698), in its
@@ -169,9 +168,8 @@ class RememberedPaths(QObject):
         if path in self.__held:
             LOG.info("Session: the storage of %s answered: %s", path, presence.value)
             if presence is Presence.GONE:
-                # its dock is there and says so; only the lists that would offer it again forget it
-                self.__recent_files.forget(path)
-            if presence is not Presence.OFFLINE:
+                self.forget(path)
+            elif presence is Presence.PRESENT:
                 self.__held.discard(path)
             self.storage_answered.emit(path, presence)
         elif presence is Presence.GONE:

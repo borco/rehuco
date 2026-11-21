@@ -212,7 +212,10 @@ READING_MESSAGE: Final = "Reading {path}…"
 WAITING_STORAGE_MESSAGE: Final = "Waiting for the storage of {path} to answer…"
 """The notice for a document a session restored whose storage was asked and has not answered yet (#698)."""
 
-OFFLINE_STORAGE_MESSAGE: Final = "The storage of {path} does not answer. It is asked again each time this tab is shown."
+OFFLINE_STORAGE_MESSAGE: Final = (
+    "The storage of {path} does not answer. It is asked again while this document is in front, and each time its"
+    " tab is shown."
+)
 """The notice for a document a session restored whose storage did not answer (#698)."""
 
 STORAGE_WAIT_NOTICES: Final = {
