@@ -449,10 +449,14 @@ never viewed, a catalog on a server that is off or a root that did not answer co
   left, never playing.
 - **Which document is read when.** A view over the document alone waits for its tab. An app-window or full-screen one
   shows whichever tab is in front, so a local document with one is read at start, and they stack in session order, the
-  focused document's on top, whatever order their reads answer in. A document on a share that arrives late opens such a
-  view only while the start is settling (5 s from the window's first show) and the reader has not focused another
-  document; otherwise it waits for its tab, so it never covers what they are working on. Its tab goes to its saved place
-  whenever it arrives ([[mounts-and-storage#offline-mounts]]).
+  focused document's on top, whatever order their reads answer in.
+- **A document still waiting for its storage** ([[mounts-and-storage#offline-mounts]], #698) cannot open its view: it
+  is not read yet. A surface in the view's mode stands in for it from the start, with a turning arc saying what is
+  being restored and what it waits for, so the window comes back as it was left and nothing opens over the reader's
+  work when a slow share answers. The arc stops while the storage does not answer. A double-click or Esc on it leaves
+  the maximized view, which is then no longer remembered; otherwise the view takes its place once the storage has
+  answered and the document is read, at once for an app-window or full-screen one, with its tab for one over the
+  document alone.
 - **A maximized dock.** Layouts are captured unmaximized, since a capture taken while maximized is poisoned
   ([[appendices.qt-ads#area-maximize]]); the maximized dock's name is therefore saved **beside** the layout at each
   manager — a document's sub-docks, the documents area, the main window, the Browsers dock, the Tasks dock — and

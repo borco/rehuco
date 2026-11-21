@@ -5,7 +5,7 @@ from .qtads_dock_removal import remove_dock_widget
 from .qtads_emptying_guard import QtAdsEmptyingGuard
 from .qtads_floating_show_guard import QtAdsFloatingShowGuard
 from .qtads_focus_tracker import QtAdsFocusTracker
-from .qtads_layout import QtAdsLayout, with_kept
+from .qtads_layout import QtAdsLayout
 from .qtads_lone_tab_hider import QtAdsLoneTabHider
 from .qtads_maximize_handler import QtAdsMaximizeHandler
 from .qtads_pin_guard import QtAdsPinGuard
@@ -30,5 +30,4 @@ __all__ = [
     "tab_close_button",
     "tab_label",
     "tab_maximize_button",
-    "with_kept",
 ]

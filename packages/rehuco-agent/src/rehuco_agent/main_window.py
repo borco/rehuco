@@ -24,7 +24,6 @@ from borco_pyside.qtads import (
     QtAdsLoneTabHider,
     QtAdsPinGuard,
     QtAdsPinSideHandler,
-    with_kept,
 )
 from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
@@ -551,10 +550,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # which remembered files are still there (#464): a fixed local drive is judged right here, anything else
         # is asked on daemon threads and reaches the handlers below once it answers -- the start waits for nothing
         self.__remembered: Final = RememberedPaths(self.__recent_files, self.__rehuco_settings, self.__session, self)
-        self.__remembered.document_arrived.connect(self.__on_document_arrived)
-        self.__remembered.preview_arrived.connect(self.__on_preview_arrived)
+        self.__remembered.storage_answered.connect(self.__documents_dock.storage_answered)
+        self.__documents_dock.storage_asked.connect(self.__remembered.ask_again)
         self.__remembered.rehuco_arrived.connect(self.__on_rehuco_arrived)
-        self.__remembered.layout_due.connect(self.__on_late_layout_due)
         self.__root_catalog.rehuco_path_changed.connect(self.__remembered.clear_deferred_rehuco)
         # a catalog reopened at start is asked about once the event loop runs, never from inside the start
         self.__mapping_timer: Final = QTimer(self)
@@ -1570,8 +1568,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             actually happened.
         """
         super().showEvent(event)
-        # from now on the answers about the remembered storage can be delivered (#698)
-        self.__remembered.window_shown()
         if not self.__bottom_dock_heights_seeded:
             self.__bottom_dock_heights_seeded = True
             self.__seed_bottom_dock_heights()
@@ -2102,10 +2098,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Reopen the documents the last session left open that are there, restoring their dock layout and focus --
         without reading any of their files up front (#66); see ``DocumentsDock.restore_session``.
 
-        **Only the documents on fixed local drives are restored here** (#464), and only those whose file is there: a
-        delete between sessions is forgotten instead of made into an empty locked ``missing`` dock. A document on a
-        share or a removable drive comes later, through :meth:`__on_document_arrived`, once its device answers; one
-        whose device does not answer is not shown and stays remembered as open (:meth:`__capture_session`).
+        **Every one of them gets its dock here, in its place** (#698). A document on a fixed local drive whose file is
+        gone was forgotten already (#464), instead of made into an empty locked ``missing`` dock. A document on a
+        share or a removable drive is **held**: its dock is there, locked and unread, until its device answers
+        (``DocumentsDock.storage_answered``), and is asked again each time its tab is shown while it does not.
 
         Reveals the Documents dock first, like every other open funnel (#268) -- see
         :meth:`__reveal_documents_dock` for why the outer layout restored afterward still has the last
@@ -2116,64 +2112,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         if not restore.restore_local_documents and not restore.restore_remote_documents:
             return
-        now = self.__remembered.documents_to_restore_now(restore)
-        LOG.info(
-            "Session: %d documents restored with the window, %d waiting for their storage",
-            len(now),
-            len(self.__remembered.still_open),
-        )
+        now, held = self.__remembered.documents_to_restore(restore)
+        LOG.info("Session: %d documents restored, %d of them waiting for their storage", len(now), len(held))
         self.__reveal_documents_dock()
-        self.__documents_dock.restore_session(self.__session, now)
-
-    def __on_document_arrived(self, path: Path, item: DocumentSessionSettings.Item, take_focus: bool) -> None:
-        """A remote document of the last session is there (#464): restore it now, as the others were -- revealing
-        the Documents dock as any open does (#268), since the start may have had nothing local to reveal it for.
-
-        It is tabbed in at its saved place, whenever it arrives. The session's focused document takes the focus only
-        when it was this one and the reader has not moved the focus since the restore left it (#698).
-
-        :param path: the document's path.
-        :param item: its session entry.
-        :param take_focus: whether it was the session's focused document.
-        """
-        self.__reveal_documents_dock()
-        focus = take_focus and self.__documents_dock.focus_is_as_restored()
-        LOG.info("Session: %s arrived late (takes the focus: %s)", path, focus)
-        self.__documents_dock.restore_late(
-            path, item, self.__session.docks_layout, focus=focus, cover=self.__may_cover()
-        )
-
-    def __on_preview_arrived(self, preview: DocumentSessionSettings.Preview) -> None:
-        """The last session's preview is there, its storage having answered late: restore it as a document arriving late
-        is restored.
-
-        :param preview: its entry.
-        """
-        self.__reveal_documents_dock()
-        self.__documents_dock.restore_late_preview(preview, self.__session.docks_layout, cover=self.__may_cover())
-
-    def __may_cover(self) -> bool:
-        """Whether a late arrival's wide maximized view may open at once (#576): the start is still settling, and the
-        reader has not focused another document than the session's.
-
-        :returns: whether it may; otherwise it waits for its tab.
-        """
-        focused = self.__documents_dock.focused_document_path()
-        return self.__remembered.settling and (focused is None or focused == self.__session.focused_path)
-
-    def __on_late_layout_due(self) -> None:
-        """Every awaited remote document has answered (#464): lay the documents out as the session left them, now
-        that the docks the saved layout names all exist.
-
-        A document the user opened in the first seconds stays where it is, since the layout does not name it (#102).
-        **Not while a preview of this run is shown**: the restore would move it out of the place the user is looking at.
-        The session's own preview is a part of the layout.
-        """
-        if self.__documents_dock.shows_a_new_preview():
-            LOG.info("Session: the late layout is not applied, a preview of this run is shown")
-            return
-        LOG.info("Session: every awaited document has answered, applying the saved layout")
-        self.__documents_dock.restore_state(self.__session.docks_layout, self.__session.maximized_dock)
+        self.__documents_dock.restore_session(self.__session, now, held)
 
     def __save_window_state(self) -> None:
         """Persist this window's current size/position, toolbar layout, outer dock layout, and the
@@ -2241,30 +2183,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             item.open = False
         for path, widget in open_widgets.items():
             self.__session.items[path] = self.__captured_item(widget)  # pylint: disable=unsupported-assignment-operation
-        # a document that was open and is not now because its device never answered this run (#464) is still open as
-        # far as the session goes: closing it here would forget it for good just because a server was off
-        for path in self.__remembered.still_open:
-            if path in self.__session.items and path not in open_widgets:
-                self.__session.items[path].open = True
         preview_focused = preview is not None and self.__documents_dock.focused_document_widget() is preview
         self.__session.focused_path = None if preview_focused else self.__documents_dock.focused_document_path()
-        # a document whose device never answered has no dock to be saved from, and would lose its place in its tab row
-        # for every later run (#698): it goes back where the layout loaded at start had it
-        absent = {str(path) for path in self.__remembered.still_open if path not in open_widgets}
-        self.__session.docks_layout = with_kept(self.__documents_dock.save_state(), self.__session.docks_layout, absent)
+        # a document whose device never answered is among them: it has its dock, locked, in its place (#698)
+        self.__session.docks_layout = self.__documents_dock.save_state()
         self.__session.maximized_dock = self.__documents_dock.maximized_dock_name
         self.__capture_preview(preview)
 
     def __capture_preview(self, preview: DocumentWidget | None) -> None:
-        """Snapshot the preview as the session's entry of it; one still waiting for its device stays as it is, for the
-        reason a document does.
+        """Snapshot the preview as the session's entry of it.
 
         :param preview: the preview's widget, or ``None`` with no preview.
         """
-        remembered = self.__session.preview
         if preview is None or preview.model.path is None or not preview.model.saved_on_disk:
-            if remembered is None or remembered.path not in self.__remembered.still_open:
-                self.__session.preview = None
+            self.__session.preview = None
             return
         name = self.__documents_dock.preview_dock_name()
         self.__session.preview = DocumentSessionSettings.Preview(
@@ -2362,7 +2294,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: the path the open was asked for, resolved -- a record, a folder or an archive.
         :param widget: the document the open showed.
         """
-        self.__reached(widget)
         model = widget.model
         model.when_read(partial(self.__record_recent, path, model))
 
@@ -2394,16 +2325,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param path: filesystem path to a ``.rehu`` file.
         """
         self.__reveal_documents_dock()
-        self.__reached(self.__documents_dock.show_in_preview(ResourceKey(absolute_path(path))))
-
-    def __reached(self, widget: DocumentWidget) -> None:
-        """Tell the remembered paths the user reached ``widget``'s record themselves (#464), so a document the session
-        was keeping open for a share that was off follows its dock from now on -- a close included.
-
-        :param widget: the document just opened or previewed; its model's path is the record, never the folder or
-            archive the open was asked for.
-        """
-        self.__remembered.reached(widget.model.path)
+        self.__documents_dock.show_in_preview(ResourceKey(absolute_path(path)))
 
     def __on_current_dock_changed(self, dock: object) -> None:
         """Remember the Browsers or the Root Catalog dock as the one the preview follows, once the reader is in it.

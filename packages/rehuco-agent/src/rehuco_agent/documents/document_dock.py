@@ -181,6 +181,7 @@ class DocumentDock(QtAds.CDockWidget):
         """
         model.dirty_changed.connect(self.__update_title)  # type: ignore[attr-defined]
         model.lock_reasons_changed.connect(self.__update_title)  # type: ignore[attr-defined]
+        model.storage_wait_changed.connect(self.__update_title)  # type: ignore[attr-defined]
         model.key_changed.connect(self.__resync_object_name)  # type: ignore[attr-defined]
         model.key_changed.connect(self.__update_title)  # type: ignore[attr-defined]
         model.key_changed.connect(self.__report_key_moved)  # type: ignore[attr-defined]
@@ -192,6 +193,7 @@ class DocumentDock(QtAds.CDockWidget):
         """
         model.dirty_changed.disconnect(self.__update_title)  # type: ignore[attr-defined]
         model.lock_reasons_changed.disconnect(self.__update_title)  # type: ignore[attr-defined]
+        model.storage_wait_changed.disconnect(self.__update_title)  # type: ignore[attr-defined]
         model.key_changed.disconnect(self.__resync_object_name)  # type: ignore[attr-defined]
         model.key_changed.disconnect(self.__update_title)  # type: ignore[attr-defined]
         model.key_changed.disconnect(self.__report_key_moved)  # type: ignore[attr-defined]
@@ -219,14 +221,17 @@ class DocumentDock(QtAds.CDockWidget):
         The tab title is the document's :attr:`~RehuDocumentModel.label`, with
         :data:`LOCKED_DOCK_MARKER` prepended while locked ([[data-model#schema-version]]) or
         :data:`DIRTY_DOCK_MARKER` while unsaved -- locked takes precedence, since a locked document's
-        disabled editors mean it can never be dirty too. The tooltip always shows the full key.
+        disabled editors mean it can never be dirty too. A document still waiting for its storage to answer
+        (:attr:`~RehuDocumentModel.storage_wait`, #698) is marked locked too: nothing in it can be edited until it is
+        read. The tooltip always shows the full key.
 
         Takes no arguments and re-reads the model itself -- Qt lets a slot accept fewer arguments than
-        the signal emits, and ``dirty_changed``, ``lock_reasons_changed`` and ``key_changed`` all drive
-        it (a rename redraws it with the label and tooltip a fresh :attr:`RehuDocumentModel.key` gives).
+        the signal emits, and ``dirty_changed``, ``lock_reasons_changed``, ``storage_wait_changed`` and
+        ``key_changed`` all drive it (a rename redraws it with the label and tooltip a fresh
+        :attr:`RehuDocumentModel.key` gives).
         """
         name = self.__model.label
-        if self.__model.locked:
+        if self.__model.locked or self.__model.storage_wait is not None:
             title = f"{LOCKED_DOCK_MARKER}{name}"
         elif self.__model.dirty:
             title = f"{DIRTY_DOCK_MARKER}{name}"

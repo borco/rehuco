@@ -371,8 +371,8 @@ macOS/Linux uic couldn't resolve a `.ui`'s `.qrc` to its package and emitted a b
   `qtbot.addWidget` keeps only a weak reference (#574). A `.show()` without `qtbot.addWidget` leaks a window (#383).
 - **A press gives the focus in the window, not in `notify`** (Qt 6, #574): `QApplication.sendEvent` of a press to a
   widget moves no focus, while `qtbot.mousePress` goes through the window and does. **A test of a visibility
-  trigger shows its window** (#574): the `restore_late` tests never did, so a background tab read at start, when
-  QtAds shows each tab it adds into a visible window, went unseen.
+  trigger shows its window** (#574): the tests of a document restored after the window was up never did, so a
+  background tab read at start, when QtAds shows each tab it adds into a visible window, went unseen.
 - **A mock widget handed to a `MainWindow` is saved and closed at teardown** (#464): set `dirty = False` and
   `save_state.return_value = b""`, or the real modal pops or `QByteArray` fails.
 - **A test that loads a model in place keeps every tab and the form alive** (#470): build all tabs, and hang the form

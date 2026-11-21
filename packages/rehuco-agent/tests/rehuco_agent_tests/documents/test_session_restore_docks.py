@@ -8,21 +8,24 @@ and the stack of wide views ([[plugins#session-restore]], #576)."""
 from pathlib import Path
 from typing import Final, cast
 
+from borco_core import Presence
 from PySide6.QtWidgets import QMainWindow, QWidget
 from pytest import mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents.document_dock import LOCKED_DOCK_MARKER
 from rehuco_agent.documents.document_fields import EDITOR_IMAGES_TAB
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.documents.maximized_restore import MaximizedStack, is_wide
+from rehuco_agent.documents.storage_wait import StorageWait
 from rehuco_agent.fields.widgets.overlay_surface import OverlayMode, OverlaySurface
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.maximized_view import CURATED_SET, LIGHTBOX_KIND, MaximizedView
 from rehuco_core.access import ResourceKey
 
 from .test_document_widget import image_selector
-from .test_documents_dock import FAKE_PATH, load_document
+from .test_documents_dock import FAKE_PATH, dock_for, load_document
 
 SECOND: Final = FAKE_PATH.with_name("second.rehu")
 THIRD: Final = FAKE_PATH.with_name("third.rehu")
@@ -78,7 +81,7 @@ def test_the_preview_comes_back_under_its_name_as_a_preview_unread(mocker: Mocke
 
 
 def test_a_preview_not_in_the_paths_to_restore_is_left_for_later(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Its storage has not answered, so no dock is made for it yet.
+    """The Session page's toggles left it out, so no dock is made for it.
 
     **Test steps:**
 
@@ -92,27 +95,6 @@ def test_a_preview_not_in_the_paths_to_restore_is_left_for_later(mocker: MockerF
     dock.restore_session(preview_session(), set())
 
     assert dock.preview_document_widget() is None
-
-
-def test_a_preview_arriving_late_is_made_as_any_late_document(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Its storage answered: it is the preview, under its name, and still unread.
-
-    **Test steps:**
-
-    * restore the preview late, and verify it
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    session = preview_session()
-    assert session.preview is not None
-
-    dock.restore_late_preview(session.preview, None)
-
-    assert dock.preview_dock_name() == "Preview-7"
-    widget = dock.preview_document_widget()
-    assert widget is not None
-    assert widget.model.pending is True
 
 
 def test_a_preview_of_a_document_open_in_its_own_dock_makes_no_second_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -133,46 +115,6 @@ def test_a_preview_of_a_document_open_in_its_own_dock_makes_no_second_dock(mocke
 
     assert len(dock.open_document_widgets()) == 1
     assert dock.preview_document_widget() is None
-
-
-def test_a_restored_preview_does_not_keep_the_late_layout_off_until_the_reader_moves_it(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """A restored preview is a part of the saved layout, so re-applying that layout is no harm to it; a preview the
-    reader
-    has moved on, or asked for, is one a restore would take out of their sight.
-
-    **Test steps:**
-
-    * restore a preview, and verify it does not count as a new one
-    * show another document in it, and verify it does
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    dock.restore_session(preview_session())
-
-    assert dock.shows_a_new_preview() is False
-
-    dock.show_in_preview(ResourceKey(SECOND))
-
-    assert dock.shows_a_new_preview() is True
-
-
-def test_a_preview_of_this_run_counts_as_new(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """**Test steps:**
-
-    * show a document in a preview with no session
-    * verify it counts as a new one, and that no preview does not
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    assert dock.shows_a_new_preview() is False
-
-    dock.show_in_preview(ResourceKey(FAKE_PATH))
-
-    assert dock.shows_a_new_preview() is True
 
 
 # endregion
@@ -204,29 +146,6 @@ def test_a_view_wider_than_its_document_is_read_at_the_start(
     dock.restore_session(session)
 
     widget = dock.open_document_widgets()[0]
-    assert (not widget.model.pending or widget.model.reading is not None) is read
-
-
-@mark.parametrize(("cover", "read"), [(True, True), (False, False)])
-def test_a_late_wide_view_is_read_at_once_only_when_it_may_cover(
-    mocker: MockerFixture, qtbot: QtBot, cover: bool, read: bool
-) -> None:
-    """A document arriving late does not put a view over what the reader is doing; it waits for its tab.
-
-    **Test steps:**
-
-    * hold a dock of another document current, so the late one is not what its area shows
-    * restore a late document with a wide view, and verify it is read only when it may cover
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    dock.open_document(ResourceKey(SECOND))
-    item = DocumentSessionSettings.Item(open=True, maximized=view_on(OverlayMode.FULL_SCREEN))
-
-    dock.restore_late(FAKE_PATH, item, None, cover=cover)
-
-    widget = next(widget for widget in dock.open_document_widgets() if widget.model.path == FAKE_PATH)
     assert (not widget.model.pending or widget.model.reading is not None) is read
 
 
@@ -488,25 +407,24 @@ def test_the_screenshots_split_comes_back_through_a_documents_first_read(mocker:
 # endregion
 
 
-def test_a_preview_of_this_run_is_not_replaced_by_the_one_arriving_late(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The reader's preview stays when the session's arrives after it.
+def test_a_preview_shown_already_is_not_replaced_by_the_sessions(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A preview that is up when the session is restored stays, and is not held for the session's storage.
 
     **Test steps:**
 
-    * show a document in a preview, then restore the session's preview late
-    * verify the preview still shows the reader's document, and is the only dock
+    * show a document in a preview, then restore a session whose preview is held
+    * verify the preview still shows that document, is the only dock, and waits for no storage
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
     reader = dock.show_in_preview(ResourceKey(SECOND))
-    session = preview_session()
-    assert session.preview is not None
 
-    dock.restore_late_preview(session.preview, None)
+    dock.restore_session(preview_session(), held={FAKE_PATH})
 
     assert dock.preview_document_widget() is reader
     assert len(dock.open_document_widgets()) == 1
+    assert reader.model.storage_wait is None
 
 
 @mark.parametrize(("mode", "focused"), [(OverlayMode.DOCUMENT_OVERLAY, True), (OverlayMode.FULL_SCREEN, False)])
@@ -555,31 +473,31 @@ def test_the_previews_maximized_view_waits_for_its_read(mocker: MockerFixture, q
     restored.assert_called_once_with(widget, view)
 
 
-def test_a_late_view_is_not_put_over_a_document_the_reader_opened_meanwhile(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """A document opened from the recents while its share was still answering is the reader's; the session's view
-    does not cover it when the share answers.
+def test_the_sessions_view_is_not_put_over_a_document_that_is_open_already(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document open before the session is restored is the reader's: the session's view does not cover it, and it
+    is not held for its storage, having been read.
 
     **Test steps:**
 
-    * open a document, then restore it late with a wide view
-    * verify the view was not handed to it
+    * open a document, then restore a session that has it held, with a wide view
+    * verify the view was not handed to it, and it waits for no storage
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
     widget = dock.open_document(ResourceKey(FAKE_PATH))
     restored = mocker.spy(DocumentWidget, "restore_maximized")
-    item = DocumentSessionSettings.Item(open=True, maximized=view_on(OverlayMode.FULL_SCREEN))
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True, maximized=view_on(OverlayMode.FULL_SCREEN))
 
-    dock.restore_late(FAKE_PATH, item, None, cover=True)
+    dock.restore_session(session, held={FAKE_PATH})
 
     restored.assert_not_called()
     assert dock.open_document_widgets() == [widget]
+    assert widget.model.storage_wait is None
 
 
-# region Late arrivals take their saved place (#698)
+# region Documents whose storage has to be asked (#698)
 
 
 def saved_row(*paths: Path, current: Path) -> dict[str, object]:
@@ -624,122 +542,248 @@ def session_of(*paths: Path, row: dict[str, object], focused: Path) -> DocumentS
     return session
 
 
-def test_documents_arriving_late_take_their_saved_places_in_any_order(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The reader's tab order survives a share that answers late: each remote document is tabbed in at its saved
-    index among the documents already there, whichever answers first, and the current tab does not change (#698).
+def widget_at(dock: DocumentsDock, path: Path) -> DocumentWidget:
+    """The widget of the document at a path.
+
+    :param dock: the documents area.
+    :param path: the document's path.
+    :returns: its widget.
+    """
+    return next(widget for widget in dock.open_document_widgets() if widget.model.path == path)
+
+
+def unread(widget: DocumentWidget) -> bool:
+    """Whether a document's file has not been asked for.
+
+    :param widget: its widget.
+    :returns: the answer.
+    """
+    return widget.model.pending and widget.model.reading is None
+
+
+def test_every_document_comes_back_in_its_place_and_the_held_ones_locked_and_unread(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A session with documents on local drives and a share comes back whole at once: the saved order, the focused
+    document, and the share's documents in their places, locked, with nothing read of them (#698).
 
     **Test steps:**
 
-    * save a row ``FAKE, SECOND, THIRD, FOURTH`` with ``THIRD`` current, restore ``FAKE`` and ``THIRD`` with the window
-    * restore ``FOURTH``, then ``SECOND``, late
-    * verify the row reads ``FAKE, SECOND, THIRD, FOURTH`` and ``THIRD`` is still the focused document
+    * restore a session of four documents, two of them held, whose saved row is in another order than its entries
+    * verify the row reads as saved and the focused document is the saved one
+    * verify the held ones wait for their storage, unread, their tabs marked locked, and the others wait for nothing
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
     row = saved_row(FAKE_PATH, SECOND, THIRD, FOURTH, current=THIRD)
-    session = session_of(FAKE_PATH, SECOND, THIRD, FOURTH, row=row, focused=THIRD)
-    dock.restore_session(session, {FAKE_PATH, THIRD})
+    session = session_of(THIRD, FOURTH, FAKE_PATH, SECOND, row=row, focused=THIRD)
 
-    dock.restore_late(FOURTH, session.items[FOURTH], row)
-    dock.restore_late(SECOND, session.items[SECOND], row)
+    dock.restore_session(session, held={SECOND, FOURTH})
 
     assert row_of(dock) == [FAKE_PATH, SECOND, THIRD, FOURTH]
     assert dock.focused_document_path() == THIRD
+    for path in (SECOND, FOURTH):
+        widget = widget_at(dock, path)
+        assert widget.model.storage_wait is StorageWait.ASKING
+        assert unread(widget)
+        assert dock_for(dock, widget).windowTitle().startswith(LOCKED_DOCK_MARKER)
+    for path in (FAKE_PATH, THIRD):
+        widget = widget_at(dock, path)
+        assert widget.model.storage_wait is None
+        assert not dock_for(dock, widget).windowTitle().startswith(LOCKED_DOCK_MARKER)
 
 
-def test_a_late_document_the_reader_opened_meanwhile_stays_where_it_is(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A document the reader opened by hand before its share answered is theirs: it is not moved to its saved place
+def test_the_focused_document_is_held_too_and_read_once_its_storage_answers(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The session's focused document on a share is the current tab from the start, unread, with nothing asked twice
+    while the start's answer is out; the answer that it is there reads it where it stands (#698).
+
+    **Test steps:**
+
+    * show the area and restore a session whose focused document is held
+    * verify it is the focused one, unread, and its storage was not asked for again
+    * say its storage is there
+    * verify it waits for nothing, was asked for its file, and its tab lost the lock marker
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.show()
+    qtbot.waitExposed(dock)
+    asked: list[Path] = []
+    dock.storage_asked.connect(asked.append)
+    session = session_of(FAKE_PATH, SECOND, row=saved_row(FAKE_PATH, SECOND, current=SECOND), focused=SECOND)
+
+    dock.restore_session(session, held={SECOND})
+
+    widget = widget_at(dock, SECOND)
+    assert dock.focused_document_widget() is widget
+    assert unread(widget)
+    assert not asked
+
+    dock.storage_answered(SECOND, Presence.PRESENT)
+
+    assert widget.model.storage_wait is None
+    assert not unread(widget)
+    assert not dock_for(dock, widget).windowTitle().startswith(LOCKED_DOCK_MARKER)
+
+
+def test_a_storage_that_does_not_answer_is_asked_again_when_the_document_is_reached(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A document whose share did not answer stays locked and says so; reaching it asks its storage again instead of
+    reading it (#698).
+
+    **Test steps:**
+
+    * restore a session with a held document behind the focused one, and say its storage did not answer
+    * verify it says its storage is offline, and is still unread
+    * open that document, as any focus route does
+    * verify its storage was asked for again, it says so, and it is still unread
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = session_of(FAKE_PATH, SECOND, row=saved_row(FAKE_PATH, SECOND, current=FAKE_PATH), focused=FAKE_PATH)
+    dock.restore_session(session, held={SECOND})
+    widget = widget_at(dock, SECOND)
+    asked: list[Path] = []
+    dock.storage_asked.connect(asked.append)
+
+    dock.storage_answered(SECOND, Presence.OFFLINE)
+
+    assert widget.model.storage_wait is StorageWait.OFFLINE
+    assert unread(widget)
+    assert not asked
+
+    dock.open_document(ResourceKey(SECOND))
+
+    assert asked == [SECOND]
+    assert widget.model.storage_wait is StorageWait.ASKING
+    assert unread(widget)
+
+
+@mark.parametrize("presence", [Presence.PRESENT, Presence.GONE])
+def test_a_background_document_whose_storage_answered_is_read_when_its_tab_is_reached(
+    mocker: MockerFixture, qtbot: QtBot, presence: Presence
+) -> None:
+    """A held document behind another is let go by its storage's answer and still read only when it is reached: one
+    whose file is there, and one whose file is gone, which then says so as any vanished file does (#698).
+
+    **Test steps:**
+
+    * restore a session with a held document behind the focused one, and say what its storage answered
+    * verify it waits for nothing, and is still unread
+    * open that document, and verify it was asked for its file
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = session_of(FAKE_PATH, SECOND, row=saved_row(FAKE_PATH, SECOND, current=FAKE_PATH), focused=FAKE_PATH)
+    dock.restore_session(session, held={SECOND})
+    widget = widget_at(dock, SECOND)
+
+    dock.storage_answered(SECOND, presence)
+
+    assert widget.model.storage_wait is None
+    assert unread(widget)
+
+    dock.open_document(ResourceKey(SECOND))
+
+    assert not unread(widget)
+
+
+@mark.parametrize(("wide", "read"), [(True, True), (False, False)])
+def test_a_held_document_with_a_wide_view_is_read_as_soon_as_its_storage_answers(
+    mocker: MockerFixture, qtbot: QtBot, wide: bool, read: bool
+) -> None:
+    """A view wider than its document shows whichever tab is in front, so the document behind it is read the moment
+    its storage answers; one with no such view waits for its tab (#698).
+
+    **Test steps:**
+
+    * restore a session with a held document behind the focused one, holding a view that is wide or not
+    * say its storage is there
+    * verify it was asked for its file only when its view is wide
+    """
+    load_document(mocker)
+    mocker.patch.object(DocumentWidget, "holds_wide_view", new_callable=mocker.PropertyMock, return_value=wide)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = session_of(FAKE_PATH, SECOND, row=saved_row(FAKE_PATH, SECOND, current=FAKE_PATH), focused=FAKE_PATH)
+    dock.restore_session(session, held={SECOND})
+    widget = widget_at(dock, SECOND)
+
+    dock.storage_answered(SECOND, Presence.PRESENT)
+
+    assert unread(widget) is not read
+
+
+def test_an_answer_about_a_document_that_is_not_held_changes_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """**Test steps:**
+
+    * open a document, and say its storage and that of a document with no dock did not answer
+    * verify the open one waits for nothing
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(ResourceKey(FAKE_PATH))
+
+    dock.storage_answered(FAKE_PATH, Presence.OFFLINE)
+    dock.storage_answered(SECOND, Presence.OFFLINE)
+
+    assert widget.model.storage_wait is None
+
+
+def test_closing_a_held_document_ends_its_wait(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The reader closes what is no longer available: the dock goes, and a later answer finds nothing to let go
     (#698).
 
     **Test steps:**
 
-    * save a row ``FAKE, SECOND, THIRD``, restore ``FAKE`` and ``THIRD``, and open ``SECOND`` by hand after them
-    * restore ``SECOND`` late
-    * verify the row is still ``FAKE, THIRD, SECOND``
+    * restore a session with one held document, and close every document
+    * verify its wait ended as it closed, and an answer about it afterward changes nothing
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    row = saved_row(FAKE_PATH, SECOND, THIRD, current=FAKE_PATH)
-    session = session_of(FAKE_PATH, SECOND, THIRD, row=row, focused=FAKE_PATH)
-    dock.restore_session(session, {FAKE_PATH, THIRD})
-    dock.open_document(ResourceKey(SECOND))
+    session = session_of(FAKE_PATH, row=saved_row(FAKE_PATH, current=FAKE_PATH), focused=FAKE_PATH)
+    dock.restore_session(session, held={FAKE_PATH})
+    waits: list[object] = []
+    widget_at(dock, FAKE_PATH).model.storage_wait_changed.connect(waits.append)  # type: ignore[attr-defined]
 
-    dock.restore_late(SECOND, session.items[SECOND], row)
+    dock.close_all()
+    dock.storage_answered(FAKE_PATH, Presence.PRESENT)
 
-    assert row_of(dock) == [FAKE_PATH, THIRD, SECOND]
+    assert waits == [None]
+    assert not dock.open_document_widgets()
 
 
-def test_the_late_preview_is_placed_too(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The session's preview arriving late goes to its saved place like a document (#698).
+def test_a_held_preview_that_moves_on_to_another_document_stops_waiting(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The session's preview on a share is held as a document is; shown another document, it reads that one (#698).
 
     **Test steps:**
 
-    * save a row ``FAKE, preview, THIRD``, restore ``FAKE`` and ``THIRD``, then the preview late
-    * verify the preview's tab is between them
+    * restore a session whose preview is held, and verify it waits for its storage
+    * show another document in the preview
+    * verify the preview shows it, waits for nothing and was asked for its file
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
-    preview = DocumentSessionSettings.Preview(SECOND, "Preview-7", DocumentSessionSettings.Item(open=True, state=b""))
-    row = saved_row(FAKE_PATH, THIRD, current=FAKE_PATH)
-    row["main"]["area"].insert(1, {"name": "Preview-7", "closed": False})  # type: ignore[index]
-    session = session_of(FAKE_PATH, THIRD, row=row, focused=FAKE_PATH)
-    dock.restore_session(session, {FAKE_PATH, THIRD})
+    dock.restore_session(preview_session(), held={FAKE_PATH})
+    preview = dock.preview_document_widget()
+    assert preview is not None
+    assert preview.model.storage_wait is StorageWait.ASKING
 
-    dock.restore_late_preview(preview, row)
+    dock.show_in_preview(ResourceKey(SECOND))
 
-    assert [entry["name"] for entry in dock.save_state()["main"]["area"]][1] == "Preview-7"
-
-
-def test_the_focus_is_as_restored_until_the_reader_moves_it(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The restore's own focus is not the reader's: a late document may take it while it has not been moved, and
-    not after (#698).
-
-    **Test steps:**
-
-    * with nothing open, verify the focus is as restored
-    * restore ``FAKE`` with the window and ``SECOND`` late without the focus; verify it still is
-    * open another document by hand; verify it is not
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    assert dock.focus_is_as_restored()
-    row = saved_row(FAKE_PATH, SECOND, current=FAKE_PATH)
-    session = session_of(FAKE_PATH, SECOND, row=row, focused=FAKE_PATH)
-    dock.restore_session(session, {FAKE_PATH})
-
-    dock.restore_late(SECOND, session.items[SECOND], row)
-
-    assert dock.focus_is_as_restored()
-    dock.open_document(ResourceKey(THIRD))
-    assert not dock.focus_is_as_restored()
-
-
-def test_an_arrival_into_an_empty_area_does_not_end_the_restored_focus(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """With only remote documents, the first to arrive becomes current because nothing else is; the session's focused
-    one arriving after it still takes the focus (#698).
-
-    **Test steps:**
-
-    * restore nothing with the window, then ``SECOND`` late without the focus, then ``FAKE`` late with it
-    * verify ``FAKE`` is the focused document
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    row = saved_row(FAKE_PATH, SECOND, current=FAKE_PATH)
-    session = session_of(FAKE_PATH, SECOND, row=row, focused=FAKE_PATH)
-    dock.restore_session(session, set())
-
-    dock.restore_late(SECOND, session.items[SECOND], row)
-    assert dock.focus_is_as_restored()
-    dock.restore_late(FAKE_PATH, session.items[FAKE_PATH], row, focus=dock.focus_is_as_restored())
-
-    assert dock.focused_document_path() == FAKE_PATH
-    assert row_of(dock) == [FAKE_PATH, SECOND]
+    assert preview.model.path == SECOND
+    assert preview.model.storage_wait is None
+    assert not unread(preview)
 
 
 # endregion

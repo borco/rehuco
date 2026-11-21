@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 import PySide6QtAds as QtAds
+from borco_core import Presence
 from borco_pyside.qtads import (
     QtAdsAutoHideButtonSuppressor,
     QtAdsEmptyingGuard,
@@ -36,6 +37,7 @@ from .pending_docks import PendingDocks
 from .pending_saves import PendingSaves
 from .preview_layouts import preview_layout_for, remember_preview_layout, write_preview_layouts
 from .rehu_document_model import RehuDocumentModel
+from .storage_wait import StorageWait
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -124,6 +126,11 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     double-click on its title, or by being asked to show another document while it had unsaved changes. A
     preview stays out of ``Open recents``, so the file joins it only now; ``MainWindow`` records it."""
 
+    storage_asked: Signal = Signal(object)
+    """Emitted with the path of a document the session restored whose storage did not answer, when it would have been
+    read -- its tab shown, a focus route (#698). ``MainWindow`` has the storage asked again, and says what it
+    answered through :meth:`storage_answered`."""
+
     def __init__(
         self,
         parent: QWidget | None = None,
@@ -143,7 +150,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         """The dock showing each held model -- what turns the registry's answer to "is this record open"
         into the dock to focus. Seeded in :meth:`__make_new_dock`, re-keyed by a preview's switch
         (:meth:`__switch_preview`), dropped in :meth:`__remove_dock`."""
-        self.__pending: Final = PendingDocks(self.__read_pending, self)
+        self.__pending: Final = PendingDocks(self.__read_pending, self.__ask_storage, self)
         self.__maximized_stack: Final = MaximizedStack()
         self.__preview: DocumentDock | None = None
         """The one preview dock (#39), or ``None`` -- set by :meth:`show_in_preview` building one, cleared by
@@ -175,11 +182,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
                 widget_of=self.__document_docks.__getitem__,
                 # looked up when called, so a test that swaps it after construction is still seen
                 restore_state=lambda layout, maximized: self.restore_state(layout, maximized),  # pylint: disable=unnecessary-lambda
-                place=self.place_dock,
+                hold=self.__hold,
                 preview=lambda: self.__preview,
                 pending=self.__pending,
                 maximized_stack=self.__maximized_stack,
-                tracker=self.__tracker,
             )
         )
 
@@ -305,14 +311,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         """
         return self.__preview.objectName() if self.__preview is not None else ""
 
-    def shows_a_new_preview(self) -> bool:
-        """Whether the reader is looking at a preview of this run, which restoring a layout would move away; a preview
-        the session restored is a part of that layout.
-
-        :returns: whether one is shown.
-        """
-        return self.__preview is not None and self.__preview is not self.__restore.restored_preview
-
     @property
     def maximized_dock_name(self) -> str:
         """The object name of the document dock filling this area, to save beside its layout; empty for none."""
@@ -324,62 +322,39 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__capture_preview_layout()
         write_preview_layouts()
 
-    def restore_session(self, session: DocumentSessionSettings, only: Container[Path] | None = None) -> None:
+    def restore_session(
+        self, session: DocumentSessionSettings, only: Container[Path] | None = None, held: Container[Path] = ()
+    ) -> None:
         """Recreate every document the last session left open, touching none of their files up front
         (:meth:`DocumentSessionRestore.restore_session`, #21, #66).
 
         :param session: the loaded session (#65) to restore.
         :param only: the paths to restore; ``None`` restores every open one.
+        :param held: the paths among them whose storage has not answered yet: their docks are made, locked, and not
+            read until :meth:`storage_answered` says they can be (#698).
         """
-        self.__restore.restore_session(session, only)
+        self.__restore.restore_session(session, only, held)
 
-    def restore_late(
-        self,
-        path: Path,
-        item: DocumentSessionSettings.Item,
-        layout: object,
-        *,
-        focus: bool = False,
-        cover: bool = False,
-    ) -> None:
-        """Restore one document of the last session after the window is up, its storage only just answered
-        (:meth:`DocumentSessionRestore.restore_late`, #464).
+    def storage_answered(self, path: Path, presence: Presence) -> None:
+        """The storage of a document the session restored has answered (#698).
+
+        A storage that is there lets the document be read: now if its tab is in front or a view of it covers more
+        than its tab, else when its tab is shown. So does one that says the file is gone, which reads into the locked
+        ``missing`` dock every vanished file gets, for the reader to close. One that did not answer leaves the document
+        locked, saying so, and is asked again the next time its tab is shown.
 
         :param path: the document's path, as the session remembers it.
-        :param item: its session entry.
-        :param layout: the session's saved documents layout, which gives the document its tab place (#698).
-        :param focus: make it current, loading it.
-        :param cover: read it now if a view it had maximized covers more than itself.
+        :param presence: what its storage said.
         """
-        self.__restore.restore_late(path, item, layout, focus=focus, cover=cover)
-
-    def restore_late_preview(
-        self, preview: DocumentSessionSettings.Preview, layout: object, *, cover: bool = False
-    ) -> None:
-        """Restore the last session's preview once its storage answers (:meth:`DocumentSessionRestore.restore_late`).
-
-        :param preview: its entry.
-        :param layout: as for :meth:`restore_late`.
-        :param cover: as for :meth:`restore_late`.
-        """
-        self.__restore.restore_late_preview(preview, layout, cover=cover)
-
-    def focus_is_as_restored(self) -> bool:
-        """Whether the reader has not moved the focus since the session restore last left it
-        (:meth:`DocumentSessionRestore.focus_is_as_restored`, #698).
-
-        :returns: ``True`` while it has not been moved.
-        """
-        return self.__restore.focus_is_as_restored()
-
-    def place_dock(self, layout: object, dock: QtAds.CDockWidget) -> bool:
-        """Move one document's dock to the tab place a saved layout gives it (:meth:`QtAdsLayout.place`, #698).
-
-        :param layout: the tree from a prior :meth:`save_state`.
-        :param dock: the document's dock.
-        :returns: whether it was moved.
-        """
-        return QtAdsLayout(self.__dock_manager, pins=False).place(layout, dock)
+        dock = self.__find_dock(ResourceKey(path))
+        if dock is None or not self.__pending.is_held(dock):
+            return
+        widget = self.__document_docks[dock]
+        if presence is Presence.OFFLINE:
+            widget.model.storage_wait = StorageWait.OFFLINE
+            return
+        widget.model.storage_wait = None
+        self.__pending.release(dock, load=widget.holds_wide_view)
 
     def open_document_widgets(self) -> list[DocumentWidget]:
         """Every currently open document's widget, in no particular order.
@@ -688,7 +663,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :returns: the preview's widget.
         """
         started = time.perf_counter()
-        self.__restore.restored_preview = None
+        # a preview still waiting for its storage shows another document now, which is read as any is
+        self.__unhold(preview)
         self.__capture_preview_layout()
         widget = preview.document_widget
         # before the record moves on: a player still going would record the old record's video into the new one (#317)
@@ -798,6 +774,37 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         model = self.__registry.find(key)
         return self.__model_docks.get(model) if model is not None else None
 
+    def __hold(self, dock: QtAds.CDockWidget) -> None:
+        """Keep a dock the session just restored from being read until its storage answers, and show it locked (#698).
+
+        :param dock: the dock; one that is not an unread placeholder -- its document was open already -- is left alone.
+        """
+        self.__pending.hold(dock)
+        if self.__pending.is_held(dock):
+            self.__document_docks[dock].model.storage_wait = StorageWait.ASKING
+
+    def __unhold(self, dock: QtAds.CDockWidget) -> None:
+        """Stop waiting for a dock's storage: the dock is closing, or about to show another document.
+
+        :param dock: the dock; one not held is left alone.
+        """
+        if self.__pending.is_held(dock):
+            self.__pending.settle(dock)
+            self.__document_docks[dock].model.storage_wait = None
+
+    def __ask_storage(self, dock: QtAds.CDockWidget) -> None:
+        """Have the storage of a held dock's document asked again: the dock would have been read just now (#698).
+
+        Only one that did not answer is asked: while an answer is still out there is nothing to ask, and one tab shown
+        reaches here more than once.
+
+        :param dock: the held dock.
+        """
+        model = self.__document_docks[dock].model
+        if model.storage_wait is StorageWait.OFFLINE:
+            model.storage_wait = StorageWait.ASKING
+            self.storage_asked.emit(model.path)
+
     def __read_pending(self, dock: QtAds.CDockWidget) -> None:
         """Read the real content of an unread session-restore placeholder's dock (#66).
 
@@ -894,12 +901,12 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         """
         # a dock closed before its tab was ever viewed leaves the pending state here instead of
         # lingering as a stale entry for the session (#66)
+        self.__unhold(dock)
         self.__pending.settle(dock)
         # a closing preview stops showing its type's layout too (#39), and the next show makes a new one
         if dock is self.__preview:
             self.__capture_preview_layout()
             self.__preview = None
-            self.__restore.restored_preview = None
         # let go of everything app-wide this document is attached to before it is destroyed: the task
         # queue calls its listeners on the worker thread, so one arriving after the C++ objects have
         # gone would reach a deleted QObject (#204). The work itself is untouched -- closing a document

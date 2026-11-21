@@ -78,6 +78,7 @@ from .progress_writer import ProgressWriter
 from .record_reader import RecordReader
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 from .rename_holders import RenameHolderReport
+from .storage_wait import StorageWait
 from .tc_conversion_outcomes import scan_after_conversion
 
 LOG: Final = logging.getLogger(__name__)
@@ -493,6 +494,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     ``DocumentSubDocks`` locks its editors and says *Reading…* until the file arrives. A record with a save not landed
     never reads this way: that save shows at once, and the read only fills in what it is based on
     ([[sync#unlanded-save]])."""
+
+    storage_wait = SimpleProperty[StorageWait | None](None)
+    """What this :attr:`pending` document waits for before it may be read, or ``None`` (#698): a session restored it
+    with the window, in its place, while the storage its file is on had not answered. Set by whoever asks the storage
+    (`DocumentsDock`); ``DocumentSubDocks`` locks the editors and says so, and the tab carries the lock marker."""
 
     gone = SimpleProperty("")
     """The sentence naming this edited document's file or folder that is not there any more, or empty (#497): its

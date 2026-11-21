@@ -284,6 +284,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__sub_docks.restore_maximized(view)
 
+    @property
+    def holds_wide_view(self) -> bool:
+        """See :attr:`DocumentSubDocks.holds_wide_view`."""
+        return self.__sub_docks.holds_wide_view
+
     def save_state(self) -> bytes:
         """See :meth:`DocumentSubDocks.save_state`.
 

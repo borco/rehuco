@@ -348,23 +348,26 @@ local drive is checked at once — it answers, so a missing file is gone. A shar
 classified without touching it (the drive letter's type, the mount table), its server is asked with a 0.3 s connection
 attempt rather than a `stat` (measured: a `stat` under a switched-off SMB host blocks **21 s**, the connection attempt
 0.3 s), and only a server that answered is `stat`-ed. All of it runs on daemon threads, so neither the start nor the
-quit waits for a dead mount. *Gone* is forgotten; *offline* is kept, shown disabled, and asked again next run.
+quit waits for a dead mount. In the recents, *gone* is forgotten; *offline* is kept, shown disabled, and asked
+again next run.
 
-**A document that answers late comes back where the session had it (#698).** The documents of fixed local drives are
-restored with the window, in the saved layout; each document that answers later is tabbed into its saved row right
-after the nearest document before it in that row that is already there, else right before the nearest one after it, so
-the row comes out in the saved order however slowly each share answers and in whatever order. It takes the focus when it
-was the session's focused document and the reader has not moved the focus since the restore left it. Only the whole
-layout's re-application, which also brings the splits back, is bounded by the settling time (5 s counted from the
-window's first show, since no answer can be delivered before it); past it, the reader's own arrangement is left alone.
-A run whose share never answered saves its document back into the layout where the last layout had it, so one run with
-the share off does not cost it its place for every later run. The log says what was restored with the window, what
-arrived late and whether the layout was applied or why not.
+**Every session document comes back with the window, in its place (#698).** A document on a fixed local drive is
+restored as before, unread until its tab is shown; one whose file is gone was forgotten by the check above. A document
+on a share, a removable drive or a disc gets its dock too, and is **held**: locked, with nothing read of it, until its
+storage has answered. So the saved layout is applied once, with every dock in it, and the tab order, the splits and the
+focused document do not depend on how fast a share answers or on the order the answers come in. What the storage says
+decides what happens to the held dock, and the reader decides the rest:
 
-*Limitation, accepted:* a session document kept open because its share was off is matched against what the user opens
-by hand by its **resolved** path, while the session stores the path as it was opened. A path whose resolved form
-changed between runs — a mapped drive now reached through its UNC path, a folder moved behind a symlink — is not
-matched, so a document the user opened and then closed by that other spelling comes back open at the next start.
+- **It is there:** the dock unlocks where it stands, and is read when its tab is in front, as any restored document.
+- **It does not answer:** the dock stays locked and says so. It is asked again each time its tab is shown, and
+  unlocks when it answers. The reader closes it or leaves it; left open, it is saved in the layout like any dock, so a
+  run with the share off costs it neither its place nor its entry.
+- **The file is gone:** the dock is read, which makes it the locked *missing* dock every vanished file gets, for the
+  reader to close; the recents forget the file.
+
+A maximized view the session remembers for a held document is stood in for on its surface by a turning arc that says
+what is being restored and what it waits for ([[plugins#session-restore]]). The log says how many documents were
+restored, how many of them wait, and what each one's storage answered.
 
 Deployment note: mount the shares **soft / with short timeouts** so failed syscalls return an error quickly rather than
 hanging. Hard mounts defeat this discipline.

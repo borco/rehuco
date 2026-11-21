@@ -3,8 +3,7 @@
 
 import base64
 import binascii
-import copy
-from collections.abc import Callable, Container
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Final, cast
 
@@ -232,52 +231,6 @@ class QtAdsLayout:
                 if entry.state is not None:
                     restore_dock_state(entry.widget, entry.state)
         self.__dock_manager.stateRestored.emit()
-        return True
-
-    def place(self, layout: object, dock: QtAds.CDockWidget) -> bool:
-        """Move one dock to the tab place a stored tree gives it, beside the docks of its saved area that exist.
-
-        For a dock that comes after the rest of a restore -- one whose content only just became available -- so it
-        joins its saved tab row at its saved index, however late it arrives, and nothing else is rearranged. The
-        docks it shares a saved area with and that sit in an area now decide where: it goes right after the nearest
-        saved neighbor before it, else right before the nearest one after it.
-
-        :param layout: the tree. Anything but a dict of this :data:`LAYOUT_FORMAT` places nothing.
-        :param dock: the dock to place; a name the tree lacks places nothing.
-        :returns: whether the dock was placed beside a neighbor; ``False`` leaves it where it is.
-        """
-        if not isinstance(layout, dict) or layout.get("format") != LAYOUT_FORMAT:
-            return False
-        parsed = LayoutResolver(self.__dock_manager, None).layout(layout)
-        name = dock.objectName()
-        for saved in saved_areas(parsed):
-            names = [entry.name for entry in saved.docks]
-            if name not in names:
-                continue
-            at = names.index(name)
-            neighbors = [entry.widget for entry in saved.docks]
-            before = [neighbor for neighbor in reversed(neighbors[:at]) if neighbor.dockAreaWidget() is not None]
-            after = [neighbor for neighbor in neighbors[at + 1 :] if neighbor.dockAreaWidget() is not None]
-            if before:
-                return self.__tab_beside(dock, before[0], 1)
-            if after:
-                return self.__tab_beside(dock, after[0], 0)
-            return False
-        return False
-
-    def __tab_beside(self, dock: QtAds.CDockWidget, neighbor: QtAds.CDockWidget, offset: int) -> bool:
-        """Tab ``dock`` into ``neighbor``'s area, ``offset`` tabs after ``neighbor``'s.
-
-        :param dock: the dock to move.
-        :param neighbor: a dock that sits in an area.
-        :param offset: ``1`` to come right after it, ``0`` to take its place.
-        :returns: whether it was moved.
-        """
-        area = cast(QtAds.CDockAreaWidget, neighbor.dockAreaWidget())
-        tabs = [other for other in area.dockWidgets() if other is not dock]
-        index = next(position for position, other in enumerate(tabs) if other is neighbor) + offset
-        self.__prepare_move(dock)
-        self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, area, index)
         return True
 
     def __build(self, parsed: ParsedLayout) -> None:
@@ -722,88 +675,6 @@ def normalized(split: LayoutSplit) -> LayoutNode | None:
             if sized:
                 sizes.append(split.sizes[index])
     return LayoutSplit(split.horizontal, children, sizes)
-
-
-def saved_areas(parsed: ParsedLayout) -> list[LayoutArea]:
-    """Every tabbed area of the main container and the floating windows of a resolved tree, in tree order.
-
-    :param parsed: the resolved tree.
-    :returns: the areas.
-    """
-    areas: list[LayoutArea] = []
-    pending = [node for node in [parsed.main, *(node for _, node in parsed.floating)] if node is not None]
-    while pending:
-        node = pending.pop(0)
-        if isinstance(node, LayoutArea):
-            areas.append(node)
-        else:
-            pending[:0] = node.children
-    return areas
-
-
-def stored_areas(layout: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every area node of a stored tree's main container and floating windows, in tree order.
-
-    :param layout: a stored tree.
-    :returns: the area nodes themselves, not copies.
-    """
-    roots = [layout.get("main"), *(item.get("root") for item in layout.get("floating", []) if isinstance(item, dict))]
-    areas: list[dict[str, Any]] = []
-    pending = [node for node in roots if isinstance(node, dict)]
-    while pending:
-        node = pending.pop(0)
-        if isinstance(node.get("area"), list):
-            areas.append(node)
-        elif isinstance(node.get("children"), list):
-            pending[:0] = [child for child in node["children"] if isinstance(child, dict)]
-    return areas
-
-
-def with_kept(new_layout: dict[str, Any], old_layout: object, names: Container[str]) -> dict[str, Any]:
-    """``new_layout`` with the docks ``names`` that it lacks put back where ``old_layout`` had them.
-
-    For a save made while some docks are not there -- their content has not arrived this run -- which would otherwise
-    write them out of their tab rows for good. Each goes into the area of its nearest saved neighbor that ``new_layout``
-    holds, right after it, else right before the one after it; one with no neighbor in ``new_layout`` is left out.
-
-    :param new_layout: the tree just saved.
-    :param old_layout: the tree loaded at start; anything but a dict of this :data:`LAYOUT_FORMAT` keeps nothing.
-    :param names: the dock names to keep.
-    :returns: a copy of ``new_layout`` with the kept docks in; ``new_layout`` itself is not changed.
-    """
-    result = copy.deepcopy(new_layout)
-    if not isinstance(old_layout, dict) or old_layout.get("format") != LAYOUT_FORMAT:
-        return result
-    present = {entry["name"] for node in stored_areas(result) for entry in node["area"] if isinstance(entry, dict)}
-    for old in stored_areas(old_layout):
-        entries = [entry for entry in old["area"] if isinstance(entry, dict) and isinstance(entry.get("name"), str)]
-        for at, entry in enumerate(entries):
-            if entry["name"] in present or entry["name"] not in names:
-                continue
-            if insert_beside(
-                result, entry, [e["name"] for e in entries[:at]][::-1], [e["name"] for e in entries[at + 1 :]]
-            ):
-                present.add(entry["name"])
-    return result
-
-
-def insert_beside(layout: dict[str, Any], entry: dict[str, Any], before: list[str], after: list[str]) -> bool:
-    """Put a dock entry into the area of the nearest of its neighbors that a stored tree holds.
-
-    :param layout: the stored tree to change.
-    :param entry: the dock entry to add (a copy goes in).
-    :param before: the names saved before it, nearest first.
-    :param after: the names saved after it, nearest first.
-    :returns: whether any neighbor was found.
-    """
-    areas = stored_areas(layout)
-    for neighbor, offset in [*((name, 1) for name in before), *((name, 0) for name in after)]:
-        for node in areas:
-            names = [item.get("name") for item in node["area"] if isinstance(item, dict)]
-            if neighbor in names:
-                node["area"].insert(names.index(neighbor) + offset, copy.deepcopy(entry))
-                return True
-    return False
 
 
 def spread(total: int, sizes: list[int], count: int) -> list[int]:

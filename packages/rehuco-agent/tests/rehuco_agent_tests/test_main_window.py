@@ -14,7 +14,6 @@ from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 from threading import Event
-from types import SimpleNamespace
 from typing import Any, Final
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -50,6 +49,7 @@ from rehuco_agent.commands import QUIT, SAVE_DOCUMENT, shared_command_registry
 from rehuco_agent.documents.document_sub_docks import LOG_DOCK_MIN_HEIGHT
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.documents.pending_saves import PendingSaves
+from rehuco_agent.documents.storage_wait import StorageWait
 from rehuco_agent.glyphs import TAB_CLOSE_GLYPH
 from rehuco_agent.main_window import (
     BROWSERS_DOCK_OBJECT_NAME,
@@ -2797,7 +2797,7 @@ def test_restore_session_on_startup_delegates_to_the_documents_dock(mocker: Mock
 
     * mock ``DocumentsDock.restore_session``
     * construct ``MainWindow`` with a session that has nothing open
-    * verify it was called once, with the window's own loaded session and no path to restore
+    * verify it was called once, with the window's own loaded session and no path to restore or to hold
     """
     restore_session = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
 
@@ -2805,7 +2805,7 @@ def test_restore_session_on_startup_delegates_to_the_documents_dock(mocker: Mock
     qtbot.addWidget(window)
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_session.assert_called_once_with(session, set())
+    restore_session.assert_called_once_with(session, set(), set())
 
 
 def test_restore_documents_off_skips_reopening_the_saved_session(
@@ -4486,7 +4486,7 @@ def test_restoring_the_session_reveals_the_documents_dock(mocker: MockerFixture,
     )
     mocker.patch(
         "rehuco_agent.main_window.DocumentsDock.restore_session",
-        side_effect=lambda _session, _only: calls.append("restore_session"),
+        side_effect=lambda _session, _only, _held: calls.append("restore_session"),
     )
 
     window = MainWindow()
@@ -4518,7 +4518,7 @@ def test_the_saved_theme_is_applied_before_the_session_is_restored(mocker: Mocke
     )
     mocker.patch(
         "rehuco_agent.main_window.DocumentsDock.restore_session",
-        side_effect=lambda _session, _only: calls.append("restore_session"),
+        side_effect=lambda _session, _only, _held: calls.append("restore_session"),
     )
 
     window = MainWindow()
@@ -8171,7 +8171,7 @@ def test_a_local_document_that_is_there_is_restored_with_the_window(
     qtbot.addWidget(window)
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_session.assert_called_once_with(session, {present})
+    restore_session.assert_called_once_with(session, {present}, set())
 
 
 def test_a_local_file_that_is_gone_is_forgotten_everywhere_at_start(
@@ -8197,7 +8197,7 @@ def test_a_local_file_that_is_gone_is_forgotten_everywhere_at_start(
     qtbot.addWidget(window)
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_session.assert_called_once_with(session, set())
+    restore_session.assert_called_once_with(session, set(), set())
     open_rehuco.assert_not_called()
     assert gone not in window._MainWindow__recent_files.paths  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert not window._MainWindow__rehuco_settings.newest_first()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -8228,364 +8228,113 @@ def test_only_the_storage_the_toggles_allow_is_restored(mocker: MockerFixture, q
     qtbot.addWidget(window)
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_session.assert_called_once_with(session, set())
+    restore_session.assert_called_once_with(session, set(), set())
 
 
-@mark.usefixtures("clock")
-def test_a_remote_document_is_not_restored_with_the_window_but_arrives_when_it_answers(
-    mocker: MockerFixture, qtbot: QtBot
+def test_a_remote_document_is_restored_with_the_window_and_held(
+    mocker: MockerFixture, qtbot: QtBot, caplog: LogCaptureFixture
 ) -> None:
-    """A document on a share is left to the scan, and restored the moment its server answers that it is there
-    (#464). The session's focused document takes the focus while the start is still settling.
+    """A document on a share gets its dock with the window, in its place, and is held unread until its server
+    answers; the log says how many came back and how many of them wait (#698).
 
     **Test steps:**
 
-    * seed one remote open document, focused, and mock ``DocumentsDock.restore_session`` and ``restore_late``
-    * construct ``MainWindow`` and verify nothing was restored with it, and the scan was started
-    * deliver the answer that it is there
-    * verify ``restore_late`` was given that path and its session entry, with the focus
+    * seed one remote open document, focused, and mock ``DocumentsDock.restore_session``
+    * construct ``MainWindow``
+    * verify the dock was asked to restore that path and to hold it, the scan was started, and the log says so
     """
+    caplog.set_level("INFO", logger="rehuco_agent.main_window")
     remote = Path("/remote-share/pack/info.rehu")
     seed_remembered(mocker, session_open=(remote,), focused=remote)
     scan_class = treat_as_remote(mocker, remote)
     restore_session = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    restore_late = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
 
     window = MainWindow()
     qtbot.addWidget(window)
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_session.assert_called_once_with(session, set())
-    restore_late.assert_not_called()
+    restore_session.assert_called_once_with(session, {remote}, {remote})
     scan_class.return_value.start.assert_called_once_with()
-
-    answer(window, remote, Presence.PRESENT)
-
-    restore_late.assert_called_once_with(remote, session.items[remote], session.docks_layout, focus=True, cover=True)
+    assert "Session: 1 documents restored, 1 of them waiting for their storage" in caplog.messages
 
 
-def test_a_late_document_does_not_take_the_focus_from_one_already_focused(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The user may be working in another document by the time a share answers (#464).
-
-    **Test steps:**
-
-    * seed one remote open document, focused, and report a document as already focused
-    * construct ``MainWindow`` and deliver the answer that the remote one is there
-    * verify ``restore_late`` was called without the focus
-    """
-    remote = Path("/remote-share/pack/info.rehu")
-    seed_remembered(mocker, session_open=(remote,), focused=remote)
-    treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.focused_document_path", return_value=Path("other.rehu"))
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.focus_is_as_restored", return_value=False)
-    restore_late = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-    answer(window, remote, Presence.PRESENT)
-
-    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_late.assert_called_once_with(remote, session.items[remote], session.docks_layout, focus=False, cover=False)
-
-
-def test_a_late_document_and_the_layout_are_logged(
-    mocker: MockerFixture, qtbot: QtBot, caplog: LogCaptureFixture
+@mark.parametrize("presence", [Presence.PRESENT, Presence.OFFLINE, Presence.GONE])
+def test_what_a_held_documents_storage_answers_reaches_the_documents_dock(
+    mocker: MockerFixture, qtbot: QtBot, presence: Presence
 ) -> None:
-    """What the start restored, what arrived late and whether the saved layout was applied are in the log, so a
-    session that came back in another order can be read off it (#698).
+    """Whatever the server of a held document says is handed to the dock, which lets the document be read or leaves
+    it locked (#698).
 
     **Test steps:**
 
-    * seed one remote open document, focused, and construct ``MainWindow``
-    * deliver the answer that it is there
-    * verify the log names the document counts at start, the arrival with the focus, and the layout applied
-    """
-    remote = Path("/remote-share/pack/info.rehu")
-    seed_remembered(mocker, session_open=(remote,), focused=remote)
-    treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
-
-    with caplog.at_level("INFO", logger="rehuco_agent.main_window"):
-        window = MainWindow()
-        qtbot.addWidget(window)
-        answer(window, remote, Presence.PRESENT)
-
-    assert "0 documents restored with the window, 1 waiting for their storage" in caplog.text
-    assert f"{remote} arrived late (takes the focus: True)" in caplog.text
-    assert "applying the saved layout" in caplog.text
-
-
-def test_the_settling_clock_starts_when_the_window_is_first_shown(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The answers about remote storage are delivered once the window runs, so the clock that bounds the late layout
-    starts there, not when the window is built (#698).
-
-    **Test steps:**
-
-    * construct ``MainWindow`` and verify the clock has not been started
-    * show it and verify it was
-    """
-    window_shown = mocker.patch("rehuco_agent.main_window.RememberedPaths.window_shown")
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-    window_shown.assert_not_called()
-    window.show()
-
-    window_shown.assert_called()
-
-
-def test_a_document_whose_server_never_answers_keeps_its_place_in_the_saved_layout(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """A run with the share off must not drop its document from the saved tab row: the next run, with the share
-    back, would tab it in at the end (#698).
-
-    **Test steps:**
-
-    * seed a remote open document that was saved between two local ones, and an area that now holds only the local ones
-    * deliver the answer that the remote one is offline and save the session
-    * verify the saved layout holds the remote document between them again, and the local row is as the area saved it
-    """
-    remote = Path("/remote-share/pack/info.rehu")
-    first, second = Path("first.rehu").resolve(), Path("second.rehu").resolve()
-    seed_remembered(mocker, session_open=(remote,))
-    treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-
-    def row(*paths: Path) -> dict[str, object]:
-        entries = [{"name": str(path), "closed": False} for path in paths]
-        return {"format": 1, "main": {"area": entries, "current": entries[0]["name"]}}
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    session.docks_layout = row(first, remote, second)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.save_state", return_value=row(first, second))
-    answer(window, remote, Presence.OFFLINE)
-
-    window._MainWindow__capture_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    names = [entry["name"] for entry in session.docks_layout["main"]["area"]]  # type: ignore[index]
-    assert names == [str(path) for path in (first, remote, second)]
-
-
-def test_a_late_document_reveals_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A session with only remote documents had nothing to reveal the Documents dock for at start, so the one that
-    arrives does it (#464, #268).
-
-    **Test steps:**
-
-    * seed one remote open document and spy on the reveal
-    * construct ``MainWindow`` and deliver the answer that it is there
-    * verify the reveal ran once more than at construction
+    * seed one remote open document, and mock ``DocumentsDock.restore_session`` and ``storage_answered``
+    * construct ``MainWindow`` and deliver the server's answer
+    * verify the dock was told that path and that answer
     """
     remote = Path("/remote-share/pack/info.rehu")
     seed_remembered(mocker, session_open=(remote,))
     treat_as_remote(mocker, remote)
     mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
-    reveal = mocker.patch.object(MainWindow, "_MainWindow__reveal_documents_dock")
+    storage_answered = mocker.patch("rehuco_agent.main_window.DocumentsDock.storage_answered")
 
     window = MainWindow()
     qtbot.addWidget(window)
-    at_start = reveal.call_count
-    answer(window, remote, Presence.PRESENT)
+    answer(window, remote, presence)
 
-    assert reveal.call_count == at_start + 1
+    storage_answered.assert_called_once_with(remote, presence)
 
 
-@mark.usefixtures("clock")
-def test_the_saved_layout_is_reapplied_once_the_late_documents_are_in(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """When every awaited remote document has answered and one arrived, the session's saved split layout is applied
-    to the documents area (#464).
+def test_a_held_document_reached_again_has_its_storage_asked_again(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The dock asking for a held document's storage is what has it asked again (#698).
 
     **Test steps:**
 
-    * seed one remote open document, and report no open document and no preview
-    * construct ``MainWindow`` and deliver the answer that it is there
-    * verify ``DocumentsDock.restore_state`` was given the session's saved layout
+    * mock ``RememberedPaths.ask_again`` and construct ``MainWindow``
+    * have the documents dock ask for a path's storage
+    * verify that path was asked about again
     """
     remote = Path("/remote-share/pack/info.rehu")
-    seed_remembered(mocker, session_open=(remote,))
-    treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
-    restore_state = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_state")
-    layout = {"format": 1, "main": {"area": [{"name": "late", "closed": False}]}}
+    ask_again = mocker.patch("rehuco_agent.main_window.RememberedPaths.ask_again")
 
     window = MainWindow()
     qtbot.addWidget(window)
-    window._MainWindow__session.docks_layout = layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_state.reset_mock()
-    answer(window, remote, Presence.PRESENT)
+    documents_dock_of(window).storage_asked.emit(remote)
 
-    restore_state.assert_called_once_with(layout, "")
+    ask_again.assert_called_once_with(remote)
 
 
-@mark.usefixtures("clock")
-def test_the_saved_layout_is_reapplied_around_a_document_the_user_opened(
+@mark.usefixtures("real_path_stat")
+def test_a_document_whose_server_never_answers_is_saved_open_and_in_its_place(
     mocker: MockerFixture, qtbot: QtBot, tmp_path: Path
 ) -> None:
-    """A document the user opened while the share was still answering does not stop the late restore, and stays
-    where it is: the saved layout does not name it (#464, #102).
-
-    The user's file does not exist, so it opens as the empty locked dock that stands in for an unreadable one --
-    a real document dock all the same, which is all the restore sees of one.
+    """A run with the share off loses nothing: its document has its dock, locked, between the others, and the session
+    saved at the end records it open and where it was (#698).
 
     **Test steps:**
 
-    * seed one remote open document, construct ``MainWindow``, and open another document
-    * give the session a saved layout that does not name it
-    * deliver the answer that the remote document is there
-    * verify the layout was applied, and the user's document is still open in the area it was in
+    * seed a session of a local file, a share's file and another local file, the share's saved between the two
+    * construct ``MainWindow``, deliver the answer that the share is offline, and save the session
+    * verify the share's document is locked and unread, is still open in the session, and the saved row names all
+      three in their order
     """
-    remote = Path("/remote-share/pack/info.rehu")
-    seed_remembered(mocker, session_open=(remote,))
+    first, second = write_record(tmp_path / "first.rehu"), write_record(tmp_path / "second.rehu")
+    remote = tmp_path / "remote.rehu"
+    seed_remembered(mocker, session_open=(first, remote, second), focused=first)
     treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
-    restore_state = mocker.spy(DocumentsDock, "restore_state")
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-    window.open_file(tmp_path / "opened-by-the-user.rehu")
-    documents = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    (opened,) = documents._DocumentsDock__document_docks  # pylint: disable=protected-access
-    area = opened.dockAreaWidget()
-    assert area is not None
-    late_layout = {"format": 1, "main": {"area": [{"name": "the-late-document", "closed": False}]}}
-    window._MainWindow__session.docks_layout = late_layout  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_state.reset_mock()
-    answer(window, remote, Presence.PRESENT)
-
-    assert restore_state.call_count == 1
-    assert restore_state.spy_return is True
-    assert opened.isClosed() is False
-    assert opened.dockAreaWidget() is area
-
-
-def test_the_saved_layout_is_not_reapplied_over_a_preview(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A preview shown while the share was still answering keeps the late documents where they landed: the restore
-    would move it out of the place the user is looking at (#464, #102).
-
-    **Test steps:**
-
-    * seed one remote open document, and report a preview as shown
-    * construct ``MainWindow`` and deliver the answer that the remote one is there
-    * verify ``restore_state`` was not called after construction
-    """
-    remote = Path("/remote-share/pack/info.rehu")
-    seed_remembered(mocker, session_open=(remote,))
-    treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
-    restore_state = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_state")
-    widget = mocker.MagicMock()
-    widget.model.path = Path("previewed-by-the-user.rehu")
-    widget.model.dirty = False  # a dirty one would pop the real save dialog when the window closes
-    widget.save_state.return_value = b""  # the close saves it into the session
-    widget.capture_maximized.return_value = None
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.preview_document_widget", return_value=widget)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.shows_a_new_preview", return_value=True)
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-    restore_state.reset_mock()
-    answer(window, remote, Presence.PRESENT)
-
-    restore_state.assert_not_called()
-
-
-def test_a_remote_document_that_is_gone_is_forgotten_when_its_server_says_so(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """A share that answers and does not hold the file makes it gone: out of the recents and the session (#464).
-
-    **Test steps:**
-
-    * seed one remote path into the recents and the session, and construct ``MainWindow``
-    * deliver the answer that it is gone
-    * verify it is in neither list and nothing was restored
-    """
-    remote = Path("/remote-share/pack/info.rehu")
-    seed_remembered(mocker, recents=(remote,), session_open=(remote,))
-    treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    restore_late = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-    answer(window, remote, Presence.GONE)
-
-    assert remote not in window._MainWindow__recent_files.paths  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert remote not in window._MainWindow__session.items  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_late.assert_not_called()
-
-
-def test_a_remote_document_whose_server_never_answers_stays_remembered_as_open(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """A document on a share that is off is not shown, and is not lost: the session still records it open, so it
-    returns with its server (#464).
-
-    **Test steps:**
-
-    * seed one remote open document, construct ``MainWindow`` and deliver the answer that it is offline
-    * save the session
-    * verify the entry is still there and still open
-    """
-    remote = Path("/remote-share/pack/info.rehu")
-    seed_remembered(mocker, session_open=(remote,))
-    treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    restore_late = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
 
     window = MainWindow()
     qtbot.addWidget(window)
     answer(window, remote, Presence.OFFLINE)
     window._MainWindow__capture_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    restore_late.assert_not_called()
+    documents = documents_dock_of(window)
+    held = next(widget for widget in documents.open_document_widgets() if widget.model.path == remote)
+    assert held.model.storage_wait is StorageWait.OFFLINE
+    assert held.model.pending
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert session.items[remote].open  # pylint: disable=no-member,useless-suppression  # a dataclass field
-
-
-@mark.parametrize("route", ["open_file", "open_folder", "open_archive", "show_in_preview"])
-def test_a_kept_open_document_the_user_opens_and_closes_stays_closed(
-    mocker: MockerFixture, qtbot: QtBot, route: str
-) -> None:
-    """A document the session was keeping open for a share that was off, then opened by hand by any route and
-    closed, is saved closed -- the user's close is not undone (#464).
-
-    **Test steps:**
-
-    * seed one remote open document, construct ``MainWindow`` and deliver the answer that it is offline
-    * open it through the route under test, with the dock's answer being a widget on that record
-    * save the session with no dock open
-    * verify the entry is saved closed
-    """
-    remote = Path("/remote-share/pack/info.rehu")
-    seed_remembered(mocker, session_open=(remote,))
-    treat_as_remote(mocker, remote)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
-    widget = mocker.MagicMock()
-    widget.model.path = remote
-    widget.model.document.load_failed = False
-    # a document whose file has been read: what the open judges is there
-    widget.model.when_read.side_effect = lambda callback: callback()
-    dock_verb = {"open_file": "open_document"}.get(route, route)
-    mocker.patch(f"rehuco_agent.main_window.DocumentsDock.{dock_verb}", return_value=widget)
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-    answer(window, remote, Presence.OFFLINE)
-    getattr(window, route)(remote)
-    window._MainWindow__capture_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert not session.items[remote].open  # pylint: disable=no-member,useless-suppression  # a dataclass field
+    names = [entry["name"] for entry in session.docks_layout["main"]["area"]]  # type: ignore[index]
+    assert names == [str(ResourceKey(path)) for path in (first, remote, second)]
 
 
 def test_a_rehuco_on_a_share_is_opened_when_its_server_answers(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -8819,30 +8568,6 @@ def test_recents_entries_on_a_share_that_has_not_answered_are_disabled(mocker: M
     assert enablement() == ([True, True], [True, True])
 
 
-class Clock:  # pylint: disable=too-few-public-methods
-    """A clock the test moves by hand, standing in for ``time.monotonic``."""
-
-    def __init__(self) -> None:
-        self.now = 1000.0
-
-    def __call__(self) -> float:
-        return self.now
-
-
-@fixture(name="clock")
-def fixture_clock(mocker: MockerFixture) -> Clock:
-    """Freeze the clock the start-up window is measured on, so a slow machine cannot end the settling window early.
-
-    Only the module's own reference to :mod:`time` is replaced, never ``time.monotonic`` itself: the rest of the
-    window and of Qt go on reading the real clock.
-
-    :returns: the clock; advance ``now`` to move time.
-    """
-    clock = Clock()
-    mocker.patch("rehuco_agent.remembered_paths.time", SimpleNamespace(monotonic=clock))
-    return clock
-
-
 def write_record(path: Path) -> Path:
     """Save a real, readable record.
 
@@ -8928,18 +8653,18 @@ def test_the_focus_survives_a_deleted_file_on_a_real_documents_dock(
 def test_the_focus_is_left_alone_when_the_next_open_document_is_on_a_share(
     mocker: MockerFixture, qtbot: QtBot, tmp_path: Path
 ) -> None:
-    """When the focused file is gone and the next one in the session is on a share that has not answered, the dock
-    does not focus it -- it is not there to focus (#464).
+    """When the focused file is gone and the next one in the session is on a share that has not answered, that one
+    is focused all the same: it has its dock, locked and unread, until its share answers (#464, #698).
 
     **Test steps:**
 
     * seed a session of a deleted file, a share's file and a local file, the deleted one focused
     * construct ``MainWindow``
-    * verify the session's focus moved to the share's file, that file has no dock, and the dock's current document
-      is the one QtAds added last, not one chosen for the session
+    * verify the session's focus moved to the share's file, which is the dock's current document, waiting for its
+      storage with nothing read of it
     """
     gone = tmp_path / "gone.rehu"
-    remote = Path("/remote-share/pack/info.rehu")
+    remote = tmp_path / "remote.rehu"
     there = write_record(tmp_path / "there.rehu")
     seed_remembered(mocker, session_open=(gone, remote, there), focused=gone)
     treat_as_remote(mocker, remote)
@@ -8949,9 +8674,12 @@ def test_the_focus_is_left_alone_when_the_next_open_document_is_on_a_share(
 
     documents = documents_dock_of(window)
     assert window._MainWindow__session.focused_path == remote  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert remote not in [widget.model.path for widget in documents.open_document_widgets()]
-    # the dock made nothing current on the session's behalf: what is current is QtAds' own choice, the last dock added
-    assert documents.focused_document_path() == there
+    assert documents.focused_document_path() == remote
+    focused = documents.focused_document_widget()
+    assert focused is not None
+    assert focused.model.storage_wait is StorageWait.ASKING
+    assert focused.model.pending
+    assert focused.model.reading is None
 
 
 @mark.usefixtures("real_path_stat")
@@ -9094,15 +8822,18 @@ def test_the_preview_is_saved_as_its_own_entry_and_out_of_the_items(mocker: Mock
     assert path not in session.items
 
 
-def test_a_preview_still_waiting_for_its_device_stays_in_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Like a document on a server that is off, a preview that never arrived is not forgotten by quitting.
+def test_a_preview_still_waiting_for_its_device_stays_in_the_session(
+    mocker: MockerFixture, qtbot: QtBot, tmp_path: Path
+) -> None:
+    """Like a document on a server that is off, a preview whose share never answered is not forgotten by quitting:
+    it has its dock, locked, and is saved from it (#698).
 
     **Test steps:**
 
     * seed a preview on a share that does not answer, and close the window
-    * verify the entry is still there
+    * verify the entry is still there, under its name, for that file
     """
-    remote = Path("/remote-share/pack/info.rehu")
+    remote = tmp_path / "remote.rehu"
     treat_as_remote(mocker, remote)
     preview = DocumentSessionSettings.Preview(remote, "Preview-1", DocumentSessionSettings.Item(open=True))
 
@@ -9119,7 +8850,9 @@ def test_a_preview_still_waiting_for_its_device_stays_in_the_session(mocker: Moc
 
     window.closeEvent(QCloseEvent())
 
-    assert window._MainWindow__session.preview == preview  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = window._MainWindow__session.preview  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert saved is not None
+    assert (saved.path, saved.name) == (remote, "Preview-1")
 
 
 def test_a_preview_the_reader_closed_is_not_brought_back(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -9173,31 +8906,3 @@ def test_the_maximized_outer_dock_comes_back(qtbot: QtBot) -> None:
 
 
 # endregion
-
-
-def test_a_preview_arriving_late_is_restored_late(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """**Test steps:**
-
-    * seed a preview on a share, construct ``MainWindow`` and deliver the answer that it is there
-    * verify it was handed on, free to cover what is on screen: the start is settling and no document was focused
-    """
-    remote = Path("/remote-share/pack/info.rehu")
-    treat_as_remote(mocker, remote)
-    preview = DocumentSessionSettings.Preview(remote, "Preview-1", DocumentSessionSettings.Item(open=True))
-
-    def load(self: DocumentSessionSettings) -> None:
-        """Answer with the preview.
-
-        :param self: the session.
-        """
-        self.preview = preview
-
-    mocker.patch.object(DocumentSessionSettings, "load", load)
-    restore = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late_preview")
-    window = MainWindow()
-    qtbot.addWidget(window)
-
-    answer(window, remote, Presence.PRESENT)
-
-    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore.assert_called_once_with(preview, session.docks_layout, cover=True)
