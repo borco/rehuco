@@ -17,7 +17,7 @@ from borco_pyside.qtads.qtads_layout import (
     splitter_panes,
 )
 from PySide6.QtCore import QRect
-from PySide6.QtWidgets import QLabel, QMainWindow, QSplitter, QToolBar, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QSplitter, QToolBar, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -777,6 +777,59 @@ def test_reading_a_splitters_panes_leaves_qt_made_objects_below_them_valid(windo
 
     assert panes_of_a_temporary_wrapper() == [False, True]
     assert shiboken6.isValid(action)
+
+
+# endregion
+
+
+# region tab order
+def tab_order(docks: dict[str, QtAds.CDockWidget]) -> str:
+    """The names of the docks in the area of ``docks["A"]``, in tab order.
+
+    :param docks: the manager's docks by name.
+    :returns: the names, one letter each.
+    """
+    return "".join(dock.objectName() for dock in placed_area(docks["A"]).dockWidgets())
+
+
+def drag_tab_onto(moved: QtAds.CDockWidget, target: QtAds.CDockWidget) -> None:
+    """End a tab drag with ``moved``'s tab over ``target``'s -- what the user's drop reports.
+
+    :param moved: the dock whose tab is dragged.
+    :param target: the dock whose tab it is dropped on.
+    """
+    tab = target.tabWidget()
+    moved.tabWidget().moved.emit(tab.mapToGlobal(tab.rect().center()))
+    QApplication.processEvents()
+
+
+def test_a_dragged_tab_order_is_what_is_saved_and_what_restores(window: QMainWindow, qtbot: QtBot) -> None:
+    """A one-row order the reader dragged into place is saved in tab order and rebuilt by a manager that built its
+    docks in another one (#698).
+
+    **Test steps:**
+
+    * build a row ``ABCD`` and drag ``A``'s tab onto ``D``'s, which gives ``BCDA``
+    * verify the saved area lists ``BCDA``
+    * restore that tree into a second manager whose row was built ``ABCD``
+    * verify its tab order is ``BCDA`` and the current tab is the saved one
+    """
+    manager, docks = make_manager(window, "ABCD")
+    qtbot.wait(10)
+    drag_tab_onto(docks["A"], docks["D"])
+    docks["C"].setAsCurrentTab()
+
+    saved = QtAdsLayout(manager).save()
+
+    assert [entry["name"] for entry in saved["main"]["area"]] == list("BCDA")
+    assert saved["main"]["current"] == "C"
+    other_window = QMainWindow()
+    other_window.resize(800, 600)
+    other_manager, other_docks = make_manager(other_window, "ABCD")
+    assert QtAdsLayout(other_manager).restore(saved, place_unnamed=ignore)
+    assert tab_order(other_docks) == "BCDA"
+    assert placed_area(other_docks["A"]).currentDockWidget() is other_docks["C"]
+    other_window.deleteLater()
 
 
 # endregion

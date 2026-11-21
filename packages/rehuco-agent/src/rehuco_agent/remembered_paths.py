@@ -1,25 +1,25 @@
-"""What the last run remembered, minus what is gone -- and the remote parts that arrive after the window is up (#464).
+"""What the last run remembered, minus what is gone -- and what the remote parts turn out to be once the window is up
+(#464).
 
 ``MainWindow`` loads three lists of paths: the ``File`` menu's recents, the root catalogs' (recents and the one to
 reopen), and the documents the session left open. This object judges every one of them
 (:class:`~rehuco_agent.startup_presence.StartupPresence`) and keeps the three lists honest:
 
 - **A file that is gone is forgotten from all of them**, at once for a fixed local drive and as soon as the scan hears
-  for a share or a removable drive. "Gone" always means the device answered and does not hold the file.
-- **A file whose device does not answer is kept, and not shown**: its recents entry stays but is disabled
-  (:meth:`unavailable`), a session document is not opened and is **still remembered as open**
-  (:attr:`still_open`) so it returns with its device, and a root catalog is not opened and stays the one to reopen.
-- **A remote document or catalog that is there arrives late**, through :attr:`document_arrived` and
-  :attr:`rehuco_arrived`, the moment its device answers -- the start never waits for it. The documents' saved
-  split layout is re-applied once the last of them is in (:attr:`layout_due`), but only while the start is still
-  settling (:data:`SETTLING_SECONDS`): after that the user may have rearranged things, and a layout restored over
-  their work would be worse than documents that tab in where they land.
+  for a share or a removable drive. "Gone" always means the device answered and does not hold the file. A session
+  document restored before its device answered has its dock closed then (:attr:`storage_answered`).
+- **A file whose device does not answer is kept**: its recents entry stays but is disabled (:meth:`unavailable`), and
+  a root catalog is not opened and stays the one to reopen.
+- **A session document on a device that has to be asked is restored with the window all the same** (#698), in its
+  place, locked and unread (:meth:`documents_to_restore`); what its device says, at start or when it is asked again
+  (:meth:`ask_again`), goes out through :attr:`storage_answered`. The start never waits for it.
+- **A remote catalog that is there arrives late**, through :attr:`rehuco_arrived`, the moment its device answers.
 
 Holds no thread and no Qt job of its own: the asking is :class:`~rehuco_agent.startup_presence.StartupPresence`'s, and
 why that runs on daemon threads is documented once, with the measurements, in :mod:`borco_core.path_presence`.
 """
 
-import time
+import logging
 from pathlib import Path
 from typing import Final
 
@@ -32,13 +32,10 @@ from .settings.rehuco_settings import RehucoSettings
 from .settings.session_restore_settings import SessionRestoreSettings
 from .startup_presence import StartupPresence
 
-SETTLING_SECONDS: Final = 5.0
-"""How long after the start a late arrival may still take the session's focus and its saved layout. A scan answers a
-live share in tens of milliseconds, so anything slower than this is a device the user has long since stopped
-waiting for, and has probably started working past."""
+LOG: Final = logging.getLogger(__name__)
 
 
-class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
+class RememberedPaths(QObject):
     """Judges the remembered paths and keeps the three lists in line with the verdicts.
 
     :param recent_files: the ``File`` menu's recents.
@@ -47,19 +44,12 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
     :param parent: optional Qt parent.
     """
 
-    document_arrived: Signal = Signal(object, object, bool)
-    """``(path, session item, take_focus)``: a remote document that was open last session is there; restore it.
-    ``take_focus`` is whether it was the focused one and the start is still settling."""
+    storage_answered: Signal = Signal(object, object)
+    """``(path, presence)``: the device of a session document restored before it answered has said whether the file
+    is there, is gone, or has not answered (#698)."""
 
     rehuco_arrived: Signal = Signal(object)
     """The remote ``.rehuco`` to reopen is there; open it, unless the user has opened another meanwhile."""
-
-    preview_arrived: Signal = Signal(object)
-    """The last session's preview is there, with its entry: restore it as a document that arrived late is."""
-
-    layout_due: Signal = Signal()
-    """Every remote document that was awaited has answered and at least one arrived: re-apply the documents' saved
-    layout, once."""
 
     def __init__(
         self,
@@ -70,13 +60,15 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
     ) -> None:
         super().__init__(parent)
         self.__recent_files: Final = recent_files
+        """The ``File`` menu's recents, kept in line with the verdicts."""
         self.__rehuco: Final = rehuco
+        """The root catalogs' recents and the one to reopen."""
         self.__session: Final = session
-        self.__kept_open: Final[set[Path]] = set()
-        self.__awaiting: Final[set[Path]] = set()
+        """The documents the last session left open, and the layout they were left in."""
+        self.__held: Final[set[Path]] = set()
+        """The session documents restored before their device answered, whose answers go out."""
         self.__deferred_rehuco: Path | None = None
-        self.__late_added = False
-        self.__born: Final = time.monotonic()
+        """The ``.rehuco`` to open once its device answers, if it is on one that must be asked."""
         remembered = [
             *recent_files.paths,
             *rehuco.recent.paths,
@@ -85,84 +77,45 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
             *([session.preview.path] if session.preview is not None else []),
         ]
         self.__presence: Final = StartupPresence(remembered, self)
+        """Asks about every remote remembered path, and judges the fixed local ones at once."""
         self.__presence.answered.connect(self.__on_answered)
         for path, presence in self.__presence.local_paths.items():
             if presence is Presence.GONE:
                 self.forget(path)
 
-    def documents_to_restore_now(self, restore: SessionRestoreSettings) -> set[Path]:
-        """The session's open documents on fixed local drives that are there and are to be restored with the window.
+    def documents_to_restore(self, restore: SessionRestoreSettings) -> tuple[set[Path], set[Path]]:
+        """The session's open documents to restore with the window, and which of them are to be held unread.
 
-        As a side effect, notes which other open documents are to come back later or stay remembered: a remote one
-        when the remote toggle is on is awaited; so is a local one that could not be judged (a permission error), which
-        is kept open for the next run rather than lost.
+        A document on a fixed local drive is restored when the local toggle is on: one that is there, and one the
+        operating system gave no verdict on (a permission error), whose dock then says what its read ran into. A gone
+        one was forgotten at construction. A document on a device that has to be asked is restored when the remote
+        toggle is on, and **held**: its dock is made in its place and not read until the device has answered
+        (:attr:`storage_answered`).
 
         :param restore: the Session page's choices.
-        :returns: the paths to hand to :meth:`DocumentsDock.restore_session`, the preview's among them when it is one.
+        :returns: the paths to hand to :meth:`DocumentsDock.restore_session`, the preview's among them when it is one,
+            and those of them to hold.
         """
+        paths = [path for path, item in self.__session.items.items() if item.open]
+        if self.__session.preview is not None:
+            paths.append(self.__session.preview.path)
         now: set[Path] = set()
-        for path, item in self.__session.items.items():
-            if not item.open:
-                continue
+        for path in paths:
             if self.__presence.is_remote(path):
                 if restore.restore_remote_documents:
-                    self.__kept_open.add(path)
-                    self.__awaiting.add(path)
-            elif restore.restore_local_documents:
-                if self.__presence.local_presence(path) is Presence.PRESENT:
                     now.add(path)
-                else:
-                    # a gone one was forgotten at construction, so what is left is one the operating system gave no
-                    # verdict on (a permission error): not restored, not lost
-                    self.__kept_open.add(path)
-        preview = self.__session.preview
-        if preview is not None and self.__note_preview(preview.path, restore):
-            now.add(preview.path)
-        return now
+                    self.__held.add(path)
+            elif restore.restore_local_documents:
+                now.add(path)
+        return now, set(self.__held)
 
-    def __note_preview(self, path: Path, restore: SessionRestoreSettings) -> bool:
-        """Say whether the session's preview is restored with the window, and note it as awaited or kept otherwise, as
-        :meth:`documents_to_restore_now` does a document.
+    def ask_again(self, path: Path) -> bool:
+        """Ask the device of a held session document once more (:meth:`StartupPresence.ask_again`).
 
-        :param path: the document the preview showed.
-        :param restore: the Session page's choices.
-        :returns: whether it is to be restored now.
+        :param path: the document's path.
+        :returns: whether it is being asked.
         """
-        if self.__presence.is_remote(path):
-            if restore.restore_remote_documents:
-                self.__kept_open.add(path)
-                self.__awaiting.add(path)
-            return False
-        if not restore.restore_local_documents:
-            return False
-        if self.__presence.local_presence(path) is Presence.PRESENT:
-            return True
-        self.__kept_open.add(path)
-        return False
-
-    @property
-    def settling(self) -> bool:
-        """Whether the start is recent enough for a late arrival to take focus and layout."""
-        return self.__settling()
-
-    @property
-    def still_open(self) -> frozenset[Path]:
-        """The documents that were open and are not now -- their device has not answered, or has not yet -- which
-        the session must go on recording as open so they come back."""
-        return frozenset(self.__kept_open)
-
-    def reached(self, path: Path | None) -> None:
-        """The user opened ``path`` themselves, so from now on its dock -- open or closed -- is what the session
-        records, not :attr:`still_open`.
-
-        Without this, a document whose share was off at start, came back, and was then opened and **closed** by
-        hand would be re-marked open at the next save and come back against the user's choice.
-
-        :param path: the record just shown in a dock (``widget.model.path``, never the folder or archive opened);
-            ``None`` -- a document with no file yet -- reaches nothing the session could hold.
-        """
-        if path is not None:
-            self.__kept_open.discard(path)
+        return self.__presence.ask_again(path)
 
     def defer_rehuco(self, path: Path) -> bool:
         """Leave the ``.rehuco`` at ``path`` to be opened when its device answers, if it is on one that must be asked.
@@ -197,8 +150,7 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
         self.__rehuco.forget(path)
         self.__session.forget(path)
         self.__session.forget_preview(path)
-        self.__kept_open.discard(path)
-        self.__awaiting.discard(path)
+        self.__held.discard(path)
         if self.__deferred_rehuco == path:
             self.__deferred_rehuco = None
         self.__presence.forget(path)
@@ -211,29 +163,17 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
         """Deliver no more answers. See :meth:`StartupPresence.stop`."""
         self.__presence.stop()
 
-    def __settling(self) -> bool:
-        """Whether the start is recent enough for a late arrival to take focus and layout."""
-        return time.monotonic() - self.__born < SETTLING_SECONDS
-
     def __on_answered(self, path: Path, presence: Presence) -> None:
         """A remote path was judged, on the GUI thread."""
-        if presence is Presence.GONE:
+        if path in self.__held:
+            LOG.info("Session: the storage of %s answered: %s", path, presence.value)
+            if presence is Presence.GONE:
+                self.forget(path)
+            elif presence is Presence.PRESENT:
+                self.__held.discard(path)
+            self.storage_answered.emit(path, presence)
+        elif presence is Presence.GONE:
             self.forget(path)
-        elif presence is Presence.PRESENT:
-            if path == self.__deferred_rehuco:
-                self.__deferred_rehuco = None
-                self.rehuco_arrived.emit(path)
-            if path in self.__awaiting and path in self.__kept_open:
-                self.__kept_open.discard(path)
-                self.__late_added = True
-                preview = self.__session.preview
-                if preview is not None and preview.path == path:
-                    self.preview_arrived.emit(preview)
-                item = self.__session.items.get(path)
-                if item is not None and item.open:
-                    self.document_arrived.emit(path, item, path == self.__session.focused_path and self.__settling())
-        self.__awaiting.discard(path)
-        if not self.__awaiting and self.__late_added:
-            self.__late_added = False
-            if self.__settling():
-                self.layout_due.emit()
+        if presence is Presence.PRESENT and path == self.__deferred_rehuco:
+            self.__deferred_rehuco = None
+            self.rehuco_arrived.emit(path)

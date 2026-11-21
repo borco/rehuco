@@ -69,6 +69,11 @@ class StubSubDocks(QObject):
     def capture_maximized(self) -> None:
         """Nothing is maximized."""
 
+    @property
+    def holds_wide_view(self) -> bool:
+        """No view is held."""
+        return False
+
     def restore_maximized(self, _view: object) -> None:
         """Nothing can be maximized.
 

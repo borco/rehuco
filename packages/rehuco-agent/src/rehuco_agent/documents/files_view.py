@@ -242,6 +242,7 @@ class FilesView(QWidget):
         # whether the videos carry their keys is decided by the record's type: an open lists the folder before its
         # placeholder is read, and a type switch changes it, so the listing is read again then (#316)
         self.__model_connections.connect(model.active_block_changed, self.refresh)
+        self.__model_connections.connect(model.storage_wait_changed, self.refresh)  # type: ignore[attr-defined]
         self.__events.moved.connect(self.__on_moved)
         self.__events.changed.connect(self.__on_files_changed)
         self.__events.folder_changed.connect(self.__on_folder_changed)
@@ -270,12 +271,14 @@ class FilesView(QWidget):
         """Read the browsed folder again, off the GUI thread.
 
         **A hidden dock reads nothing**, the discipline every other inspection surface keeps (#111): a
-        refresh asked for while hidden only flags the table stale, and :meth:`showEvent` catches it up.
+        refresh asked for while hidden only flags the table stale, and :meth:`showEvent` catches it up. **Nor does
+        one whose document waits for its storage** (:attr:`~RehuDocumentModel.storage_wait`, #698): a read of a
+        switched-off share would hold a thread until it times out. The wait ending refreshes it.
 
         :param _args: whatever value the triggering signal carried; unused -- the folder and the
             document's path are always re-read from here.
         """
-        if not self.isVisible():
+        if not self.isVisible() or self.__model.storage_wait is not None:
             self.__stale = True
             return
         self.__stale = False

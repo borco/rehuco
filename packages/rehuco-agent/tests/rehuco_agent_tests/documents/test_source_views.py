@@ -22,6 +22,7 @@ from rehuco_agent.documents.source_views import (
     OnDiskView,
     SavePreviewView,
 )
+from rehuco_agent.documents.storage_wait import StorageWait
 from rehuco_core import CURRENT_FORMAT_VERSION, RecordVersion, RehuDocument, SaveOutcome, user_sidecar_path
 
 REHU_PATH: Final = Path.cwd() / "fake" / "info.rehu"
@@ -451,6 +452,38 @@ def test_on_disk_reads_nothing_while_hidden(qtbot: QtBot, mocker: MockerFixture)
 
     view.show()
     qtbot.waitExposed(view)
+
+    assert read.call_count == 1
+    assert label(view, REHU_PATH.name).text() == "on disk\n"
+
+
+def test_on_disk_reads_nothing_while_its_document_waits_for_its_storage(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A document restored before its share answered is on screen unread, and this view reads on the GUI thread:
+    shown, it reads nothing until the wait is over, and then catches up (#698).
+
+    **Test steps:**
+
+    * build an On Disk view over a model that waits for its storage, and show it
+    * verify ``read_text`` was never called
+    * say the storage did not answer, and verify it still was not
+    * say the wait is over, and verify the one deferred read happened and rendered
+    """
+    read = mocker.patch.object(Path, "read_text", return_value="on disk\n")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo"}]}, REHU_PATH))
+    model.storage_wait = StorageWait.ASKING
+    view = OnDiskView(model)
+    qtbot.addWidget(view)
+
+    view.show()
+    qtbot.waitExposed(view)
+
+    assert read.call_count == 0
+
+    model.storage_wait = StorageWait.OFFLINE
+
+    assert read.call_count == 0
+
+    model.storage_wait = None
 
     assert read.call_count == 1
     assert label(view, REHU_PATH.name).text() == "on disk\n"

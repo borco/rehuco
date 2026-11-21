@@ -3470,136 +3470,16 @@ def test_restore_session_with_an_empty_allowance_restores_nothing(mocker: Mocker
     assert not dock.open_document_widgets()
 
 
-def test_restore_late_adds_an_unread_dock_without_taking_the_focus(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A document whose share answered after the window was up is restored like the others -- a pending placeholder
-    -- and does not take the focus from what the user is doing (#464).
-
-    **Test steps:**
-
-    * open one document, and restore a second one late
-    * verify both have docks, the late one is still unread, and the first is still the focused one
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    first = dock.open_document(FAKE_KEY)
-
-    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
-
-    late = next(widget for widget in dock.open_document_widgets() if widget.model.path == OTHER_PATH)
-    assert late.model.pending is True
-    assert dock.focused_document_widget() is first
-
-
-def test_restore_late_into_a_shown_window_leaves_a_background_tab_unread(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Regression: QtAds shows each tab it adds, and with the window already up the shown tab counted as reaching the
-    screen -- a document on a share was read, and its player played, from behind the one in front (owner, #574).
-
-    **Test steps:**
-
-    * show the area, open one document, and restore a second one late into the same area
-    * verify the late one is still unread and the first is still the focused one
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    dock.show()
-    qtbot.waitExposed(dock)
-    first = dock.open_document(FAKE_KEY)
-
-    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
-
-    late = next(widget for widget in dock.open_document_widgets() if widget.model.path == OTHER_PATH)
-    assert late.model.pending is True
-    assert dock.focused_document_widget() is first
-
-
-def test_restore_late_into_a_shown_empty_area_reads_the_tab_it_shows(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """**Test steps:**
-
-    * show the area with nothing open, and restore one document late, without asking for the focus
-    * verify it was read: it is the tab on screen
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    dock.show()
-    qtbot.waitExposed(dock)
-
-    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True))
-
-    widgets = dock.open_document_widgets()
-    assert widgets[0].model.pending is False
-    assert widgets[0].model.title == "Foo"
-
-
-def test_restore_late_can_focus_the_document_and_reads_it(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The session's focused document arriving before the user chose another is focused, and read (#464).
-
-    **Test steps:**
-
-    * restore one document late, asking for the focus
-    * verify it is the focused one and its fields came from the file
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-
-    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True), focus=True)
-
-    focused = dock.focused_document_widget()
-    assert focused is not None
-    assert focused.model.path == FAKE_PATH
-    assert focused.model.title == "Foo"
-
-
-def test_restore_late_reuses_a_dock_the_user_already_opened(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A document the user opened by hand before its share answered is not opened a second time (#464).
-
-    **Test steps:**
-
-    * open a document, then restore the same path late
-    * verify there is still exactly one dock for it
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    dock.open_document(FAKE_KEY)
-
-    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True))
-
-    assert len(dock.open_document_widgets()) == 1
-
-
-def test_restore_late_into_an_empty_area_just_adds_the_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """With nothing open there is no focus to give back (#464).
-
-    **Test steps:**
-
-    * restore one document late into an empty area, without asking for the focus
-    * verify it has a dock and is still unread
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-
-    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True))
-
-    widgets = dock.open_document_widgets()
-    assert [widget.model.path for widget in widgets] == [FAKE_PATH]
-    assert widgets[0].model.pending is True
-
-
 # region records named by key (#414)
 
 
 def test_a_restored_sessions_paths_become_keys(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A remembered session names its documents by path; the area turns each into a key, for a session restored at
-    start-up and one restored late alike.
+    """A remembered session names its documents by path; the area turns each into a key, for a document restored
+    to be read and one held for its storage alike.
 
     **Test steps:**
 
-    * restore a session holding one path, then restore another path late
+    * restore a session holding two paths, one of them held
     * verify both documents have docks, keyed by their paths
     """
     mocker.patch.object(Path, "read_text", return_value="")
@@ -3607,9 +3487,9 @@ def test_a_restored_sessions_paths_become_keys(mocker: MockerFixture, qtbot: QtB
     qtbot.addWidget(dock)
     session = DocumentSessionSettings()
     session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[OTHER_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
 
-    dock.restore_session(session)
-    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
+    dock.restore_session(session, held={OTHER_PATH})
 
     assert {widget.model.key for widget in dock.open_document_widgets()} == {FAKE_KEY, OTHER_KEY}
 

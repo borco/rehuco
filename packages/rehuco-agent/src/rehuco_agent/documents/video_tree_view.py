@@ -122,6 +122,7 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__follow_tree()
         model.path_changed.connect(self.refresh)  # type: ignore[attr-defined]
         model.active_block_changed.connect(self.refresh)
+        model.storage_wait_changed.connect(self.refresh)  # type: ignore[attr-defined]
         self.__events.moved.connect(self.__on_moved)
         self.__events.changed.connect(self.__on_files_changed)
         self.__events.folder_changed.connect(self.__on_folder_changed)
@@ -147,6 +148,7 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__tree.detach()
         self.__document.path_changed.disconnect(self.refresh)  # type: ignore[attr-defined]
         self.__document.active_block_changed.disconnect(self.refresh)
+        self.__document.storage_wait_changed.disconnect(self.refresh)  # type: ignore[attr-defined]
         self.__events.moved.disconnect(self.__on_moved)
         self.__events.changed.disconnect(self.__on_files_changed)
         self.__events.folder_changed.disconnect(self.__on_folder_changed)
@@ -170,11 +172,12 @@ class VideoTreeView(QWidget):  # pylint: disable=too-many-instance-attributes
     # region Reading
 
     def refresh(self, *_args: object) -> None:
-        """List the tutorial's videos again, off the GUI thread; nothing while hidden.
+        """List the tutorial's videos again, off the GUI thread; nothing while hidden, or while the document waits
+        for its storage (:attr:`~RehuDocumentModel.storage_wait`, #698), whose end lists them.
 
         :param _args: whatever value the triggering signal carried; unused.
         """
-        if not self.isVisible():
+        if not self.isVisible() or self.__document.storage_wait is not None:
             self.__stale = True
             return
         self.__stale = False

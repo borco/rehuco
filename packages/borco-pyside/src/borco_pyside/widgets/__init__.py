@@ -2,6 +2,7 @@
 
 from .action_button_column import ActionButtonColumn
 from .band_tree_view import BandTreeView
+from .busy_spinner import BusySpinner
 from .card_list import (
     CARD_LIST_COMMANDS,
     BuddyButtonStrip,
@@ -64,6 +65,7 @@ __all__ = [
     "ActionButtonColumn",
     "BandTreeView",
     "BuddyButtonStrip",
+    "BusySpinner",
     "Card",
     "CardContent",
     "CardGhost",

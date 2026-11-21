@@ -11,7 +11,8 @@ opens nothing), and the application cannot yet show it from a retained copy (Rel
 - Every other path -- a share, a removable drive, a disc -- is handed to a :class:`borco_core.PresenceScan` on daemon
   threads and answered later, one signal per path. Until it is, :meth:`StartupPresence.unavailable` says so and the
   menus show the entry disabled. A server that does not answer is **offline**: the entry stays disabled, remembered,
-  and is asked again next run; only a device that answered and does not hold the file makes it *gone*.
+  and is asked again next run -- or sooner, when someone asks for it (:meth:`StartupPresence.ask_again`, #698); only a
+  device that answered and does not hold the file makes it *gone*.
 
 **Why the scan is not a Qt job** is the module docstring of :mod:`borco_core.path_presence`, with the measurements:
 a ``QThreadPool`` worker stuck in a call to a switched-off server keeps the process alive for the 21 s the call takes,
@@ -22,6 +23,7 @@ when the window closes, so an answer racing the teardown is dropped.
 
 import sys
 from collections.abc import Iterable
+from functools import partial
 from pathlib import Path
 from typing import Final
 
@@ -58,10 +60,17 @@ class StartupPresence(QObject):
                 self.__local[path] = presence_of(path, mounts, device=device)  # pylint: disable=unsupported-assignment-operation
             else:
                 self.__remote[path] = None  # pylint: disable=unsupported-assignment-operation
+        self.__asking: Final[set[Path]] = set(self.__remote)
+        """The remote paths whose answer is out, or will be once :meth:`start` asks: none of them is asked twice at
+        once."""
         self.__scan: Final = PresenceScan(self.__remote, self.__relay)
+        scans: dict[Path | None, PresenceScan] = {None: self.__scan}
+        self.__scans: Final = scans
+        """Every scan that may still answer: the start's under ``None``, and the latest :meth:`ask_again` of each
+        path under it."""
         # a window torn down without a close (a test, a crash path) must not be emitted into from a scan thread
-        # after its C++ object is gone: ``stop`` is a plain Python bound method, so it is safe to run from here
-        self.destroyed.connect(self.__scan.stop)
+        # after its C++ object is gone: this stops plain Python objects, so it is safe to run from here
+        self.destroyed.connect(partial(stop_scans, scans))
 
     @property
     def local_paths(self) -> dict[Path, Presence]:
@@ -90,12 +99,30 @@ class StartupPresence(QObject):
     def stop(self) -> None:
         """Deliver no more answers. Does not wait for a call still blocked on a switched-off server: it is on a daemon
         thread, and the process leaves without it."""
-        self.__scan.stop()
+        stop_scans(self.__scans)
+
+    def ask_again(self, path: Path) -> bool:
+        """Ask about one remote path once more: its device did not answer, and someone wants it now (#698).
+
+        The answer comes through :attr:`answered`, as the first did.
+
+        :param path: a remembered path.
+        :returns: whether it is being asked: ``False`` for a path that is not a remote one this tracks, one whose
+            answer is still out, and after :meth:`stop`.
+        """
+        if path not in self.__remote or path in self.__asking or self.__scan.stopped:
+            return False
+        self.__asking.add(path)
+        scan = PresenceScan([path], self.__relay)
+        self.__scans[path] = scan  # pylint: disable=unsupported-assignment-operation
+        scan.start()
+        return True
 
     def forget(self, path: Path) -> None:
         """Stop tracking ``path`` -- it was forgotten, so a later answer about it is moot."""
         self.__local.pop(path, None)
         self.__remote.pop(path, None)
+        self.__asking.discard(path)
 
     def __relay(self, path: Path, presence: Presence) -> None:
         """The scan's callback, on a scan thread: hand the answer to the GUI thread and nothing else."""
@@ -107,5 +134,16 @@ class StartupPresence(QObject):
         its slot already hears the new answer. An answer about a path forgotten meanwhile is dropped."""
         if path not in self.__remote:
             return
+        self.__asking.discard(path)
         self.__remote[path] = presence  # pylint: disable=unsupported-assignment-operation
         self.answered.emit(path, presence)
+
+
+def stop_scans(scans: dict[Path | None, PresenceScan]) -> None:
+    """Stop every scan, so none answers again. A plain function over plain objects: it also runs as its owner is
+    destroyed, when no method of the owner may.
+
+    :param scans: the scans.
+    """
+    for scan in scans.values():
+        scan.stop()

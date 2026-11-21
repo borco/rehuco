@@ -320,7 +320,10 @@ class OnDiskView(SourceFilesView):
     catches it up. This dock starts closed, so no file is read merely because a document was opened --
     which is also what keeps a session-restored placeholder's file untouched until its tab is actually
     viewed (#66); no :attr:`~RehuDocumentModel.pending` check is needed here, because *visible* is
-    exactly the condition that makes the read legitimate.
+    exactly the condition that makes the read legitimate. **Nor does one whose document waits for its storage**
+    (:attr:`~RehuDocumentModel.storage_wait`, #698): that document is on screen unread, and this read is made on the
+    GUI thread, where a switched-off share would hold the window for as long as it takes to time out. The wait ending
+    is one more seam.
 
     :param model: the reactive view-model whose file is shown.
     :param parent: optional Qt parent.
@@ -334,6 +337,7 @@ class OnDiskView(SourceFilesView):
         for name in ON_DISK_REFRESH_FIELDS:
             getattr(model, SimpleProperty.notify_signal_name(model_type, name)).connect(self.__on_file_seam)
         model.reloaded.connect(self.__on_file_seam)
+        model.storage_wait_changed.connect(self.__on_file_seam)  # type: ignore[attr-defined]
 
     def __on_file_seam(self, *_args: object) -> None:
         """Re-read if currently visible, else defer the read to the next :meth:`showEvent`.
@@ -357,7 +361,10 @@ class OnDiskView(SourceFilesView):
             self.__render()
 
     def __render(self) -> None:
-        """Re-read the files from disk (or fall back to the placeholder) and show them."""
+        """Re-read the files from disk (or fall back to the placeholder) and show them; nothing, the text left
+        stale, while the document waits for its storage."""
+        if self.__model.storage_wait is not None:
+            return
         self.set_files(self.__read_on_disk())
         self.__stale = False
 

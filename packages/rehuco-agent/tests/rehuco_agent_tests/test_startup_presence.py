@@ -260,3 +260,91 @@ def test_off_windows_the_mount_table_is_read_once_for_the_whole_batch(
     StartupPresence([REMOTE, OTHER_REMOTE])
 
     read.assert_called_once_with()
+
+
+# region Asking again (#698)
+
+
+def test_a_path_whose_device_did_not_answer_can_be_asked_again(qtbot: QtBot, scan_class: Any) -> None:
+    """A path heard about is asked once more through a scan of its own, and its new answer is told as the first was
+    (#698).
+
+    **Test steps:**
+
+    * construct over one remote path and deliver *offline*
+    * ask again, and verify a scan over that path alone was built and started
+    * deliver *present* through it, and verify it was announced and the path is available
+    """
+    scan_class.return_value.stopped = False
+    presence = StartupPresence([REMOTE])
+    heard: list[tuple[Path, Presence]] = []
+    presence.answered.connect(lambda path, verdict: heard.append((path, verdict)))
+    deliver(scan_class, REMOTE, Presence.OFFLINE)
+    qtbot.waitUntil(lambda: len(heard) == 1)
+
+    assert presence.ask_again(REMOTE)
+
+    assert scan_class.call_args.args[0] == [REMOTE]
+    scan_class.return_value.start.assert_called_once_with()
+    deliver(scan_class, REMOTE, Presence.PRESENT)
+    qtbot.waitUntil(lambda: len(heard) == 2)
+    assert heard == [(REMOTE, Presence.OFFLINE), (REMOTE, Presence.PRESENT)]
+    assert not presence.unavailable(REMOTE)
+
+
+def test_a_path_is_not_asked_again_while_it_cannot_or_need_not_be(
+    qtbot: QtBot, tmp_path: Path, scan_class: Any
+) -> None:
+    """Nothing is asked twice at once, about a path this does not ask about, or after the stop (#698).
+
+    **Test steps:**
+
+    * construct over one remote and one local path
+    * verify asking again is refused for the remote one, whose first answer is still out, and for the local one
+    * deliver the remote one's answer and stop
+    * verify asking again is refused, and no second scan was ever built
+    """
+    scan_class.return_value.stopped = False
+    local = tmp_path / "there.rehu"
+    local.touch()
+    presence = StartupPresence([REMOTE, local])
+    heard: list[Path] = []
+    presence.answered.connect(lambda path, _verdict: heard.append(path))
+
+    assert not presence.ask_again(REMOTE)
+    assert not presence.ask_again(local)
+
+    deliver(scan_class, REMOTE, Presence.OFFLINE)
+    qtbot.waitUntil(lambda: bool(heard))
+    presence.stop()
+    scan_class.return_value.stopped = True
+
+    assert not presence.ask_again(REMOTE)
+    scan_class.assert_called_once()
+
+
+def test_stopping_stops_a_scan_that_asks_again_too(qtbot: QtBot, mocker: MockerFixture, scan_class: Any) -> None:
+    """A stop reaches the start's scan and the one asking again, so neither answers afterward (#698).
+
+    **Test steps:**
+
+    * make each scan built a recorder of its own, construct over one remote path and deliver *offline*
+    * ask again, then stop
+    * verify both scans were stopped
+    """
+    first, again = mocker.Mock(stopped=False), mocker.Mock(stopped=False)
+    scan_class.side_effect = [first, again]
+    presence = StartupPresence([REMOTE])
+    heard: list[Path] = []
+    presence.answered.connect(lambda path, _verdict: heard.append(path))
+    deliver(scan_class, REMOTE, Presence.OFFLINE)
+    qtbot.waitUntil(lambda: bool(heard))
+    presence.ask_again(REMOTE)
+
+    presence.stop()
+
+    first.stop.assert_called_once_with()
+    again.stop.assert_called_once_with()
+
+
+# endregion

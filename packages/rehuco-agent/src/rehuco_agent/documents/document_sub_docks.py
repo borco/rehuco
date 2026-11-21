@@ -87,7 +87,7 @@ from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPT
 from .files_view import FilesView
 from .image_downloads import ImageDownloads
 from .latest_runner import LatestRunner
-from .maximized_restore import folder_images, relative_key, resolve_key
+from .maximized_restore import folder_images, is_wide, relative_key, resolve_key
 from .name_suggestion_model import NameSuggestionModel
 from .notes_panel import NotesPanel
 from .pending_saves import PendingSaves
@@ -98,7 +98,9 @@ from .rehu_document_model import USER_STATE_FIELD_NAMES, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .scrape_actions import ScrapeActions
 from .source_views import OnDiskView, SavePreviewView
+from .storage_wait import StorageWait
 from .video_tree_view import VideoTreeView
+from .waiting_overlay import WaitingOverlay
 from .watch_progress_recorder import WatchProgressRecorder
 from .web_search_action import WebSearchAction
 
@@ -207,6 +209,30 @@ SAVING_MESSAGE: Final = "Saving…"
 READING_MESSAGE: Final = "Reading {path}…"
 """The notice for a document waiting for its file to be read, its editors locked until it arrives (#564)."""
 
+WAITING_STORAGE_MESSAGE: Final = "Waiting for the storage of {path} to answer…"
+"""The notice for a document a session restored whose storage was asked and has not answered yet (#698)."""
+
+OFFLINE_STORAGE_MESSAGE: Final = (
+    "The storage of {path} does not answer. It is asked again while this document is in front, and each time its"
+    " tab is shown."
+)
+"""The notice for a document a session restored whose storage did not answer (#698)."""
+
+STORAGE_WAIT_NOTICES: Final = {
+    StorageWait.ASKING: (MessageBannerSeverity.INFO, WAITING_STORAGE_MESSAGE),
+    StorageWait.OFFLINE: (MessageBannerSeverity.WARNING, OFFLINE_STORAGE_MESSAGE),
+}
+"""How the banner says each thing a document's storage is waited for: the row's severity and its message (#698)."""
+
+RESTORING_PLAYER_MESSAGE: Final = "Restoring the player…"
+"""What stands in for a maximized player the session remembers, until it can be opened (#698)."""
+
+RESTORING_VIEWER_MESSAGE: Final = "Restoring the image viewer…"
+"""What stands in for a maximized image viewer the session remembers, until it can be opened (#698)."""
+
+LEAVE_MAXIMIZED_HINT: Final = "Double-click or press Esc to leave the maximized view."
+"""What a view being restored says about getting out of it (#698)."""
+
 GONE_REMEDY: Final = " Nothing is saved until it is back; <i>Revert</i> or closing the document discards the edits."
 """What follows the sentence naming a document's missing file or folder (#497)."""
 
@@ -250,6 +276,16 @@ def type_dock_names(layout_type: str) -> frozenset[str]:
     return TYPE_DOCK_NAMES.get(layout_type, frozenset())
 
 
+def refuses_drops(model: RehuDocumentModel) -> bool:
+    """Whether a document has nowhere for a drop to land: it is locked, still waits for its file (#564) or for its
+    storage to answer (#698), or has no local path.
+
+    :param model: the document.
+    :returns: the answer.
+    """
+    return model.locked or model.reading is not None or model.storage_wait is not None or model.path is None
+
+
 class UrlDropFilter(QObject):
     """Turns a `UrlDrop` landing on the Main Editor dock into a `ScrapeActions.submit`
     ([[acquisition-tooling#drag-drop-aids]], #272).
@@ -288,7 +324,7 @@ class UrlDropFilter(QObject):
         if event.type() not in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop):
             return False
         drop_event = cast(QDropEvent, event)
-        if self.__model.locked or self.__model.reading is not None or self.__model.path is None:
+        if refuses_drops(self.__model):
             return False
         drop = UrlDrop.parse(drop_event.mimeData())
         if drop is None:
@@ -375,7 +411,7 @@ class ImageDropFilter(QObject):
         if event.type() not in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop):
             return False
         drop_event = cast(QDropEvent, event)
-        if self.__model.locked or self.__model.reading is not None or self.__model.path is None:
+        if refuses_drops(self.__model):
             return False
         data = drop_event.mimeData()
         if event.type() == QEvent.Type.DragEnter or self.__own is None:
@@ -680,6 +716,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__held_record: ResourceKey | None = None
         """The record :attr:`__held_view` is of: a preview moving on lets go of it."""
 
+        self.__waiting_overlay: WaitingOverlay | None = None
+        """What stands on :attr:`__held_view`'s surface while the document waits for its storage, and from then until
+        the view opens (#698)."""
+
         self.__held_set_asked = False
         """Whether a held view's set has been asked for: a folder no dock lists, or content images no dock reads."""
 
@@ -807,7 +847,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # disabled until the document has been saved to disk: there is nothing on disk to revert to, and
         # reverting a not-yet-written path would replace the editable document with a locked MISSING stub,
         # silently discarding the edits (#147). The first save sets saved_on_disk and re-enables it.
-        self.__revert_action.setEnabled(model.saved_on_disk and model.reading is None)
+        self.__revert_action.setEnabled(self.__revert_enabled())
         self.__connect(model.saved_on_disk_changed, self.__on_saved_on_disk_changed)  # type: ignore[attr-defined]
 
         self.__convert_keep_backups_action: Final = QAction("Convert, &Keep Backups", host.widget)
@@ -917,6 +957,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__connect(model.unreadable_sidecars_changed, self.__on_sidecars_changed)  # type: ignore[attr-defined]
         self.__connect(model.user_state_locked_changed, self.__on_sidecars_changed)  # type: ignore[attr-defined]
         self.__connect(model.reading_changed, self.__on_reading_changed)  # type: ignore[attr-defined]
+        self.__connect(model.storage_wait_changed, self.__on_storage_wait_changed)  # type: ignore[attr-defined]
         self.__connect(model.upgradable_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.changed_on_disk_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
         self.__connect(model.conflict_changed, self.__on_upgradable_changed)  # type: ignore[attr-defined]
@@ -1157,7 +1198,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__maximize_handler.restore()
         self.detach()
         # a folder still being listed for a remembered view has no document left to open it over
-        self.__held_view = None
+        self.__drop_held_view()
         self.__held_folder_lister.discard()
         for signal, slot in self.__connections:
             signal.disconnect(slot)
@@ -1217,6 +1258,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__image_viewer.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
         elif self.__player_view is not None and self.__player_view.overlay is not None:
             self.__player_view.overlay.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+        elif self.__waiting_overlay is not None:
+            self.__waiting_overlay.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
 
     def capture_maximized(self) -> MaximizedView | None:
         """Say what this document has maximized, and put it back: a layout captured with the player's stage lifted out
@@ -1225,6 +1268,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         :returns: the view; one not opened yet is still the one to remember. ``None`` for none.
         """
         view = self.__held_view
+        # what stands in for it goes without the view being let go of: the reader did not leave it
+        self.__close_waiting_overlay()
         viewer = self.__image_viewer
         if viewer is not None:
             view = view or self.__viewer_view(viewer)
@@ -1266,7 +1311,59 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__held_view = view
         self.__held_record = self.__model.key
         self.__held_set_asked = False
+        self.__sync_waiting_overlay()
         self.__open_held_view()
+
+    @property
+    def holds_wide_view(self) -> bool:
+        """Whether the session's view this still holds covers more than this document, so it shows whichever tab is in
+        front (#698)."""
+        return self.__held_view is not None and is_wide(self.__held_view.mode)
+
+    def __drop_held_view(self) -> None:
+        """Let go of the view the session remembers, and of what stood in for it."""
+        self.__held_view = None
+        self.__close_waiting_overlay()
+
+    def __close_waiting_overlay(self) -> None:
+        """Take away what stands in for the held view, the view itself still held."""
+        overlay = self.__waiting_overlay
+        if overlay is not None:
+            self.__waiting_overlay = None
+            overlay.close()
+
+    def __sync_waiting_overlay(self) -> None:
+        """Stand a `WaitingOverlay` on the held view's surface while the document waits for its storage, and keep
+        what it says current until the view opens (#698): the window comes back as the session left it, and nothing
+        opens over the reader's work once a slow share answers."""
+        view = self.__held_view
+        if view is None:
+            return
+        wait = self.__model.storage_wait
+        if self.__waiting_overlay is None:
+            if wait is None:
+                return
+            overlay = WaitingOverlay(OverlayMode.stored(view.mode, OverlayMode.DOCUMENT_OVERLAY), self.__host.widget)
+            self.__waiting_overlay = overlay
+            overlay.closed.connect(lambda: self.__on_waiting_overlay_closed(overlay))
+            overlay.reveal()
+            self.maximized_restored.emit(overlay)
+        lines = [RESTORING_PLAYER_MESSAGE if view.kind == PLAYER_KIND else RESTORING_VIEWER_MESSAGE]
+        if wait is StorageWait.ASKING:
+            lines.append(WAITING_STORAGE_MESSAGE.format(path=self.__model.path))
+        elif wait is StorageWait.OFFLINE:
+            lines.append(OFFLINE_STORAGE_MESSAGE.format(path=self.__model.path))
+        lines.append(LEAVE_MAXIMIZED_HINT)
+        self.__waiting_overlay.say("\n".join(lines), busy=wait is not StorageWait.OFFLINE)
+
+    def __on_waiting_overlay_closed(self, overlay: WaitingOverlay) -> None:
+        """The reader dismissed what stood in for the held view: they left the maximized view, so it is let go of.
+
+        :param overlay: the overlay that closed; one already taken away by this object changes nothing.
+        """
+        if self.__waiting_overlay is overlay:
+            self.__waiting_overlay = None
+            self.__held_view = None
 
     def __open_held_view(self) -> None:
         """Open the view held, if the document and the view's set are there yet. Asked at each moment one may have
@@ -1276,7 +1373,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if view is None or self.__model.pending or self.__model.reading is not None or self.__awaiting_type:
             return
         if self.__model.key != self.__held_record:
-            self.__held_view = None
+            self.__drop_held_view()
         elif view.kind == PLAYER_KIND:
             self.__open_held_player(view)
         elif view.source == CURATED_SET:
@@ -1301,7 +1398,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
                 self.__path_source(images), images.index(cast(Path, image)), viewer_set=view.source, restored=view
             )
         elif images or image is None:
-            self.__held_view = None
+            self.__drop_held_view()
 
     def __open_held_curating(self, view: MaximizedView) -> None:
         """Open a held view over every row of the images editor, once it has its rows.
@@ -1316,7 +1413,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if selector is not None and image in rows:
             self.__open_curating_viewer(selector, rows.index(cast(Path, image)), view)
         elif rows or image is None or selector is None:
-            self.__held_view = None
+            self.__drop_held_view()
 
     def __open_held_content(self, view: MaximizedView) -> None:
         """Open a held view over a pack's content images, once they have been listed: read for it if the dock's being
@@ -1326,7 +1423,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         model, content_view = self.__content_images_model, self.__content_images_view
         if model is None or content_view is None:
-            self.__held_view = None
+            self.__drop_held_view()
             return
         source = content_view.source
         if len(source) == 0:
@@ -1343,7 +1440,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             key = ()
         index = next((position for position in range(len(source)) if source.key(position) == key), None)
         if index is None:
-            self.__held_view = None
+            self.__drop_held_view()
             return
         self.__viewer_follows_curation = False
         viewer = self.__open_image_viewer(source, index, viewer_set=CONTENT_SET, restored=view)
@@ -1356,7 +1453,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         image = resolve_key(view.key, self.__record_folder())
         if image is None:
-            self.__held_view = None
+            self.__drop_held_view()
             return
         self.__held_set_asked = True
         self.__held_folder_lister.start(view.key, partial(folder_images, image.parent))
@@ -1372,7 +1469,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             return
         if isinstance(result, list):
             self.__open_held_paths(view, result)
-        self.__held_view = None
+        self.__drop_held_view()
 
     def __open_held_player(self, view: MaximizedView) -> None:
         """Maximize the player over a held view's video, which is loaded first, paused where it was left.
@@ -1381,9 +1478,9 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         """
         player = self.__player_view
         if player is None:
-            self.__held_view = None
+            self.__drop_held_view()
         elif player.current_key == view.key:
-            self.__held_view = None
+            self.__drop_held_view()
             player.maximize(OverlayMode.stored(view.mode, OverlayMode.DOCUMENT_OVERLAY))
             self.maximized_restored.emit(player.overlay)
         else:
@@ -1400,7 +1497,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if key == view.key:
             self.__open_held_player(view)
         else:
-            self.__held_view = None
+            self.__drop_held_view()
 
     def save_state(self) -> bytes:
         """Serialize this document's dock layout (visible docks, splitter sizes) and each persisting
@@ -1618,7 +1715,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         :param saved_on_disk: the model's new saved-on-disk state.
         """
-        self.__revert_action.setEnabled(saved_on_disk and self.__model.reading is None)
+        self.__revert_action.setEnabled(self.__revert_enabled())
         if saved_on_disk:
             self.__refresh_content_images()
 
@@ -1651,15 +1748,44 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         on."""
         self.__set_editors_locked(self.__editors_locked())
         self.__on_dirty_changed()
-        self.__revert_action.setEnabled(self.__model.saved_on_disk and self.__model.reading is None)
+        self.__revert_action.setEnabled(self.__revert_enabled())
         self.__banner.set_rows(self.__banner_rows())
 
-    def __editors_locked(self) -> bool:
-        """Whether the editors are locked: a lock reason stands, or the document waits for its file to be read.
+    def __storage_wait_rows(self) -> list[MessageBannerRow]:
+        """The notice for a document waiting for its storage to answer (#698).
+
+        :returns: one row saying its storage was asked, or did not answer; none for a document that waits for nothing.
+        """
+        wait = self.__model.storage_wait
+        if wait is None:
+            return []
+        severity, message = STORAGE_WAIT_NOTICES[wait]
+        return [MessageBannerRow(severity, message.format(path=self.__model.path))]
+
+    def __on_storage_wait_changed(self) -> None:
+        """Lock the editors, disable Revert and say so while the document waits for its storage to answer, and undo
+        all three once it has (#698); what stands in for a maximized view it has follows."""
+        self.__set_editors_locked(self.__editors_locked())
+        self.__revert_action.setEnabled(self.__revert_enabled())
+        self.__banner.set_rows(self.__banner_rows())
+        self.__sync_waiting_overlay()
+
+    def __revert_enabled(self) -> bool:
+        """Whether Revert has a file to read again: one saved to disk (#147), not being read already (#564), on storage
+        that is not being waited for (#698).
 
         :returns: the answer.
         """
-        return self.__model.locked or self.__model.reading is not None
+        model = self.__model
+        return model.saved_on_disk and model.reading is None and model.storage_wait is None
+
+    def __editors_locked(self) -> bool:
+        """Whether the editors are locked: a lock reason stands, or the document waits for its file to be read, or for
+        its storage to answer.
+
+        :returns: the answer.
+        """
+        return self.__model.locked or self.__model.reading is not None or self.__model.storage_wait is not None
 
     def __on_upgradable_changed(self) -> None:
         """Swap the toolbar's write action and rebuild the inline notice strip as the model's upgrade
@@ -2041,7 +2167,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
 
         :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then one per
             :attr:`~RehuDocumentModel.unreadable_sidecars` entry and a row saying so while the user's own state is
-            read-only (#568), then a reading row while
+            read-only (#568), then a row while the document waits for its storage
+            (:attr:`~RehuDocumentModel.storage_wait`, #698), then a reading row while
             the document waits for its file (:attr:`~RehuDocumentModel.reading`, #564), then an error row while
             the document's file or folder is :attr:`~RehuDocumentModel.gone` (#497), then a refused-save
             row while :attr:`~RehuDocumentModel.conflict` stands (#416), or else a changed-on-disk row while
@@ -2064,6 +2191,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         )
         if self.__model.user_state_locked:
             rows.append(MessageBannerRow(MessageBannerSeverity.WARNING, OWN_SIDECAR_MESSAGE))
+        rows.extend(self.__storage_wait_rows())
         if self.__model.reading is not None:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, READING_MESSAGE.format(path=self.__model.reading)))
         if self.__model.gone:
@@ -2450,7 +2578,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         # whichever route opens this one, it is not the editor's until that route says so (#370)
         self.__curation_selector = None
         # and whichever opens it, the reader has moved on from what the session remembered
-        self.__held_view = None
+        self.__drop_held_view()
         self.__viewer_set = viewer_set
         settings = shared_image_viewer_settings()
         # resolved here, not at construction: a document that has never shown a row follows whatever
