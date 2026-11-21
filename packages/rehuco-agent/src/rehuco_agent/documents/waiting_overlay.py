@@ -2,7 +2,6 @@
 
 from typing import Final, override
 
-from borco_pyside.widgets import BusySpinner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
@@ -11,7 +10,7 @@ from ..fields.widgets.overlay_surface import OverlayMode, OverlaySurface
 
 
 class WaitingOverlay(OverlaySurface):
-    """A surface saying a maximized view is being restored, with a turning arc while something is still being tried.
+    """A surface saying a maximized view is being restored, and what it waits for.
 
     A session restores a maximized player or image viewer over the surface it was on, but the view itself needs its
     document read, which waits for its storage to answer. Until then this stands in its place, so the window comes
@@ -25,13 +24,11 @@ class WaitingOverlay(OverlaySurface):
     def __init__(self, mode: OverlayMode, document: QWidget) -> None:
         super().__init__(mode, document)
         self.setAutoFillBackground(True)
-        self.__spinner: Final = BusySpinner(self)
         self.__label: Final = QLabel(self)
         self.__label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.__label.setWordWrap(True)
         layout = QVBoxLayout(self)
         layout.addStretch(1)
-        layout.addWidget(self.__spinner, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self.__label)
         layout.addStretch(1)
 
@@ -40,22 +37,12 @@ class WaitingOverlay(OverlaySurface):
         """What the surface says."""
         return self.__label.text()
 
-    @property
-    def busy(self) -> bool:
-        """Whether the arc is turning."""
-        return self.__spinner.running
-
-    def say(self, text: str, *, busy: bool) -> None:
+    def say(self, text: str) -> None:
         """Say what is being waited for.
 
         :param text: the words.
-        :param busy: whether something is still being tried, which turns the arc.
         """
         self.__label.setText(text)
-        if busy:
-            self.__spinner.start()
-        else:
-            self.__spinner.stop()
 
     @override
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt override)

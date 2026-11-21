@@ -26,21 +26,19 @@ def fixture_overlay(qtbot: QtBot) -> WaitingOverlay:
     return overlay
 
 
-def test_it_says_what_it_is_told_and_turns_only_while_busy(overlay: WaitingOverlay) -> None:
+def test_it_says_what_it_is_told(overlay: WaitingOverlay) -> None:
     """**Test steps:**
 
-    * say something is being tried, and verify the words and the turning arc
-    * say nothing is being tried any more, and verify the new words and the arc stopped
+    * say what is being restored, and verify the words
+    * say something else, and verify the new words
     """
-    overlay.say("Restoring the player…", busy=True)
+    overlay.say("Restoring the player…")
 
     assert overlay.text == "Restoring the player…"
-    assert overlay.busy
 
-    overlay.say("Its storage does not answer.", busy=False)
+    overlay.say("Its storage does not answer.")
 
     assert overlay.text == "Its storage does not answer."
-    assert not overlay.busy
 
 
 def test_a_double_click_dismisses_it(overlay: WaitingOverlay, qtbot: QtBot) -> None:
