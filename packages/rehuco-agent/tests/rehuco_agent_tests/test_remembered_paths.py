@@ -301,26 +301,77 @@ def test_a_remote_document_that_is_there_arrives_with_its_entry_and_the_focus(qa
     assert lists.remembered.still_open == frozenset()
 
 
-def test_a_document_arriving_after_the_start_settled_does_not_take_the_focus(
+def test_a_document_arriving_after_the_start_settled_still_takes_the_focus_but_not_the_layout(
     qapp: Any, clock: Clock, scan_class: Any
 ) -> None:
-    """A share that answers long after the start is a device the user has stopped waiting for (#464).
+    """A share that answers long after the window was shown still hands over the session's focused document, which
+    the window gives the focus only if the reader has not moved it; the saved layout is not re-applied over their work
+    (#464, #698).
 
     **Test steps:**
 
-    * name one remote open document as the focused one and await it
+    * name one remote open document as the focused one and await it, and show the window
     * move the clock past the settling window and deliver *present*
-    * verify it arrived without the focus, and the saved layout is not asked to be re-applied
+    * verify it arrived with the focus offered, and the saved layout is not asked to be re-applied
     """
     del qapp, scan_class
     lists = Lists(session_open=(REMOTE,), focused=REMOTE)
     lists.remembered.documents_to_restore_now(SessionRestoreSettings())
+    lists.remembered.window_shown()
     clock.now += SETTLING_SECONDS + 1
 
     lists.answer(REMOTE, Presence.PRESENT)
 
-    assert lists.arrived == [(REMOTE, lists.session.items[REMOTE], False)]
+    assert lists.arrived == [(REMOTE, lists.session.items[REMOTE], True)]
     assert lists.layouts == 0
+
+
+def test_the_settling_clock_counts_from_the_window_being_shown(qapp: Any, clock: Clock, scan_class: Any) -> None:
+    """Time spent building the window is not settling time: no answer can be delivered before it is shown, so a slow
+    start must not use the window up (#698).
+
+    **Test steps:**
+
+    * await one remote document, and let more than the settling window pass before the window is shown
+    * show the window twice, a second apart, and verify the start is still settling and the layout is due on arrival
+    * move the clock past the window from the first show and verify the start has settled
+    """
+    del qapp, scan_class
+    lists = Lists(session_open=(REMOTE,), focused=REMOTE)
+    lists.remembered.documents_to_restore_now(SessionRestoreSettings())
+    clock.now += SETTLING_SECONDS * 3
+    lists.remembered.window_shown()
+    clock.now += 1
+    lists.remembered.window_shown()
+
+    assert lists.remembered.settling
+    lists.answer(REMOTE, Presence.PRESENT)
+    assert lists.layouts == 1
+
+    clock.now += SETTLING_SECONDS
+    assert not lists.remembered.settling
+
+
+def test_a_late_layout_skipped_past_the_settling_time_is_logged(
+    qapp: Any, clock: Clock, scan_class: Any, caplog: Any
+) -> None:
+    """The reason the saved layout was not re-applied is in the log, not silent (#698).
+
+    **Test steps:**
+
+    * await one remote document, show the window, and let the settling window pass
+    * deliver *present* and verify the log names the settling time
+    """
+    del qapp, scan_class
+    lists = Lists(session_open=(REMOTE,), focused=REMOTE)
+    lists.remembered.documents_to_restore_now(SessionRestoreSettings())
+    lists.remembered.window_shown()
+    clock.now += SETTLING_SECONDS + 1
+
+    with caplog.at_level("INFO", logger="rehuco_agent.remembered_paths"):
+        lists.answer(REMOTE, Presence.PRESENT)
+
+    assert "settling time" in caplog.text
 
 
 def test_an_unfocused_document_arrives_without_the_focus(qapp: Any, scan_class: Any) -> None:

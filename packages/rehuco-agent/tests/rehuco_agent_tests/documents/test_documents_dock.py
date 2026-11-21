@@ -3484,7 +3484,7 @@ def test_restore_late_adds_an_unread_dock_without_taking_the_focus(mocker: Mocke
     qtbot.addWidget(dock)
     first = dock.open_document(FAKE_KEY)
 
-    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
+    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True), None)
 
     late = next(widget for widget in dock.open_document_widgets() if widget.model.path == OTHER_PATH)
     assert late.model.pending is True
@@ -3507,7 +3507,7 @@ def test_restore_late_into_a_shown_window_leaves_a_background_tab_unread(mocker:
     qtbot.waitExposed(dock)
     first = dock.open_document(FAKE_KEY)
 
-    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
+    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True), None)
 
     late = next(widget for widget in dock.open_document_widgets() if widget.model.path == OTHER_PATH)
     assert late.model.pending is True
@@ -3526,7 +3526,7 @@ def test_restore_late_into_a_shown_empty_area_reads_the_tab_it_shows(mocker: Moc
     dock.show()
     qtbot.waitExposed(dock)
 
-    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True))
+    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True), None)
 
     widgets = dock.open_document_widgets()
     assert widgets[0].model.pending is False
@@ -3545,7 +3545,7 @@ def test_restore_late_can_focus_the_document_and_reads_it(mocker: MockerFixture,
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True), focus=True)
+    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True), None, focus=True)
 
     focused = dock.focused_document_widget()
     assert focused is not None
@@ -3566,7 +3566,7 @@ def test_restore_late_reuses_a_dock_the_user_already_opened(mocker: MockerFixtur
     qtbot.addWidget(dock)
     dock.open_document(FAKE_KEY)
 
-    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True))
+    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True), None)
 
     assert len(dock.open_document_widgets()) == 1
 
@@ -3583,7 +3583,7 @@ def test_restore_late_into_an_empty_area_just_adds_the_dock(mocker: MockerFixtur
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
-    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True))
+    dock.restore_late(FAKE_PATH, DocumentSessionSettings.Item(open=True), None)
 
     widgets = dock.open_document_widgets()
     assert [widget.model.path for widget in widgets] == [FAKE_PATH]
@@ -3609,7 +3609,7 @@ def test_a_restored_sessions_paths_become_keys(mocker: MockerFixture, qtbot: QtB
     session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
 
     dock.restore_session(session)
-    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True))
+    dock.restore_late(OTHER_PATH, DocumentSessionSettings.Item(open=True), None)
 
     assert {widget.model.key for widget in dock.open_document_widgets()} == {FAKE_KEY, OTHER_KEY}
 

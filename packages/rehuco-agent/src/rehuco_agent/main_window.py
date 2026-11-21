@@ -24,6 +24,7 @@ from borco_pyside.qtads import (
     QtAdsLoneTabHider,
     QtAdsPinGuard,
     QtAdsPinSideHandler,
+    with_kept,
 )
 from borco_pyside.shortcuts import BindingRole
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
@@ -1569,6 +1570,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             actually happened.
         """
         super().showEvent(event)
+        # from now on the answers about the remembered storage can be delivered (#698)
+        self.__remembered.window_shown()
         if not self.__bottom_dock_heights_seeded:
             self.__bottom_dock_heights_seeded = True
             self.__seed_bottom_dock_heights()
@@ -2114,6 +2117,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if not restore.restore_local_documents and not restore.restore_remote_documents:
             return
         now = self.__remembered.documents_to_restore_now(restore)
+        LOG.info(
+            "Session: %d documents restored with the window, %d waiting for their storage",
+            len(now),
+            len(self.__remembered.still_open),
+        )
         self.__reveal_documents_dock()
         self.__documents_dock.restore_session(self.__session, now)
 
@@ -2121,12 +2129,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """A remote document of the last session is there (#464): restore it now, as the others were -- revealing
         the Documents dock as any open does (#268), since the start may have had nothing local to reveal it for.
 
-        The session's focused document takes the focus only when it was this one, the start is still settling and the
-        user has not focused another document meanwhile.
+        It is tabbed in at its saved place, whenever it arrives. The session's focused document takes the focus only
+        when it was this one and the reader has not moved the focus since the restore left it (#698).
+
+        :param path: the document's path.
+        :param item: its session entry.
+        :param take_focus: whether it was the session's focused document.
         """
         self.__reveal_documents_dock()
-        idle = self.__documents_dock.focused_document_path() is None
-        self.__documents_dock.restore_late(path, item, focus=take_focus and idle, cover=self.__may_cover())
+        focus = take_focus and self.__documents_dock.focus_is_as_restored()
+        LOG.info("Session: %s arrived late (takes the focus: %s)", path, focus)
+        self.__documents_dock.restore_late(
+            path, item, self.__session.docks_layout, focus=focus, cover=self.__may_cover()
+        )
 
     def __on_preview_arrived(self, preview: DocumentSessionSettings.Preview) -> None:
         """The last session's preview is there, its storage having answered late: restore it as a document arriving late
@@ -2135,7 +2150,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         :param preview: its entry.
         """
         self.__reveal_documents_dock()
-        self.__documents_dock.restore_late_preview(preview, cover=self.__may_cover())
+        self.__documents_dock.restore_late_preview(preview, self.__session.docks_layout, cover=self.__may_cover())
 
     def __may_cover(self) -> bool:
         """Whether a late arrival's wide maximized view may open at once (#576): the start is still settling, and the
@@ -2155,7 +2170,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         The session's own preview is a part of the layout.
         """
         if self.__documents_dock.shows_a_new_preview():
+            LOG.info("Session: the late layout is not applied, a preview of this run is shown")
             return
+        LOG.info("Session: every awaited document has answered, applying the saved layout")
         self.__documents_dock.restore_state(self.__session.docks_layout, self.__session.maximized_dock)
 
     def __save_window_state(self) -> None:
@@ -2231,7 +2248,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
                 self.__session.items[path].open = True
         preview_focused = preview is not None and self.__documents_dock.focused_document_widget() is preview
         self.__session.focused_path = None if preview_focused else self.__documents_dock.focused_document_path()
-        self.__session.docks_layout = self.__documents_dock.save_state()
+        # a document whose device never answered has no dock to be saved from, and would lose its place in its tab row
+        # for every later run (#698): it goes back where the layout loaded at start had it
+        absent = {str(path) for path in self.__remembered.still_open if path not in open_widgets}
+        self.__session.docks_layout = with_kept(self.__documents_dock.save_state(), self.__session.docks_layout, absent)
         self.__session.maximized_dock = self.__documents_dock.maximized_dock_name
         self.__capture_preview(preview)
 

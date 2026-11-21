@@ -350,6 +350,17 @@ attempt rather than a `stat` (measured: a `stat` under a switched-off SMB host b
 0.3 s), and only a server that answered is `stat`-ed. All of it runs on daemon threads, so neither the start nor the
 quit waits for a dead mount. *Gone* is forgotten; *offline* is kept, shown disabled, and asked again next run.
 
+**A document that answers late comes back where the session had it (#698).** The documents of fixed local drives are
+restored with the window, in the saved layout; each document that answers later is tabbed into its saved row right
+after the nearest document before it in that row that is already there, else right before the nearest one after it, so
+the row comes out in the saved order however slowly each share answers and in whatever order. It takes the focus when it
+was the session's focused document and the reader has not moved the focus since the restore left it. Only the whole
+layout's re-application, which also brings the splits back, is bounded by the settling time (5 s counted from the
+window's first show, since no answer can be delivered before it); past it, the reader's own arrangement is left alone.
+A run whose share never answered saves its document back into the layout where the last layout had it, so one run with
+the share off does not cost it its place for every later run. The log says what was restored with the window, what
+arrived late and whether the layout was applied or why not.
+
 *Limitation, accepted:* a session document kept open because its share was off is matched against what the user opens
 by hand by its **resolved** path, while the session stores the path as it was opened. A path whose resolved form
 changed between runs — a mapped drive now reached through its UNC path, a folder moved behind a symlink — is not

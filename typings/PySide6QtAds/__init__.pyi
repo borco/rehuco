@@ -249,6 +249,10 @@ class CDockWidgetTab(QWidget):
     """The clickable tab representing a `CDockWidget` within its `CDockAreaWidget`'s tab bar.
     `toolTip()` (inherited from `QWidget`) reflects `CDockWidget.setTabToolTip`."""
 
+    moved: Signal
+    """Emitted with the global position (a `QPoint`) as a drag of this tab ends or moves over the tab bar; the tab bar
+    reorders the tab to it."""
+
     def buildContextMenu(self, menu: QMenu) -> QMenu:
         """Fill ``menu`` with the entries QtAds' own right-click menu on this tab holds (*Detach*, a
         separator, *Close*, ...) and return it, without showing it."""
@@ -674,10 +678,12 @@ class CDockManager(CDockContainerWidget):
         area: DockWidgetArea,
         dock_widget: CDockWidget,
         dock_area_widget: CDockAreaWidget | None = None,
+        index: int = -1,
     ) -> CDockAreaWidget:
         """Place `dock_widget` at `area` relative to `dock_area_widget` (or relative to the whole
         manager, if omitted), creating a new tabbed area or joining an existing one as `area`
-        dictates.
+        dictates. `index` is the tab index in a joined area, the end when -1; a dock already in that
+        area is moved to it, `index` counted among the area's other docks.
 
         :returns: the tabbed area `dock_widget` ended up in.
         """

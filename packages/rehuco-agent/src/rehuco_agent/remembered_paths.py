@@ -12,13 +12,15 @@ reopen), and the documents the session left open. This object judges every one o
 - **A remote document or catalog that is there arrives late**, through :attr:`document_arrived` and
   :attr:`rehuco_arrived`, the moment its device answers -- the start never waits for it. The documents' saved
   split layout is re-applied once the last of them is in (:attr:`layout_due`), but only while the start is still
-  settling (:data:`SETTLING_SECONDS`): after that the user may have rearranged things, and a layout restored over
-  their work would be worse than documents that tab in where they land.
+  settling (:data:`SETTLING_SECONDS`, counted from :meth:`window_shown`): after that the user may have rearranged
+  things, and a layout restored over their work would be worse than documents left where they are. Each document is
+  tabbed in at its saved place as it arrives whatever the time, so the order survives a slow share (#698).
 
 Holds no thread and no Qt job of its own: the asking is :class:`~rehuco_agent.startup_presence.StartupPresence`'s, and
 why that runs on daemon threads is documented once, with the measurements, in :mod:`borco_core.path_presence`.
 """
 
+import logging
 import time
 from pathlib import Path
 from typing import Final
@@ -32,8 +34,11 @@ from .settings.rehuco_settings import RehucoSettings
 from .settings.session_restore_settings import SessionRestoreSettings
 from .startup_presence import StartupPresence
 
+LOG: Final = logging.getLogger(__name__)
+
 SETTLING_SECONDS: Final = 5.0
-"""How long after the start a late arrival may still take the session's focus and its saved layout. A scan answers a
+"""How long after the window is shown a late arrival may still bring the saved layout back whole, splits included, and
+open a wide maximized view at once. Its place among the tabs and the focus do not depend on it. A scan answers a
 live share in tens of milliseconds, so anything slower than this is a device the user has long since stopped
 waiting for, and has probably started working past."""
 
@@ -49,7 +54,7 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
 
     document_arrived: Signal = Signal(object, object, bool)
     """``(path, session item, take_focus)``: a remote document that was open last session is there; restore it.
-    ``take_focus`` is whether it was the focused one and the start is still settling."""
+    ``take_focus`` is whether it was the focused one: it takes the focus if the reader has not moved it."""
 
     rehuco_arrived: Signal = Signal(object)
     """The remote ``.rehuco`` to reopen is there; open it, unless the user has opened another meanwhile."""
@@ -70,13 +75,21 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
     ) -> None:
         super().__init__(parent)
         self.__recent_files: Final = recent_files
+        """The ``File`` menu's recents, kept in line with the verdicts."""
         self.__rehuco: Final = rehuco
+        """The root catalogs' recents and the one to reopen."""
         self.__session: Final = session
+        """The documents the last session left open, and the layout they were left in."""
         self.__kept_open: Final[set[Path]] = set()
+        """The documents that were open and are not shown now, which the session goes on recording as open."""
         self.__awaiting: Final[set[Path]] = set()
+        """The remote paths asked about whose answer has not come yet."""
         self.__deferred_rehuco: Path | None = None
+        """The ``.rehuco`` to open once its device answers, if it is on one that must be asked."""
         self.__late_added = False
-        self.__born: Final = time.monotonic()
+        """Whether a remote document has arrived since the last :attr:`layout_due`."""
+        self.__settling_since: float | None = None
+        """When the window was first shown (:meth:`window_shown`), on the monotonic clock; ``None`` before that."""
         remembered = [
             *recent_files.paths,
             *rehuco.recent.paths,
@@ -85,6 +98,7 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
             *([session.preview.path] if session.preview is not None else []),
         ]
         self.__presence: Final = StartupPresence(remembered, self)
+        """Asks about every remote remembered path, and judges the fixed local ones at once."""
         self.__presence.answered.connect(self.__on_answered)
         for path, presence in self.__presence.local_paths.items():
             if presence is Presence.GONE:
@@ -142,7 +156,7 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
 
     @property
     def settling(self) -> bool:
-        """Whether the start is recent enough for a late arrival to take focus and layout."""
+        """Whether the start is recent enough for a late arrival to take the saved layout and cover."""
         return self.__settling()
 
     @property
@@ -211,9 +225,22 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
         """Deliver no more answers. See :meth:`StartupPresence.stop`."""
         self.__presence.stop()
 
+    def window_shown(self) -> None:
+        """Start the settling clock: the window is up, so an answer can reach the GUI thread from now on.
+
+        Counted from here and not from construction, which comes before the whole window is built -- seconds in which
+        no answer can be delivered, and which a slow share would otherwise spend out of the clock (#698). Only the
+        first call counts.
+        """
+        if self.__settling_since is None:
+            self.__settling_since = time.monotonic()
+
     def __settling(self) -> bool:
-        """Whether the start is recent enough for a late arrival to take focus and layout."""
-        return time.monotonic() - self.__born < SETTLING_SECONDS
+        """Whether the start is recent enough for a late arrival to take the saved layout and cover.
+
+        :returns: ``True`` until :data:`SETTLING_SECONDS` have passed since :meth:`window_shown`.
+        """
+        return self.__settling_since is None or time.monotonic() - self.__settling_since < SETTLING_SECONDS
 
     def __on_answered(self, path: Path, presence: Presence) -> None:
         """A remote path was judged, on the GUI thread."""
@@ -231,9 +258,11 @@ class RememberedPaths(QObject):  # pylint: disable=too-many-instance-attributes
                     self.preview_arrived.emit(preview)
                 item = self.__session.items.get(path)
                 if item is not None and item.open:
-                    self.document_arrived.emit(path, item, path == self.__session.focused_path and self.__settling())
+                    self.document_arrived.emit(path, item, path == self.__session.focused_path)
         self.__awaiting.discard(path)
         if not self.__awaiting and self.__late_added:
             self.__late_added = False
             if self.__settling():
                 self.layout_due.emit()
+            else:
+                LOG.info("Session: the late layout is not applied, the start is past its settling time")

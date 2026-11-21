@@ -175,6 +175,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
                 widget_of=self.__document_docks.__getitem__,
                 # looked up when called, so a test that swaps it after construction is still seen
                 restore_state=lambda layout, maximized: self.restore_state(layout, maximized),  # pylint: disable=unnecessary-lambda
+                place=self.place_dock,
                 preview=lambda: self.__preview,
                 pending=self.__pending,
                 maximized_stack=self.__maximized_stack,
@@ -333,25 +334,52 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__restore.restore_session(session, only)
 
     def restore_late(
-        self, path: Path, item: DocumentSessionSettings.Item, *, focus: bool = False, cover: bool = False
+        self,
+        path: Path,
+        item: DocumentSessionSettings.Item,
+        layout: object,
+        *,
+        focus: bool = False,
+        cover: bool = False,
     ) -> None:
         """Restore one document of the last session after the window is up, its storage only just answered
         (:meth:`DocumentSessionRestore.restore_late`, #464).
 
         :param path: the document's path, as the session remembers it.
         :param item: its session entry.
+        :param layout: the session's saved documents layout, which gives the document its tab place (#698).
         :param focus: make it current, loading it.
         :param cover: read it now if a view it had maximized covers more than itself.
         """
-        self.__restore.restore_late(path, item, focus=focus, cover=cover)
+        self.__restore.restore_late(path, item, layout, focus=focus, cover=cover)
 
-    def restore_late_preview(self, preview: DocumentSessionSettings.Preview, *, cover: bool = False) -> None:
+    def restore_late_preview(
+        self, preview: DocumentSessionSettings.Preview, layout: object, *, cover: bool = False
+    ) -> None:
         """Restore the last session's preview once its storage answers (:meth:`DocumentSessionRestore.restore_late`).
 
         :param preview: its entry.
+        :param layout: as for :meth:`restore_late`.
         :param cover: as for :meth:`restore_late`.
         """
-        self.__restore.restore_late_preview(preview, cover=cover)
+        self.__restore.restore_late_preview(preview, layout, cover=cover)
+
+    def focus_is_as_restored(self) -> bool:
+        """Whether the reader has not moved the focus since the session restore last left it
+        (:meth:`DocumentSessionRestore.focus_is_as_restored`, #698).
+
+        :returns: ``True`` while it has not been moved.
+        """
+        return self.__restore.focus_is_as_restored()
+
+    def place_dock(self, layout: object, dock: QtAds.CDockWidget) -> bool:
+        """Move one document's dock to the tab place a saved layout gives it (:meth:`QtAdsLayout.place`, #698).
+
+        :param layout: the tree from a prior :meth:`save_state`.
+        :param dock: the document's dock.
+        :returns: whether it was moved.
+        """
+        return QtAdsLayout(self.__dock_manager, pins=False).place(layout, dock)
 
     def open_document_widgets(self) -> list[DocumentWidget]:
         """Every currently open document's widget, in no particular order.

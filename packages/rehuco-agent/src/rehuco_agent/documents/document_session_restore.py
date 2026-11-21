@@ -50,6 +50,8 @@ class SessionRestoreHost:  # pylint: disable=too-many-instance-attributes
     :param activate: make a dock current, reading it if it is pending.
     :param widget_of: a dock's document widget.
     :param restore_state: lay the open docks out as a saved layout says, with the dock it says fills the area.
+    :param place: move one dock to the tab place a saved layout gives it, if it names it beside a dock that is
+        there.
     :param preview: the preview dock, if there is one.
     :param pending: the docks not read yet.
     :param maximized_stack: the order maximized views are stacked in.
@@ -61,6 +63,7 @@ class SessionRestoreHost:  # pylint: disable=too-many-instance-attributes
     activate: Callable[[QtAds.CDockWidget], object]
     widget_of: Callable[[QtAds.CDockWidget], DocumentWidget]
     restore_state: Callable[[object, str], bool]
+    place: Callable[[object, QtAds.CDockWidget], bool]
     preview: Callable[[], DocumentDock | None]
     pending: PendingDocks
     maximized_stack: MaximizedStack
@@ -78,6 +81,17 @@ class DocumentSessionRestore:
         self.restored_preview: DocumentDock | None = None
         """The preview as the session left it, until the reader moves it on to another document; the area clears it
         when it closes the preview."""
+        self.__left_current: QtAds.CDockWidget | None = None
+        """The dock that was current when the last restore step finished: while it still is, the reader has not moved
+        the focus since."""
+
+    def focus_is_as_restored(self) -> bool:
+        """Whether the reader has not moved the focus since the restore last left it (#698).
+
+        :returns: ``True`` while the current dock is the one the last restore step left current, or none was.
+        """
+        current = self.__host.tracker.current_dock
+        return current is None or current is self.__left_current
 
     def restore_session(self, session: DocumentSessionSettings, only: Container[Path] | None = None) -> None:
         """Recreate every document the last session left open (#21), restoring its dock layout and
@@ -129,9 +143,16 @@ class DocumentSessionRestore:
         for dock, item in opened.items():
             if item.maximized is not None and is_wide(item.maximized.mode):
                 host.pending.load(dock)
+        self.__left_current = host.tracker.current_dock
 
     def restore_late(
-        self, path: Path, item: DocumentSessionSettings.Item, *, focus: bool = False, cover: bool = False
+        self,
+        path: Path,
+        item: DocumentSessionSettings.Item,
+        layout: object,
+        *,
+        focus: bool = False,
+        cover: bool = False,
     ) -> None:
         """Restore one document of the last session after the window is up: its storage only just answered (#464).
 
@@ -142,24 +163,35 @@ class DocumentSessionRestore:
         screen. It is **not** made current unless asked: the user may already be working in another document. **Nor
         is it read while it is added**: QtAds shows each tab it adds, and with the window already up that counted as
         reaching the screen, so a background tab was read -- and its player played -- behind the one in front (owner,
-        #574). It is read once added only if it is what its area then shows.
+        #574). It is read once added only if it is what its area then shows. **It is tabbed in at its saved place**
+        (#698), whenever it arrives: right after the nearest document before it in its saved row that is already
+        there, else before the nearest one after it, so the row comes out as the session left it however late each
+        document answers.
 
         :param path: the document's path, as the session remembers it.
         :param item: its session entry, whose ``state`` is its own dock layout.
+        :param layout: the session's saved documents layout, which names the place.
         :param focus: make it current, loading it -- the session's focused document arriving before the user chose
             another.
         :param cover: read it now if a view it had maximized covers more than itself: the start is still settling and
             the reader has not moved on, so it is not put over anything of theirs. Otherwise it waits for its tab.
         """
-        self.__arrive(self.__restore_dock, path, item, focus=focus, cover=cover)
+        fresh = self.__host.find_dock(ResourceKey(path)) is None
+        self.__arrive(
+            lambda: self.__placed(self.__restore_dock(path, item), layout, fresh), item, focus=focus, cover=cover
+        )
 
-    def restore_late_preview(self, preview: DocumentSessionSettings.Preview, *, cover: bool = False) -> None:
+    def restore_late_preview(
+        self, preview: DocumentSessionSettings.Preview, layout: object, *, cover: bool = False
+    ) -> None:
         """Restore the last session's preview once its storage answers, as :meth:`restore_late` restores a document.
 
         :param preview: its entry.
+        :param layout: as for :meth:`restore_late`.
         :param cover: as for :meth:`restore_late`.
         """
-        self.__arrive(lambda _path, _item: self.__restore_preview(preview), preview.path, preview.item, cover=cover)
+        fresh = self.__host.find_dock(ResourceKey(preview.path)) is None and self.__host.preview() is None
+        self.__arrive(lambda: self.__placed(self.__restore_preview(preview), layout, fresh), preview.item, cover=cover)
 
     def __restore_dock(self, path: Path, item: DocumentSessionSettings.Item) -> QtAds.CDockWidget:
         """Make a document of the last session's dock, with its layout and its maximized view waiting for its read.
@@ -201,10 +233,21 @@ class DocumentSessionRestore:
             host.widget_of(dock).restore_maximized(preview.item.maximized)
         return dock
 
+    def __placed(self, dock: QtAds.CDockWidget, layout: object, fresh: bool) -> QtAds.CDockWidget:
+        """Put a dock this just made at its saved place (#698).
+
+        :param dock: the dock.
+        :param layout: the session's saved documents layout.
+        :param fresh: whether the dock is new; one the reader opened meanwhile stays where they have it.
+        :returns: the dock.
+        """
+        if fresh:
+            self.__host.place(layout, dock)
+        return dock
+
     def __arrive(
         self,
-        make: Callable[[Path, DocumentSessionSettings.Item], QtAds.CDockWidget],
-        path: Path,
+        make: Callable[[], QtAds.CDockWidget],
         item: DocumentSessionSettings.Item,
         *,
         focus: bool = False,
@@ -217,13 +260,14 @@ class DocumentSessionRestore:
         previous = host.tracker.current_dock
         host.pending.restoring = True
         try:
-            dock = make(path, item)
+            dock = make()
         finally:
             host.pending.restoring = False
         if cover and item.maximized is not None and is_wide(item.maximized.mode):
             host.pending.load(dock)
         if focus:
             host.activate(dock)
+            self.__left_current = host.tracker.current_dock
             return
         if previous is not None and previous is not dock:
             # QtAds makes every dock current as it is added, which is right for the start (the last one made is
@@ -232,3 +276,4 @@ class DocumentSessionRestore:
         if dock.isVisible():
             # what its area shows once the focus is given back -- the only tab there, or one in an area of its own
             host.pending.load(dock)
+        self.__left_current = host.tracker.current_dock

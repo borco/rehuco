@@ -5,6 +5,7 @@ and the stack of wide views ([[plugins#session-restore]], #576)."""
 # astroid reads the settings' ordered dict and the sub-docks' name-to-dock dict's values wrongly
 # pylint: disable=protected-access,unsupported-assignment-operation,no-member
 
+from pathlib import Path
 from typing import Final, cast
 
 from PySide6.QtWidgets import QMainWindow, QWidget
@@ -25,6 +26,7 @@ from .test_documents_dock import FAKE_PATH, load_document
 
 SECOND: Final = FAKE_PATH.with_name("second.rehu")
 THIRD: Final = FAKE_PATH.with_name("third.rehu")
+FOURTH: Final = FAKE_PATH.with_name("fourth.rehu")
 TIMEOUT: Final = 5000
 
 
@@ -105,7 +107,7 @@ def test_a_preview_arriving_late_is_made_as_any_late_document(mocker: MockerFixt
     session = preview_session()
     assert session.preview is not None
 
-    dock.restore_late_preview(session.preview)
+    dock.restore_late_preview(session.preview, None)
 
     assert dock.preview_dock_name() == "Preview-7"
     widget = dock.preview_document_widget()
@@ -222,7 +224,7 @@ def test_a_late_wide_view_is_read_at_once_only_when_it_may_cover(
     dock.open_document(ResourceKey(SECOND))
     item = DocumentSessionSettings.Item(open=True, maximized=view_on(OverlayMode.FULL_SCREEN))
 
-    dock.restore_late(FAKE_PATH, item, cover=cover)
+    dock.restore_late(FAKE_PATH, item, None, cover=cover)
 
     widget = next(widget for widget in dock.open_document_widgets() if widget.model.path == FAKE_PATH)
     assert (not widget.model.pending or widget.model.reading is not None) is read
@@ -501,7 +503,7 @@ def test_a_preview_of_this_run_is_not_replaced_by_the_one_arriving_late(mocker: 
     session = preview_session()
     assert session.preview is not None
 
-    dock.restore_late_preview(session.preview)
+    dock.restore_late_preview(session.preview, None)
 
     assert dock.preview_document_widget() is reader
     assert len(dock.open_document_widgets()) == 1
@@ -571,7 +573,173 @@ def test_a_late_view_is_not_put_over_a_document_the_reader_opened_meanwhile(
     restored = mocker.spy(DocumentWidget, "restore_maximized")
     item = DocumentSessionSettings.Item(open=True, maximized=view_on(OverlayMode.FULL_SCREEN))
 
-    dock.restore_late(FAKE_PATH, item, cover=True)
+    dock.restore_late(FAKE_PATH, item, None, cover=True)
 
     restored.assert_not_called()
     assert dock.open_document_widgets() == [widget]
+
+
+# region Late arrivals take their saved place (#698)
+
+
+def saved_row(*paths: Path, current: Path) -> dict[str, object]:
+    """A saved documents layout: one row of tabs.
+
+    :param paths: the documents, in tab order.
+    :param current: the one whose tab is current.
+    :returns: the layout.
+    """
+    return {
+        "format": 1,
+        "main": {
+            "area": [{"name": str(ResourceKey(path)), "closed": False} for path in paths],
+            "current": str(ResourceKey(current)),
+        },
+    }
+
+
+def row_of(dock: DocumentsDock) -> list[Path]:
+    """The documents' tab order as the area would save it.
+
+    :param dock: the documents area.
+    :returns: the paths, in tab order.
+    """
+    names = [entry["name"] for entry in dock.save_state()["main"]["area"]]
+    return [Path(name) for name in names]
+
+
+def session_of(*paths: Path, row: dict[str, object], focused: Path) -> DocumentSessionSettings:
+    """A session with every one of ``paths`` open.
+
+    :param paths: the documents.
+    :param row: its saved layout.
+    :param focused: the focused document.
+    :returns: the session.
+    """
+    session = DocumentSessionSettings()
+    for path in paths:
+        session.items[path] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.docks_layout = row
+    session.focused_path = focused
+    return session
+
+
+def test_documents_arriving_late_take_their_saved_places_in_any_order(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The reader's tab order survives a share that answers late: each remote document is tabbed in at its saved
+    index among the documents already there, whichever answers first, and the current tab does not change (#698).
+
+    **Test steps:**
+
+    * save a row ``FAKE, SECOND, THIRD, FOURTH`` with ``THIRD`` current, restore ``FAKE`` and ``THIRD`` with the window
+    * restore ``FOURTH``, then ``SECOND``, late
+    * verify the row reads ``FAKE, SECOND, THIRD, FOURTH`` and ``THIRD`` is still the focused document
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    row = saved_row(FAKE_PATH, SECOND, THIRD, FOURTH, current=THIRD)
+    session = session_of(FAKE_PATH, SECOND, THIRD, FOURTH, row=row, focused=THIRD)
+    dock.restore_session(session, {FAKE_PATH, THIRD})
+
+    dock.restore_late(FOURTH, session.items[FOURTH], row)
+    dock.restore_late(SECOND, session.items[SECOND], row)
+
+    assert row_of(dock) == [FAKE_PATH, SECOND, THIRD, FOURTH]
+    assert dock.focused_document_path() == THIRD
+
+
+def test_a_late_document_the_reader_opened_meanwhile_stays_where_it_is(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document the reader opened by hand before its share answered is theirs: it is not moved to its saved place
+    (#698).
+
+    **Test steps:**
+
+    * save a row ``FAKE, SECOND, THIRD``, restore ``FAKE`` and ``THIRD``, and open ``SECOND`` by hand after them
+    * restore ``SECOND`` late
+    * verify the row is still ``FAKE, THIRD, SECOND``
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    row = saved_row(FAKE_PATH, SECOND, THIRD, current=FAKE_PATH)
+    session = session_of(FAKE_PATH, SECOND, THIRD, row=row, focused=FAKE_PATH)
+    dock.restore_session(session, {FAKE_PATH, THIRD})
+    dock.open_document(ResourceKey(SECOND))
+
+    dock.restore_late(SECOND, session.items[SECOND], row)
+
+    assert row_of(dock) == [FAKE_PATH, THIRD, SECOND]
+
+
+def test_the_late_preview_is_placed_too(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The session's preview arriving late goes to its saved place like a document (#698).
+
+    **Test steps:**
+
+    * save a row ``FAKE, preview, THIRD``, restore ``FAKE`` and ``THIRD``, then the preview late
+    * verify the preview's tab is between them
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    preview = DocumentSessionSettings.Preview(SECOND, "Preview-7", DocumentSessionSettings.Item(open=True, state=b""))
+    row = saved_row(FAKE_PATH, THIRD, current=FAKE_PATH)
+    row["main"]["area"].insert(1, {"name": "Preview-7", "closed": False})  # type: ignore[index]
+    session = session_of(FAKE_PATH, THIRD, row=row, focused=FAKE_PATH)
+    dock.restore_session(session, {FAKE_PATH, THIRD})
+
+    dock.restore_late_preview(preview, row)
+
+    assert [entry["name"] for entry in dock.save_state()["main"]["area"]][1] == "Preview-7"
+
+
+def test_the_focus_is_as_restored_until_the_reader_moves_it(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The restore's own focus is not the reader's: a late document may take it while it has not been moved, and
+    not after (#698).
+
+    **Test steps:**
+
+    * with nothing open, verify the focus is as restored
+    * restore ``FAKE`` with the window and ``SECOND`` late without the focus; verify it still is
+    * open another document by hand; verify it is not
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    assert dock.focus_is_as_restored()
+    row = saved_row(FAKE_PATH, SECOND, current=FAKE_PATH)
+    session = session_of(FAKE_PATH, SECOND, row=row, focused=FAKE_PATH)
+    dock.restore_session(session, {FAKE_PATH})
+
+    dock.restore_late(SECOND, session.items[SECOND], row)
+
+    assert dock.focus_is_as_restored()
+    dock.open_document(ResourceKey(THIRD))
+    assert not dock.focus_is_as_restored()
+
+
+def test_an_arrival_into_an_empty_area_does_not_end_the_restored_focus(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """With only remote documents, the first to arrive becomes current because nothing else is; the session's focused
+    one arriving after it still takes the focus (#698).
+
+    **Test steps:**
+
+    * restore nothing with the window, then ``SECOND`` late without the focus, then ``FAKE`` late with it
+    * verify ``FAKE`` is the focused document
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    row = saved_row(FAKE_PATH, SECOND, current=FAKE_PATH)
+    session = session_of(FAKE_PATH, SECOND, row=row, focused=FAKE_PATH)
+    dock.restore_session(session, set())
+
+    dock.restore_late(SECOND, session.items[SECOND], row)
+    assert dock.focus_is_as_restored()
+    dock.restore_late(FAKE_PATH, session.items[FAKE_PATH], row, focus=dock.focus_is_as_restored())
+
+    assert dock.focused_document_path() == FAKE_PATH
+    assert row_of(dock) == [FAKE_PATH, SECOND]
+
+
+# endregion

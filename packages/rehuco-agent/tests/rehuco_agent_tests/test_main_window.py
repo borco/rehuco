@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from pytest import MonkeyPatch, fixture, mark
+from pytest import LogCaptureFixture, MonkeyPatch, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent import main_window
@@ -8261,7 +8261,7 @@ def test_a_remote_document_is_not_restored_with_the_window_but_arrives_when_it_a
 
     answer(window, remote, Presence.PRESENT)
 
-    restore_late.assert_called_once_with(remote, session.items[remote], focus=True, cover=True)
+    restore_late.assert_called_once_with(remote, session.items[remote], session.docks_layout, focus=True, cover=True)
 
 
 def test_a_late_document_does_not_take_the_focus_from_one_already_focused(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -8278,6 +8278,7 @@ def test_a_late_document_does_not_take_the_focus_from_one_already_focused(mocker
     treat_as_remote(mocker, remote)
     mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
     mocker.patch("rehuco_agent.main_window.DocumentsDock.focused_document_path", return_value=Path("other.rehu"))
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.focus_is_as_restored", return_value=False)
     restore_late = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
 
     window = MainWindow()
@@ -8285,7 +8286,89 @@ def test_a_late_document_does_not_take_the_focus_from_one_already_focused(mocker
     answer(window, remote, Presence.PRESENT)
 
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    restore_late.assert_called_once_with(remote, session.items[remote], focus=False, cover=False)
+    restore_late.assert_called_once_with(remote, session.items[remote], session.docks_layout, focus=False, cover=False)
+
+
+def test_a_late_document_and_the_layout_are_logged(
+    mocker: MockerFixture, qtbot: QtBot, caplog: LogCaptureFixture
+) -> None:
+    """What the start restored, what arrived late and whether the saved layout was applied are in the log, so a
+    session that came back in another order can be read off it (#698).
+
+    **Test steps:**
+
+    * seed one remote open document, focused, and construct ``MainWindow``
+    * deliver the answer that it is there
+    * verify the log names the document counts at start, the arrival with the focus, and the layout applied
+    """
+    remote = Path("/remote-share/pack/info.rehu")
+    seed_remembered(mocker, session_open=(remote,), focused=remote)
+    treat_as_remote(mocker, remote)
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_late")
+
+    with caplog.at_level("INFO", logger="rehuco_agent.main_window"):
+        window = MainWindow()
+        qtbot.addWidget(window)
+        answer(window, remote, Presence.PRESENT)
+
+    assert "0 documents restored with the window, 1 waiting for their storage" in caplog.text
+    assert f"{remote} arrived late (takes the focus: True)" in caplog.text
+    assert "applying the saved layout" in caplog.text
+
+
+def test_the_settling_clock_starts_when_the_window_is_first_shown(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The answers about remote storage are delivered once the window runs, so the clock that bounds the late layout
+    starts there, not when the window is built (#698).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and verify the clock has not been started
+    * show it and verify it was
+    """
+    window_shown = mocker.patch("rehuco_agent.main_window.RememberedPaths.window_shown")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window_shown.assert_not_called()
+    window.show()
+
+    window_shown.assert_called()
+
+
+def test_a_document_whose_server_never_answers_keeps_its_place_in_the_saved_layout(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A run with the share off must not drop its document from the saved tab row: the next run, with the share
+    back, would tab it in at the end (#698).
+
+    **Test steps:**
+
+    * seed a remote open document that was saved between two local ones, and an area that now holds only the local ones
+    * deliver the answer that the remote one is offline and save the session
+    * verify the saved layout holds the remote document between them again, and the local row is as the area saved it
+    """
+    remote = Path("/remote-share/pack/info.rehu")
+    first, second = Path("first.rehu").resolve(), Path("second.rehu").resolve()
+    seed_remembered(mocker, session_open=(remote,))
+    treat_as_remote(mocker, remote)
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
+
+    def row(*paths: Path) -> dict[str, object]:
+        entries = [{"name": str(path), "closed": False} for path in paths]
+        return {"format": 1, "main": {"area": entries, "current": entries[0]["name"]}}
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    session.docks_layout = row(first, remote, second)
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.save_state", return_value=row(first, second))
+    answer(window, remote, Presence.OFFLINE)
+
+    window._MainWindow__capture_session()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    names = [entry["name"] for entry in session.docks_layout["main"]["area"]]  # type: ignore[index]
+    assert names == [str(path) for path in (first, remote, second)]
 
 
 def test_a_late_document_reveals_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -9116,4 +9199,5 @@ def test_a_preview_arriving_late_is_restored_late(mocker: MockerFixture, qtbot: 
 
     answer(window, remote, Presence.PRESENT)
 
-    restore.assert_called_once_with(preview, cover=True)
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    restore.assert_called_once_with(preview, session.docks_layout, cover=True)
