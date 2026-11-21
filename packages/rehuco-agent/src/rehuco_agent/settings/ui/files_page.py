@@ -11,8 +11,10 @@ from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
     LICENSE_SIDECAR_SUFFIX,
+    MIN_SPLIT_LIMIT,
     REHU_SUFFIX,
     USER_SIDECAR_SUFFIX,
+    clamped_limits,
 )
 
 from ...item_action_icons import apply_item_action_icons
@@ -41,8 +43,10 @@ class FilesPage(QWidget):
     first has made one. It covers a screenshot deleted from the images editor, a `.tc` conversion's discarded backup
     and a discarded conversion-backups set alike (#298), so it sits here rather than under "Images".
     **Moving records** (`MoveSettings`, #579) says whether a move to the place a record's root's layout gives it
-    removes the folders it leaves empty. **Verify checksums when moving a record** (`MoveSettings` too, #339) says
-    which moves verify the record's checksums: a rename in place on a local disk, one on a share, and the original
+    removes the folders it leaves empty, and how many entries a folder of buckets holds before it splits and how few
+    before a rebalance joins it back (#680), the second kept at most half the first. **Verify checksums when moving a
+    record** (`MoveSettings` too, #339) says which moves verify the record's checksums: a rename in place on a local
+    disk, one on a share, and the original
     before a copy to another disk or share. The copy's own check is shown ticked and disabled: it is the hard rule,
     not a choice. The last two frames, unchanged since #226, are the
     two tiers of what a size scan and checksum run leave out: **Excluded file patterns** is the
@@ -74,6 +78,9 @@ class FilesPage(QWidget):
         self.__ui.structural_patterns_label.setText(self.__structural_summary())
         self.__ui.patterns_editor.defaults = EXCLUDED_FILE_PATTERNS
         apply_item_action_icons(self.__ui.patterns_editor)
+        self.__ui.split_limit_spin_box.setMinimum(MIN_SPLIT_LIMIT)
+        self.__ui.split_limit_spin_box.valueChanged.connect(self.__on_split_limit_changed)
+        self.__on_split_limit_changed(self.__ui.split_limit_spin_box.value())
 
         self.drop_changes()
 
@@ -114,6 +121,7 @@ class FilesPage(QWidget):
         moves.verify_renamed_local = self.__ui.verify_renamed_local_check_box.isChecked()
         moves.verify_renamed_network = self.__ui.verify_renamed_network_check_box.isChecked()
         moves.verify_original_before_copy = self.__ui.verify_original_check_box.isChecked()
+        moves.split_limit, moves.join_limit = self.__staged_limits()
         moves.save(persistent_settings())
 
         excluded = shared_excluded_files_settings()
@@ -141,6 +149,8 @@ class FilesPage(QWidget):
         self.__ui.verify_renamed_local_check_box.setChecked(moves.verify_renamed_local)
         self.__ui.verify_renamed_network_check_box.setChecked(moves.verify_renamed_network)
         self.__ui.verify_original_check_box.setChecked(moves.verify_original_before_copy)
+        self.__ui.split_limit_spin_box.setValue(moves.split_limit)
+        self.__ui.join_limit_spin_box.setValue(moves.join_limit)
         self.__ui.clear_backups_without_asking_check_box.setChecked(deletion.clear_backups_without_asking)
         self.__ui.delete_images_without_asking_check_box.setChecked(deletion.delete_images_without_asking)
         self.__ui.use_recycle_bin_check_box.setChecked(deletion.use_recycle_bin)
@@ -157,7 +167,22 @@ class FilesPage(QWidget):
             or self.__ui.verify_renamed_local_check_box.isChecked() != moves.verify_renamed_local
             or self.__ui.verify_renamed_network_check_box.isChecked() != moves.verify_renamed_network
             or self.__ui.verify_original_check_box.isChecked() != moves.verify_original_before_copy
+            or self.__staged_limits() != (moves.split_limit, moves.join_limit)
         )
+
+    def __staged_limits(self) -> tuple[int, int]:
+        """The bucket limits as staged, clamped as a move uses them (#680).
+
+        :returns: the split limit and the join limit.
+        """
+        return clamped_limits(self.__ui.split_limit_spin_box.value(), self.__ui.join_limit_spin_box.value())
+
+    def __on_split_limit_changed(self, split_limit: int) -> None:
+        """Keep the join limit at most half the split limit, so the box never offers a value a move would not use.
+
+        :param split_limit: the split limit as now staged.
+        """
+        self.__ui.join_limit_spin_box.setMaximum(clamped_limits(split_limit, 0)[0] // 2)
 
     def __structural_summary(self) -> str:
         """Describe the six structural exclusions, written from the constants rather than restated.

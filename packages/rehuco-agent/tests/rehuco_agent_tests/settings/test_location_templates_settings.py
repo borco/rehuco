@@ -411,7 +411,7 @@ def test_samples_round_trip_through_their_own_group(settings: FakeSettings) -> N
     * load a fresh object and verify the record came back, and no type reads as customized
     """
     saved = LocationTemplatesSettings()
-    sample = ("Title", "Publisher", "Jane Doe, John Roe", "2024", "12")
+    sample = ("Title", "Publisher", "Jane Doe, John Roe", "2024", "12", "0a1b")
     samples: dict[str, tuple[str, ...]] = {"reference_images": sample}
     saved.samples = samples
     saved.save(settings)  # type: ignore[arg-type]

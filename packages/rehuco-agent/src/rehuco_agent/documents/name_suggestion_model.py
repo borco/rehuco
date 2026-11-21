@@ -13,15 +13,19 @@ from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import (
     MappedRoot,
+    Placement,
     RecordNaming,
     Refusal,
     apply_location_replacements,
     destinations,
     is_directory_scoped,
     known_placeholders_for,
+    location_name_problem,
     location_values,
     path_key,
+    place_holds,
     render_location_pattern,
+    shown_place,
 )
 
 from ..settings.location_replacements_settings import shared_location_replacements_settings
@@ -51,6 +55,8 @@ class RootDestination:  # pylint: disable=too-many-instance-attributes
     :param source_root: the folder of the root the record is under now, or ``None`` for a record under no root.
     :param source_root_id: that root, or ``None``.
     :param template: the path template that rendered the place, ``*`` included; empty for the root itself (#639).
+    :param bucketed: the indices of the levels of ``relative`` put in prefix buckets, which only a move reads off the
+        disk (#680); none for a place with no buckets.
     """
 
     label: str
@@ -61,6 +67,7 @@ class RootDestination:  # pylint: disable=too-many-instance-attributes
     source_root: Path | None
     source_root_id: UUID | None
     template: str = ""
+    bucketed: tuple[int, ...] = ()
 
     @property
     def same_root(self) -> bool:
@@ -69,8 +76,14 @@ class RootDestination:  # pylint: disable=too-many-instance-attributes
 
     @property
     def into(self) -> Path:
-        """The folder the record's own entry -- its folder, or its file set -- lands in."""
+        """The folder the record's own entry -- its folder, or its file set -- lands in; for a bucketed place, that
+        folder without its buckets."""
         return self.root.joinpath(*self.relative.parts[:-1])
+
+    @property
+    def shown(self) -> PurePosixPath:
+        """The place as the path row draws it: its buckets, not yet read, as an ellipsis (#680)."""
+        return shown_place(self.relative, self.bucketed)
 
     @property
     def name(self) -> str:
@@ -100,6 +113,10 @@ class NameSuggestionModel(QObject):
     layout keeps the record's folder name, at the root's top, under its own root too (#643). **The place the record
     sits at** is a row of its own, first and ``here``, whenever its own root's layout puts it somewhere else or
     refuses it.
+
+    **A bucketed place** (#680) is offered without its buckets, which only the move reads off the disk, and the record
+    sits there when its folders are the place's with any chain of its buckets at each bucketed level; nothing is read
+    to tell. Where the record's own name is bucketed (:meth:`bucket_home`), a rename moves it to its new name's bucket.
 
     **A record that is its root's folder** (``<root>/info.rehu``, #641) is not moved or renamed from here: its own
     root is the one place offered, by the root's label alone and already there, no other root offers one, and no name
@@ -165,7 +182,14 @@ class NameSuggestionModel(QObject):
         model = self.__model
         if self.is_root_folder():
             return []
-        values = location_values(model.title, model.publisher, model.authors, model.released, model.advertised_count)
+        values = location_values(
+            model.title,
+            model.publisher,
+            model.authors,
+            model.released,
+            model.advertised_count,
+            site_id=model.document.site_id,
+        )
         plugins = self.__model.document.plugins
         main_key = plugins.main_key(self.__model.resource_type)
         if main_key not in plugins:
@@ -177,7 +201,23 @@ class NameSuggestionModel(QObject):
             apply_location_replacements(render_location_pattern(pattern, values, known_placeholders), rules)
             for pattern in patterns
         )
-        return list(dict.fromkeys(name for name in rendered if name))
+        # a name starting with a dot is never made (#680): not offered, rather than refused once clicked
+        return list(dict.fromkeys(name for name in rendered if name and not location_name_problem(name.strip())))
+
+    def bucket_home(self) -> RootDestination | None:
+        """The place the record sits at under its own root when the place buckets its name (#680): a rename there is a
+        move to the bucket of its new name, not a rename beside the buckets of its old one.
+
+        :returns: the place, ``here``; ``None`` when the record's name is not bucketed where it sits.
+        """
+        return next(
+            (
+                place
+                for place in self.root_destinations()
+                if place.here and place.same_root and len(place.relative.parts) - 1 in place.bucketed
+            ),
+            None,
+        )
 
     def is_root_folder(self) -> bool:
         """Whether the record describes a root's own folder (``<root>/info.rehu``, #641), which no rename or move
@@ -218,13 +258,12 @@ class NameSuggestionModel(QObject):
         naming = RecordNaming.of(self.__model.document, current_name)
         rules = shared_location_replacements_settings().rules
         folder = path.parent.parent if is_directory_scoped(path) else path.parent
-        current = path_key(folder / current_name)
         places: list[RootDestination] = []
         for root in [*([own] if own is not None else []), *others]:
             offered = destinations(root, naming, rules)
             if isinstance(offered, Refusal):
                 offered = ()
-            here = [path_key(root.path.joinpath(*place.relative.parts)) == current for place in offered]
+            here = [self.__is_here(root, place, folder / current_name, root is own) for place in offered]
             if root is own and not any(here):
                 places.append(self.__current_place(root, folder, current_name))
             places.extend(
@@ -237,10 +276,27 @@ class NameSuggestionModel(QObject):
                     None if own is None else own.path,
                     None if own is None else own.root_id,
                     place.template,
+                    place.bucketed,
                 )
                 for place, is_here in zip(offered, here, strict=True)
             )
         return tuple(places)
+
+    @staticmethod
+    def __is_here(root: MappedRoot, place: Placement, entry: Path, own: bool) -> bool:
+        """Whether the record already sits at a place: at its path, or for a bucketed one under any chain of its
+        buckets (#680), which only its own root can hold.
+
+        :param root: the root the place is under.
+        :param place: the place.
+        :param entry: the record's own entry -- its folder, or its file set's name -- where it is now.
+        :param own: whether ``root`` is the root holding the record.
+        :returns: whether it is there.
+        """
+        if place.bucketed:
+            levels = entry.parts[len(root.path.parts) :]
+            return own and place_holds(levels, place.relative, place.bucketed)
+        return path_key(root.path.joinpath(*place.relative.parts)) == path_key(entry)
 
     @staticmethod
     def __current_place(own: MappedRoot, folder: Path, current_name: str) -> RootDestination:

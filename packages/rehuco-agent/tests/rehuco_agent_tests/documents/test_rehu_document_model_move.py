@@ -10,7 +10,7 @@ from pytest import mark
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.move_settings import shared_move_settings
-from rehuco_core import RehuDocument, RenameCoordinator
+from rehuco_core import LEADING_DOT_PROBLEM, RehuDocument, RenameCoordinator
 
 ROOT: Final = Path(Path.cwd().anchor) / "tutorials"
 RECORD: Final = ROOT / "Old" / "Foo" / "info.rehu"
@@ -249,3 +249,26 @@ def test_a_move_a_task_ran_reports_its_end() -> None:
 
     assert model.rename_error == "Could not move: the copy did not match."
     assert heard == [True]
+
+
+def test_a_rename_to_a_name_starting_with_a_dot_is_refused(mocker: MockerFixture) -> None:
+    """No location starts with a dot (#680): such a rename is refused on the banner before anything is saved or
+    moved; a record already named so may be renamed to that same name, a no-op.
+
+    **Test steps:**
+
+    * rename a record to a name starting with a dot
+    * verify ``False``, the banner saying why, and core never asked
+    * rename a record already named with a dot to its own name, and verify core is asked
+    """
+    rename = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=RECORD)
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, RECORD))
+
+    assert model.rename_location(".Foo") is False
+
+    assert model.rename_error == f'Cannot rename to ".Foo": {LEADING_DOT_PROBLEM}'
+    rename.assert_not_called()
+
+    hidden = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, ROOT / ".Foo" / "info.rehu"))
+    hidden.rename_location(".Foo")
+    rename.assert_called_once()

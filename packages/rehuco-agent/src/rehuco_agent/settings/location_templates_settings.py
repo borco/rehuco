@@ -23,7 +23,7 @@ A reactive ``QObject`` (`SimpleProperty` fields), the same shape `ScreenshotPatt
 change updates an already-open document's suggestion list without a reopen.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from functools import lru_cache
 from typing import Final
 
@@ -41,15 +41,34 @@ per-type sub-groups, since :meth:`LocationTemplatesSettings.load` reads every on
 whose patterns were customized, and :meth:`LocationTemplatesSettings.save` prunes the ones
 :attr:`~LocationTemplatesSettings.patterns` no longer names."""
 
-SAMPLE_FIELDS: Final = ("title", "publisher", "authors", "year", "count")
+SAMPLE_FIELDS: Final = ("title", "publisher", "authors", "year", "count", "site_id")
 """The Try-it sample record's fields, in the order the page shows them -- also the placeholder each one
-fills and the key it is stored under."""
+fills and the key it is stored under. ``{site}`` has no field of its own: it is the publisher (#680)."""
 
-DEFAULT_SAMPLE: Final[tuple[str, ...]] = ("Sample Title", "Sample Publisher", "Jane Doe, John Roe", "2025", "900+")
+DEFAULT_SAMPLE: Final[tuple[str, ...]] = (
+    "Sample Title",
+    "Sample Publisher",
+    "Jane Doe, John Roe",
+    "2025",
+    "900+",
+    "a1b2c3",
+)
 """What the Try-it sample record starts out as, in :data:`SAMPLE_FIELDS` order, so a fresh page shows
 the patterns naming something rather than an empty preview. ``count`` is seeded the same as the others
 even on a type that hides its row (#349): the field is never read for such a type, since no pattern of
 its own can name ``{count}``."""
+
+
+def sample_values(sample: Sequence[str]) -> dict[str, str]:
+    """A Try-it sample record as a pattern reads it: each field under its placeholder, and ``{site}`` as its
+    publisher, which a site's scraper sets it to (#680).
+
+    :param sample: the record, in :data:`SAMPLE_FIELDS` order.
+    :returns: the values, by placeholder name.
+    """
+    values = dict(zip(SAMPLE_FIELDS, sample, strict=True))
+    return values | {"site": values["publisher"]}
+
 
 NAME_SUGGESTION_PATTERNS: Final = (
     "{title}",

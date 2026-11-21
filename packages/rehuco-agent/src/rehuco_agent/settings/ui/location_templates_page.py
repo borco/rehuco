@@ -9,6 +9,7 @@ from rehuco_core import (
     DEFAULT_PLUGIN_REGISTRY,
     apply_location_replacements,
     known_placeholders_for,
+    location_name_problem,
     render_location_pattern,
 )
 
@@ -17,10 +18,10 @@ from ..location_replacements_settings import shared_location_replacements_settin
 from ..location_templates_settings import (
     DEFAULT_SAMPLE,
     NAME_SUGGESTION_PATTERNS,
-    SAMPLE_FIELDS,
     LocationTemplatesSettings,
     effective_location_templates,
     normalize_location_templates,
+    sample_values,
     shared_location_templates_settings,
 )
 from ..persistent_settings import persistent_settings
@@ -77,7 +78,7 @@ class LocationTemplatesPage(QWidget):
         super().__init__(parent)
         self.__resource_type: Final = resource_type
         self.__known_placeholders: Final = known_placeholders_for(DEFAULT_PLUGIN_REGISTRY.field_names(resource_type))
-        """This type's full placeholder set (#349): the base four plus ``count`` when its plugin
+        """This type's full placeholder set (#349): the base set plus ``count`` when its plugin
         declares ``advertised_count``."""
         self.__ui: Final = Ui_LocationTemplatesPage()
         self.__ui.setupUi(self)
@@ -92,7 +93,7 @@ class LocationTemplatesPage(QWidget):
             )
             self.__ui.placeholders_label.setText(
                 self.__ui.placeholders_label.text()
-                + " This type also accepts a fifth: {count}, the pack's advertised image count."
+                + " This type also accepts {count}, the pack's advertised image count."
             )
         self.__sample_edits: Final = (
             self.__ui.sample_title_edit,
@@ -100,6 +101,7 @@ class LocationTemplatesPage(QWidget):
             self.__ui.sample_authors_edit,
             self.__ui.sample_year_edit,
             self.__ui.sample_count_edit,
+            self.__ui.sample_site_id_edit,
         )
         """The sample record's fields, in :data:`SAMPLE_FIELDS` order -- ``sample_count_edit`` stays in
         this tuple even when hidden, since it is simply never named by a pattern this type's patterns
@@ -181,7 +183,7 @@ class LocationTemplatesPage(QWidget):
         replacement rules are the *saved* ones, not staged: they belong to the separate Location
         Replacements page, and this preview follows a save there live via ``rules_changed``.
         """
-        values: dict[str, str] = dict(zip(SAMPLE_FIELDS, self.__sample(), strict=True))
+        values = sample_values(self.__sample())
         usable = effective_location_templates(self.__ui.patterns_editor.values, self.__known_placeholders)
         rules = shared_location_replacements_settings().rules
         sanitized = (
@@ -190,5 +192,6 @@ class LocationTemplatesPage(QWidget):
             )
             for pattern in usable
         )
-        names = dict.fromkeys(name for name in sanitized if name is not None)
+        # as the suggestions do, a name starting with a dot is not offered (#680)
+        names = dict.fromkeys(name for name in sanitized if name is not None and not location_name_problem(name))
         self.__ui.try_it_result_label.setText("\n".join(names))

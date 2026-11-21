@@ -1,6 +1,7 @@
 """Tests for RecordMoves (#339): which move a click on a root's place makes -- a rename at once, or a task -- and how
 a task's end reaches the document's banner."""
 
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Final
 from unittest.mock import MagicMock, Mock
@@ -204,6 +205,32 @@ def test_a_rename_on_a_share_is_verified_as_a_task(
     assert (kwargs["mode"], kwargs["check_renamed"]) == (MoveMode.RENAME, True)
     queue.enqueue.assert_called_once_with(job_class.return_value)
     scope.assert_called_once_with(RECORD)
+
+
+def test_a_bucketed_place_is_always_a_task(
+    qtbot: QtBot, model: Mock, queue: Mock, job_class: MagicMock, mocker: MockerFixture
+) -> None:
+    """A rename into a bucketed place, even one no box asks to verify, is a task: its buckets are read and its folder
+    split on the task's thread (#680).
+
+    **Test steps:**
+
+    * make a bucketed place on the record's local volume, with no verify asked, and move there
+    * check nothing was renamed at once, and a rename job was queued without the buckets, its bucketed levels given,
+      named by the place as shown
+    """
+    del qtbot
+    volume(mocker, same=True)
+    bucketed = replace(PLACE, bucketed=(1,))
+
+    RecordMoves(model, queue).move(bucketed)
+
+    model.move_in_root.assert_not_called()
+    model.prepare_move.assert_called_once_with(f"Archive: {Path('Jane', '…', 'Foo')}")
+    kwargs = job_class.call_args.kwargs
+    assert (kwargs["into"], kwargs["new_name"], kwargs["bucketed"]) == (PurePosixPath("Jane"), "Foo", (1,))
+    assert kwargs["mode"] is MoveMode.RENAME
+    queue.enqueue.assert_called_once_with(job_class.return_value)
 
 
 def test_a_place_on_another_volume_is_a_copy_naming_both_roots(

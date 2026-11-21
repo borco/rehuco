@@ -681,10 +681,12 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   the order the path row offers them in**, which the table's move up / down buttons change, and a row with no type, no
   template, or alike in type and template to an earlier row, is flagged and left out; the **Path template** is an editable drop-down of `*` and the Root Layout Templates of the
   settings ([[appendices.settings-pages#category-groups]]) that the row's type accepts -- `*` standing for any type,
-  so only the four placeholders every type has -- or typed. A template the row's type cannot use is shown in the
+  so only the placeholders every type has, and `{buckets}` ([[mounts-and-storage#buckets]]), which any type's may
+  name -- or typed. A template the row's type cannot use is shown in the
   warning color with the reason as its tooltip, and saved as typed; the file keeps the template's text, so editing
-  the library later changes no root. **Fallbacks** is a fixed table, one row for each of the five placeholders
-  a template may use -- `title`, `publisher`, `authors`, `year`, `count` -- only *When empty* editable, no row
+  the library later changes no root. **Fallbacks** is a fixed table, one row for each placeholder naming a field
+  -- `title`, `publisher`, `authors`, `year`, `count`, `site`, `site_id`; `{buckets}` names none -- only *When empty*
+  editable, no row
   added, duplicated or removed, an empty one not written, and with no buttons, the full width. The same editor serves the
   New Root Presets page and the Add Roots dialog's *New layout…*.
   A root whose file cannot be read, or a catalog open read-only, offers no edit. **A root this machine has not mapped**
@@ -1130,7 +1132,12 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   with the same collision check and rollback, the folders it made removed again if it fails; it runs at once unless the
   Files page asks for it to be verified, when it is a task that verifies before and after. A place on another volume
   is the checksum-gated **verified move**, always a task ([[mounts-and-storage#safe-move-rename]]: verify, copy,
-  verify at the target, delete); its failure reaches the document's banner as a rename's does. **Only a place that can
+  verify at the target, delete); its failure reaches the document's banner as a rename's does. **A bucketed place**
+  ([[mounts-and-storage#buckets]], #680) is drawn with its buckets as `…`, read off no disk; the record is there when
+  its folders are the place's with any chain of its buckets; it is never shown occupied, since only its move knows the
+  folder; and choosing it is always a task, which reads the buckets and splits what it crowds. A name chosen for a
+  record whose own name is bucketed is such a move too, into the new name's bucket. A name starting with a dot is
+  never offered, and a typed one is refused (#680). **Only a place that can
   be built is shown**: none for a root this machine does not map or cannot reach now, a layout naming neither the
   record's type nor `*`, or one needing a placeholder the record leaves empty with no fallback on the root — and none at
   all for a record whose own root cannot be reached. A host with no task queue offers only the record's own root's

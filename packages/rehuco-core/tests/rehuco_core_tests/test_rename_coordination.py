@@ -16,7 +16,7 @@ from typing import Any, Final
 
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
-from rehuco_core import Relocation, RenameCoordinator, RenameYieldTimeout, ResourceLocation
+from rehuco_core import RecordLockedError, Relocation, RenameCoordinator, RenameYieldTimeout, ResourceLocation
 
 from rehuco_core_tests.concurrency import BRIEF, SETTLE, running, wait_until
 
@@ -783,6 +783,106 @@ def test_a_failing_step_releases_the_readers_and_announces_nothing(coordinator: 
 
     assert coordinator.yield_wanted is False
     assert not heard
+
+
+# endregion
+
+
+# region a folder moved whole (#680)
+
+
+def test_a_folder_moves_whole_and_everyone_follows_every_record_beneath(
+    coordinator: RenameCoordinator, tmp_path: Path
+) -> None:
+    """A folder move tells every record beneath it before it waits, makes the folder it lands in, renames the folder
+    once, and every holder follows the one directory pair.
+
+    **Test steps:**
+
+    * write two records in a folder, track one, and listen before and after
+    * move the folder into a bucket not yet made
+    * verify both records were told first, the folder is in the bucket, the location followed, one pair announced
+    """
+    first, second = tmp_path / "Jane" / "A" / "info.rehu", tmp_path / "Jane" / "B.rehu"
+    first.parent.mkdir(parents=True)
+    first.write_text("{}", encoding="utf-8")
+    second.write_text("{}", encoding="utf-8")
+    location = coordinator.track(second)
+    before: list[Path] = []
+    heard: list[Relocation] = []
+    coordinator.add_before_rename_listener(before.append)
+    coordinator.add_rename_listener(heard.append)
+
+    landed = coordinator.move_folder(tmp_path / "Jane", tmp_path / "j", "Jane", (first, second))
+
+    assert before == [first, second]
+    assert landed == tmp_path / "j" / "Jane"
+    assert (landed / "A" / "info.rehu").is_file()
+    assert location.path == landed / "B.rehu"
+    assert heard == [Relocation(((tmp_path / "Jane", landed),))]
+
+
+def test_a_folder_move_steps_out_of_the_folder(
+    coordinator: RenameCoordinator, tmp_path: Path, chdir: Any, mocker: MockerFixture
+) -> None:
+    """A working directory inside the folder is left for its parent before the folder moves (#355).
+
+    **Test steps:**
+
+    * put the working directory inside a folder
+    * move the folder
+    * verify the process moved to the folder's parent
+    """
+    (tmp_path / "Jane").mkdir()
+    mocker.patch.object(Path, "cwd", return_value=tmp_path / "Jane" / "A")
+
+    coordinator.move_folder(tmp_path / "Jane", tmp_path / "j", "Jane", ())
+
+    chdir.assert_called_once_with(tmp_path)
+
+
+def test_a_folder_holding_a_locked_record_is_not_moved(
+    coordinator: RenameCoordinator, tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """A record beneath the folder another process is writing keeps the folder where it is.
+
+    **Test steps:**
+
+    * have every lock look held, and move a folder holding a record
+    * verify the lock error, the folder where it was, and nothing announced
+    """
+    record = tmp_path / "Jane" / "B.rehu"
+    record.parent.mkdir()
+    record.write_text("{}", encoding="utf-8")
+    mocker.patch(
+        "rehuco_core.rename_coordination.RecordFileLock.refuse_if_held", side_effect=RecordLockedError(record, None)
+    )
+    heard: list[Relocation] = []
+    coordinator.add_rename_listener(heard.append)
+
+    with raises(RecordLockedError):
+        coordinator.move_folder(tmp_path / "Jane", tmp_path / "j", "Jane", (record,))
+
+    assert record.is_file()
+    assert not heard
+
+
+def test_a_folder_is_not_moved_onto_a_name_taken(coordinator: RenameCoordinator, tmp_path: Path) -> None:
+    """Something already at the folder's new place refuses the move, both left as they were.
+
+    **Test steps:**
+
+    * make the folder and something at its new place
+    * move it
+    * verify the error and both still there
+    """
+    (tmp_path / "Jane").mkdir()
+    (tmp_path / "j" / "Jane").mkdir(parents=True)
+
+    with raises(FileExistsError):
+        coordinator.move_folder(tmp_path / "Jane", tmp_path / "j", "Jane", ())
+
+    assert (tmp_path / "Jane").is_dir()
 
 
 # endregion

@@ -20,6 +20,13 @@ is lost by guessing wrong.
 
 A rename runs *source* (when its setting asks), the rename itself, then *target* (the same setting).
 
+**A move to a bucketed place** ([[mounts-and-storage#buckets]], #680) reads its buckets off the disk as it first
+enters *move*, and keeps them, so a stopped copy goes on into the same folder. Once the record is there, a *split*
+phase settles each bucketed level the place went into: a folder it crowded past the limit splits
+(:class:`~rehuco_core.BucketSplitter`), every record and folder that moves going through the rename barrier. The limit
+is the host's, asked then. A split stopped anywhere is finished by settling again, from the disk alone; a cancel then
+takes nothing back, since every record is whole wherever it is.
+
 **An end that goes away makes the move wait, not fail** (#634): whatever a phase fails with -- an I/O error, or a
 check that could not read what it checked -- the source and the destination are asked whether they answer
 (:func:`~borco_core.presence_of`, a 0.3 s connection attempt, never a ``stat`` that blocks 21 s), and one that does
@@ -50,7 +57,6 @@ does.
 import logging
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Any, Final, cast
@@ -62,6 +68,9 @@ from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM
 from .checksum_reporting import checksum_report_is_clean, checksum_report_summary
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
+from .move_cleanup import MoveCleanup
+from .prefix_buckets import BucketChain, BucketSplitter, resolve_buckets
+from .record_bucket_mover import RecordBucketMover
 from .record_file_lock import RecordFileLock, RecordLockedError
 from .record_move_host import DEFAULT_RECORD_MOVE_HOST, RecordMoveHost
 from .rehu_checksums import verify_checksums
@@ -111,12 +120,6 @@ SOURCE_SIDE: Final = "source"
 DESTINATION_SIDE: Final = "destination"
 """A move's two ends, as a waiting row names the one that does not answer."""
 
-CLEANUP_FILES_KEY: Final = "files"
-CLEANUP_FOLDERS_KEY: Final = "folders"
-CLEANUP_LEFT_KEY: Final = "left"
-CLEANUP_ROOT_KEY: Final = "root"
-"""The keys a :class:`MoveCleanup` writes itself down under."""
-
 STATE_SOURCE_ROOT_KEY: Final = "source_root"
 STATE_SOURCE_KEY: Final = "source"
 STATE_DESTINATION_ROOT_KEY: Final = "destination_root"
@@ -133,6 +136,8 @@ STATE_CREATE_IF_MISSING_KEY: Final = "create_if_missing"
 STATE_REMOVE_EMPTY_FOLDERS_KEY: Final = "remove_empty_folders"
 STATE_ALGORITHM_KEY: Final = "algorithm"
 STATE_EXCLUDED_PATTERNS_KEY: Final = "excluded_patterns"
+STATE_BUCKETED_KEY: Final = "bucketed"
+STATE_CHAINS_KEY: Final = "bucket_chains"
 """The keys this job writes itself down under; read back by it and by nothing else.
 
 The source is its root's id and the path under it, or with no root the absolute path; the destination is always a root
@@ -167,6 +172,9 @@ class MovePhase(StrEnum):
     CLEANUP = "cleanup"
     """What is left of a copy's original is removed."""
 
+    SPLIT = "split"
+    """The buckets a bucketed place went into are settled (#680)."""
+
     DONE = "done"
     """Nothing is left to do."""
 
@@ -174,55 +182,6 @@ class MovePhase(StrEnum):
 COPYING_PHASES: Final = frozenset({MovePhase.SOURCE, MovePhase.MOVE, MovePhase.TARGET, MovePhase.FINISH})
 """The phases a copy's files can be at the destination while the original is whole: what a cancel takes back. The
 source check is one of them for a retried move, which starts over from it with its copy kept."""
-
-
-@dataclass(frozen=True, slots=True)
-class MoveCleanup:
-    """What is left of an original once it stopped being a record, kept so a quit before it is all removed still
-    removes it.
-
-    :param files: the original's files.
-    :param folders: its folders, a parent before its children.
-    :param left: the folder its own entry was in.
-    :param root: the folder of the root it was under, or ``None`` for none.
-    """
-
-    files: tuple[str, ...]
-    folders: tuple[str, ...]
-    left: str
-    root: str | None
-
-    def to_state(self) -> dict[str, Any]:
-        """This cleanup as JSON primitives.
-
-        :returns: the state.
-        """
-        return {
-            CLEANUP_FILES_KEY: list(self.files),
-            CLEANUP_FOLDERS_KEY: list(self.folders),
-            CLEANUP_LEFT_KEY: self.left,
-            CLEANUP_ROOT_KEY: self.root,
-        }
-
-    @classmethod
-    def from_state(cls, state: Any) -> MoveCleanup | None:
-        """A cleanup from what :meth:`to_state` wrote.
-
-        :param state: the saved value; ``None`` for a move with nothing to clean up.
-        :returns: the cleanup, or ``None``.
-        :raises ValueError: the value is not the shape written.
-        """
-        if state is None:
-            return None
-        if not isinstance(state, dict):
-            raise ValueError("A saved move's cleanup is not an object.")
-        files, folders = state.get(CLEANUP_FILES_KEY), state.get(CLEANUP_FOLDERS_KEY)
-        left, root = state.get(CLEANUP_LEFT_KEY), state.get(CLEANUP_ROOT_KEY)
-        if not (isinstance(files, list) and isinstance(folders, list) and isinstance(left, str)):
-            raise ValueError("A saved move's cleanup names no files, folders or folder left.")
-        if not all(isinstance(path, str) for path in [*files, *folders]) or not isinstance(root, str | None):
-            raise ValueError("A saved move's cleanup names something that is not a path.")
-        return cls(tuple(files), tuple(folders), left, root)
 
 
 # a move's members are what it was asked and where it has got; grouping them would put a second shape between the
@@ -237,8 +196,11 @@ class MoveRecordJob(TaskJobBase):
     :param rehu_path: the record's ``.rehu`` file, or ``None`` for a job about to be handed a saved state.
     :param source_root: the root the record is under, or ``None`` for a record under no root.
     :param destination_root: the root it moves to.
-    :param into: the folder its own entry lands in, under the destination root.
+    :param into: the folder its own entry lands in, under the destination root -- without its buckets, for a bucketed
+        place.
     :param new_name: its name there.
+    :param bucketed: the indices of the levels of ``into / new_name`` put in prefix buckets
+        (:attr:`~rehuco_core.Placement.bucketed`, #680); none for a place with no buckets.
     :param mode: a rename or a copy.
     :param check_source: whether a copy verifies the original first (the setting; a copy whose record lacks entries
         verifies it anyway).
@@ -265,6 +227,7 @@ class MoveRecordJob(TaskJobBase):
         destination_root: UUID | None = None,
         into: PurePosixPath = PurePosixPath(),
         new_name: str = "",
+        bucketed: tuple[int, ...] = (),
         mode: MoveMode = MoveMode.COPY,
         check_source: bool = True,
         check_renamed: bool = False,
@@ -287,6 +250,10 @@ class MoveRecordJob(TaskJobBase):
         self.destination_root = destination_root
         self.into = into
         self.new_name = new_name
+        self.bucketed = bucketed
+        """The bucketed levels not yet read off the disk; none once :attr:`into` holds the buckets."""
+        self.chains: tuple[BucketChain, ...] = ()
+        """The buckets the place went into, the innermost first, for the split phase to settle."""
         self.mode = mode
         self.check_source = check_source
         self.check_renamed = check_renamed
@@ -384,7 +351,7 @@ class MoveRecordJob(TaskJobBase):
             self.__cancel_asked = False
             self.__keep_partial = False
         self.__outcome = None
-        if self.phase not in (MovePhase.CLEANUP, MovePhase.DONE):
+        if self.phase not in (MovePhase.CLEANUP, MovePhase.SPLIT, MovePhase.DONE):
             self.phase = MovePhase.SOURCE
 
     def cancel(self) -> None:
@@ -481,7 +448,9 @@ class MoveRecordJob(TaskJobBase):
                 self.__finish()
             case MovePhase.CLEANUP:
                 self.__clean_up()
-                self.phase = MovePhase.DONE
+                self.phase = self.__landed()
+            case MovePhase.SPLIT:
+                self.__split()
             case _:  # pragma: no cover  (run's loop never enters with DONE)
                 pass
 
@@ -522,6 +491,7 @@ class MoveRecordJob(TaskJobBase):
 
         :param control: the engine's face to this job.
         """
+        self.__resolve_buckets()
         destination = self.__destination()
         if self.mode is MoveMode.COPY:
             self.__copy(destination).copy(self.journal, progress=control.report, checkpoint=self.checkpoint)
@@ -545,7 +515,55 @@ class MoveRecordJob(TaskJobBase):
             return
         self.__remove_left(left, root)
         self.__outcome = JobOutcome(f"Moved to {destination}")
-        self.phase = MovePhase.TARGET if self.check_renamed else MovePhase.DONE
+        self.phase = MovePhase.TARGET if self.check_renamed else self.__landed()
+
+    def __resolve_buckets(self) -> None:
+        """Read a bucketed place's buckets off the disk, once: :attr:`into` holds them from then on, and the chains
+        are kept for the split phase.
+
+        :raises ValueError: the destination root is not mapped here.
+        :raises OSError: a folder of the place could not be read.
+        """
+        if not self.bucketed:
+            return
+        root = self.__root_folder()
+        place = resolve_buckets(root, self.into / self.new_name, self.bucketed)
+        self.into = place.relative.parent
+        self.chains = place.chains
+        self.bucketed = ()
+        LOG.info("%s: the buckets put it in %s.", self.label, root.joinpath(*self.into.parts))
+
+    def __landed(self) -> MovePhase:
+        """The phase after the record is at its place: its buckets settled, when it went into any.
+
+        :returns: :attr:`MovePhase.SPLIT` or :attr:`MovePhase.DONE`.
+        """
+        return MovePhase.SPLIT if self.chains else MovePhase.DONE
+
+    def __split(self) -> None:
+        """Settle each bucketed level the place went into, the innermost first, with the limit as it is now; a level
+        settled is not settled again by a retry. A level whose layout folder is gone from a root that answers was moved
+        by another move's split while this one waited: it is left to the next record that arrives there.
+
+        :raises JobWaiting: a record to move is locked by a write elsewhere, or a reader did not let go in time.
+        """
+        root = self.__root_folder()
+        mover = RecordBucketMover(self.__coordinator, self.__host, self.checkpoint)
+        splitter = BucketSplitter(self.__host.split_limit(), mover, self.checkpoint)
+        while self.chains:
+            chain = self.chains[0]
+            folder = root.joinpath(*chain.folder.parts)
+            try:
+                if folder.is_dir() or self.__offline_end((DESTINATION_SIDE,)) is not None:
+                    splitter.settle(folder, chain.chain)
+                else:
+                    LOG.info("%s: %s is no longer there, so its buckets were not settled.", self.label, folder)
+            except RecordLockedError as error:
+                raise JobWaiting(str(error), LOCK_HELD_RETRY) from error
+            except RenameYieldTimeout as error:
+                raise JobWaiting(str(error), READERS_BUSY_RETRY) from error
+            self.chains = self.chains[1:]
+        self.phase = MovePhase.DONE
 
     def __check_target(self, control: JobControl) -> None:
         """Check the record where it now is: a copy always, a rename when its setting says.
@@ -576,7 +594,7 @@ class MoveRecordJob(TaskJobBase):
             raise VerifiedCopyError(
                 f"The record was moved, but did not verify there ({checksum_report_summary(report)})."
             )
-        self.phase = MovePhase.DONE
+        self.phase = self.__landed()
 
     def __renamed_and_refused(self, error: OSError) -> bool:
         """Whether ``error`` is the check after a rename refusing the record, both ends answering.
@@ -786,6 +804,17 @@ class MoveRecordJob(TaskJobBase):
             raise ValueError("The root this record moves to is not mapped on this machine.")
         return destination
 
+    def __root_folder(self) -> Path:
+        """The destination root's folder.
+
+        :returns: the folder.
+        :raises ValueError: the root is not mapped here.
+        """
+        root = None if self.destination_root is None else self.__host.root_folder(self.destination_root)
+        if root is None:
+            raise ValueError("The root this record moves to is not mapped on this machine.")
+        return root
+
     def __source_root_folder(self) -> Path | None:
         """The source root's folder, or ``None`` for a record under no root, or one this machine does not map."""
         return None if self.source_root is None else self.__host.root_folder(self.source_root)
@@ -820,6 +849,8 @@ class MoveRecordJob(TaskJobBase):
             STATE_REMOVE_EMPTY_FOLDERS_KEY: self.remove_empty_folders,
             STATE_ALGORITHM_KEY: self.algorithm,
             STATE_EXCLUDED_PATTERNS_KEY: list(self.excluded_patterns),
+            STATE_BUCKETED_KEY: list(self.bucketed),
+            STATE_CHAINS_KEY: [chain.to_state() for chain in self.chains],
         }
 
     def restore_state(self, state: dict[str, Any]) -> None:
@@ -864,7 +895,26 @@ class MoveRecordJob(TaskJobBase):
         self.algorithm = algorithm
         if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
             self.excluded_patterns = tuple(excluded)
+        self.bucketed, self.chains = self.__restored_buckets(state)
         self.label = self.__derived_label()
+
+    @staticmethod
+    def __restored_buckets(state: dict[str, Any]) -> tuple[tuple[int, ...], tuple[BucketChain, ...]]:
+        """The bucketed levels and the chains a state names; none for a state saved before buckets (#680).
+
+        :param state: the saved state.
+        :returns: the levels still to resolve, and the chains still to settle.
+        :raises ValueError: either is not the shape written.
+        """
+        bucketed, chains = state.get(STATE_BUCKETED_KEY, []), state.get(STATE_CHAINS_KEY, [])
+        if not (
+            isinstance(bucketed, list)
+            and all(isinstance(index, int) and not isinstance(index, bool) for index in bucketed)
+        ):
+            raise ValueError("A saved move's bucketed levels are not a list of indices.")
+        if not isinstance(chains, list):
+            raise ValueError("A saved move's buckets are not a list.")
+        return tuple(bucketed), tuple(BucketChain.from_state(chain) for chain in chains)
 
     def __captured_source(self) -> dict[str, Any]:
         """The source end: its root and the path under it when it has a mapped root holding it, else the path.

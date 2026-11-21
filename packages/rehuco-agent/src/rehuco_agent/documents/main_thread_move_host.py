@@ -19,6 +19,7 @@ from uuid import UUID
 from PySide6.QtCore import QObject, QThread, Signal
 from rehuco_core import ROOT_MAPPINGS_FILE_NAME, ResourceKey, RootMappings, RootMappingsError, SavePayload
 
+from ..settings.move_settings import shared_move_settings
 from ..settings.persistent_settings import config_folder
 
 LOG: Final = logging.getLogger(__name__)
@@ -95,6 +96,8 @@ class MainThreadMoveHost(QObject):
             mappings_path if mappings_path is not None else config_folder() / ROOT_MAPPINGS_FILE_NAME
         )
         self.__pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None
+        self.__moves: Final = shared_move_settings()
+        """Taken here, on the GUI thread, so a worker asking :meth:`split_limit` never builds the shared object."""
         self.step_requested.connect(self.__run)
 
     def follow_pending_saves(self, pending_save_of: Callable[[ResourceKey], SavePayload | None]) -> None:
@@ -146,6 +149,14 @@ class MainThreadMoveHost(QObject):
                     raise
         if handed.error is not None:
             raise handed.error
+
+    def split_limit(self) -> int:
+        """How many entries a folder of buckets holds before it splits, as the Files page says now (#680): a plain
+        attribute read, safe from a worker.
+
+        :returns: the limit.
+        """
+        return self.__moves.split_limit
 
     def __run(self, handed: HandedStep) -> None:
         """Run a step a worker handed over, on this object's thread.

@@ -1,5 +1,5 @@
-"""How a record is moved (#579, #339): the Files page's *Moving records* frame -- the folders it leaves, and which of
-its moves verify its checksums.
+"""How a record is moved (#579, #339): the Files page's *Moving records* frame -- the folders it leaves, how many
+entries a folder of buckets holds (#680), and which of its moves verify its checksums.
 
 A ``QObject`` with plain attributes: a move reads it when it lands, and the path row's *verified* marker reads it
 too (#649), so :attr:`MoveSettings.changed` fires on every :meth:`MoveSettings.save` for an open row to redraw.
@@ -9,6 +9,7 @@ from functools import lru_cache
 from typing import Final, cast
 
 from PySide6.QtCore import QObject, QSettings, Signal
+from rehuco_core import DEFAULT_JOIN_LIMIT, DEFAULT_SPLIT_LIMIT, clamped_limits
 
 from .persistent_settings import persistent_settings
 
@@ -17,6 +18,8 @@ REMOVE_EMPTY_FOLDERS_KEY: Final = "remove_empty_folders"
 VERIFY_RENAMED_LOCAL_KEY: Final = "verify_renamed_local"
 VERIFY_RENAMED_NETWORK_KEY: Final = "verify_renamed_network"
 VERIFY_ORIGINAL_BEFORE_COPY_KEY: Final = "verify_original_before_copy"
+SPLIT_LIMIT_KEY: Final = "split_limit"
+JOIN_LIMIT_KEY: Final = "join_limit"
 
 DEFAULT_REMOVE_EMPTY_FOLDERS: Final = False
 """Whether a fresh install removes the folders a move leaves empty. Off: a move touches nothing but the record unless
@@ -55,6 +58,10 @@ class MoveSettings(QObject):
         """Whether a rename on a network share verifies before and after."""
         self.verify_original_before_copy = DEFAULT_VERIFY_ORIGINAL_BEFORE_COPY
         """Whether a copy to another disk or share verifies the original first."""
+        self.split_limit = DEFAULT_SPLIT_LIMIT
+        """How many entries a folder a ``{buckets}`` level fills holds before it splits (#680)."""
+        self.join_limit = DEFAULT_JOIN_LIMIT
+        """How few entries a split folder's buckets hold in all before a rebalance joins them back (#680, #681)."""
 
     def load(self, settings: QSettings) -> None:
         """Replace the current values with what's in persistent storage.
@@ -74,7 +81,25 @@ class MoveSettings(QObject):
         self.verify_original_before_copy = cast(
             bool, settings.value(VERIFY_ORIGINAL_BEFORE_COPY_KEY, DEFAULT_VERIFY_ORIGINAL_BEFORE_COPY, type=bool)
         )
+        self.split_limit, self.join_limit = clamped_limits(
+            self.__read_count(settings, SPLIT_LIMIT_KEY, DEFAULT_SPLIT_LIMIT),
+            self.__read_count(settings, JOIN_LIMIT_KEY, DEFAULT_JOIN_LIMIT),
+        )
         settings.endGroup()
+
+    @staticmethod
+    def __read_count(settings: QSettings, key: str, default: int) -> int:
+        """One stored count, or ``default`` when it is missing or not a number.
+
+        :param settings: the ``QSettings``, inside this group.
+        :param key: the count's key.
+        :param default: its default.
+        :returns: the count.
+        """
+        try:
+            return int(cast(int, settings.value(key, default)))
+        except TypeError, ValueError:
+            return default
 
     def save(self, settings: QSettings) -> None:
         """Save the current values to persistent storage.
@@ -86,6 +111,8 @@ class MoveSettings(QObject):
         settings.setValue(VERIFY_RENAMED_LOCAL_KEY, self.verify_renamed_local)
         settings.setValue(VERIFY_RENAMED_NETWORK_KEY, self.verify_renamed_network)
         settings.setValue(VERIFY_ORIGINAL_BEFORE_COPY_KEY, self.verify_original_before_copy)
+        settings.setValue(SPLIT_LIMIT_KEY, self.split_limit)
+        settings.setValue(JOIN_LIMIT_KEY, self.join_limit)
         settings.endGroup()
         self.changed.emit()
 

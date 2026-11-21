@@ -7,6 +7,7 @@ nothing of *this* document's fields, tabs, or ``level`` choices; only this modul
 """
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
@@ -19,6 +20,7 @@ from rehuco_core import (
     content_size_on_disk,
     content_videos,
     enumerate_content_images,
+    location_name_problem,
     total_duration,
 )
 
@@ -293,20 +295,23 @@ def root_place_callbacks(
     shown: list[RootDestination] = []
 
     def row_of(place: RootDestination) -> DestinationRow:
-        occupied = not place.here and model.move_conflicts(place.into, place.name)
+        # a bucketed place is not known until its move reads the buckets (#680): its move's own rename refuses a
+        # name taken there
+        occupied = not place.here and not place.bucketed and model.move_conflicts(place.into, place.name)
         path = model.path
         # what a click involves, asked only of a place that can be clicked; with no queue a click renames at once,
         # unverified, so there are no move settings to plan by (#649)
         markers = NO_MARKERS
         if path is not None and not place.here and not occupied:
             markers = plan_move(path, place.into, shared_move_settings() if record_moves is not None else None)
+        shown = place.shown
         return DestinationRow(
             # a place with no path is the root itself (#641): its label alone
-            f"{place.label}: {Path(place.relative)}" if place.relative.parts else place.label,
+            f"{place.label}: {Path(shown)}" if shown.parts else place.label,
             here=place.here,
             occupied=occupied,
-            rendered=str(Path(place.relative)) if place.relative.parts else "",
-            full_path=str(place.root.joinpath(*place.relative.parts)),
+            rendered=str(Path(shown)) if shown.parts else "",
+            full_path=str(place.root.joinpath(*shown.parts)),
             template=place.template,
             markers=markers,
         )
@@ -417,8 +422,16 @@ def build_document_form(
         # callback is a command, ``(str) -> None``) and defers the ``model.rename_location`` lookup to
         # click time, so a test that swaps it after construction is still seen. A record that is its root's folder
         # is never renamed (#641): that would rename the root's folder
-        if not name_suggestions.is_root_folder():
-            model.rename_location(name)
+        if name_suggestions.is_root_folder():
+            return
+        # a record whose name is bucketed is renamed into its new name's bucket, by a move (#680); a name no
+        # location may have is refused by the rename, as ever
+        home = name_suggestions.bucket_home() if record_moves is not None else None
+        if record_moves is not None and home is not None and not location_name_problem(name):
+            if name != model.current_name:
+                record_moves.move(replace(home, relative=home.relative.with_name(name), here=False))
+            return
+        model.rename_location(name)
 
     destination_rows, move_to_root_place = root_place_callbacks(model, name_suggestions, record_moves)
 

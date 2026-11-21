@@ -4,10 +4,18 @@ offers, with a Try-it preview (#637)."""
 from typing import Final
 
 from PySide6.QtWidgets import QWidget
-from rehuco_core import PLACEHOLDERS, LocationPattern, render_layout
+from rehuco_core import (
+    BUCKETS_PLACEHOLDER,
+    PLACEHOLDERS,
+    LayoutProblem,
+    LocationPattern,
+    buckets_problem,
+    layout_values,
+    render_layout,
+)
 
 from ..location_replacements_settings import shared_location_replacements_settings
-from ..location_templates_settings import DEFAULT_SAMPLE, SAMPLE_FIELDS
+from ..location_templates_settings import DEFAULT_SAMPLE, sample_values
 from ..persistent_settings import persistent_settings
 from ..root_layout_templates_settings import (
     DEFAULT_ROOT_LAYOUT_TEMPLATES,
@@ -17,7 +25,7 @@ from ..root_layout_templates_settings import (
 )
 from .root_layout_templates_page_ui import Ui_RootLayoutTemplatesPage
 
-ALL_PLACEHOLDERS: Final = frozenset(PLACEHOLDERS)
+ALL_PLACEHOLDERS: Final = frozenset(PLACEHOLDERS) | {BUCKETS_PLACEHOLDER}
 """What a library row may name: a row is checked against a type's own set only where the root editor offers it."""
 
 NO_TEMPLATES: Final = "No templates yet: the root editor offers * only."
@@ -52,8 +60,10 @@ class RootLayoutTemplatesPage(QWidget):
             self.__ui.sample_authors_edit,
             self.__ui.sample_year_edit,
             self.__ui.sample_count_edit,
+            self.__ui.sample_site_id_edit,
         )
-        """The sample record's fields, in :data:`SAMPLE_FIELDS` order."""
+        """The sample record's fields, in :data:`~rehuco_agent.settings.location_templates_settings.SAMPLE_FIELDS`
+        order."""
         self.__ui.templates_editor.values_changed.connect(self.__refresh_try_it)
         for edit in self.__sample_edits:
             edit.textChanged.connect(self.__refresh_try_it)
@@ -88,31 +98,39 @@ class RootLayoutTemplatesPage(QWidget):
         self.__refresh_try_it()
 
     def __sample(self) -> tuple[str, ...]:
-        """The sample record as typed, in :data:`SAMPLE_FIELDS` order."""
+        """The sample record as typed, in :data:`~rehuco_agent.settings.location_templates_settings.SAMPLE_FIELDS`
+        order."""
         return tuple(edit.text() for edit in self.__sample_edits)
 
     def __show_sample(self, sample: tuple[str, ...]) -> None:
         """Show ``sample`` in the record's fields.
 
-        :param sample: the record to show, in :data:`SAMPLE_FIELDS` order.
+        :param sample: the record to show, in :data:`~rehuco_agent.settings.location_templates_settings.SAMPLE_FIELDS`
+            order.
         """
         for edit, value in zip(self.__sample_edits, sample, strict=True):
             edit.setText(value)
 
     def __refresh_try_it(self) -> None:
         """Recompute the preview from the staged templates, the sample as typed and the saved replacements."""
-        values: dict[str, str] = dict(zip(SAMPLE_FIELDS, self.__sample(), strict=True))
+        values = layout_values(sample_values(self.__sample()))
         rules = shared_location_replacements_settings().rules
         lines: list[str] = []
         for template in normalize_root_layout_templates(self.__ui.templates_editor.values):
             pattern = LocationPattern(template, ALL_PLACEHOLDERS)
             if pattern.problem or template in REFUSED_TEMPLATES:
                 continue
+            if problem := buckets_problem(pattern):
+                lines.append(f"{template}: {problem}")
+                continue
             missing = pattern.missing(values)
             if missing:
                 verb = "is" if len(missing) == 1 else "are"
                 lines.append(f"{template}: {', '.join(missing)} {verb} empty")
                 continue
-            path = render_layout(pattern, values, {}, rules)
-            lines.append(f"{template} → {path}" if path else f"{template}: a folder level renders to nothing")
+            place = render_layout(pattern, values, {}, rules)
+            if isinstance(place, LayoutProblem):
+                lines.append(f"{template}: it {place.value}")
+            else:
+                lines.append(f"{template} → {place.shown}")
         self.__ui.try_it_result_label.setText("\n".join(lines) or NO_TEMPLATES)

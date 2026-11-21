@@ -37,13 +37,15 @@ hosts belongs with the rename being addressed by resource UUID rather than by pa
 
 import logging
 import os
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from threading import Condition, RLock
 from typing import Final
 from weakref import ReferenceType, ref
 
+from .checksum_record import checksum_record_path
+from .record_file_lock import RecordFileLock
 from .rehu_rename import RehuRenamer
 from .relocation import Relocation
 from .resource_scoping import is_directory_scoped
@@ -344,15 +346,73 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
         :param timeout: how long to wait for readers, in seconds.
         :raises RenameYieldTimeout: the readers did not let go in time; ``step`` never ran.
         """
+        self.__run((path,), path.parent if is_directory_scoped(path) else None, step, timeout)
+
+    def move_folder(
+        self,
+        folder: Path,
+        into: Path,
+        name: str,
+        records: Sequence[Path],
+        timeout: float = DEFAULT_RENAME_YIELD_TIMEOUT,
+    ) -> Path:
+        """Move a plain folder and every record beneath it, inside the barrier (#680): a prefix bucket into its place,
+        or a folder of records a bucketed level names into its bucket ([[mounts-and-storage#buckets]]).
+
+        One rename of the folder, so its records move together or not at all; every holder follows the one
+        directory pair the step answers. Each record beneath is told to the before-listeners, so a video playing from
+        any of them lets go, and none may be locked by a write elsewhere.
+
+        :param folder: the folder.
+        :param into: the folder it lands in, made when missing.
+        :param name: its name there.
+        :param records: the ``.rehu`` of every record beneath it, as listed by the caller off the GUI thread.
+        :param timeout: how long to wait for readers, in seconds.
+        :returns: where the folder now is.
+        :raises RenameYieldTimeout: the readers did not let go in time; nothing on disk was touched.
+        :raises RecordLockedError: a record beneath is locked by a write elsewhere; nothing on disk was touched.
+        :raises FileExistsError: something already has the name there.
+        :raises OSError: the rename failed.
+        """
+        destination = into / name
+
+        def step() -> Relocation:
+            """Refuse a locked record or an occupied name, then move the folder; answer what moved."""
+            for record in records:
+                RecordFileLock(record).refuse_if_held()
+                RecordFileLock(checksum_record_path(record)).refuse_if_held()
+            if destination.exists():
+                raise FileExistsError(f"{destination} already exists, so {folder} was not moved there.")
+            into.mkdir(parents=True, exist_ok=True)
+            folder.rename(destination)
+            return Relocation(((folder, destination),))
+
+        self.__run(tuple(records), folder, step, timeout)
+        return destination
+
+    def __run(
+        self, records: Sequence[Path], directory: Path | None, step: Callable[[], Relocation], timeout: float
+    ) -> None:
+        """Run ``step`` inside the barrier: the before-listeners told each record, the process out of the directory
+        that moves, the readers away; then every tracked location rewritten and the listeners told.
+
+        :param records: the ``.rehu`` files of the resources that move.
+        :param directory: the directory that moves, ``None`` when only files do.
+        :param step: moves the files; answers what moved.
+        :param timeout: how long to wait for readers, in seconds.
+        :raises RenameYieldTimeout: the readers did not let go in time; ``step`` never ran.
+        """
         with self.__renaming:
             with self.__condition:
                 before = tuple(self.__before_listeners)
-            for listener in before:
-                try:
-                    listener(path)
-                except Exception:  # pylint: disable=broad-exception-caught
-                    LOG.exception("A before-rename listener failed; its files may block this rename.")
-            self.__step_out_of(path)
+            for record in records:
+                for listener in before:
+                    try:
+                        listener(record)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        LOG.exception("A before-rename listener failed; its files may block this rename.")
+            if directory is not None:
+                self.__step_out_of(directory)
             self.__wait_for_readers(timeout)
             try:
                 relocation = step()
@@ -362,20 +422,18 @@ class RenameCoordinator:  # pylint: disable=too-many-instance-attributes
         self.__announce(relocation)
 
     @staticmethod
-    def __step_out_of(path: Path) -> None:
+    def __step_out_of(directory: Path) -> None:
         """Move this process's working directory out of the directory a rename is about to move (#355).
 
-        Only a directory-scoped resource renames a directory, and only where a handle beneath one blocks
-        that (:func:`~rehuco_core.readers_must_yield_for_directory_rename`); a file-scoped rename
-        respells files, which a working directory beside them never blocks. The parent is where it goes:
-        outside the subtree, and always there. A failure is logged and the rename goes on to report
-        whatever the operating system then says.
+        Only a directory-scoped resource or a folder move (#680) renames a directory, and only where a handle beneath
+        one blocks that (:func:`~rehuco_core.readers_must_yield_for_directory_rename`); a file-scoped rename respells
+        files, which a working directory beside them never blocks. The parent is where it goes: outside the subtree,
+        and always there. A failure is logged and the rename goes on to report whatever the operating system then says.
 
-        :param path: the resource's ``.rehu`` file.
+        :param directory: the directory that moves.
         """
-        if not is_directory_scoped(path) or not readers_must_yield_for_directory_rename(path):
+        if not readers_must_yield_for_directory_rename(directory):
             return
-        directory = path.parent
         try:
             if not Path.cwd().is_relative_to(directory):
                 return

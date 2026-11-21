@@ -15,8 +15,10 @@ from uuid import UUID
 
 from PySide6.QtCore import QCoreApplication, QThread
 from pytest import LogCaptureFixture, raises
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.main_thread_move_host import MainThreadMoveHost
+from rehuco_agent.settings.move_settings import MoveSettings
 from rehuco_core import JobPaused, ResourceKey
 from rehuco_core.root_mappings import FORMAT_VERSION, FORMAT_VERSION_KEY, PATH_KEY, ROOTS_KEY, STORAGE_KEY
 
@@ -97,6 +99,23 @@ def test_a_save_is_pending_only_as_the_save_owner_says(tmp_path: Path) -> None:
 
     assert host.save_pending(record)
     assert not host.save_pending(tmp_path / "other.rehu")
+
+
+def test_the_split_limit_is_the_move_settings_as_they_are_now(tmp_path: Path, mocker: MockerFixture) -> None:
+    """A move asks the limit when it splits, so the host answers what the Files page saved last (#680).
+
+    **Test steps:**
+
+    * build a host over move settings holding one limit, then change it
+    * verify the host answers the new one
+    """
+    moves = MoveSettings()
+    mocker.patch("rehuco_agent.documents.main_thread_move_host.shared_move_settings", return_value=moves)
+    host = MainThreadMoveHost(tmp_path / "root-mappings.json")
+
+    moves.split_limit = 300
+
+    assert host.split_limit() == 300
 
 
 # endregion

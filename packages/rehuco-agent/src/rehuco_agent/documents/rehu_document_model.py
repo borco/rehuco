@@ -42,6 +42,7 @@ from rehuco_core import (
     details_of,
     is_directory_scoped,
     is_directory_scoped_name,
+    location_name_problem,
     merge_users,
     move_rehu_resource,
     paths_overlap,
@@ -1226,10 +1227,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         to parent to, which a `QObject` doesn't have -- but a failed rename also has nothing to
         interrupt for, since the suggestion list that produced the name is still on screen.
 
+        A name starting with a dot is refused before anything is attempted (#680): no location is made hidden, and such
+        names are the prefix buckets' own.
+
         :param new_name: the destination file/folder name (already sanitized by the caller, e.g. a
             clicked `PathField` suggestion).
         :returns: whether the rename succeeded.
         """
+        problem = location_name_problem(new_name)
+        if problem and new_name != self.current_name:
+            with LogScope.open(self.path):
+                return self.__rename_failed(f'Cannot rename to "{new_name}": {problem}')
         return self.__relocate(new_name, None)
 
     def move_in_root(self, into: Path, new_name: str, root: Path | None) -> bool:

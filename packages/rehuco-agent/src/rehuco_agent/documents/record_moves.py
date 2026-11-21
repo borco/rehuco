@@ -4,7 +4,8 @@
 local disk, or the same share however it is reached -- is a rename; when the Files page asks for that rename to be
 verified (*on a local disk*, *on a network share*), it is a task that verifies before and after, and otherwise it runs
 at once, as #579's move in place does. A place on another volume is always a task: a copy, checked against the
-record, the original removed only once the copy matched.
+record, the original removed only once the copy matched. So is a bucketed place (#680), even an unverified rename: its
+buckets are read off the disk, and the folder it crowds split, on the task's thread.
 
 A task's end is told on the document's banner: a failure, or a move that left part of the original behind, as the
 rename failures are; a clean landing as a rename's, so the record is read again where it now is. Its progress is the
@@ -149,10 +150,12 @@ class RecordMoves(QObject):
             return
         settings = shared_move_settings()
         plan = plan_move(path, place.into, settings)
-        if PlaceMarker.VERIFIED not in plan:
+        # a bucketed place is always a task (#680): its buckets are read off the disk, and the folder it crowds split,
+        # on the task's thread, never here
+        if PlaceMarker.VERIFIED not in plan and not place.bucketed:
             self.__model.move_in_root(place.into, place.name, place.source_root)
             return
-        target = f"{place.label}: {Path(place.relative)}"
+        target = f"{place.label}: {Path(place.shown)}"
         if not self.__model.prepare_move(target):
             return
         self.__enqueue(place, target, settings, MoveMode.COPY if PlaceMarker.COPY in plan else MoveMode.RENAME)
@@ -173,6 +176,7 @@ class RecordMoves(QObject):
             destination_root=place.root_id,
             into=place.relative.parent,
             new_name=place.name,
+            bucketed=place.bucketed,
             mode=mode,
             check_source=settings.verify_original_before_copy,
             check_renamed=verifies_rename(settings, place.into),

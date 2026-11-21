@@ -1,6 +1,7 @@
 """Tests for the path row's roots' places as the document form wires them (#579, #339): what the rows show, and what
 a click on one moves."""
 
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Final
 from unittest.mock import Mock
@@ -410,3 +411,82 @@ def test_with_no_queue_a_row_is_planned_as_a_rename_at_once(
     (label,) = labels_of(editor)
     assert label.icon_count() == 1
     plan.assert_called_once_with(model.path, PLACE.into, None)
+
+
+# region bucketed places (#680)
+
+BUCKETED: Final = replace(PLACE, bucketed=(1,))
+"""The place, its name in prefix buckets."""
+
+
+def test_a_bucketed_place_shows_its_buckets_unresolved_and_is_never_occupied(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A bucketed place reads with an ellipsis where its buckets go, and is not asked whether something sits there:
+    that is unknown until its move reads the buckets.
+
+    **Test steps:**
+
+    * give the suggestions a bucketed place, the model saying every place is occupied
+    * check the row's text, that it is enabled, and that the model was not asked
+    """
+    suggestions = NameSuggestionModel(model)
+    mocker.patch.object(suggestions, "root_destinations", return_value=(BUCKETED,))
+    conflicts = mocker.patch.object(model, "move_conflicts", return_value=True)
+
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    (label,) = labels_of(editor)
+    assert full_text(label) == f"Tutorials: {Path('Jane', '…', 'Foo')}"
+    assert label.isEnabled()
+    conflicts.assert_not_called()
+
+
+def test_a_rename_where_the_records_name_is_bucketed_moves_it_to_its_new_buckets(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A record whose own name is bucketed is renamed by a move to the same place under its new name, whose buckets
+    the move reads; its current name, or one starting with a dot, goes to the rename as ever.
+
+    **Test steps:**
+
+    * build the editor with moves, over suggestions whose bucket home is the bucketed place, there
+    * emit a new name, then the current one, then one starting with a dot
+    * check the moves were handed the place under the new name, not there, and the rename only the dot name
+    """
+    suggestions = NameSuggestionModel(model)
+    mocker.patch.object(suggestions, "bucket_home", return_value=replace(BUCKETED, here=True))
+    rename = mocker.patch.object(model, "rename_location")
+    record_moves = Mock(spec=RecordMoves)
+    editor, _kept = path_editor(qtbot, model, suggestions, record_moves)
+
+    editor.suggestion_selected.emit("Bar")
+    editor.suggestion_selected.emit(model.current_name)
+    editor.suggestion_selected.emit(".Bar")
+
+    record_moves.move.assert_called_once_with(replace(BUCKETED, relative=PurePosixPath("Jane/Bar")))
+    rename.assert_called_once_with(".Bar")
+
+
+def test_with_no_queue_a_bucketed_record_is_renamed_where_it_is(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """With nothing to queue a move on, a rename is a rename, buckets or not.
+
+    **Test steps:**
+
+    * build the editor without moves, over suggestions with a bucket home
+    * emit a name and check the model renamed to it, the bucket home never asked
+    """
+    suggestions = NameSuggestionModel(model)
+    home = mocker.patch.object(suggestions, "bucket_home", return_value=BUCKETED)
+    rename = mocker.patch.object(model, "rename_location")
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    editor.suggestion_selected.emit("Bar")
+
+    rename.assert_called_once_with("Bar")
+    home.assert_not_called()
+
+
+# endregion

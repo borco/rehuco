@@ -641,12 +641,12 @@ def test_rename_location_reports_a_refused_name(mocker: MockerFixture) -> None:
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, TUTORIALS / "old_file.rehu"))
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
-        side_effect=ValueError("'..' is not a plain file or folder name."),
+        side_effect=ValueError("'a/b' is not a plain file or folder name."),
     )
 
-    assert model.rename_location("..") is False
+    assert model.rename_location("a/b") is False
 
-    assert model.rename_error == 'Could not rename "old_file" to "..": \'..\' is not a plain file or folder name.'
+    assert model.rename_error == 'Could not rename "old_file" to "a/b": \'a/b\' is not a plain file or folder name.'
 
 
 def test_rename_location_clears_a_previous_error_when_a_retry_succeeds(mocker: MockerFixture) -> None:
