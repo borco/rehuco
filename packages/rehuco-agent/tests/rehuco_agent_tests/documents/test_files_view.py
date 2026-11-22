@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import QCoreApplication, Qt, QThreadPool, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QTableView
 from pytest import fixture, mark
@@ -466,19 +466,20 @@ def test_a_record_this_build_cannot_read_is_said_rather_than_hidden(
     assert "newer than this build" in view.summary
 
 
-def test_a_read_landing_after_the_document_lost_its_path_says_nowhere(
-    qtbot: QtBot, view: FilesView, model: RehuDocumentModel, listing: Any
+def test_a_read_landing_after_the_document_lost_its_path_is_dropped(
+    view: FilesView, model: RehuDocumentModel, listing: Any
 ) -> None:
     """The one window in which a landed read can be about a folder the document no longer has: the
-    listing was started while there was a path and lands after there is not. The header is written from
-    the record's own folder, so with no record there is no relative place to name -- and naming the last
-    one would be a heading pointing at a resource this document is no longer.
+    listing was started while there was a path and lands after there is not. Clearing the path disowns it,
+    so the panel goes on saying there is no folder yet instead of drawing the folder this document no longer
+    has (#676's gate found it drawn, whenever the timing let it land).
 
     **Test steps:**
 
     * hold the listing and start a read
     * clear the document's path while that read is still out
-    * release it, and verify the header names nowhere rather than the folder it was about
+    * release it, let the pool finish and its answer reach the GUI thread
+    * verify the panel still says there is no folder, draws no row and names nowhere
     """
     from threading import Event  # pylint: disable=import-outside-toplevel
 
@@ -495,9 +496,50 @@ def test_a_read_landing_after_the_document_lost_its_path_says_nowhere(
     model.path = None
 
     release.set()
-    qtbot.waitUntil(lambda: view.path_label == "", timeout=TIMEOUT)
+    assert QThreadPool.globalInstance().waitForDone(TIMEOUT)
+    QCoreApplication.sendPostedEvents()
+    QCoreApplication.processEvents()
 
+    assert view.summary == NO_PATH_SUMMARY
+    assert drawn(view) == []
     assert view.path_label == ""
+
+
+def test_a_read_landing_on_a_hidden_panel_whose_document_lost_its_path_is_dropped(
+    view: FilesView, model: RehuDocumentModel, listing: Any
+) -> None:
+    """A hidden panel reads nothing and clears nothing until it is shown, so the read still out is disowned where
+    the folder goes, not where the table is cleared: landed, it would make a folder the browsed one again for a
+    document that has none.
+
+    **Test steps:**
+
+    * hold the listing, start a read and hide the panel
+    * clear the document's path while that read is still out
+    * release it, let the pool finish and its answer reach the GUI thread
+    * verify no folder is browsed
+    """
+    from threading import Event  # pylint: disable=import-outside-toplevel
+
+    release = Event()
+    quick = listing.side_effect
+
+    def held(_self: object, directory: Path) -> DirectoryListing:
+        release.wait(timeout=5)
+        return quick(_self, directory)
+
+    listing.side_effect = held
+    view.refresh_action.trigger()
+    view.hide()
+
+    model.path = None
+
+    release.set()
+    assert QThreadPool.globalInstance().waitForDone(TIMEOUT)
+    QCoreApplication.sendPostedEvents()
+    QCoreApplication.processEvents()
+
+    assert view.directory is None
 
 
 def test_the_rows_this_resource_cannot_speak_for_are_refused(view: FilesView) -> None:

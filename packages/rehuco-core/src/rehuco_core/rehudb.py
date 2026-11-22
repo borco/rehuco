@@ -41,7 +41,7 @@ import logging
 import os
 import sqlite3
 import time
-from collections.abc import Collection, Generator, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -53,7 +53,7 @@ from uuid import UUID
 from borco_core import fold
 
 from .constants import REHUDB_SUFFIX
-from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, SchemaChain
+from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, FORMATS_VERSION, SchemaChain
 from .migrations.runner import chain_head
 from .path_keys import path_key
 from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
@@ -126,6 +126,19 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     :param level: the chosen levels, in order.
     :param advertised_count: the pack's own claim of how many images it holds, as text (``500+``), or ``None``.
     :param current_count: the measured content-image count, or ``None``.
+    :param asset_kind: an asset's ``kind`` ([[assets#kind]]), or ``None`` when its block names none; type-specific,
+        like the nine below and ``formats`` ([[assets#block]], #676).
+    :param license: the license's short id, or ``None``.
+    :param compatibility: what the item works with and in which versions, in the block's order.
+    :param source_updated: when the store last changed the item, as stored, or ``None``.
+    :param advertised_version: the version the store offers, or ``None``.
+    :param current_version: the version of the local files, or ``None``.
+    :param advertised_size: the download size the store states in bytes, or ``None``.
+    :param triangles: the heaviest mesh's triangle count, or ``None``.
+    :param texture_size: the largest texture's longest side in pixels, or ``None``.
+    :param acquired: when the account got the item, as stored -- a UTC time where the store gives one, so that text
+        order is time order -- or ``None``.
+    :param formats: the file formats delivered, in order.
     :param format_version: the file's own ``format_version`` as it is on disk (``0`` for an unstamped ``.rehu``), or
         ``None``: always for a legacy ``.tc``, which has no version of its own, and for a ``.rehu`` that could not be
         read (#379).
@@ -156,6 +169,17 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     level: tuple[str, ...] = ()
     advertised_count: str | None = None
     current_count: int | None = None
+    asset_kind: str | None = None
+    license: str | None = None
+    compatibility: tuple[tuple[str, str], ...] = ()
+    source_updated: str | None = None
+    advertised_version: str | None = None
+    current_version: str | None = None
+    advertised_size: int | None = None
+    triangles: int | None = None
+    texture_size: int | None = None
+    acquired: str | None = None
+    formats: tuple[str, ...] = ()
     format_version: int | None = None
     mtime_ns: int = 0
     size: int = 0
@@ -307,7 +331,14 @@ JOINS: Final = (
     ("tags", "resource_tags"),
     ("publishers", "resource_publishers"),
 )
-"""Each value table and its join table -- the only names ever formatted into a statement."""
+"""Each value table a search reads and its join table -- with :data:`FORMATS_JOIN`, the only names ever formatted
+into a statement."""
+
+FORMATS_JOIN: Final = ("formats", "resource_formats")
+"""An asset's file formats and their join table (schema v10, #676): kept as tags are, searched by nothing yet."""
+
+VALUE_JOINS: Final = (*JOINS, FORMATS_JOIN)
+"""Every value table and its join table, in the order a row is written and read with them."""
 
 TOKEN_CLAUSES: Final = {
     CatalogField.TYPE: "r.type = ? COLLATE NOCASE",
@@ -367,9 +398,29 @@ TYPE_FIELD_COLUMNS: Final = (
     "level",
     "advertised_count",
     "current_count",
+    "asset_kind",
+    "license",
+    "compatibility",
+    "source_updated",
+    "advertised_version",
+    "current_version",
+    "advertised_size",
+    "triangles",
+    "texture_size",
+    "acquired",
 )
-"""The type-specific fields the cache stores, one column each (schema v3, #399): a tutorial's durations and level,
-a reference pack's image counts. A scan fills one only where the record's type declares it."""
+"""The type-specific fields the cache stores, one column each: a tutorial's durations and level, a reference pack's
+image counts (schema v3, #399), an asset's scalars and its ``compatibility`` (schema v10, #676). A scan fills one only
+where the record's type declares it. An asset's ``formats`` is a type field too, kept in a value table instead
+(:data:`FORMATS_JOIN`)."""
+
+COLUMN_FIELDS: Final = {"asset_kind": "kind"}
+"""The block field a type-specific column holds, where the two are named apart: an asset's ``kind``, since the
+``resources`` table's ``kind`` is the record's format."""
+
+JSON_COLUMNS: Final = frozenset({"level", "compatibility"})
+"""The columns that hold their field as JSON text -- ``level`` an array, ``compatibility`` an object -- and ``NULL``
+when it is empty."""
 
 RESOURCE_COLUMNS: Final = (
     "path",
@@ -390,7 +441,7 @@ RESOURCE_COLUMNS: Final = (
     "error",
 )
 """The ``resources`` columns a :class:`CatalogRecord` fills -- each one of its fields, under the same name, and
-stored as it is but for ``level``, which a column holds as a JSON array (:meth:`CatalogCache.rows`)."""
+stored as it is but for :data:`JSON_COLUMNS` (:meth:`CatalogCache.rows`)."""
 
 SELECTED_COLUMNS: Final = ", ".join(f"r.{column}" for column in RESOURCE_COLUMNS)
 """The ``resources r`` columns a row is read with, in :data:`RESOURCE_COLUMNS` order."""
@@ -421,7 +472,7 @@ def catalog_type_fields(type_name: str, plugins: PluginRegistry = DEFAULT_PLUGIN
     :returns: the column names; ``()`` for a type that declares none, or whose plugin is not installed.
     """
     declared = plugins.field_names(type_name)
-    return tuple(column for column in TYPE_FIELD_COLUMNS if column in declared)
+    return tuple(column for column in TYPE_FIELD_COLUMNS if COLUMN_FIELDS.get(column, column) in declared)
 
 
 def catalog_path_key(path: str) -> str:
@@ -492,8 +543,9 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         try:
             cls.__configure(connection, fresh=version == BASE_VERSION)
             cls.__migrate(connection, version, chain)
-            if cls.__user_version(connection) >= FOLD_STAMP_VERSION:
-                cls.__refold_if_stale(connection)
+            migrated = cls.__user_version(connection)
+            if migrated >= FOLD_STAMP_VERSION:
+                cls.__refold_if_stale(connection, migrated)
         except BaseException:
             connection.close()
             raise
@@ -909,7 +961,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         # the value tables and the rows read in one snapshot: a write committing between them would leave rows
         # without their names (#528)
         with self.__read():
-            values = {table: self.__values(table, join, where, parameters) for table, join in JOINS}
+            values = {table: self.__values(table, join, where, parameters) for table, join in VALUE_JOINS}
             site_ids = self.__site_ids(where, parameters)
             cursor = self.__connection.execute(
                 f"SELECT r.id, r.root_id, roots.label, r.scanned_at, {SELECTED_COLUMNS} "  # nosec  # B608: fixed names
@@ -976,12 +1028,16 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         """
         columns_read: dict[str, Any] = dict(zip(RESOURCE_COLUMNS, fields, strict=True))
         columns_read["kind"] = RecordKind(columns_read["kind"])
-        columns_read["level"] = cls.__level_read(columns_read["level"])
+        columns_read["level"] = cls.__json_read(columns_read["level"], tuple)
+        columns_read["compatibility"] = cls.__json_read(
+            columns_read["compatibility"], lambda stored: tuple(stored.items())
+        )
         return CatalogRecord(
             **columns_read,
             authors=values["authors"].get(resource_id, ()),
             tags=values["tags"].get(resource_id, ()),
             publishers=values["publishers"].get(resource_id, ()),
+            formats=values["formats"].get(resource_id, ()),
             site_ids=site_ids,
         )
 
@@ -1061,7 +1117,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         return stored is not None and stored[0] == fold(FOLD_PROBE)
 
     @classmethod
-    def __refold_if_stale(cls, connection: sqlite3.Connection) -> None:
+    def __refold_if_stale(cls, connection: sqlite3.Connection, version: int) -> None:
         """Write the folded columns again from the real ones when the ``fold`` that wrote them is not this one (#475).
 
         The file keeps what :data:`FOLD_PROBE` folded to when it last wrote them; a different answer now -- an edit to
@@ -1070,6 +1126,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         refill is one transaction of about a second per 100k resources, and no scan.
 
         :param connection: the cache, at a version with ``cache_meta``.
+        :param version: the version the file is stamped with, which says whether it has a formats table yet.
         """
         if cls.__fold_is_current(connection):
             return
@@ -1082,7 +1139,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 "UPDATE resources SET folded_title = ?, folded_path = ? WHERE id = ?",
                 [(fold(title), fold(path), resource_id) for resource_id, title, path in resources],
             )
-            for table, _ in JOINS:
+            for table, _ in VALUE_JOINS if version >= FORMATS_VERSION else JOINS:
                 names = connection.execute(f"SELECT id, name FROM {table}").fetchall()  # nosec  # B608: fixed names
                 connection.executemany(
                     f"UPDATE {table} SET folded = ? WHERE id = ?",  # nosec  # B608: fixed names
@@ -1215,7 +1272,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             f"folded_title = excluded.folded_title, folded_path = excluded.folded_path, {updates} RETURNING id",
             (root_id, key, stamp, fold(record.title), fold(record.path), *fields),
         ).fetchone()
-        for (table, join), names_of in zip(JOINS, (record.authors, record.tags, record.publishers), strict=True):
+        value_names = (record.authors, record.tags, record.publishers, record.formats)
+        for (table, join), names_of in zip(VALUE_JOINS, value_names, strict=True):
             CatalogCache.__write_values(connection, table, join, resource_id, names_of)
         connection.execute("DELETE FROM resource_sources WHERE resource_id = ?", (resource_id,))
         connection.executemany(
@@ -1338,17 +1396,25 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
 
     @staticmethod
     def __stored(record: CatalogRecord, column: str) -> object:
-        """What one of a record's columns holds: its field as it is, but ``level`` as a JSON array, or ``NULL``
-        when it names none -- the inverse of :meth:`__level_read`."""
+        """What one of a record's columns holds: its field as it is, but a :data:`JSON_COLUMNS` field as JSON --
+        ``level`` an array, ``compatibility`` an object -- or ``NULL`` when it is empty; the inverse of
+        :meth:`__json_read`."""
         value = getattr(record, column)
-        if column != "level":
+        if column not in JSON_COLUMNS:
             return value
-        return json.dumps(list(value)) if value else None
+        if not value:
+            return None
+        return json.dumps(dict(value) if column == "compatibility" else list(value), ensure_ascii=False)
 
     @staticmethod
-    def __level_read(stored: str | None) -> tuple[str, ...]:
-        """The levels a ``level`` column holds, in order -- the inverse of :meth:`__stored`."""
-        return tuple(json.loads(stored)) if stored else ()
+    def __json_read[T](stored: str | None, shaped: Callable[[Any], tuple[T, ...]]) -> tuple[T, ...]:
+        """What a :data:`JSON_COLUMNS` column holds, in the record's shape -- the inverse of :meth:`__stored`.
+
+        :param stored: the column's text, or ``NULL``.
+        :param shaped: turns the parsed JSON into the record's tuple.
+        :returns: the field; empty for ``NULL``.
+        """
+        return shaped(json.loads(stored)) if stored else ()
 
     @staticmethod
     def __write_values(
@@ -1376,8 +1442,8 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
 
     @staticmethod
     def __prune_values(connection: sqlite3.Connection) -> None:
-        """Drop every author, tag and publisher no resource names any more."""
-        for table, join in JOINS:
+        """Drop every author, tag, publisher and format no resource names any more."""
+        for table, join in VALUE_JOINS:
             orphans = f"DELETE FROM {table} WHERE id NOT IN (SELECT value_id FROM {join})"  # nosec  # B608: fixed names
             connection.execute(orphans)
 

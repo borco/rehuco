@@ -51,7 +51,8 @@ def browser_presets(plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> tuple[
     every_type_column = frozenset(TYPE_COLUMNS.values())
     typed = []
     for key in plugins.main_keys:
-        shown = frozenset(TYPE_COLUMNS[field] for field in catalog_type_fields(key, plugins))
+        # an asset's fields are cached before the browser has a column for them (#678)
+        shown = frozenset(TYPE_COLUMNS[field] for field in catalog_type_fields(key, plugins) if field in TYPE_COLUMNS)
         if shown:
             label = type_label(key)
             typed.append(

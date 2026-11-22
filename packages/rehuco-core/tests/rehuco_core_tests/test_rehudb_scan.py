@@ -143,7 +143,15 @@ def read_paths(tree: FakeTree) -> list[Path]:
 
 
 def test_a_record_is_read_into_its_common_core(tree: FakeTree) -> None:
-    """The fields a browser shows, the value lists, and the record's own signature."""
+    """The fields a browser shows, the value lists, and the record's own signature.
+
+    **Test steps:**
+
+    * declare a folder holding a ``.rehu`` with a type, title, authors, tags, release, size and update date
+    * scan the root
+    * verify the scan outcome is scanned and the one record carries the path, kind, id, type and title
+    * verify its dates, size, author names and merged tags, a stat signature and a hash, and no error
+    """
     tree.directory("course")
     tree.file(
         "course/info.rehu",
@@ -180,7 +188,15 @@ def test_a_record_is_read_into_its_common_core(tree: FakeTree) -> None:
 
 
 def test_every_sources_publisher_is_kept_the_primarys_first(tree: FakeTree) -> None:
-    """``publishers`` is every source's, named once; ``publisher`` is the primary's."""
+    """``publishers`` is every source's, named once; ``publisher`` is the primary's.
+
+    **Test steps:**
+
+    * declare a ``.rehu`` whose sources repeat a publisher, mark another as primary and add one that is not a source
+    * scan the root
+    * verify ``publisher`` is the primary's
+    * verify ``publishers`` names each publisher once, the primary's first
+    """
     content = payload()
     content["core"]["sources"] = [
         {"title": "T", "publisher": "Second"},
@@ -225,7 +241,15 @@ def test_every_sources_store_id_is_kept_with_its_publisher_the_primarys_first(tr
 
 
 def test_a_tutorial_is_read_with_its_durations_and_level(tree: FakeTree) -> None:
-    """A tutorial's own fields reach its record; a reference pack's do not (#399)."""
+    """A tutorial's own fields reach its record; a reference pack's do not (#399).
+
+    **Test steps:**
+
+    * declare a tutorial ``.rehu`` with three durations and a level list holding a non-text entry
+    * scan the root
+    * verify the three durations and the level, without the non-text entry
+    * verify the reference pack counts are empty
+    """
     content = payload("Donut", type="tutorial")
     content["tutorial"] = {
         "advertised_duration": 3600,
@@ -243,7 +267,15 @@ def test_a_tutorial_is_read_with_its_durations_and_level(tree: FakeTree) -> None
 
 
 def test_a_reference_pack_is_read_with_its_image_counts(tree: FakeTree) -> None:
-    """A reference pack's claimed count stays the text it is; its measured count is a number (#399)."""
+    """A reference pack's claimed count stays the text it is; its measured count is a number (#399).
+
+    **Test steps:**
+
+    * declare a reference images ``.rehu`` with a text advertised count and a numeric current count
+    * scan the root
+    * verify the advertised count is the text and the current count the number
+    * verify the tutorial duration and level are empty
+    """
     content = payload("Faces", type="ReferenceImages")
     content["reference_images"] = {"advertised_count": "500+", "current_count": 480}
     tree.file("info.rehu", content)
@@ -252,6 +284,60 @@ def test_a_reference_pack_is_read_with_its_image_counts(tree: FakeTree) -> None:
 
     assert (record.advertised_count, record.current_count) == ("500+", 480)
     assert (record.advertised_duration, record.level) == (None, ())
+
+
+def test_an_asset_is_read_with_its_own_fields_and_formats(tree: FakeTree) -> None:
+    """An asset's block reaches its record, its ``kind`` as ``asset_kind``, its formats and compatibility in the
+    block's order, and its acquisition time as the store gave it (#676).
+
+    **Test steps:**
+
+    * declare an asset carrying every field of its block the cache stores
+    * scan it
+    * verify each field on the record, and no tutorial field
+    """
+    content = payload("Rock", type="asset")
+    content["asset"] = {
+        "kind": "model",
+        "license": "fab-standard",
+        "formats": ["fbx", "blend"],
+        "compatibility": {"unreal": "5.1-5.6", "blender": ">=4,<5"},
+        "source_updated": "2025-02",
+        "advertised_version": "1.2",
+        "current_version": "1.1",
+        "advertised_size": 12096296,
+        "triangles": 5000,
+        "texture_size": 4096,
+        "acquired": "2024-05-03T12:34:56.789123Z",
+    }
+    tree.file("info.rehu", content)
+
+    (record,) = scan().records
+
+    assert (record.asset_kind, record.license, record.formats) == ("model", "fab-standard", ("fbx", "blend"))
+    assert record.compatibility == (("unreal", "5.1-5.6"), ("blender", ">=4,<5"))
+    assert (record.source_updated, record.advertised_version, record.current_version) == ("2025-02", "1.2", "1.1")
+    assert (record.advertised_size, record.triangles, record.texture_size) == (12096296, 5000, 4096)
+    assert record.acquired == "2024-05-03T12:34:56.789123Z"
+    assert (record.advertised_duration, record.level) == (None, ())
+
+
+def test_asset_keys_in_another_types_block_are_left_empty(tree: FakeTree) -> None:
+    """A tutorial whose block carries an asset's keys shows none of them, its formats included (#676).
+
+    **Test steps:**
+
+    * declare a tutorial whose block carries ``kind``, ``formats``, ``compatibility`` and ``acquired``
+    * scan it
+    * verify the record's asset fields are all empty
+    """
+    content = payload("Donut", type="tutorial")
+    content["tutorial"] = {"kind": "model", "formats": ["fbx"], "compatibility": {"a": "b"}, "acquired": "2024"}
+    tree.file("info.rehu", content)
+
+    (record,) = scan().records
+
+    assert (record.asset_kind, record.formats, record.compatibility, record.acquired) == (None, (), (), None)
 
 
 def test_a_field_its_type_does_not_declare_is_left_empty(tree: FakeTree) -> None:
@@ -307,7 +393,15 @@ def test_scanned_type_fields_round_trip_through_the_cache(tree: FakeTree, mocker
 
 def test_a_legacy_record_is_read_only_where_no_rehu_covers_it(tree: FakeTree) -> None:
     """A converted ``foo.tc`` beside its ``foo.rehu`` is not a second resource; a lone one, or a nested
-    ``info.tc``, is."""
+    ``info.tc``, is.
+
+    **Test steps:**
+
+    * declare an ``info.rehu`` beside an ``info.tc``, a lone ``Foo.TC``, and an ``info.tc`` in a subfolder
+    * scan the root
+    * verify the covered ``info.tc`` is not a record, and the others come back with the right kinds
+    * verify two legacy records are counted
+    """
     tree.file("info.rehu")
     tree.file("info.tc")
     tree.file("Foo.TC")
@@ -323,7 +417,14 @@ def test_a_legacy_record_is_read_only_where_no_rehu_covers_it(tree: FakeTree) ->
 
 def test_a_record_carries_the_format_version_of_its_file(tree: FakeTree) -> None:
     """A ``.rehu``'s own stamp, ``0`` for an unstamped one; a legacy ``.tc`` and an unreadable ``.rehu`` have none
-    (#379)."""
+    (#379).
+
+    **Test steps:**
+
+    * declare a current ``.rehu``, an unstamped one, a legacy ``.tc`` and a ``.rehu`` that fails to parse
+    * scan the root
+    * verify each record's format version is the current one, ``0``, or none for the legacy and broken ones
+    """
     tree.file("current.rehu")
     tree.file("unstamped.rehu", {"core": {"sources": [{"title": "Old"}]}})
     tree.file("legacy.tc", {"core": {}})
@@ -341,7 +442,15 @@ def test_a_record_carries_the_format_version_of_its_file(tree: FakeTree) -> None
 
 
 def test_an_unparsable_record_keeps_a_row_with_the_reason(tree: FakeTree) -> None:
-    """Reported, not fatal: the scan goes on to the next record."""
+    """Reported, not fatal: the scan goes on to the next record.
+
+    **Test steps:**
+
+    * declare a ``.rehu`` that fails to parse and a good one
+    * scan the root
+    * verify the bad record carries the error and a hash
+    * verify the good record is read and one unreadable record is counted
+    """
     tree.file("bad.rehu", RehuFormatError("Not JSON"))
     tree.file("good.rehu", payload("Good"))
 
@@ -355,7 +464,14 @@ def test_an_unparsable_record_keeps_a_row_with_the_reason(tree: FakeTree) -> Non
 
 
 def test_a_record_that_vanished_after_its_listing_keeps_a_row_with_the_reason(tree: FakeTree) -> None:
-    """A stat that fails is a reason like any other."""
+    """A stat that fails is a reason like any other.
+
+    **Test steps:**
+
+    * declare a ``.rehu`` and remove its size so its stat fails
+    * scan the root
+    * verify the record carries an error and an empty hash
+    """
     tree.file("gone.rehu")
     del tree.sizes[ROOT / "gone.rehu"]
 
@@ -366,7 +482,15 @@ def test_a_record_that_vanished_after_its_listing_keeps_a_row_with_the_reason(tr
 
 
 def test_an_oversized_record_is_refused_without_being_read(tree: FakeTree) -> None:
-    """The parse limit is applied before the bytes are hashed, so a stray huge file costs a stat."""
+    """The parse limit is applied before the bytes are hashed, so a stray huge file costs a stat.
+
+    **Test steps:**
+
+    * declare a ``.rehu`` one byte over the size limit
+    * scan the root
+    * verify the record carries an error and its size
+    * verify its bytes were never read
+    """
     tree.file("huge.rehu", size=MAX_FILE_BYTES + 1)
 
     (record,) = scan().records
@@ -377,7 +501,13 @@ def test_an_oversized_record_is_refused_without_being_read(tree: FakeTree) -> No
 
 
 def test_progress_counts_records_as_they_are_read(tree: FakeTree, mocker: MockerFixture) -> None:
-    """A running count, since a first scan has no total to show a percentage of."""
+    """A running count, since a first scan has no total to show a percentage of.
+
+    **Test steps:**
+
+    * declare two records and scan the root with a progress callback
+    * verify the callback was called with 1, then 2
+    """
     tree.file("a.rehu")
     tree.file("b.rehu")
     progress = mocker.Mock()
@@ -388,7 +518,13 @@ def test_progress_counts_records_as_they_are_read(tree: FakeTree, mocker: Mocker
 
 
 def test_the_checkpoint_runs_for_every_directory_and_every_record(tree: FakeTree, mocker: MockerFixture) -> None:
-    """A cancel bites within one listing or one read."""
+    """A cancel bites within one listing or one read.
+
+    **Test steps:**
+
+    * declare a subfolder with one record and a second record beside it, and scan the root with a checkpoint callback
+    * verify the checkpoint ran four times, once for each of two directories and two records
+    """
     tree.directory("sub")
     tree.file("sub/a.rehu")
     tree.file("b.rehu")
@@ -433,7 +569,15 @@ def test_a_rescan_reads_only_what_changed_or_is_new(tree: FakeTree) -> None:
 
 
 def test_a_row_that_could_not_be_read_or_was_cleared_is_read_again(tree: FakeTree) -> None:
-    """An error row is asked again in case it now reads; a signature a schema step cleared matches no file."""
+    """An error row is asked again in case it now reads; a signature a schema step cleared matches no file.
+
+    **Test steps:**
+
+    * declare two records, and known signatures for them: one with an error, one cleared to time zero
+    * scan the root with those signatures known
+    * verify both records are read again
+    * verify none is reported as unchanged
+    """
     tree.file("bad.rehu", payload("Fixed"))
     tree.file("stale.rehu", payload("Stale"))
     known = {
@@ -448,7 +592,14 @@ def test_a_row_that_could_not_be_read_or_was_cleared_is_read_again(tree: FakeTre
 
 
 def test_a_known_record_that_vanished_after_its_listing_keeps_a_row_with_the_reason(tree: FakeTree) -> None:
-    """A stat that fails is no match: the record goes to the reader, which names why."""
+    """A stat that fails is no match: the record goes to the reader, which names why.
+
+    **Test steps:**
+
+    * declare a record, scan it once and keep its signatures, then remove its size so its stat fails
+    * scan the root again with those signatures known
+    * verify the record is read again and carries an error
+    """
     tree.file("gone.rehu")
     known = signatures_of(scan())
     del tree.sizes[ROOT / "gone.rehu"]
@@ -459,7 +610,14 @@ def test_a_known_record_that_vanished_after_its_listing_keeps_a_row_with_the_rea
 
 
 def test_progress_counts_every_record_whether_read_or_not(tree: FakeTree, mocker: MockerFixture) -> None:
-    """The count the job sets against the previous total includes the records skipped."""
+    """The count the job sets against the previous total includes the records skipped.
+
+    **Test steps:**
+
+    * declare two records, scan once and keep the signatures, then change the second's time
+    * scan again with those signatures known and a progress callback
+    * verify the callback was called with 1, then 2, though only one record was read
+    """
     tree.file("a.rehu")
     tree.file("b.rehu")
     known = signatures_of(scan())
@@ -529,7 +687,14 @@ def test_records_nested_inside_a_tutorial_are_found_by_every_scan(tree: FakeTree
 
 
 def test_a_root_that_does_not_list_is_offline_and_nothing_is_read(tree: FakeTree) -> None:
-    """Offline is not empty: the result says so, and carries nothing to apply."""
+    """Offline is not empty: the result says so, and carries nothing to apply.
+
+    **Test steps:**
+
+    * declare a record and make the root itself unlistable
+    * scan the root
+    * verify the outcome is offline, the result is not applicable and it holds no records
+    """
     tree.file("a.rehu")
     tree.unreadable.add(ROOT)
 
@@ -541,7 +706,14 @@ def test_a_root_that_does_not_list_is_offline_and_nothing_is_read(tree: FakeTree
 
 
 def test_a_root_that_goes_away_before_the_end_is_not_applied(tree: FakeTree) -> None:
-    """A mount dropping mid-walk looks like folders vanishing; the probe at the end tells them apart."""
+    """A mount dropping mid-walk looks like folders vanishing; the probe at the end tells them apart.
+
+    **Test steps:**
+
+    * declare a record and make the root look gone at the end of the walk
+    * scan the root
+    * verify the outcome is went-offline, the result is not applicable and it holds no records
+    """
     tree.file("a.rehu")
     tree.gone_at_end = True
 
@@ -553,7 +725,15 @@ def test_a_root_that_goes_away_before_the_end_is_not_applied(tree: FakeTree) -> 
 
 
 def test_an_unreadable_branch_under_an_online_root_is_named_and_contributes_nothing(tree: FakeTree) -> None:
-    """A root is wholly online: what a branch would not show is not kept."""
+    """A root is wholly online: what a branch would not show is not kept.
+
+    **Test steps:**
+
+    * declare a record under a folder that cannot be listed, and another record beside it
+    * scan the root
+    * verify the result is applicable and holds only the readable record
+    * verify the unreadable folder is named
+    """
     tree.directory("away")
     tree.file("away/lost.rehu")
     tree.file("kept.rehu")
@@ -624,7 +804,15 @@ def test_the_root_itself_renamed_at_the_very_end_still_yields_root_relative_path
 ) -> None:
     """The root and its records are read under one hold, so a rename asked for while the scan probes its
     root waits for the probe and the result is wholly pre-rename -- never an old root paired with records
-    already moved, which is a ``ValueError`` out of ``relative_to``."""
+    already moved, which is a ``ValueError`` out of ``relative_to``.
+
+    **Test steps:**
+
+    * declare a record at the root, and make the scan's final root probe wait until released
+    * run the scan on a thread, and once it is probing ask the coordinator to rename the record on another
+    * release the probe when the rename is waiting, and wait for the scan's result
+    * verify one result, scanned, with the root as it was and the record's path relative to it
+    """
     mocker.patch.object(Path, "is_file", autospec=True, return_value=True)
     mocker.patch.object(Path, "exists", autospec=True, return_value=False)
     mocker.patch.object(Path, "rename", autospec=True)

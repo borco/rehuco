@@ -67,8 +67,9 @@ OPTIONAL_TEXT_ASSET_KEYS: Final = ("license", "license_url", "advertised_version
 present non-string reads as ``None`` and locks."""
 
 OPTIONAL_DATE_ASSET_KEYS: Final = ("source_updated", "acquired")
-"""An asset block's optional partial-precision dates ([[assets#block]]): when the store last changed the item, and
-when the account got it. Strings, as ``released`` is, with the same absent/malformed contract."""
+"""An asset block's optional dates ([[assets#block]]): when the store last changed the item, a partial-precision date,
+and when the account got it, a UTC time where the store gives one (``2024-05-03T12:34:56.789123Z``) and a partial date
+otherwise. Strings, as ``released`` is, with the same absent/malformed contract."""
 
 ASSET_KIND_KEY: Final = "kind"
 """The asset block's one closed-list field ([[assets#kind]]): absent (or JSON ``null``) reads as ``None``; a present

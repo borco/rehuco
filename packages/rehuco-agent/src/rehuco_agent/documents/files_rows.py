@@ -555,6 +555,12 @@ class FilesRowsLoader(QObject):
         relay = PoolRelay.instance()
         QThreadPool.globalInstance().start(lambda: self.__run(relay, reader, directory, now, generation))
 
+    def disown(self) -> None:
+        """Drop every read still out, so none of them is drawn: for a caller that has stopped wanting any listing at
+        all -- a document that lost its path -- rather than moved on to another one, which :meth:`start` disowns by
+        itself."""
+        self.__generation += 1
+
     def __run(self, relay: PoolRelay, reader: FilesRowsReader, directory: Path, now: datetime, generation: int) -> None:
         """Do the read on the worker thread and report it, raise or no raise.
 
