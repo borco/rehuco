@@ -139,8 +139,9 @@ the terms.
 - **It belongs to the record as its screenshots and its `.rehuser` do.** A rename, a move and a delete carry it, and a
   record moved by hand takes it along with the rest of its files. A root that is offline takes nothing from another
   root's records, and a store that has gone leaves every text where it was.
-- **The scan writes it with a new record** ([[acquisition-tooling#library-scan-job]]), reading each distinct
-  `license_url` once per run. The text is therefore the terms on the day of the scan, which for an item got years
+- **The scan writes it with a new record** ([[acquisition-tooling#library-scan-job]]), reading each distinct license
+  once per run, keyed by the store's license **path** rather than by `license_url`, which differs between labels of
+  one license and may be empty (below). The text is therefore the terms on the day of the scan, which for an item got years
   earlier is not the day it was got; `acquired` beside `read` shows the gap, and nothing recovers the older text.
 - **What Fab gives** (#686): each owned item names its license(s) as a `group` (`name`, `slug`, `url`) and a `path`
   (`license/standard/reference-plus-source`, `license/cc/cc-by`, `license/legacy/uem`). **The `path` is the stable

@@ -28,12 +28,11 @@ from borco_core.logging import LogScope
 from borco_pyside.widgets import MessageBannerRow, MessageBannerSeverity
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QAction
-from rehuco_core import SITE_ID_KEY
 
-from ..scraping.markdown_images import substitute_image_stem
 from ..scraping.protocols import PageFetcher, RefetchRequestedError
 from ..scraping.registry import ScraperRegistry, shared_scraper_registry
 from ..scraping.results import Page, ScrapeResult
+from ..scraping.scrape_application import ScrapeApplication, ScrapeTarget
 from ..scraping.scrape_job import (
     MAX_REFETCHES,
     REFETCH_COUNTDOWN_MESSAGE,
@@ -400,35 +399,18 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
             :attr:`~.scrape_job.ScrapeJob.page_url` become the added source.
         :param result: the result to apply.
         """
-        declared = declared_field_names(self.__model)
-        for name, value in result.fields.items():
-            if name in {"description", "url", SITE_ID_KEY}:
-                continue
-            if name not in declared:
-                LOG.info("%s is not a field of this document's type; left unset.", name)
-                continue
-            setattr(self.__model, name, value)
-        # a scraped `url` is a source, not a field write: a scraper that recognizes a canonical URL for
-        # the page it read (ArtStation's store host, #366) hands it over here, and it goes through the
-        # same add-or-fill path as the page itself, ahead of it -- so it fills an empty primary, or is
-        # kept beside whatever sources the document already has, never overwriting one
-        # ([[field-schema#sources]]); a scraped `site_id` goes with it onto that source, else onto the page's
-        # ([[assets#site-id]])
-        canonical_url = result.fields.get("url")
-        site_id = cast("str | None", result.fields.get(SITE_ID_KEY))
-        if isinstance(canonical_url, str) and canonical_url:
-            self.__model.add_source(cast(str, job.publisher), canonical_url, site_id)
-            site_id = None
-        description = result.description
-        if description is None:
-            raw = result.fields.get("description")
-            description = raw if isinstance(raw, str) else None
-        else:
-            description = substitute_image_stem(description, self.__model.current_name)
-        if description is not None and "description" in declared:
-            self.__model.description = description
-        # not a runtime check: both are set together, unconditionally, by the time scrape() returns the
-        # result __apply is only ever called with -- see ScrapeJob.publisher/page_url's own docstrings
-        self.__model.add_source(cast(str, job.publisher), cast(str, job.page_url), site_id)
-        for image in result.images:
+        model = self.__model
+        images = ScrapeApplication.apply(
+            cast(ScrapeTarget, model),  # see ScrapeTarget: its SimpleProperty attributes are its properties
+            result,
+            # not a runtime check: both are set together, unconditionally, by the time scrape() returns the
+            # result __apply is only ever called with -- see ScrapeJob.publisher/page_url's own docstrings
+            publisher=cast(str, job.publisher),
+            page_url=cast(str, job.page_url),
+            # a result is applied only while the document is open at the path it was dropped on
+            image_stem=cast(Path, model.path).stem,
+            declared=declared_field_names(model),
+            write_field=lambda name, value: setattr(model, name, value),
+        )
+        for image in images:
             self.__image_downloads.submit(image.url, image.referrer, image.slot)

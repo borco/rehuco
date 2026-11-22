@@ -10,16 +10,13 @@ from borco_pyside.widgets import MessageBannerRow, MessageBannerSeverity
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents import scrape_actions
 from rehuco_agent.documents.image_downloads import ImageDownloads
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.scrape_actions import ScrapeActions
 from rehuco_agent.scraping.protocols import PageFetcher, RefetchRequestedError
 from rehuco_agent.scraping.registry import ScraperRegistry
 from rehuco_agent.scraping.results import Page, ScrapedImage, ScrapeResult
-from rehuco_agent.scraping.scrape_job import MAX_REFETCHES
 from rehuco_agent.scraping.scraper_executor import ScraperExecutor
-from rehuco_agent.scraping.sites.artstation import ArtStation
 from rehuco_agent.scraping.url_drop import UrlDrop
 from rehuco_core import LockReason, LockReasonKind, RehuDocument
 from rehuco_core.access import LoadedRecord, ResourceKey
@@ -250,8 +247,8 @@ def resolve(qtbot: QtBot, doc_actions: ScrapeActions, url_drop: UrlDrop) -> None
     )
 
 
-@fixture
-def image_downloads(mocker: MockerFixture) -> ImageDownloads:
+@fixture(name="image_downloads")
+def fixture_image_downloads(mocker: MockerFixture) -> ImageDownloads:
     """A mock `ImageDownloads`, standing in for #73's image-acquisition seam this class hands its
     results' images off to."""
     return mocker.create_autospec(ImageDownloads, instance=True)
@@ -261,7 +258,14 @@ def image_downloads(mocker: MockerFixture) -> ImageDownloads:
 
 
 def test_scraped_fields_land_and_dirty_the_model(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """Declared fields from the result are written through, and the model ends up dirty (#272)."""
+    """Declared fields from the result are written through, and the model ends up dirty (#272).
+
+    **Test steps:**
+
+    * drop a page whose result carries a title and an advertised duration
+    * verify the model holds both values
+    * verify the model is dirty
+    """
     doc_model = model()
     result = ScrapeResult(fields={"title": "New Title", "advertised_duration": 3600}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
@@ -274,7 +278,13 @@ def test_scraped_fields_land_and_dirty_the_model(qtbot: QtBot, image_downloads: 
 
 
 def test_a_field_the_result_does_not_carry_is_left_untouched(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A field absent from the result's `fields` keeps its current value (#272)."""
+    """A field absent from the result's `fields` keeps its current value (#272).
+
+    **Test steps:**
+
+    * set ``released`` on the model, then drop a page whose result carries only a title
+    * verify ``released`` still holds its earlier value
+    """
     doc_model = model()
     doc_model.released = "2020"
     result = ScrapeResult(fields={"title": "New Title"}, description=None, images=())
@@ -286,7 +296,14 @@ def test_a_field_the_result_does_not_carry_is_left_untouched(qtbot: QtBot, image
 
 
 def test_a_field_the_type_does_not_declare_is_skipped(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """`level` is Tutorial-only; a ReferenceImages document leaves it alone rather than raise (#272)."""
+    """`level` is Tutorial-only; a ReferenceImages document leaves it alone rather than raise (#272).
+
+    **Test steps:**
+
+    * drop a page whose result carries a title and a ``level`` onto a ReferenceImages document
+    * verify the title landed
+    * verify ``level`` is still empty
+    """
     doc_model = model("ReferenceImages")
     result = ScrapeResult(fields={"title": "New Title", "level": ["beginner"]}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
@@ -298,19 +315,33 @@ def test_a_field_the_type_does_not_declare_is_skipped(qtbot: QtBot, image_downlo
 
 
 def test_the_description_gets_the_stem_substituted(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """`ScrapeResult.description`'s stem-less placeholders become this document's real `<stem>NN` (#272)."""
+    """`ScrapeResult.description`'s stem-less placeholders become this document's real `<stem>NN` (#272), named
+    as its screenshots are (#682).
+
+    **Test steps:**
+
+    * drop a page whose description names an image placeholder on a directory-scoped record
+    * verify the placeholder became ``info00``, the name its screenshots are written under
+    """
     doc_model = model()
     result = ScrapeResult(fields={}, description="See ![](#image-00) for reference.", images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
 
     resolve(qtbot, doc_actions, drop())
 
-    # PATH is "info.rehu" -- directory-scoped -- so the stem is the parent folder's name (#250)
-    assert doc_model.description == "See ![](sculpting00) for reference."
+    # PATH is "info.rehu" -- directory-scoped -- whose screenshots are info00, info01, ... (#682); the folder's name
+    # is its rename target (#250), never its screenshots' stem
+    assert doc_model.description == "See ![](info00) for reference."
 
 
 def test_the_fields_description_is_used_when_the_result_has_none(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A scraper that only fills ``fields["description"]`` still lands, unsubstituted (#272)."""
+    """A scraper that only fills ``fields["description"]`` still lands, unsubstituted (#272).
+
+    **Test steps:**
+
+    * drop a page whose result has no description of its own but a ``description`` field
+    * verify the model's description is that field's text, unchanged
+    """
     doc_model = model()
     result = ScrapeResult(fields={"description": "Plain text, no images."}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
@@ -321,7 +352,14 @@ def test_the_fields_description_is_used_when_the_result_has_none(qtbot: QtBot, i
 
 
 def test_a_source_is_added_from_the_scraper_and_page(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """The scraper's publisher and the scraped page's URL are added as a source (#272)."""
+    """The scraper's publisher and the scraped page's URL are added as a source (#272).
+
+    **Test steps:**
+
+    * drop a page on a document that already has a source, with a scraper naming a publisher
+    * verify the last source holds the dropped URL
+    * verify the last source holds the scraper's publisher
+    """
     doc_model = model()
     doc_actions = actions(doc_model, FakeScraper(publisher="Example Publisher"), image_downloads)
 
@@ -338,7 +376,16 @@ def test_a_scraped_url_field_becomes_primary_and_the_dropped_url_is_added_second
     reconstructing the `www.artstation.com` URL from a store host, #366) has it added as a source ahead of
     the page actually dropped -- not written as a field -- so on a fresh document it fills the empty
     primary, publisher included, and the dropped page is appended as a second, non-primary source
-    ([[acquisition-tooling#scraper-protocols]])."""
+    ([[acquisition-tooling#scraper-protocols]]).
+
+    **Test steps:**
+
+    * drop a page into a source-less document, with a result carrying a canonical ``url`` field
+    * verify the model's url is the canonical one
+    * verify the first source is the canonical URL with the scraper's publisher
+    * verify the last source is the dropped URL with the same publisher
+    * verify there are two sources and the model's publisher is the scraper's
+    """
     doc_model = sourceless_model()
     canonical_url = "https://www.artstation.com/marketplace/p/aBcDe/example-product-tutorial"
     result = ScrapeResult(fields={"url": canonical_url}, description=None, images=())
@@ -359,7 +406,15 @@ def test_a_scraped_url_field_is_kept_beside_an_existing_primary_not_written_over
     qtbot: QtBot, image_downloads: ImageDownloads
 ) -> None:
     """On a document that already has a primary source, a canonical ``url`` and the dropped page are
-    both appended and the primary is left exactly as it was -- URL and publisher alike (#366)."""
+    both appended and the primary is left exactly as it was -- URL and publisher alike (#366).
+
+    **Test steps:**
+
+    * drop a page on a document with a primary source, with a result carrying a canonical ``url`` field
+    * verify the sources' URLs are the original, the canonical one and the dropped one, in that order
+    * verify the primary's publisher is unchanged
+    * verify the two appended sources carry the scraper's publisher
+    """
     doc_model = model()
     canonical_url = "https://www.artstation.com/marketplace/p/aBcDe/example-product-tutorial"
     result = ScrapeResult(fields={"url": canonical_url}, description=None, images=())
@@ -378,7 +433,14 @@ def test_a_scraped_url_field_equal_to_the_dropped_url_adds_no_second_source(
 ) -> None:
     """A scraper whose canonical ``url`` field is the same string as the page dropped fills the primary
     source once, publisher included, and the second add finds it already there -- no second source
-    appears."""
+    appears.
+
+    **Test steps:**
+
+    * drop a page into a source-less document, with a result whose ``url`` field is the dropped URL
+    * verify the model's url is that URL and its publisher is the scraper's
+    * verify there is exactly one source
+    """
     doc_model = sourceless_model()
     result = ScrapeResult(fields={"url": URL}, description=None, images=())
     doc_actions = actions(doc_model, FakeScraper(publisher="ArtStation", result=result), image_downloads)
@@ -433,7 +495,14 @@ def test_a_scraped_site_id_without_a_canonical_url_lands_on_the_dropped_page(
 
 def test_a_drop_carrying_a_fragment_is_scraped_without_a_fetch(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """A selection drop's `text/html` is handed to the scraper as the page itself; nothing is fetched
-    ([[acquisition-tooling#drag-drop-aids]], #272)."""
+    ([[acquisition-tooling#drag-drop-aids]], #272).
+
+    **Test steps:**
+
+    * build the actions with a scraper that returns the page's html as the title, and a fetcher that fails the test
+    * drop the URL with an html fragment
+    * verify the title is the fragment, so it reached the scraper as the page and nothing was fetched
+    """
     doc_model = model()
 
     class FragmentScraper(FakeScraper):  # pylint: disable=missing-class-docstring
@@ -455,7 +524,14 @@ def test_a_drop_carrying_a_fragment_is_scraped_without_a_fetch(qtbot: QtBot, ima
 
 def test_each_scraped_image_is_handed_to_image_downloads(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """Every `ScrapedImage` a result carries is handed to `.ImageDownloads.submit`, url/referrer/slot
-    intact -- this class never touches a file itself (#73) (#272)."""
+    intact -- this class never touches a file itself (#73) (#272).
+
+    **Test steps:**
+
+    * drop a page whose result carries a title and two images, one with a referrer and one without
+    * verify the title landed
+    * verify the mock ``ImageDownloads`` was submitted both images, in order, with their url, referrer and slot
+    """
     doc_model = model()
     images = (
         ScrapedImage(0, "https://x/one.jpg", "https://x/"),
@@ -479,7 +555,15 @@ def test_each_scraped_image_is_handed_to_image_downloads(qtbot: QtBot, image_dow
 
 def test_submit_is_a_no_op_for_a_document_with_no_path(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """A drop on a not-yet-saved document (no path) is refused: there is nowhere to log it under, and
-    no way to tell later whether it is still the same document (#272)."""
+    no way to tell later whether it is still the same document (#272).
+
+    **Test steps:**
+
+    * build the actions over a document that has no path, and verify it has none
+    * submit a drop and wait briefly
+    * verify there is no banner row
+    * verify the title is unchanged
+    """
     doc_model = RehuDocumentModel(document())
     assert doc_model.path is None
     doc_actions = actions(doc_model, FakeScraper(), image_downloads)
@@ -493,7 +577,14 @@ def test_submit_is_a_no_op_for_a_document_with_no_path(qtbot: QtBot, image_downl
 
 def test_a_locked_document_discards_an_arriving_result(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """A result for a document that has become locked while its page was being fetched is discarded,
-    never applied (#272)."""
+    never applied (#272).
+
+    **Test steps:**
+
+    * use an executor that locks the document, then runs the job, when it is handed one
+    * submit a drop and wait for the outcome to land
+    * verify the title is unchanged
+    """
     doc_model = model()
     registry = FakeRegistry(
         {URL: FakeScraper(result=ScrapeResult(fields={"title": "New"}, description=None, images=()))}
@@ -515,7 +606,14 @@ def test_a_locked_document_discards_an_arriving_result(qtbot: QtBot, image_downl
 
 
 def test_a_path_change_before_the_result_arrives_discards_it(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A result for a document that has since moved is discarded, never applied (#272)."""
+    """A result for a document that has since moved is discarded, never applied (#272).
+
+    **Test steps:**
+
+    * use an executor that moves the document to another path, then runs the job, when it is handed one
+    * submit a drop and wait for the outcome to land
+    * verify the title is unchanged
+    """
     doc_model = model()
     registry = FakeRegistry(
         {URL: FakeScraper(result=ScrapeResult(fields={"title": "New"}, description=None, images=()))}
@@ -537,7 +635,14 @@ def test_a_path_change_before_the_result_arrives_discards_it(qtbot: QtBot, image
 
 
 def test_detach_discards_a_result_that_arrives_afterward(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A detached document's in-flight scrape is never applied once it lands (#272)."""
+    """A detached document's in-flight scrape is never applied once it lands (#272).
+
+    **Test steps:**
+
+    * submit a drop to an executor that holds the job, and wait until it holds one
+    * detach the actions, then run the held job
+    * verify the title is unchanged
+    """
     doc_model = model()
     registry = FakeRegistry(
         {URL: FakeScraper(result=ScrapeResult(fields={"title": "New"}, description=None, images=()))}
@@ -555,7 +660,14 @@ def test_detach_discards_a_result_that_arrives_afterward(qtbot: QtBot, image_dow
 
 
 def test_detach_discards_a_failure_that_arrives_afterward(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A detached document's in-flight scrape never records its failure once it lands, either (#272)."""
+    """A detached document's in-flight scrape never records its failure once it lands, either (#272).
+
+    **Test steps:**
+
+    * submit a drop for a URL no scraper matches, to an executor that holds the job, and wait until it holds one
+    * detach the actions, then run the held job
+    * verify there is no banner row
+    """
     doc_model = model()
     executor = HoldingExecutor()
     doc_actions = build_actions(doc_model, FakeRegistry({}), executor, FakeFetcher(), image_downloads)
@@ -616,7 +728,15 @@ def test_another_record_loaded_in_place_says_nothing_of_the_last_one_s_scrapes(
 
 def test_a_no_match_gives_a_warning_row_naming_the_host(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """No scraper for the host is a WARNING row, like every other failure: the drop did not do what it
-    was dropped for (#272, #73)."""
+    was dropped for (#272, #73).
+
+    **Test steps:**
+
+    * drop a URL no scraper matches
+    * verify there is exactly one banner row
+    * verify it is a WARNING
+    * verify its text names the host
+    """
     doc_model = model()
     doc_actions = actions(doc_model, None, image_downloads)
 
@@ -659,7 +779,14 @@ def test_resolved_drops_leave_no_qt_object_behind(qtbot: QtBot, image_downloads:
 
 
 def test_a_fetch_failure_gives_a_warning_row(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """Any other scrape failure is a WARNING row (#272)."""
+    """Any other scrape failure is a WARNING row (#272).
+
+    **Test steps:**
+
+    * drop a page whose scraper raises ``RuntimeError``
+    * verify there is exactly one banner row
+    * verify it is a WARNING
+    """
     doc_model = model()
 
     class RaisingScraper(FakeScraper):  # pylint: disable=missing-class-docstring
@@ -676,7 +803,14 @@ def test_a_fetch_failure_gives_a_warning_row(qtbot: QtBot, image_downloads: Imag
 
 
 def test_the_next_drop_replaces_the_previous_failures_row(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A new drop's outcome replaces the last one's row, not accumulates beside it (#272)."""
+    """A new drop's outcome replaces the last one's row, not accumulates beside it (#272).
+
+    **Test steps:**
+
+    * drop a URL no scraper matches and verify one banner row
+    * drop it again
+    * verify there is still exactly one banner row
+    """
     doc_model = model()
     doc_actions = actions(doc_model, None, image_downloads)
     resolve(qtbot, doc_actions, drop())
@@ -688,7 +822,16 @@ def test_the_next_drop_replaces_the_previous_failures_row(qtbot: QtBot, image_do
 
 
 def test_the_busy_row_appears_while_a_scrape_is_in_flight(image_downloads: ImageDownloads) -> None:
-    """A submitted scrape shows an INFO row immediately, before the (synchronous, here) executor runs it."""
+    """A submitted scrape shows an INFO row immediately, before the (synchronous, here) executor runs it.
+
+    **Test steps:**
+
+    * build the actions over an executor that accepts a job and never runs it
+    * submit a drop
+    * verify there is exactly one banner row
+    * verify it is an INFO row
+    * verify its text names the host
+    """
     doc_model = model()
 
     class NeverRunningExecutor:  # pylint: disable=missing-class-docstring,too-few-public-methods
@@ -704,267 +847,6 @@ def test_the_busy_row_appears_while_a_scrape_is_in_flight(image_downloads: Image
     assert len(doc_actions.notice) == 1
     assert doc_actions.notice[0].severity == MessageBannerSeverity.INFO
     assert "example.com" in doc_actions.notice[0].text
-
-
-# endregion
-# region re-fetching
-
-
-def test_a_retry_chain_that_succeeds_applies_the_result(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """Two 503s the scraper asks to re-fetch, then a 200: the third attempt's result is applied, and
-    the banner is left clear (#368)."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503, 503, 200)
-    doc_actions = refetching_actions(doc_model, fetcher, image_downloads)
-
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: doc_model.title == "New Title", timeout=WAIT_TIMEOUT_MS)
-
-    assert fetcher.calls == [URL, URL, URL]
-    assert not doc_actions.notice
-
-
-def test_a_chain_out_of_refetches_ends_as_a_failure_row(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A scraper still asking after `MAX_REFETCHES` re-fetches ends the drop with its last reason as the
-    failure row, having fetched ``MAX_REFETCHES + 1`` times (#368)."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503)
-    doc_actions = refetching_actions(doc_model, fetcher, image_downloads)
-
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: any("gave up" in row.text for row in doc_actions.notice), timeout=WAIT_TIMEOUT_MS)
-
-    assert len(fetcher.calls) == MAX_REFETCHES + 1
-    assert doc_actions.notice[0].severity == MessageBannerSeverity.WARNING
-    assert doc_actions.notice[0].text == f"Example answered 503 — gave up after {MAX_REFETCHES + 1} failed fetches"
-    assert doc_model.title == "Original"
-
-
-def test_cancel_stops_a_waiting_chain(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """Triggering a waiting re-fetch's banner action drops it: the row clears and nothing more is
-    fetched (#368)."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503, 200)
-    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, delay=0.2)
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
-
-    action = cast(MessageBannerRow, countdown_row(doc_actions)).action
-    assert action is not None
-    action.trigger()
-    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
-    qtbot.wait(400)
-
-    assert fetcher.calls == [URL]
-    assert doc_model.title == "Original"
-
-
-def test_detach_mid_countdown_drops_the_retry(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A document closed while a re-fetch waits never fetches again (#368)."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503, 200)
-    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, delay=0.2)
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
-
-    doc_actions.detach()
-    qtbot.wait(400)
-
-    assert fetcher.calls == [URL]
-    assert not doc_actions.notice
-    assert doc_model.title == "Original"
-
-
-def test_a_path_change_mid_countdown_drops_the_retry(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A document moved while a re-fetch waits drops it -- the next attempt would land on a document
-    that is no longer the one that asked (#368)."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503, 200)
-    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, delay=0.2)
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
-
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        doc_model.path = Path("/fake/library/sculpting/moved.rehu")
-    qtbot.wait(400)
-
-    assert fetcher.calls == [URL]
-    assert not doc_actions.notice
-    assert doc_model.title == "Original"
-
-
-def test_each_refetch_is_scheduled_by_its_own_number(
-    mocker: MockerFixture, qtbot: QtBot, image_downloads: ImageDownloads
-) -> None:
-    """The pause grows with each re-fetch (`refetch_delay`): the chain hands it 1 for the first, 2 for the
-    second, so the waits lengthen rather than repeat (#369)."""
-    spy = mocker.spy(scrape_actions, "refetch_delay")
-    doc_model = model()
-    doc_actions = refetching_actions(doc_model, SequenceFetcher(503, 503, 200), image_downloads)
-
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: doc_model.title == "New Title", timeout=WAIT_TIMEOUT_MS)
-
-    assert [entry.args[1] for entry in spy.call_args_list] == [1, 2]
-
-
-def test_the_countdown_row_ticks(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A waiting re-fetch's row is a WARNING naming the reason, the URL, the seconds left and the
-    attempt, re-said each second as the clock runs down (#368)."""
-    doc_model = model()
-    clock = FakeClock()
-    doc_actions = refetching_actions(doc_model, SequenceFetcher(503, 200), image_downloads, delay=60.0, clock=clock)
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
-    row = cast(MessageBannerRow, countdown_row(doc_actions))
-    assert row.severity == MessageBannerSeverity.WARNING
-    assert row.text == f"Example answered 503 — trying {URL} in 60 s (attempt 2 of {MAX_REFETCHES + 1})"
-
-    clock.now += 2.5
-    with qtbot.waitSignal(doc_actions.changed, timeout=WAIT_TIMEOUT_MS):
-        pass
-
-    assert f"in 58 s (attempt 2 of {MAX_REFETCHES + 1})" in cast(MessageBannerRow, countdown_row(doc_actions)).text
-    doc_actions.detach()
-
-
-def test_two_waiting_drops_each_show_a_countdown(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """Two drops waiting to re-fetch at once each keep their own countdown row, on one shared tick (#368)."""
-    doc_model = model()
-    doc_actions = refetching_actions(doc_model, SequenceFetcher(503), image_downloads, delay=60.0)
-
-    doc_actions.submit(drop())
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: sum(row.action is not None for row in doc_actions.notice) == 2, timeout=WAIT_TIMEOUT_MS)
-
-    assert len(doc_actions.notice) == 2
-    doc_actions.detach()
-
-
-def test_a_path_change_mid_attempt_drops_its_refetch_request(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A document moved while an attempt is in flight discards that attempt's re-fetch request: the
-    drop ends, with no further fetch and no row left behind (#368)."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503, 200)
-    executor = HoldingExecutor()
-    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, executor=executor)
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: bool(executor.jobs), timeout=WAIT_TIMEOUT_MS)
-
-    doc_model.path = Path("/fake/library/sculpting/moved.rehu")
-    executor.run_next()
-    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
-    qtbot.wait(50)
-
-    assert fetcher.calls == [URL]
-    assert not executor.jobs
-
-
-def test_detach_mid_attempt_ignores_its_refetch_request(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A document closed while an attempt is in flight never schedules the re-fetch that attempt asks
-    for (#368)."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503, 200)
-    executor = HoldingExecutor()
-    doc_actions = refetching_actions(doc_model, fetcher, image_downloads, executor=executor)
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: bool(executor.jobs), timeout=WAIT_TIMEOUT_MS)
-
-    doc_actions.detach()
-    executor.run_next()
-    qtbot.wait(50)
-
-    assert fetcher.calls == [URL]
-    assert not doc_actions.notice
-
-
-def test_a_cancel_arriving_after_its_drop_ended_is_ignored(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """Cancel is delivered queued, so the drop can end first -- here, by the document closing between the
-    click and its delivery; the late cancel then finds nothing to drop (#368)."""
-    doc_model = model()
-    doc_actions = refetching_actions(doc_model, SequenceFetcher(503, 200), image_downloads, delay=60.0)
-    doc_actions.submit(drop())
-    qtbot.waitUntil(lambda: countdown_row(doc_actions) is not None, timeout=WAIT_TIMEOUT_MS)
-    action = cast(MessageBannerRow, countdown_row(doc_actions)).action
-    assert action is not None
-
-    action.trigger()
-    doc_actions.detach()
-    qtbot.wait(50)
-
-    assert not doc_actions.notice
-
-
-# endregion
-
-# region ArtStation's refused store page (#369)
-
-ARTSTATION_STORE_URL: Final = "https://anartist.artstation.com/store/12345/example"
-ARTSTATION_MARKETPLACE_URL: Final = "https://www.artstation.com/marketplace/p/12345/example"
-
-
-def artstation_actions(
-    doc_model: RehuDocumentModel, fetcher: SequenceFetcher, image_downloads: ImageDownloads
-) -> ScrapeActions:
-    """`ScrapeActions` over the real `ArtStation` scraper, found for either of its URL shapes."""
-    registry = FakeRegistry({ARTSTATION_STORE_URL: ArtStation(), ARTSTATION_MARKETPLACE_URL: ArtStation()})
-    return build_actions(doc_model, registry, SyncExecutor(), fetcher, image_downloads)
-
-
-def test_a_refused_store_page_is_retried_on_the_marketplace_url(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """The real scraper through the whole chain: a 503 from the store host, and the next attempt fetches
-    the marketplace URL, whose 200 lands as the result."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503, 200)
-    doc_actions = artstation_actions(doc_model, fetcher, image_downloads)
-
-    doc_actions.submit(UrlDrop(url=ARTSTATION_STORE_URL, fragment=None))
-    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
-
-    assert fetcher.calls == [ARTSTATION_STORE_URL, ARTSTATION_MARKETPLACE_URL]
-    assert doc_model.sources[-1]["url"] == ARTSTATION_MARKETPLACE_URL
-
-
-def test_a_refused_marketplace_page_is_retried_on_itself(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """A marketplace 503 has no store URL to fall back on, so the same URL is fetched again."""
-    doc_model = model()
-    fetcher = SequenceFetcher(503, 200)
-    doc_actions = artstation_actions(doc_model, fetcher, image_downloads)
-
-    doc_actions.submit(UrlDrop(url=ARTSTATION_MARKETPLACE_URL, fragment=None))
-    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
-
-    assert fetcher.calls == [ARTSTATION_MARKETPLACE_URL, ARTSTATION_MARKETPLACE_URL]
-    assert doc_model.sources[-1]["url"] == ARTSTATION_MARKETPLACE_URL
-
-
-class StockErrorPageFetcher:  # pylint: disable=missing-function-docstring,too-few-public-methods
-    """Answers the first fetch with ArtStation's stock 503 page and no status -- how a browser that cannot
-    report one leaves it -- and every later fetch with an ordinary page."""
-
-    def __init__(self) -> None:
-        self.calls: list[str] = []
-
-    def fetch(self, url: str) -> Page:
-        self.calls.append(url)
-        if len(self.calls) == 1:
-            html = "<html><head><title>503 Service Temporarily Unavailable</title></head><body></body></html>"
-            return Page(url=url, final_url=url, html=html)
-        return Page(url=url, final_url=url, html="<html></html>", status=200)
-
-
-def test_a_stock_error_page_with_no_status_is_retried(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
-    """The page itself is enough: a stock 503 page carrying no status still sends the retry to the
-    marketplace URL (#369)."""
-    doc_model = model()
-    fetcher = StockErrorPageFetcher()
-    registry = FakeRegistry({ARTSTATION_STORE_URL: ArtStation(), ARTSTATION_MARKETPLACE_URL: ArtStation()})
-    doc_actions = build_actions(doc_model, registry, SyncExecutor(), fetcher, image_downloads)
-
-    doc_actions.submit(UrlDrop(url=ARTSTATION_STORE_URL, fragment=None))
-    qtbot.waitUntil(lambda: not doc_actions.notice, timeout=WAIT_TIMEOUT_MS)
-
-    assert fetcher.calls == [ARTSTATION_STORE_URL, ARTSTATION_MARKETPLACE_URL]
 
 
 # endregion
