@@ -151,7 +151,14 @@ when qa runs on macOS/Linux:
 - **A module-level annotation's name can be undefined and the import still succeed** (#459): only ruff and pyright
   catch it.
 - **Import what a test patches from where it is defined** (#464). pylint cannot infer a mock's recorded argument
-  (`not-callable`): call it in a helper with one reasoned pragma.
+  (`not-callable`): call it in a helper with one reasoned pragma. Patching *through* the module under test
+  (`mocker.patch.object(job_module.CatalogCache, ...)`, `job_module.time`) fails pyright's
+  `reportPrivateImportUsage` (#682): patch the class where it lives, a standard-library module by its string target
+  (`mocker.patch("pkg.mod.time.sleep")`).
+- **A `Protocol` method that returns a value has a docstring-only body** under `# pyright: ignore[reportReturnType]`
+  (#682): `...` after the docstring is pylint's `unnecessary-ellipsis`, and `raise NotImplementedError` is a line
+  coverage counts as missed. When the signature with its pragma passes 120 columns, a magic trailing comma keeps ruff
+  from joining it, so the pragma sits on the short `) -> …:` line.
 - **pylint refuses `bar` as a name** (#392, #376), and **a name-mangled call through another instance reads as
   unused** (#400).
 - **Astroid cannot type some values** (#649): `E1101`, `E1102` or `W0632` on a `Mock`'s recorded call, a signal
