@@ -172,7 +172,7 @@ def test_a_stop_before_the_step_starts_abandons_it(tmp_path: Path) -> None:
     raised: list[BaseException] = []
 
     def checkpoint() -> None:
-        raise JobPaused("move")
+        raise JobPaused()
 
     def work() -> None:
         try:
@@ -205,7 +205,7 @@ def test_a_stop_once_the_step_runs_is_waited_out(tmp_path: Path, qtbot: QtBot) -
     def checkpoint() -> None:
         if stop.is_set():
             stopped.set()
-            raise JobPaused("move")
+            raise JobPaused()
 
     def step() -> None:
         stop.set()

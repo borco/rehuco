@@ -320,6 +320,12 @@ at once rather than when the wait ends — while pausing one holds it (`PAUSED`)
 written (§7): a save waiting for its share must come back waiting, not held. A pause or a cancel asked while the job
 is running, which then reports a wait, wins — the job ends `PAUSED` or `CANCELED`, as asked.
 
+**A job may also pause itself, saying why** (#682): `JobPaused(reason)`, for what will not pass by itself and is not a
+failure either — a library scan meeting a challenge page, a disk that filled ([[acquisition-tooling#library-scan-stops]]).
+The job ends `PAUSED` with the reason as the row's message, held like any pause until the user resumes it, which clears
+the reason and runs the job again; canceling it, or a cancel or a late resume landing as it unwinds, clears it too. A
+pause asked from outside carries none, so a row's message never says something the user already knows.
+
 ## 4. A failure costs its job and nothing else
 
 [[[appendices.task-queue#failure]]]
@@ -446,8 +452,9 @@ one — the class that wrote a state is the class that reads it.
 **Everything persistable is written, including `done`, `failed` and `canceled`.** Since jobs leave only
 when removed (§4.1), dropping the finished ones at quit would be exactly the implicit removal that rule
 exists to prevent — and it would take the retryable failures with it. Each item carries `kind`, the
-captured state, the label, the state it was in, and under `message` the reason it failed or what it waits for —
-`JobStatus.message`, which was `error` until #497, and a file the build before wrote is still read by that key.
+captured state, the label, the state it was in, and under `message` the reason it failed, what it waits for, or why it
+paused itself (§3.5) — `JobStatus.message`, which was `error` until #497, and a file the build before wrote is still
+read by that key. A pause's reason comes back only with the pause: work revived queued looks again at what stopped it.
 
 **Progress is written for a job that declares `resumes_where_it_stopped`, and only for that job.** Such
 a job genuinely is as far along as its bar says, because whatever it needs to carry on is in the state

@@ -157,7 +157,18 @@ class JobPaused(Exception):
     **Pausing returns rather than parks** ([[appendices.task-queue#cursor]]). A paused job's ``run``
     has unwound and the worker thread has gone on to the next job; resuming calls ``run`` again and the
     job carries on from whatever it kept for itself.
+
+    **A job may pause itself, saying why** (#682): a scan that met a challenge page, or a disk that filled, cannot go
+    on until someone acts, which is neither a failure to retry nor a wait that passes by itself. Its reason becomes
+    the row's :attr:`JobStatus.message`, kept in the saved queue, and goes when the job is resumed or canceled. A
+    pause asked from outside carries none.
+
+    :param reason: why the job paused itself, as the sentence a row shows; ``None`` for a pause it was asked for.
     """
+
+    def __init__(self, reason: str | None = None) -> None:
+        super().__init__(reason)
+        self.reason: Final = reason
 
 
 @runtime_checkable
@@ -319,7 +330,7 @@ class TaskJob(Protocol):
 
         :param control: the engine's face to this job.
         :raises JobCanceled: to report that it obeyed a cancel; the engine catches it.
-        :raises JobPaused: to report that it obeyed a pause; likewise.
+        :raises JobPaused: to report that it obeyed a pause, or paused itself with a reason; likewise.
         """
 
     def pause(self) -> None:
@@ -465,8 +476,9 @@ class JobStatus:
     :param progress_unit: the job's :attr:`TaskJob.progress_unit`, read once at enqueue -- what the two
         numbers above are *in*, without which they cannot be drawn honestly (#248). ``""`` on a job with
         no progress worth showing.
-    :param message: why a :attr:`JobState.FAILED` job failed, as ``"TypeName: message"``, or what a
-        :attr:`JobState.WAITING` job waits for (#497), else ``None``. The text rather than the exception: the
+    :param message: why a :attr:`JobState.FAILED` job failed, as ``"TypeName: message"``, what a
+        :attr:`JobState.WAITING` job waits for (#497), or why a :attr:`JobState.PAUSED` job paused itself
+        (:attr:`JobPaused.reason`, #682), else ``None``. The text rather than the exception: the
         full traceback is written to the log, where it can be read, and a snapshot carrying a live exception
         invites a reader to re-raise it on a thread that has nothing to do with where it happened.
     :param stop_requested: what the job was last asked to do about stopping, or ``None``. A **fact

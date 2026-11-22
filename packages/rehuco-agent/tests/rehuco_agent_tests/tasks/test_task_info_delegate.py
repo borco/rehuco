@@ -489,6 +489,50 @@ def test_a_waiting_job_draws_what_it_waits_for_across_the_whole_cell(image: QIma
     assert bar_is_bare(image)
 
 
+def test_a_job_that_paused_itself_draws_why_across_the_whole_cell(image: QImage, mocker: MockerFixture) -> None:
+    """Why a job paused itself is a sentence too, so it takes the cell as a wait's reason does (#682).
+
+    **Test steps:**
+
+    * paint a paused job carrying a reason and a unit
+    * verify the reason was drawn into the whole cell, and no bar was painted
+    """
+    drawn_text = mocker.patch.object(QPainter, "drawText")
+    status = JobStatus(
+        serial=1,
+        label="job",
+        state=JobState.PAUSED,
+        done=3,
+        total=4,
+        progress_unit=PROGRESS_UNIT_BYTES,
+        message="Fab asks for a challenge.",
+    )
+
+    paint(status, image)
+
+    drawn_text.assert_called_once()
+    rect, _alignment, text = drawn_text.call_args.args
+    assert text == "Fab asks for a challenge."
+    assert rect.width() > FIGURE_WIDTH
+    assert bar_is_bare(image)
+
+
+def test_a_job_paused_by_the_user_keeps_its_progress(image: QImage, mocker: MockerFixture) -> None:
+    """A pause the user asked for says nothing, so the row goes on showing how far the job got (#682).
+
+    **Test steps:**
+
+    * paint a paused job with no message, carrying a unit
+    * verify the bar was painted
+    """
+    mocker.patch.object(QPainter, "drawText")
+    status = JobStatus(serial=1, label="job", state=JobState.PAUSED, done=3, total=4, progress_unit=PROGRESS_UNIT_BYTES)
+
+    paint(status, image)
+
+    assert not bar_is_bare(image)
+
+
 # endregion
 
 
