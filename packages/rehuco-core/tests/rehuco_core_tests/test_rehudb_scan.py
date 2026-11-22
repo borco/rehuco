@@ -286,6 +286,60 @@ def test_a_reference_pack_is_read_with_its_image_counts(tree: FakeTree) -> None:
     assert (record.advertised_duration, record.level) == (None, ())
 
 
+def test_an_asset_is_read_with_its_own_fields_and_formats(tree: FakeTree) -> None:
+    """An asset's block reaches its record, its ``kind`` as ``asset_kind``, its formats and compatibility in the
+    block's order, and its acquisition time as the store gave it (#676).
+
+    **Test steps:**
+
+    * declare an asset carrying every field of its block the cache stores
+    * scan it
+    * verify each field on the record, and no tutorial field
+    """
+    content = payload("Rock", type="asset")
+    content["asset"] = {
+        "kind": "model",
+        "license": "fab-standard",
+        "formats": ["fbx", "blend"],
+        "compatibility": {"unreal": "5.1-5.6", "blender": ">=4,<5"},
+        "source_updated": "2025-02",
+        "advertised_version": "1.2",
+        "current_version": "1.1",
+        "advertised_size": 12096296,
+        "triangles": 5000,
+        "texture_size": 4096,
+        "acquired": "2024-05-03T12:34:56.789123Z",
+    }
+    tree.file("info.rehu", content)
+
+    (record,) = scan().records
+
+    assert (record.asset_kind, record.license, record.formats) == ("model", "fab-standard", ("fbx", "blend"))
+    assert record.compatibility == (("unreal", "5.1-5.6"), ("blender", ">=4,<5"))
+    assert (record.source_updated, record.advertised_version, record.current_version) == ("2025-02", "1.2", "1.1")
+    assert (record.advertised_size, record.triangles, record.texture_size) == (12096296, 5000, 4096)
+    assert record.acquired == "2024-05-03T12:34:56.789123Z"
+    assert (record.advertised_duration, record.level) == (None, ())
+
+
+def test_asset_keys_in_another_types_block_are_left_empty(tree: FakeTree) -> None:
+    """A tutorial whose block carries an asset's keys shows none of them, its formats included (#676).
+
+    **Test steps:**
+
+    * declare a tutorial whose block carries ``kind``, ``formats``, ``compatibility`` and ``acquired``
+    * scan it
+    * verify the record's asset fields are all empty
+    """
+    content = payload("Donut", type="tutorial")
+    content["tutorial"] = {"kind": "model", "formats": ["fbx"], "compatibility": {"a": "b"}, "acquired": "2024"}
+    tree.file("info.rehu", content)
+
+    (record,) = scan().records
+
+    assert (record.asset_kind, record.formats, record.compatibility, record.acquired) == (None, (), (), None)
+
+
 def test_a_field_its_type_does_not_declare_is_left_empty(tree: FakeTree) -> None:
     """A stray count in a tutorial's block, or a block under a type with no fields of its own, shows in no column.
 

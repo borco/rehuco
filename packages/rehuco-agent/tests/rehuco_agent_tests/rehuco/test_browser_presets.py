@@ -2,7 +2,7 @@
 
 from rehuco_agent.rehuco.browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from rehuco_agent.rehuco.catalog_table_model import DEFAULT_HIDDEN, TYPE_COLUMNS, CatalogColumn
-from rehuco_core import TYPE_FIELD_COLUMNS, PluginRegistry, PluginSpec
+from rehuco_core import TYPE_FIELD_COLUMNS, PluginRegistry, PluginSpec, catalog_type_fields
 
 DURATIONS = frozenset(
     {
@@ -20,18 +20,22 @@ def preset_labeled(label: str, presets: tuple[BrowserPreset, ...]) -> BrowserPre
     return next(preset for preset in presets if preset.label == label)
 
 
-def test_every_type_specific_field_the_cache_stores_has_a_column() -> None:
-    """The columns a preset turns a type's fields into cover exactly the cache's type-specific fields.
+def test_every_type_column_is_a_field_the_cache_stores() -> None:
+    """The columns a preset turns a type's fields into are the cache's type-specific fields, in the cache's order --
+    all of them but an asset's, which the cache stores before the browser has columns for them (#676, #678).
 
     **Test steps:**
 
-    * verify :data:`TYPE_COLUMNS` is keyed by every cache field, in order, and no other
+    * verify :data:`TYPE_COLUMNS` is keyed by the cache fields that are not an asset's, in the cache's order
     """
-    assert tuple(TYPE_COLUMNS) == TYPE_FIELD_COLUMNS
+    asset_fields = set(catalog_type_fields("asset"))
+
+    assert tuple(TYPE_COLUMNS) == tuple(field for field in TYPE_FIELD_COLUMNS if field not in asset_fields)
 
 
 def test_the_built_in_presets_are_the_default_then_one_per_type_with_columns() -> None:
-    """Default first, then Tutorial and Reference Images -- not Collection, which contributes no column.
+    """Default first, then Tutorial and Reference Images -- not Collection, which contributes no column, nor Asset,
+    whose cached fields have no column yet (#678).
 
     **Test steps:**
 

@@ -121,6 +121,10 @@ FOLD_STAMP_VERSION: Final = 6
 """The first version whose file has the ``cache_meta`` table, and so a fingerprint of the ``fold`` that wrote its folded
 columns (:meth:`~rehuco_core.rehudb.CatalogCache.open` compares it)."""
 
+FORMATS_VERSION: Final = 10
+"""The first version whose file has the ``formats`` value table (#676), so the first whose folded names include
+formats."""
+
 
 def create_schema_v1(connection: sqlite3.Connection) -> None:
     """0 -> 1: the first schema -- roots, the resources under them, and the three value tables with their joins.
@@ -263,6 +267,55 @@ def add_source_ids_v9(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
+V10_COLUMNS: Final = (
+    ("asset_kind", "TEXT"),
+    ("license", "TEXT"),
+    ("compatibility", "TEXT"),
+    ("source_updated", "TEXT"),
+    ("advertised_version", "TEXT"),
+    ("current_version", "TEXT"),
+    ("advertised_size", "INTEGER"),
+    ("triangles", "INTEGER"),
+    ("texture_size", "INTEGER"),
+    ("acquired", "TEXT"),
+)
+"""The asset columns version 10 adds to ``resources``, with their SQL types -- frozen, like :data:`V1_STATEMENTS`."""
+
+V10_STATEMENTS: Final = (
+    "CREATE TABLE formats (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, "
+    "folded TEXT NOT NULL DEFAULT '')",
+    "CREATE INDEX formats_folded ON formats (folded)",
+    """
+    CREATE TABLE resource_formats (
+        resource_id INTEGER NOT NULL REFERENCES resources (id) ON DELETE CASCADE,
+        value_id INTEGER NOT NULL REFERENCES formats (id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        name TEXT,
+        PRIMARY KEY (resource_id, value_id)
+    )
+    """,
+    "CREATE INDEX resource_formats_value ON resource_formats (value_id)",
+    "UPDATE resources SET mtime_ns = 0, content_hash = ''",
+)
+"""Version 10's statements after its columns -- frozen, like :data:`V1_STATEMENTS`."""
+
+
+def add_asset_fields_v10(connection: sqlite3.Connection) -> None:
+    """9 -> 10: an asset's own fields (#676, [[assets#block]]) -- a column per scalar, ``compatibility`` as its JSON
+    object, and ``formats`` as a value table with its join, as tags are, its names folded and indexed.
+
+    The block's ``kind`` is ``asset_kind`` here, since ``kind`` is already the record's format. As in version 3, nothing
+    on disk says a row written before this step lacks them, so its stat signature is cleared and the next scan reads it
+    again.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    for column, sql_type in V10_COLUMNS:
+        connection.execute(f"ALTER TABLE resources ADD COLUMN {column} {sql_type}")
+    for statement in V10_STATEMENTS:
+        connection.execute(statement)
+
+
 CHAIN: Final[SchemaChain] = (
     (1, create_schema_v1),
     (2, add_join_spellings_v2),
@@ -273,6 +326,7 @@ CHAIN: Final[SchemaChain] = (
     (7, add_file_identity_v7),
     (8, add_root_file_v8),
     (9, add_source_ids_v9),
+    (10, add_asset_fields_v10),
 )
 """This target's ordered ``(target, step)`` chain."""
 

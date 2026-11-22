@@ -721,6 +721,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     shows authors, title, type, path, publisher, tags, released, size, updated and **format**; the URL and the
     type-specific columns — a tutorial's durations and level, a reference pack's image counts, the fields the cache
     stores that the type's plugin declares ([[data-model#cache-schema]], #399) — start hidden, for a preset to show.
+    An asset's fields are cached (#676) but have no column yet, so no preset is offered for it until #678.
     A header state saved before a column existed shows that column at its default. **A cell holds its value** (a size
     in bytes, a duration in seconds) and a delegate says how it reads, so two sizes that read alike still sort apart;
     the exact size is the cell's tooltip. A missing value sorts as the smallest — first ascending, last descending

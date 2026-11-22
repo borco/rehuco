@@ -20,6 +20,7 @@ from borco_core import fold
 from pytest import LogCaptureFixture, fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
+    ASSET_FIELD_NAMES,
     BUILTIN_PLUGINS,
     REHUDB_SUFFIX,
     TYPE_FIELD_COLUMNS,
@@ -38,7 +39,7 @@ from rehuco_core import (
     rehudb_path,
 )
 from rehuco_core.migrations.rehudb import CHAIN, CURRENT_VERSION
-from rehuco_core.rehudb import BUSY_TIMEOUT_MS, FOLD_PROBE
+from rehuco_core.rehudb import BUSY_TIMEOUT_MS, COLUMN_FIELDS, FOLD_PROBE
 
 from rehuco_core_tests.mapped_roots import location_at, mapped, new_catalog
 
@@ -1623,7 +1624,7 @@ def test_a_token_on_its_own_reads_resources_through_an_index_never_a_scan(
         if "FROM resources r" in statement
     }
 
-    assert len(plans) == 5  # the rows, the three value tables and the sources' ids
+    assert len(plans) == 6  # the rows, the four value tables and the sources' ids
     assert not [step for steps in plans.values() for step in steps if re.fullmatch(r"SCAN r( .*)?", step)]
 
 
@@ -1694,24 +1695,49 @@ def test_rows_read_while_a_scan_commits_show_the_catalog_as_it_was_before_the_sc
 
 def test_a_type_contributes_the_stored_fields_its_plugin_declares() -> None:
     """A tutorial contributes its durations and level, a reference pack -- by any of its spellings -- its image
-    counts, in the cache's order (#399)."""
+    counts, and an asset every field of its block but the license URL and the formats, which have a table of their
+    own, its ``kind`` as ``asset_kind`` (#676), in the cache's order (#399).
+
+    **Test steps:**
+
+    * ask for a tutorial's, a reference pack's (by its tc4 spelling) and an asset's columns
+    * verify the first two are their types' stored fields, in the cache's order
+    * verify the asset's, read as the fields they hold, are its block's in its declared order, the two left out
+    """
     assert catalog_type_fields("tutorial") == ("advertised_duration", "original_duration", "current_duration", "level")
     assert catalog_type_fields("ReferenceImages") == ("advertised_count", "current_count")
+    assert catalog_type_fields("asset")[0] == "asset_kind"
+    assert tuple(COLUMN_FIELDS.get(column, column) for column in catalog_type_fields("asset")) == tuple(
+        name for name in ASSET_FIELD_NAMES if name not in {"license_url", "formats"}
+    )
 
 
 def test_a_type_declaring_none_of_them_contributes_nothing() -> None:
     """A Collection declares no field of its own, a type no plugin claims declares nothing, and a record with no
-    type has none."""
+    type has none.
+
+    **Test steps:**
+
+    * ask for a Collection's, an unclaimed type's and an empty type's columns
+    * verify each is empty
+    """
     assert not catalog_type_fields("collection")
     assert not catalog_type_fields("daz3d")
     assert not catalog_type_fields("")
 
 
 def test_every_stored_type_field_is_some_plugins() -> None:
-    """No type-specific column is one no built-in type would ever fill."""
+    """No type-specific column is one no built-in type would ever fill, a column named apart from its field read as
+    that field.
+
+    **Test steps:**
+
+    * collect every field a built-in plugin declares
+    * verify each type-specific column's field is among them
+    """
     declared = {name for plugin in BUILTIN_PLUGINS for name in plugin.field_names}
 
-    assert set(TYPE_FIELD_COLUMNS) <= declared
+    assert {COLUMN_FIELDS.get(column, column) for column in TYPE_FIELD_COLUMNS} <= declared
 
 
 # endregion

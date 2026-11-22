@@ -190,6 +190,6 @@ def test_the_lookup_reads_the_ids_through_their_index(stores: tuple[CatalogCache
         if "FROM resources r" in statement
     ]
 
-    assert len(plans) == 5  # the rows, the three value tables and the sources' ids
+    assert len(plans) == 6  # the rows, the four value tables and the sources' ids
     assert all(any("resource_sources_site (site=? AND site_id=?)" in step for step in steps) for steps in plans)
     assert not [step for steps in plans for step in steps if re.fullmatch(r"SCAN r( .*)?", step)]

@@ -15,8 +15,9 @@
 - [#679: feat(agent): Open in Web Browser on the browser's selection](https://github.com/borco/rehuco/issues/679)
 - [#688: feat(agent): the license subdock, Refresh License, and the sidecar's path in Copy as JSON](https://github.com/borco/rehuco/issues/688)
 
-**Only the block is built** (#674): `asset` is a declared type whose fields are read and checked as §19.1 says; no
-editor, cache column, sidecar or scan uses it yet. The rest is the design for this fourth resource type: something
+**Only the block, the cache and the license sidecar are built** (#674, #676, #677): `asset` is a declared type whose
+fields are read and checked as §19.1 says and kept in the catalog cache, one column each and `formats` in a link table
+of its own; no editor, browser column, filter or scan uses them yet. The rest is the design for this fourth resource type: something
 acquired from a store to be used in other work, such as a 3D model, a texture set, an animation pack, an audio pack, a
 Blender add-on or an Unreal plugin. It answers the *3D objects as a resource category* question
 [[appendices.open-questions#still-open]] left open.
@@ -52,7 +53,7 @@ block does ([[plugins#plugin-blocks]]).
 | `advertised_size` | size (bytes) | scan | the download size the store states |
 | `triangles` | integer | measured | triangle count of the heaviest mesh at full detail |
 | `texture_size` | integer | measured | longest side, in pixels, of its largest texture |
-| `acquired` | partial-precision date | scan | when the account got it, where the store says |
+| `acquired` | UTC time, or a partial-precision date | scan | when the account got it, where the store says |
 
 - **Reused from the core, not repeated in the table:** `description`, `released` (the store's publication date),
   `authors`, the tag lists, the screenshots, and the measured size pair ([[field-schema#duration-size]]).
@@ -70,8 +71,13 @@ block does ([[plugins#plugin-blocks]]).
   reliably, so the scan never guesses. `triangles` is the heaviest single mesh because a pack's total says nothing
   about what one object costs to draw.
 - **`acquired` is never asked for.** Where the store shows the date the scan records it; where it does not, the field
-  stays empty. Fab states it for every owned item (the entitlement's `createdAt`). It sorts the library, and beside the date a license was read ([[assets#licenses]]) it says how far the
-  saved terms are from the day the item was got.
+  stays empty. Fab states it for every owned item (the entitlement's `createdAt`). It sorts the library, and beside
+  the date a license was read ([[assets#licenses]]) it says how far the saved terms are from the day the item was got.
+- **`acquired` is a time where the store gives one**, unlike `released`, the core's publication date: an ISO 8601 UTC
+  time with six fractional digits and a `Z` (Fab's `createdAt` to the microsecond: `2024-05-03T12:34:56.789123Z`),
+  a partial-precision date (`2024-05-03`) where the store gives only a day. Never a local offset, so its text sorts
+  in time order and the cache compares it as text; the library scan's cursor is the newest one
+  ([[acquisition-tooling#library-scan-job]]).
 - **`formats` is a field, not tags**, because it is the filter used most and the tag lists are the store's own
   vocabulary. The cache gives it a link table of its own, as tags have.
 - **What the store calls its categories goes into `advertised_tags` untouched**, as every scraped tag does
@@ -221,7 +227,8 @@ adds the next.
 - **`rehuco-core`:** the field tuples and `BUILTIN_PLUGINS` in `plugins/plugin_registry.py`, and the exports beside
   it; `BLOCK_TARGETS` and a migrations subpackage once the block's shape first changes (`asset` has neither yet: a
   block with no chain is version 0); the per-key value rules in `rehu_locks.py`, checked only where the type
-  declares the key; the typed getters on `rehu_document.py`; `TYPE_FIELD_COLUMNS`, the column DDL and a schema step in `rehudb.py` and
+  declares the key; the typed getters on `rehu_document.py`; `TYPE_FIELD_COLUMNS` (with `COLUMN_FIELDS` for a column
+  named apart from its field, as `asset_kind` is), the column DDL and a schema step in `rehudb.py` and
   `migrations/rehudb/`, with the formats link table; `rehudb_scan.py`, which fills them; `PLUGIN_PLACEHOLDERS` in
   `location_pattern.py`; and, for a type with a sidecar of its own as this one has ([[assets#licenses]]), whatever
   enumerates a record's files.
