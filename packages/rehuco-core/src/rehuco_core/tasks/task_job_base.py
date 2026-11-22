@@ -108,7 +108,7 @@ class TaskJobBase:
             self.__acted = True
             if self.__stop is StopRequest.CANCEL:
                 raise JobCanceled(self.label)
-            raise JobPaused(self.label)
+            raise JobPaused()
 
     def pause(self) -> None:
         """Record a pause request, replacing whatever was asked before."""

@@ -283,25 +283,27 @@ class SlowUnwindJob(SampleJob):
 
 
 class SelfPausingJob(SampleJob):
-    """A job that raises the pause exception without ever having been asked -- a contract violation
-    the engine must absorb without re-running it forever.
+    """A job that pauses itself without ever having been asked, as a scan meeting a challenge page does (#682) --
+    which the engine must take without re-running it forever.
 
     :param label: the job's label.
+    :param reason: why it pauses itself, or ``None`` for a pause that gives none.
     """
 
-    def __init__(self, label: str = "unasked") -> None:
+    def __init__(self, label: str = "unasked", reason: str | None = None) -> None:
         super().__init__(label)
+        self.reason = reason
         self.runs = 0
 
     def run(self, control: JobControl) -> None:
         """Raise the pause exception, unasked.
 
         :param control: unused.
-        :raises JobPaused: always.
+        :raises JobPaused: always, with :attr:`reason`.
         """
         del control
         self.runs += 1
-        raise JobPaused(self.label)
+        raise JobPaused(self.reason)
 
 
 class StubbornJob(SampleJob):

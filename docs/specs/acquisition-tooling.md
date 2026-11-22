@@ -655,9 +655,10 @@ local-viewer or tablet-watching milestones.
 - [#686: spike: what Fab's library and listings return to a logged-in session](https://github.com/borco/rehuco/issues/686)
 - [#687: feat: a tool that adds a Fab results page's free listings to the library](https://github.com/borco/rehuco/issues/687)
 
-**Not built.** A scrape ([[acquisition-tooling#url-extract]]) fills the one document that is open and never creates a
-record. This is the other direction: **read what a store account owns and write one record per item**, new ones added
-and known ones brought up to date. It is what the *account-side import of what the user owns* in
+**Partly built**: the scan job is (#682); no store plugs into it yet, and there is no dialog to start one. A scrape
+([[acquisition-tooling#url-extract]]) fills the one document that is open and never creates a record. This is the other
+direction: **read what a store account owns and write one record per item**, the new ones added and the ones already
+filed left as they are. It is what the *account-side import of what the user owns* in
 [[appendices.open-questions#still-open]] asked for, designed for asset stores ([[assets]]) first and for Udemy by the
 same means.
 
@@ -708,25 +709,36 @@ queue is right for.
   with the entitlement's id as the tie-break (31 groups of two or three share one in 4,250 entries), so within a
   millisecond the microsecond order differs from the page order.
 - **A new item** is written straight to disk, its `.rehu` and its screenshots, and entered in the cache. No document
-  is opened.
+  is opened. **It is read as a dropped URL of it would be**: the site hands the scan a `ScrapeResult`
+  ([[acquisition-tooling#scraper-protocols]]), and the record is filled from it by the rule a drop fills an open
+  editor with (`ScrapeApplication`, #682), so an item filed either way reads alike. The listing's own facts, the store's
+  id and `acquired`, are written beside it.
 - **Its license text is saved with it**, as the record's `.rehuterms` ([[assets#licenses]]): each distinct license is
   read once per run, keyed by the store's license **path** (Fab: `license/cc/cc-by`), not by `license_url`, since one
   license arrives under different URLs and the URL may be empty. A known item's saved text is never touched by a scan.
 - **An item whose public page is gone** (Fab: `isActiveInLive` false, its listing a 404; 102 of 4,250) is still in the
   account, so it is written from the library entry alone, its unknown fields left empty and `online` left true, and
   **its source URL is the library link** (`/library/assets/<entitlement id>`) instead of the dead public one.
-- **A known item**, found by its source's `site_id` ([[assets#site-id]]), has its scraped fields brought up to date
-  and nothing else touched.
-- **A scan does not overwrite an edit.** The block keeps, under `scraped`, the values the last scan wrote. A field is
-  updated only while it still holds what the scan last wrote there; one the user has changed since is left alone, and
-  its new scraped value is recorded for the next comparison.
+- **A known item is skipped**: one the root already holds a record of, found by its source's `site_id`
+  ([[assets#site-id]]), is neither read again nor written over (owner, 2026-11-22). The record is the user's from the
+  moment it is written, so a scan run again and again only adds what was acquired since, and keeps no copy of what it
+  wrote to compare an edit against.
 - **Every item is logged**, in the job's own log scope ([[appendices.logging#scopes]]): one line with its title, the
-  URL read, and whether the record was added, updated or left as it was. **Both are links.** The URL opens the page in
-  the user's browser; the title opens the record in the documents dock, as clicking it in the browser dock does.
+  URL read, and whether the record was added or already there. **Both are to be links** (#700): the URL opening the
+  page in the user's browser, the title opening the record in the documents dock as clicking it in the browser dock
+  does. Until then the line is plain text.
+- **It shares the persona with a drop.** A scan holds the persona browser for hours, and a URL dropped meanwhile must not
+  wait behind it: the scan takes a *lease* on the profile, keeping its session between items and giving it up before
+  the next item, or in the wait between two pages, whenever a drop's fetch or another store's scan is waiting for it.
+  Two scans of different stores therefore take turns, and a scan waiting its turn can still be paused. A scan nobody
+  waits for pays nothing.
 - **It is slow on purpose**: a pause of a few seconds, drawn at random, between pages. A library is read once, and a
   store that starts challenging the persona costs more than the time saved.
 - **A full rescan is a separate choice** on the dialog. It starts from the oldest item again, which is the only way to
-  notice a changed listing or one that has left the account ([[assets#online-only]]).
+  notice an item that has left the account ([[assets#online-only]]): a record whose time the walk passes without the
+  listing naming it is marked `online: false`, saved against the version just read. That is the one change any scan
+  makes to an existing record, and it never deletes one. A rescan skips what is filed as a scan does, so a changed
+  listing is not noticed.
 
 **The records are the cursor.** On every entry to `run()`, a first run included, the job asks the cache how far this
 site's records in this root already reach: the newest `acquired` among them where the store states the time, and
@@ -735,7 +747,10 @@ otherwise the set of `site_id`s, skipped as the listing is walked. **Fab states 
 id]`, opaque to the job and never built by it). Nothing has to be written per item for the scan to
 know where it stands, which is what [[appendices.task-queue#lifetime]] requires (*written on structural change, never
 on progress*) and why a crash, a kill and a power cut cost the same as a pause. The state the job captures holds only
-what the records cannot say: the site, the root, and whether this is a full rescan and how far it got.
+what the records cannot say: the site, the root, what the runs counted, and whether this is a full rescan and how far it
+got -- saved, as the queue is, on a pause or a close, so a crash mid-rescan starts the rescan over. **Only a time to the
+millisecond counts** for the cursor and for a rescan's walk: a partial date, typed in or from another store, sorts by
+its text rather than its time.
 
 ### §15.5.3 Three ways to stop, one way back
 
@@ -745,8 +760,10 @@ what the records cannot say: the site, the root, and whether this is a full resc
 - **The app closes.** The exit sequence pauses every job and waits briefly ([[appendices.task-queue#teardown]]), so
   the scan must unwind at once: **its checkpoints sit inside the wait for a page, not between items**, and a pause
   seen there abandons the item in hand. That item is read again on resume, so **a close costs at most one item**. A
-  half-written record is never left: the `.rehu` and its screenshots are written under temporary names and renamed
-  into place only when the item is whole.
+  half-written record is never left: the screenshots, the license text and, last, the `.rehu` are written into a
+  staging folder beside their place, `.rehuscan-<name>` (a bucket listing skips it by its dot), and renamed into place
+  in one step only when the item is whole. Until that last write the folder holds no record a catalog scan could read;
+  a pause, a cancel or a failure removes it, and one a crash left goes when the item is written again.
 - **Something goes wrong.** What happens next depends on who can fix it:
   - **Nobody needs to**: the network is down, the share holding the root is not answering. The job raises `JobWaiting`
     and the queue tries again by itself ([[appendices.task-queue#waiting]]).
@@ -760,9 +777,8 @@ re-entered scan does is **look again at what stopped it**. Gone, it carries on f
 there, it ends paused again, showing the browser or the message as before. There is no separate *retry* and no state
 that says *the user claims to have fixed it*.
 
-A pause the job takes itself, carrying a reason, is the one thing here the engine may not have yet: `JobWaiting`
-carries one, a pause asked from outside does not need one. If it is missing it is added to the engine, not worked
-around in the job.
+A pause the job takes itself carries a reason, as `JobWaiting` does: `JobPaused(reason)`, added to the engine for this
+(#682, [[appendices.task-queue#waiting]]). A pause asked from outside carries none.
 
 ### §15.5.4 Free listings: a tool beside the scan
 

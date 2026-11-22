@@ -363,6 +363,7 @@ from .rehu_screenshot_ordering import (
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .rehuco_file import RehucoChangedError, RehucoFile, RehucoFileError, RehucoRoot, RootStorage
 from .rehudb import (
+    ACQUIRED_MILLISECOND_LENGTH,
     TYPE_FIELD_COLUMNS,
     CatalogCache,
     CatalogField,
@@ -373,6 +374,7 @@ from .rehudb import (
     CatalogRow,
     CatalogTextField,
     HardlinkedRecord,
+    LibraryCursor,
     RecordKind,
     RecordSignature,
     RootScanEffects,
@@ -659,6 +661,7 @@ __version__ = "0.4.0"
 # export has exactly one correct place and no convention to remember (`borco_core.__init__` is the same)
 __all__ = [
     "ABSENT",
+    "ACQUIRED_MILLISECOND_LENGTH",
     "ANY_TYPE",
     "APP_FOLDER_NAME",
     "ARCHIVE_EXTENSIONS",
@@ -844,6 +847,7 @@ __all__ = [
     "LegacyDrop",
     "LegacySeed",
     "LibrariesUnusableError",
+    "LibraryCursor",
     "LicenseTerms",
     "LicenseTermsError",
     "LinkInRecordError",

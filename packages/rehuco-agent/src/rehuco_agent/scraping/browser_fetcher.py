@@ -58,6 +58,10 @@ before giving up on asking nicely."""
 LOGIN_PROCESS_KILL_TIMEOUT_SECONDS: Final = 5
 """How long `PersonaBrowser.reset` waits after forcing a still-open login window closed."""
 
+LEASE_WAIT_SLICE_SECONDS: Final = 0.1
+"""How often a lease waiting for the profile looks at its holder's stop request, so a scan held up behind another
+holder can still be paused or canceled at once."""
+
 PROFILE_IN_USE_HINT: Final = (
     " If the persona browser is open for login, close it first -- a persona profile can only be held "
     "open by one browser at a time."
@@ -76,11 +80,84 @@ class PersonaBrowser:
     several at once and a persona profile is not safe to open twice at once. The login window is not
     covered by that lock -- it is a separate process the user drives, not this class's own work -- so a
     scrape attempted while it is open simply fails to start its own session, with a message naming why.
+
+    **A library scan holds the profile for hours, and a drop must still get in** (#682): it takes a
+    :class:`PersonaLease` instead, which keeps its session between pages and gives the profile up between two of
+    them whenever a :meth:`fetch` is waiting for it (:attr:`wanted`).
     """
 
     def __init__(self) -> None:
         self.__lock: Final = threading.Lock()
+        self.__waiting_lock: Final = threading.Lock()
+        self.__waiting = 0
         self.__login_processes: Final[dict[Browser, subprocess.Popen]] = {}
+
+    @property
+    def wanted(self) -> bool:
+        """Whether a :meth:`fetch` is waiting for the profile, so a lease holding it should give it up.
+
+        :returns: whether one waits.
+        """
+        with self.__waiting_lock:
+            return self.__waiting > 0
+
+    def lease(self, browser: Browser, *, headless: bool, checkpoint: Callable[[], None]) -> PersonaLease:
+        """Hold the persona for a long run of fetches, giving it up to any one-shot :meth:`fetch` between them.
+
+        :param browser: which browser's persona to use.
+        :param headless: whether its sessions run with no visible window.
+        :param checkpoint: the holder's own, called while it waits for the profile -- what it raises gives up waiting.
+        :returns: the lease, holding nothing until it is first asked for a session.
+        """
+        return PersonaLease(self, browser, headless=headless, checkpoint=checkpoint)
+
+    def hold(self, browser: Browser, *, headless: bool, checkpoint: Callable[[], None]) -> WebDriver:
+        """Take the profile and start a session on it, for :class:`PersonaLease`; :meth:`let_go` gives both back.
+
+        Waiting for the profile counts as :attr:`wanted`, as a fetch's does, so another lease gives it up at its next
+        page: two scans of different stores take turns rather than one waiting out the other.
+
+        :param browser: which browser's persona to use.
+        :param headless: whether the session runs with no visible window.
+        :param checkpoint: called while waiting for the profile; what it raises leaves the profile untaken.
+        :returns: the session.
+        :raises FetchError: the browser could not be started; the profile is not held.
+        """
+        self.__take(checkpoint)
+        try:
+            return self.__start_scrape_driver(browser, headless=headless)
+        except BaseException:
+            self.__lock.release()
+            raise
+
+    def __take(self, checkpoint: Callable[[], None] | None) -> None:
+        """Take the profile's lock, counted as waiting for it until it is held.
+
+        :param checkpoint: called every :data:`LEASE_WAIT_SLICE_SECONDS` while waiting, for a holder that must stay
+            stoppable; ``None`` waits plainly, as a one-shot fetch does.
+        """
+        with self.__waiting_lock:
+            self.__waiting += 1
+        try:
+            if checkpoint is None:
+                self.__lock.acquire()  # pylint: disable=consider-using-with  # released by the caller
+            else:
+                # released by the caller, as above
+                while not self.__lock.acquire(timeout=LEASE_WAIT_SLICE_SECONDS):  # pylint: disable=consider-using-with
+                    checkpoint()
+        finally:
+            with self.__waiting_lock:
+                self.__waiting -= 1
+
+    def let_go(self, driver: WebDriver) -> None:
+        """Quit a session :meth:`hold` started and give the profile back.
+
+        :param driver: the session.
+        """
+        try:
+            self.__quit(driver)
+        finally:
+            self.__lock.release()
 
     def open_for_login(self, browser: Browser, url: str | None = None) -> None:
         """Launch (or, if one is already open, just bring forward) a plain, un-automated ``browser``
@@ -111,12 +188,15 @@ class PersonaBrowser:
         :raises FetchError: the browser could not be started (including because a login window is
             currently holding the profile open), or navigation failed.
         """
-        with self.__lock:
+        self.__take(None)
+        try:
             driver = self.__start_scrape_driver(browser, headless=headless)
             try:
                 return self.__navigate(driver, url)
             finally:
                 self.__quit(driver)
+        finally:
+            self.__lock.release()
 
     def reset(self, browser: Browser) -> None:
         """Close any open login window and delete ``browser``'s persona folder, so the next use starts
@@ -215,6 +295,68 @@ class PersonaBrowser:
             driver.quit()
         except Exception:  # pylint: disable=broad-exception-caught
             LOG.debug("Quitting the persona browser raised; the process was likely already gone.", exc_info=True)
+
+
+class PersonaLease:
+    """A long run of fetches on the persona -- a library scan's (#682) -- that gives the profile up whenever a one-shot
+    :meth:`PersonaBrowser.fetch` waits for it, so a drop never queues behind hours of scanning.
+
+    Its session is started on first use and kept between pages; :meth:`yield_if_wanted`, called between two of them,
+    quits it when a fetch is waiting, and the next :meth:`driver` starts a fresh one once that fetch is done. Used on
+    one thread, the scan's; :meth:`close` gives everything back.
+
+    :param browser: the persona browser it leases from.
+    :param persona: which browser's persona to use.
+    :param headless: whether its sessions run with no visible window.
+    :param checkpoint: the holder's own, called while it waits for the profile.
+    """
+
+    def __init__(
+        self, browser: PersonaBrowser, persona: Browser, *, headless: bool, checkpoint: Callable[[], None]
+    ) -> None:
+        self.__browser: Final = browser
+        self.__persona: Final = persona
+        self.__headless: Final = headless
+        self.__checkpoint: Final = checkpoint
+        self.__driver: WebDriver | None = None
+
+    def __enter__(self) -> PersonaLease:
+        """Hold the lease for a ``with`` block; nothing is started until :meth:`driver` is asked.
+
+        :returns: this lease.
+        """
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        """Give everything back however the block ends (:meth:`close`)."""
+        self.close()
+
+    def driver(self) -> WebDriver:
+        """The session to fetch with, started now if the lease holds none -- waiting, stoppably, while another holder
+        has the profile.
+
+        :returns: the session.
+        :raises FetchError: the browser could not be started.
+        """
+        if self.__driver is None:
+            self.__driver = self.__browser.hold(self.__persona, headless=self.__headless, checkpoint=self.__checkpoint)
+        return self.__driver
+
+    def yield_if_wanted(self) -> bool:
+        """Give the profile up if a one-shot fetch is waiting for it.
+
+        :returns: whether it was given up.
+        """
+        if self.__driver is None or not self.__browser.wanted:
+            return False
+        self.close()
+        return True
+
+    def close(self) -> None:
+        """Quit the session and give the profile back, if held."""
+        driver, self.__driver = self.__driver, None
+        if driver is not None:
+            self.__browser.let_go(driver)
 
 
 @lru_cache(maxsize=1)

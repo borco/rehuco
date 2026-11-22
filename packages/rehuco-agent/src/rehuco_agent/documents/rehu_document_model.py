@@ -22,7 +22,6 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_CURRENT_USERNAME,
     FORMAT_VERSION_KEY,
-    SITE_ID_KEY,
     TUTORIAL_PLUGIN,
     USERS_KEY,
     AuthorEntry,
@@ -70,6 +69,7 @@ from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
 from ..recycle_bin_deleter import configured_deleter
+from ..scraping.scrape_application import ScrapeApplication, ScrapeTarget
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.identity_settings import shared_identity_settings
 from ..settings.move_settings import shared_move_settings
@@ -2381,50 +2381,20 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     def add_source(self, publisher: str, url: str, site_id: str | None = None) -> None:
         """Add a scraped page as a source ([[field-schema#sources]], #272), never a duplicate of one
-        already there by ``url``.
+        already there by ``url``, by the rule a library scan's new record follows too
+        (`~rehuco_agent.scraping.scrape_application.ScrapeApplication.add_source`, #682).
 
-        Three cases, decided by ``url`` alone (#366, #386), with URLs compared after trimming: a source
-        with this ``url`` **already exists** -- its ``publisher`` is filled in if empty and it is
-        otherwise left as it is, so a re-scrape never duplicates it and never relabels a publisher the
-        document already names; the top source (the primary) **has no url** -- it takes this one, with or
-        without a publisher, and takes the scraper's publisher only if it names none; or the ``url`` is
-        **new** -- appended below whatever the document already has, never overwriting a source from an
-        earlier drop or a `.tc` migration. The primary is filled through the
-        `~RehuDocumentModel.url`/`~RehuDocumentModel.publisher` properties, so dirty tracking and the Save
-        Preview refresh exactly as an edit through those fields already does; the other writes go through
-        :attr:`sources`. A ``site_id`` follows the publisher's rule: it fills the source this ``url`` lands on
-        only when that source names none ([[assets#site-id]]).
+        The primary is filled through the `~RehuDocumentModel.url`/`~RehuDocumentModel.publisher` properties, so
+        dirty tracking and the Save Preview refresh exactly as an edit through those fields already does; the other
+        writes go through :attr:`sources`.
 
         :param publisher: the scraper's publisher -- fills the matching or primary source's own empty
             ``publisher``, and seeds a new entry's.
         :param url: the scraped page's URL.
         :param site_id: the store's own id for the item, when the scraper reported one.
         """
-        url = url.strip()
-        sources = self.sources
-        match = next(
-            (
-                row
-                for row, source in enumerate(sources)
-                if isinstance(source, dict) and str(source.get("url") or "").strip() == url
-            ),
-            None,
-        )
-        if match is None and self.url.strip():
-            added = {"title": self.title, "publisher": publisher, "url": url}
-            self.sources = [*sources, {**added, SITE_ID_KEY: site_id} if site_id else added]
-            return
-        if match is None:
-            self.url = url
-            match = 0
-        if match == 0:
-            if not self.publisher:
-                self.publisher = publisher
-        elif not sources[match].get("publisher"):
-            self.sources = [*sources[:match], {**sources[match], "publisher": publisher}, *sources[match + 1 :]]
-        sources = self.sources
-        if site_id and not sources[match].get(SITE_ID_KEY):
-            self.sources = [*sources[:match], {**sources[match], SITE_ID_KEY: site_id}, *sources[match + 1 :]]
+        # see ScrapeTarget: this model's SimpleProperty attributes are its properties
+        ScrapeApplication.add_source(cast(ScrapeTarget, self), publisher, url, site_id)
 
     def rescan_images(self) -> None:
         """Send this resource's ``<stem>NN`` set back to the directory (#73).

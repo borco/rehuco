@@ -101,8 +101,8 @@ class TaskQueueItem(TypedDict):
         ``state`` because they are different things: this is where the job had got to, that is what the
         job kept.
     :param state: the job's own :meth:`PersistableTaskJob.capture_state`.
-    :param message: why a failed job failed, or what a waiting one waits for (#497), kept so a restored row
-        still says so.
+    :param message: why a failed job failed, what a waiting one waits for (#497), or why a paused one paused itself
+        (#682), kept so a restored row still says so.
     :param error: what a queue file written before #497 calls ``message``; read, never written.
     :param summary: what a finished job found (:attr:`~rehuco_core.tasks.JobStatus.summary`), kept so a restored
         row still says what its run found.

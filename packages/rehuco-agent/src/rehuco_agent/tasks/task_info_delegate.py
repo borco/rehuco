@@ -92,9 +92,12 @@ class TaskInfoDelegate(TaskRowDelegate):
         painter.save()
         try:
             self.paint_background(painter, option, status.state)
-            if status.state in (JobState.FAILED, JobState.WAITING):
+            if status.state in (JobState.FAILED, JobState.WAITING) or (
+                status.state is JobState.PAUSED and status.message is not None
+            ):
                 # a reason is a sentence, so it takes the whole cell rather than the figure's slot -- what
-                # broke, or what the job waits for (#497)
+                # broke, what the job waits for (#497), or why it paused itself (#682); a pause the user asked
+                # for has none, and keeps its figure
                 self.paint_text(painter, option.rect, status.message or "")
                 return
             if status.state == JobState.DONE and status.summary:

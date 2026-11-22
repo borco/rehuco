@@ -306,6 +306,49 @@ class CatalogRow:
     scanned_at: float
 
 
+ACQUIRED_MILLISECOND_LENGTH: Final = 23
+"""How much of an ``acquired`` time names its millisecond: ``2024-05-03T12:34:56.789``, the precision a store's library
+listing is sorted by (#686), where the stored time has six fractional digits ([[assets#block]])."""
+
+
+@dataclass(frozen=True, slots=True)
+class LibraryCursor:
+    """How far a site's records in a root reach in its library, oldest first ([[acquisition-tooling#library-scan-job]]):
+    the newest ``acquired`` among them, and the store ids of the records acquired in that same millisecond.
+
+    The ids are needed because a store sorts its library by the millisecond and breaks a tie by its own id, which is not
+    the order the microseconds give (#686): the listing is resumed at the millisecond, and what of it is already filed
+    is skipped by id.
+
+    :param acquired: the newest ``acquired``, as stored; ``None`` when the site has no record there with one.
+    :param site_ids: the store ids of the records acquired in its millisecond.
+    """
+
+    acquired: str | None = None
+    site_ids: frozenset[str] = frozenset()
+
+    @property
+    def millisecond(self) -> str | None:
+        """The millisecond the listing resumes at, or ``None`` to read it from the start.
+
+        :returns: :attr:`acquired`, cut to :data:`ACQUIRED_MILLISECOND_LENGTH`.
+        """
+        return None if self.acquired is None else self.acquired[:ACQUIRED_MILLISECOND_LENGTH]
+
+    def covers(self, acquired: str, site_id: str) -> bool:
+        """Whether a library entry is already behind this cursor: acquired before its millisecond, or in it and filed.
+
+        :param acquired: the entry's acquisition time.
+        :param site_id: the entry's store id.
+        :returns: whether a scan resuming here passes it by.
+        """
+        millisecond = self.millisecond
+        if millisecond is None:
+            return False
+        entry_millisecond = acquired[:ACQUIRED_MILLISECOND_LENGTH]
+        return entry_millisecond < millisecond or (entry_millisecond == millisecond and site_id in self.site_ids)
+
+
 @dataclass(frozen=True, slots=True)
 class CatalogQuery:
     """Which rows to read: free-text terms over the places ``scope`` names, and field tokens, all of which must match.
@@ -454,6 +497,9 @@ where ``LIKE`` would need its wildcards escaped and ``substr`` would read every 
 SITE_ID_CLAUSE: Final = "r.id IN (SELECT s.resource_id FROM resource_sources s WHERE s.site = ? AND s.site_id = ?)"
 """The records one of whose sources names a store id on a site ([[assets#site-id]]) -- two parameters, the site and
 the id: driven from the ``(site, site_id)`` index, never probed once per resource."""
+
+SITE_CLAUSE: Final = "r.id IN (SELECT s.resource_id FROM resource_sources s WHERE s.site = ?)"
+"""The records one of whose sources names a store id on a site -- one parameter, the site."""
 
 SUBTREE_CLAUSE: Final = "(path_key = ? OR (path_key >= ? AND path_key < ?))"
 """A path and everything beneath it, by key -- three parameters: the path's own key, then the bounds of the keys
@@ -1009,6 +1055,45 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         if root_id is None:
             return self.__rows_where(SITE_ID_CLAUSE, (site, site_id))
         return self.__rows_where(f"{SITE_ID_CLAUSE} AND r.root_id = ?", (site, site_id, str(root_id)))
+
+    def library_cursor(self, site: str, root_id: UUID) -> LibraryCursor:
+        """How far ``site``'s records in a root reach in its library ([[acquisition-tooling#library-scan-job]]): the
+        records are the scan's cursor, so nothing has to be written per item for a scan to know where it stands.
+
+        A record counts when one of its sources names a store id on ``site``, as :meth:`find_by_site_id` finds it;
+        ``acquired`` is the store's own date for the item, so whichever source carries the id, the record sits where
+        the store's listing has it. It compares as text, since it is stored in UTC with fixed precision
+        ([[assets#block]]). **Only a time to the millisecond counts**: a partial date, typed in or from another store,
+        sorts by its text rather than by its time, and a larger one would put the cursor past items never filed.
+
+        :param site: the site, its sources' publisher, matched ignoring ASCII case.
+        :param root_id: the root.
+        :returns: the cursor; empty when the site has no record there with an ``acquired``.
+        """
+        with self.__read():
+            (acquired,) = self.__connection.execute(
+                "SELECT MAX(r.acquired) FROM resources r "  # nosec  # B608: fixed fragments
+                f"WHERE r.root_id = ? AND length(r.acquired) >= ? AND {SITE_CLAUSE}",
+                (str(root_id), ACQUIRED_MILLISECOND_LENGTH, site),
+            ).fetchone()
+            if acquired is None:
+                return LibraryCursor()
+            cursor = self.__connection.execute(
+                "SELECT s.site_id FROM resources r JOIN resource_sources s ON s.resource_id = r.id "
+                "WHERE r.root_id = ? AND s.site = ? AND substr(r.acquired, 1, ?) = ?",
+                (str(root_id), site, ACQUIRED_MILLISECOND_LENGTH, acquired[:ACQUIRED_MILLISECOND_LENGTH]),
+            )
+            return LibraryCursor(acquired, frozenset(site_id for (site_id,) in cursor))
+
+    def library_rows(self, site: str, root_id: UUID) -> list[CatalogRow]:
+        """``site``'s records in a root, as :meth:`library_cursor` counts them: what a full rescan checks the library
+        against, to find the items that left the account ([[assets#online-only]]).
+
+        :param site: the site, matched as :meth:`library_cursor` matches it.
+        :param root_id: the root.
+        :returns: the rows, in :meth:`rows`' order.
+        """
+        return self.__rows_where(f"r.root_id = ? AND {SITE_CLAUSE}", (str(root_id), site))
 
     @classmethod
     def __record_read(

@@ -850,8 +850,7 @@ class TaskQueue:
             return None
         # a wait is not a hold, so it comes back waiting and due now, whatever unfinished work is revived in (#497)
         restored = saved if saved in FINISHED_JOB_STATES or saved is JobState.WAITING else unfinished_state
-        # a queue file the build before #497 wrote spells the message "error"
-        message = item.get("message", item.get("error")) if restored in (JobState.FAILED, JobState.WAITING) else None
+        message = self.__saved_message(item, saved, restored)
         summary = item.get("summary") if saved is JobState.DONE else None
         done, total = self.__saved_progress(item, job)
         label = item.get("label")
@@ -869,6 +868,19 @@ class TaskQueue:
             # a job class whose chain family this build no longer registers: one dropped row, never a failed start
             LOG.warning("A saved task could not be restored: %s", error_raised)
             return None
+
+    @staticmethod
+    def __saved_message(item: TaskQueueItem, saved: JobState, restored: JobState) -> object:
+        """The row message a saved item comes back with: a failure's or a wait's, and a pause's only with the pause,
+        since work revived queued looks again at what stopped it (#682).
+
+        :param item: the saved item; a file the build before #497 wrote spells the message ``error``.
+        :param saved: the state it was written in.
+        :param restored: the state it comes back in.
+        :returns: what was saved as its message, unchecked; ``None`` when none comes back.
+        """
+        kept = restored in (JobState.FAILED, JobState.WAITING) or restored is saved is JobState.PAUSED
+        return item.get("message", item.get("error")) if kept else None
 
     @staticmethod
     def __saved_state(value: object) -> JobState | None:
@@ -1044,7 +1056,9 @@ class TaskQueue:
                 entry.due = None
                 entry.message = None
             if request is StopRequest.CANCEL:
+                # why a job paused itself is no longer true of a job nobody will resume (#682)
                 entry.state = JobState.CANCELED
+                entry.message = None
                 changed = True
                 self.__abandon(entry)
             elif entry.state in (JobState.QUEUED, JobState.WAITING):
@@ -1246,9 +1260,9 @@ class TaskQueue:
                 with self.__watching_paused():
                     if state is JobState.PAUSED:
                         if entry.stop_requested is StopRequest.CANCEL:
-                            state = JobState.CANCELED
+                            state, message = JobState.CANCELED, None
                         elif entry.resume_requested:
-                            state = JobState.QUEUED
+                            state, message = JobState.QUEUED, None
                             entry.stop_requested = None
                     elif state is JobState.WAITING:
                         if entry.stop_requested is StopRequest.CANCEL:
@@ -1309,8 +1323,8 @@ class TaskQueue:
 
         :param entry: the job being run.
         :param control: what it was handed.
-        :returns: the state it ended in, the failure text for a failed job or the reason for a waiting one, and
-            how long a waiting one waits, in seconds.
+        :returns: the state it ended in, the failure text for a failed job or the reason for a waiting or self-paused
+            one, and how long a waiting one waits, in seconds.
         """
         with LogScope.open(JobScope(entry.serial)):
             try:
@@ -1318,9 +1332,12 @@ class TaskQueue:
             except JobCanceled:
                 LOG.debug("Task canceled: %s", entry.label)
                 return JobState.CANCELED, None, 0.0
-            except JobPaused:
-                LOG.debug("Task paused: %s", entry.label)
-                return JobState.PAUSED, None, 0.0
+            except JobPaused as paused:
+                if paused.reason is None:
+                    LOG.debug("Task paused: %s", entry.label)
+                else:
+                    LOG.info("Task paused: %s -- %s", entry.label, paused.reason)
+                return JobState.PAUSED, paused.reason, 0.0
             except JobWaiting as waiting:
                 LOG.info("Task waiting: %s -- %s", entry.label, waiting.reason)
                 return JobState.WAITING, waiting.reason, waiting.retry_after
