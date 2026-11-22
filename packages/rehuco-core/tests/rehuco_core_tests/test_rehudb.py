@@ -197,7 +197,14 @@ def ids(cache: CatalogCache) -> dict[str, int]:
 def test_a_fresh_cache_is_incremental_and_stamped_with_the_current_version(
     database: MemoryDatabase, cache: CatalogCache
 ) -> None:
-    """``auto_vacuum`` is chosen before the first table, and the stamp is the chain's head."""
+    """``auto_vacuum`` is chosen before the first table, and the stamp is the chain's head.
+
+    **Test steps:**
+
+    * open a fresh cache on an in-memory database
+    * verify ``auto_vacuum`` is incremental and ``user_version`` is the current version
+    * verify the cache reports the current schema version and its path, and the catalog tables exist
+    """
     assert database.scalar("PRAGMA auto_vacuum") == INCREMENTAL
     assert database.scalar("PRAGMA user_version") == CURRENT_VERSION
     assert cache.schema_version == CURRENT_VERSION
@@ -206,12 +213,25 @@ def test_a_fresh_cache_is_incremental_and_stamped_with_the_current_version(
 
 
 def test_every_connection_enforces_foreign_keys(cache: CatalogCache) -> None:
-    """The cascade a root removal relies on is otherwise silently ignored."""
+    """The cascade a root removal relies on is otherwise silently ignored.
+
+    **Test steps:**
+
+    * read the ``foreign_keys`` pragma on the cache's connection
+    * verify it is on
+    """
     assert cache.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
 
 def test_the_cache_folder_is_created(mocker: MockerFixture, memory: Callable[[], MemoryDatabase]) -> None:
-    """A first run has no cache folder yet."""
+    """A first run has no cache folder yet.
+
+    **Test steps:**
+
+    * patch the connection to an in-memory database and ``Path.mkdir`` to a mock
+    * open and close the cache
+    * verify the cache's parent folder was created, with its parents and ``exist_ok``
+    """
     database = memory()
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mkdir = mocker.patch.object(Path, "mkdir", autospec=True)
@@ -222,14 +242,27 @@ def test_the_cache_folder_is_created(mocker: MockerFixture, memory: Callable[[],
 
 
 def test_the_cache_is_named_by_the_rehuco_id() -> None:
-    """Moving or renaming the ``.rehuco`` keeps its cache, because its path names nothing."""
+    """Moving or renaming the ``.rehuco`` keeps its cache, because its path names nothing.
+
+    **Test steps:**
+
+    * create a new ``.rehuco`` file
+    * verify the cache path is the cache folder joined with the ``.rehuco``'s id and the cache suffix
+    """
     rehuco = RehucoFile.new()
 
     assert rehudb_path(Path("/cache"), rehuco.rehuco_id) == Path("/cache") / f"{rehuco.rehuco_id}{REHUDB_SUFFIX}"
 
 
 def test_each_step_runs_once_in_order(database: MemoryDatabase) -> None:
-    """A version-1 file meets a two-step chain: only the second step runs, and the stamp follows it."""
+    """A version-1 file meets a two-step chain: only the second step runs, and the stamp follows it.
+
+    **Test steps:**
+
+    * stamp the database as version 1 and declare a chain of two steps that record when they run
+    * open the cache with that chain
+    * verify only step two ran, the stamp is 2 and step two's table exists
+    """
     database.keeper.execute("PRAGMA user_version = 1")
     ran: list[int] = []
     chain = (
@@ -245,7 +278,14 @@ def test_each_step_runs_once_in_order(database: MemoryDatabase) -> None:
 
 
 def test_a_failing_step_leaves_the_version_it_started_from(database: MemoryDatabase) -> None:
-    """Each step is its own transaction, its stamp inside it."""
+    """Each step is its own transaction, its stamp inside it.
+
+    **Test steps:**
+
+    * declare a chain whose first step creates a table and whose second creates one, then raises
+    * open the cache with that chain
+    * verify the error propagates, the stamp stays 1 and only the first step's table exists
+    """
 
     def failing(connection: sqlite3.Connection) -> None:
         connection.execute("CREATE TABLE half (x)")
@@ -264,7 +304,16 @@ def test_a_failing_step_leaves_the_version_it_started_from(database: MemoryDatab
 def test_a_newer_cache_is_discarded_and_rebuilt_never_written(
     mocker: MockerFixture, caplog: LogCaptureFixture, memory: Callable[[], MemoryDatabase]
 ) -> None:
-    """There is no downgrade: a cache from a newer build is thrown away, the reason logged."""
+    """There is no downgrade: a cache from a newer build is thrown away, the reason logged.
+
+    **Test steps:**
+
+    * stamp one in-memory database as version 99 with a table of its own, and patch the connection to yield it, then
+      a fresh one
+    * open the cache, capturing warnings
+    * verify the rebuilt cache has the current version and the newer-build reason is logged
+    * verify the cache file and its ``-wal`` and ``-shm`` files were unlinked and the newer database was never written
+    """
     newer, rebuilt = memory(), memory()
     newer.keeper.execute("PRAGMA user_version = 99")
     newer.keeper.execute("CREATE TABLE future (x)")
@@ -285,7 +334,15 @@ def test_a_newer_cache_is_discarded_and_rebuilt_never_written(
 def test_a_file_that_is_not_a_database_is_rebuilt(
     mocker: MockerFixture, caplog: LogCaptureFixture, memory: Callable[[], MemoryDatabase]
 ) -> None:
-    """A disposable cache that will not open is replaced rather than reported."""
+    """A disposable cache that will not open is replaced rather than reported.
+
+    **Test steps:**
+
+    * patch the connection to yield one whose statements fail as "not a database", then a fresh in-memory one
+    * open the cache, capturing warnings
+    * verify the rebuilt cache has the current version and the reason is logged
+    * verify the broken connection was closed
+    """
     broken = mocker.Mock(spec=sqlite3.Connection)
     broken.execute.side_effect = sqlite3.DatabaseError("file is not a database")
     rebuilt = memory()
@@ -301,7 +358,14 @@ def test_a_file_that_is_not_a_database_is_rebuilt(
 
 
 def test_a_locked_cache_is_refused_not_deleted(mocker: MockerFixture) -> None:
-    """A lock is not corruption: the file may be perfectly good, and deleting it would destroy a valid cache."""
+    """A lock is not corruption: the file may be perfectly good, and deleting it would destroy a valid cache.
+
+    **Test steps:**
+
+    * patch the connection to yield one whose statements fail with "database is locked"
+    * open the cache
+    * verify the lock error propagates, nothing was unlinked and the connection was closed
+    """
     locked = mocker.Mock(spec=sqlite3.Connection)
     locked.execute.side_effect = sqlite3.OperationalError("database is locked")
     mocker.patch("rehuco_core.rehudb.sqlite3.connect", return_value=locked)
@@ -318,7 +382,14 @@ def test_a_locked_cache_is_refused_not_deleted(mocker: MockerFixture) -> None:
 def test_a_connection_waits_for_a_busy_cache_from_its_first_statement(
     mocker: MockerFixture, memory: Callable[[], MemoryDatabase]
 ) -> None:
-    """The busy wait is set on the connection, not by a later pragma, so the version read on open has it."""
+    """The busy wait is set on the connection, not by a later pragma, so the version read on open has it.
+
+    **Test steps:**
+
+    * patch the connection to an in-memory database
+    * open and close the cache
+    * verify the connection was made with a ``timeout`` of the busy timeout in seconds
+    """
     database = memory()
     connect = mocker.patch("rehuco_core.rehudb.sqlite3.connect", side_effect=database.connect)
     mocker.patch.object(Path, "mkdir", autospec=True)
@@ -329,7 +400,13 @@ def test_a_connection_waits_for_a_busy_cache_from_its_first_statement(
 
 
 def test_the_cache_closes_on_leaving_a_with_block(cache: CatalogCache) -> None:
-    """The connection is unusable once the block ends."""
+    """The connection is unusable once the block ends.
+
+    **Test steps:**
+
+    * enter and leave a ``with`` block on the cache
+    * verify a statement on its connection raises ``ProgrammingError``
+    """
     with cache:
         pass
 
@@ -343,7 +420,14 @@ def test_the_cache_closes_on_leaving_a_with_block(cache: CatalogCache) -> None:
 
 
 def test_reconciling_inserts_roots_in_the_rehuco_order(cache: CatalogCache) -> None:
-    """A new id gets a row with nothing scanned under it."""
+    """A new id gets a row with nothing scanned under it.
+
+    **Test steps:**
+
+    * reconcile the cache with a ``.rehuco`` that has two roots
+    * verify the roots come back in the ``.rehuco``'s order with its labels
+    * verify the first root has no reachability and no scan time yet
+    """
     rehuco, first, second = two_roots()
 
     cache.reconcile_roots(mapped(rehuco))
@@ -356,7 +440,16 @@ def test_reconciling_inserts_roots_in_the_rehuco_order(cache: CatalogCache) -> N
 
 
 def test_a_relabeled_repointed_and_reordered_root_keeps_its_rows(cache: CatalogCache) -> None:
-    """Rows are keyed by root id, never by path or label."""
+    """Rows are keyed by root id, never by path or label.
+
+    **Test steps:**
+
+    * reconcile two roots and scan a record under the first
+    * relabel the first root, move it to the bottom and point it at another path on a removable volume, then
+      reconcile again
+    * verify the record's row survives under the new label
+    * verify the root reads back with the new label, path, position and removable flag
+    """
     rehuco, first, _ = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(first.root_id, [record("a/info.rehu")])
@@ -380,7 +473,15 @@ def test_a_relabeled_repointed_and_reordered_root_keeps_its_rows(cache: CatalogC
 
 
 def test_a_root_the_rehuco_no_longer_has_cascades_away(database: MemoryDatabase, cache: CatalogCache) -> None:
-    """A missing id loses its row, its resources and their join rows; values nobody names go too."""
+    """A missing id loses its row, its resources and their join rows; values nobody names go too.
+
+    **Test steps:**
+
+    * reconcile two roots and scan a record with an author and a tag under the first
+    * reconcile again with only the second root
+    * verify no rows remain and only the second root is left
+    * verify the author join rows and the author values are gone
+    """
     rehuco, first, second = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(first.root_id, [record("a/info.rehu", authors=("Ann",), tags=("x",))])
@@ -438,7 +539,15 @@ def test_a_held_file_no_row_was_read_from_holds_nothing(cache: CatalogCache) -> 
 
 
 def test_removing_a_root_cascades_and_returns_its_space(database: MemoryDatabase, cache: CatalogCache) -> None:
-    """The pages the cascade empties are handed back by ``incremental_vacuum``, not left on the freelist."""
+    """The pages the cascade empties are handed back by ``incremental_vacuum``, not left on the freelist.
+
+    **Test steps:**
+
+    * reconcile two roots, scan 400 large records under the first and one record with a publisher under the second
+    * remove the first root
+    * verify only the second root's record remains
+    * verify the freelist is empty and the second root's publisher is kept
+    """
     rehuco, first, second = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(first.root_id, [record(f"r{index}/info.rehu", title="x" * 500) for index in range(400)])
@@ -452,7 +561,15 @@ def test_removing_a_root_cascades_and_returns_its_space(database: MemoryDatabase
 
 
 def test_an_unreachable_root_keeps_its_rows(cache: CatalogCache) -> None:
-    """Offline is recorded on the root, and nothing under it changes."""
+    """Offline is recorded on the root, and nothing under it changes.
+
+    **Test steps:**
+
+    * reconcile two roots and scan a record under the first
+    * mark the first root unreachable
+    * verify the root reads as unreachable with its scan time unchanged
+    * verify its record is still there
+    """
     rehuco, first, _ = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(first.root_id, [record("a/info.rehu")], scanned_at=1000.0)
@@ -471,7 +588,15 @@ def test_an_unreachable_root_keeps_its_rows(cache: CatalogCache) -> None:
 
 
 def test_a_scan_replaces_the_roots_rows_and_keeps_the_ids_of_records_found_again(cache: CatalogCache) -> None:
-    """A record found again keeps its row; one not found is gone; a new one is added."""
+    """A record found again keeps its row; one not found is gone; a new one is added.
+
+    **Test steps:**
+
+    * scan two records under a root and note the id of the first
+    * scan again with the first record retitled and a new record, the second left out
+    * verify the scan was applied and only the first and new records remain
+    * verify the first record kept its id, took its new title and the root reads as reachable
+    """
     rehuco, first, _ = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(first.root_id, [record("a/info.rehu", title="Old"), record("b/info.rehu")])
@@ -488,7 +613,14 @@ def test_a_scan_replaces_the_roots_rows_and_keeps_the_ids_of_records_found_again
 
 
 def test_a_scan_leaves_the_other_roots_rows_alone(cache: CatalogCache) -> None:
-    """A root's scan says nothing about any other root."""
+    """A root's scan says nothing about any other root.
+
+    **Test steps:**
+
+    * reconcile two roots and scan a record under the second
+    * scan the first root with no records
+    * verify only the second root's record remains
+    """
     rehuco, first, second = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(second.root_id, [record("p/info.rehu")])
@@ -500,7 +632,15 @@ def test_a_scan_leaves_the_other_roots_rows_alone(cache: CatalogCache) -> None:
 
 def test_an_unchanged_record_keeps_its_row_as_it_was_read(cache: CatalogCache) -> None:
     """An incremental scan's unchanged record is kept whole -- id, fields and read time -- while what it did not
-    find is swept; an unchanged path with no row (gone from the cache meanwhile) adds none."""
+    find is swept; an unchanged path with no row (gone from the cache meanwhile) adds none.
+
+    **Test steps:**
+
+    * scan two records under a root and note their ids
+    * scan again with no records but one known path and one path never cached listed as unchanged
+    * verify the scan was applied
+    * verify only the known record remains, with its id, title and read time as they were
+    """
     rehuco, first, _ = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(first.root_id, [record("a/info.rehu", title="A"), record("b/info.rehu")], scanned_at=1.0)
@@ -513,7 +653,14 @@ def test_an_unchanged_record_keeps_its_row_as_it_was_read(cache: CatalogCache) -
 
 
 def test_an_unchanged_record_takes_its_new_spelling(cache: CatalogCache, mocker: MockerFixture) -> None:
-    """A case-only rename on a case-insensitive filesystem changes no stat signature, only how the path is spelled."""
+    """A case-only rename on a case-insensitive filesystem changes no stat signature, only how the path is spelled.
+
+    **Test steps:**
+
+    * make the path key fold case, and scan a record under a root
+    * scan again with no records and the same path, spelled with another case, as unchanged
+    * verify the record keeps its id and now carries the new spelling
+    """
     mocker.patch("rehuco_core.rehudb.catalog_path_key", side_effect=str.casefold)
     rehuco, first, _ = two_roots()
     cache.reconcile_roots(mapped(rehuco))
@@ -554,13 +701,27 @@ def test_a_converted_record_takes_over_its_legacy_row(cache: CatalogCache) -> No
 
 
 def test_a_scan_of_a_root_removed_meanwhile_is_dropped(cache: CatalogCache) -> None:
-    """Nothing to apply to, so nothing is applied."""
+    """Nothing to apply to, so nothing is applied.
+
+    **Test steps:**
+
+    * scan a record under a root id the cache does not have
+    * verify the scan was not applied and no rows exist
+    """
     assert not cache.apply_root_scan(uuid4(), [record("a/info.rehu")])
     assert not cache.rows()
 
 
 def test_every_field_of_a_record_round_trips(cache: CatalogCache) -> None:
-    """What a scan read is what the browser reads back, values in their own order."""
+    """What a scan read is what the browser reads back, values in their own order.
+
+    **Test steps:**
+
+    * declare a record with every field set, its value lists in an order that is not sorted
+    * scan it under a root
+    * verify the one row's record equals the one written
+    * verify the row carries the root's id and label and the scan time
+    """
     rehuco, first, _ = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     written = CatalogRecord(
@@ -984,7 +1145,16 @@ def test_a_path_is_located_under_its_innermost_root(cache: CatalogCache) -> None
 
 
 def test_one_record_is_written_and_removed_on_its_own(filled: tuple[CatalogCache, MappedRoot, MappedRoot]) -> None:
-    """A save writes its row, a deletion drops it and the values only it named; neither touches another row."""
+    """A save writes its row, a deletion drops it and the values only it named; neither touches another row.
+
+    **Test steps:**
+
+    * scan one record, then upsert a second with a title and an author
+    * verify the upsert succeeded and the new row carries its title and scan time
+    * remove the new record by its full path
+    * verify only the first record remains and no row is found by the removed author, and removing it again, or a
+      path under no root, removes nothing
+    """
     cache, first, _ = filled
     cache.apply_root_scan(first.root_id, [record("kept.rehu")])
 
@@ -1043,13 +1213,26 @@ def test_rows_read_by_id_are_only_those_that_also_match(filled: tuple[CatalogCac
 
 
 def test_a_record_of_a_root_not_in_the_cache_is_not_written(cache: CatalogCache) -> None:
-    """Nothing to write it under."""
+    """Nothing to write it under.
+
+    **Test steps:**
+
+    * upsert a record under a root id the cache does not have
+    * verify nothing was written and no rows exist
+    """
     assert not cache.upsert_record(uuid4(), record("a.rehu"))
     assert not cache.rows()
 
 
 def test_a_roots_resources_are_counted(filled: tuple[CatalogCache, MappedRoot, MappedRoot]) -> None:
-    """The count is what a root's removal would drop, and no other root's."""
+    """The count is what a root's removal would drop, and no other root's.
+
+    **Test steps:**
+
+    * count the first root's resources before any scan
+    * scan two records under the first root and one under the second
+    * verify each root's count is its own, and an unknown root counts zero
+    """
     cache, first, second = filled
     assert cache.resource_count(first.root_id) == 0
     cache.apply_root_scan(first.root_id, [record("a.rehu"), record("b.rehu")])
@@ -1061,7 +1244,14 @@ def test_a_roots_resources_are_counted(filled: tuple[CatalogCache, MappedRoot, M
 
 
 def test_a_signature_is_what_its_row_was_read_at(filled: tuple[CatalogCache, MappedRoot, MappedRoot]) -> None:
-    """One row's, or every row's under a root, keyed as a scan looks them up."""
+    """One row's, or every row's under a root, keyed as a scan looks them up.
+
+    **Test steps:**
+
+    * scan a record with a time and size under the first root and another under the second
+    * verify the first root's signatures are keyed by the path key and equal what the record was read at
+    * verify one row's signature is that same value, and a path under another root has none
+    """
     cache, first, second = filled
     cache.apply_root_scan(first.root_id, [record("a.rehu", mtime_ns=7, size=3)])
     cache.apply_root_scan(second.root_id, [record("p.rehu")])
@@ -1126,7 +1316,14 @@ def test_a_resource_uuid_is_what_its_row_says_found_by_its_place(
 
 
 def test_a_signature_matches_only_a_readable_uncleared_row_of_the_same_time_and_size() -> None:
-    """An error row and a cleared one are always read again."""
+    """An error row and a cleared one are always read again.
+
+    **Test steps:**
+
+    * match a signature against the same time and size, a different time and a different size
+    * match a signature that carries an error, and one cleared to time zero
+    * verify only the first match is true
+    """
     assert RecordSignature("a", 7, 3).matches(7, 3)
     assert not RecordSignature("a", 7, 3).matches(8, 3)
     assert not RecordSignature("a", 7, 3).matches(7, 4)
@@ -1166,12 +1363,25 @@ def titles(cache: CatalogCache, query: CatalogQuery) -> list[str]:
 
 
 def test_every_row_comes_back_in_root_order(library: CatalogCache) -> None:
-    """No query reads everything, the ``.rehuco``'s first root first."""
+    """No query reads everything, the ``.rehuco``'s first root first.
+
+    **Test steps:**
+
+    * read the library with an empty query
+    * verify every title comes back, the first root's first
+    """
     assert titles(library, CatalogQuery()) == ["Donut 100%", "Rigging", "Sculpt_1", "Faces"]
 
 
 def test_free_text_matches_title_or_path_case_insensitively(library: CatalogCache) -> None:
-    """Free text is a substring of either."""
+    """Free text is a substring of either.
+
+    **Test steps:**
+
+    * query the library with free text found in a title, in capitals
+    * query it with free text found in a path, in lowercase
+    * verify each query returns the one resource it names
+    """
     assert titles(library, CatalogQuery(("RIG",))) == ["Rigging"]
     assert titles(library, CatalogQuery(("zbrush",))) == ["Sculpt_1"]
 
@@ -1251,14 +1461,28 @@ def test_a_moved_row_keeps_its_folded_path(library: CatalogCache) -> None:
 
 
 def test_free_text_takes_like_wildcards_literally(library: CatalogCache) -> None:
-    """``%`` and ``_`` are characters a title can hold, not patterns a reader meant."""
+    """``%`` and ``_`` are characters a title can hold, not patterns a reader meant.
+
+    **Test steps:**
+
+    * query the library with free text holding a ``%``, and with one holding a ``_``
+    * query it with free text whose ``_`` would match a letter if it were a wildcard
+    * verify the first two find the titles that hold those characters and the third finds nothing
+    """
     assert titles(library, CatalogQuery(("0%",))) == ["Donut 100%"]
     assert titles(library, CatalogQuery(("t_1",))) == ["Sculpt_1"]
     assert not titles(library, CatalogQuery(("_ig",)))
 
 
 def test_a_value_token_matches_one_value_whole_and_case_insensitively(library: CatalogCache) -> None:
-    """``authors``, ``tags`` and ``publishers`` each look through their join."""
+    """``authors``, ``tags`` and ``publishers`` each look through their join.
+
+    **Test steps:**
+
+    * query the library with an author, a tag and a publisher token, each in another case than stored
+    * query it with an author token that is only part of a name
+    * verify the first three find the resources that carry the value and the last finds nothing
+    """
     assert titles(library, CatalogQuery(tokens=((CatalogField.AUTHORS, "ann"),))) == ["Donut 100%", "Sculpt_1"]
     assert titles(library, CatalogQuery(tokens=((CatalogField.TAGS, "rig"),))) == ["Rigging"]
     assert titles(library, CatalogQuery(tokens=((CatalogField.PUBLISHERS, "PUB"),))) == ["Sculpt_1"]
@@ -1266,12 +1490,25 @@ def test_a_value_token_matches_one_value_whole_and_case_insensitively(library: C
 
 
 def test_a_type_token_matches_the_type(library: CatalogCache) -> None:
-    """The type is a column of its own."""
+    """The type is a column of its own.
+
+    **Test steps:**
+
+    * query the library with a ``type`` token naming the reference images type
+    * verify only the reference pack comes back
+    """
     assert titles(library, CatalogQuery(tokens=((CatalogField.TYPE, "reference_images"),))) == ["Faces"]
 
 
 def test_a_folder_token_is_a_label_and_path_prefix(library: CatalogCache) -> None:
-    """``folder`` addresses ``<label>/<relative path>``, a whole folder at a time."""
+    """``folder`` addresses ``<label>/<relative path>``, a whole folder at a time.
+
+    **Test steps:**
+
+    * query the library with a ``folder`` token naming a subfolder of one root, with a trailing slash
+    * query it with a token naming another root's label alone, and with a partial folder name
+    * verify the subfolder's resources and the other root's resource come back, and the partial name finds nothing
+    """
     blender = CatalogQuery(tokens=((CatalogField.FOLDER, "tutorials/blender/"),))
     assert titles(library, blender) == ["Donut 100%", "Rigging"]
     assert titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "packs"),))) == ["Faces"]
@@ -1280,7 +1517,15 @@ def test_a_folder_token_is_a_label_and_path_prefix(library: CatalogCache) -> Non
 
 def test_a_folder_token_folds_the_label_as_ascii_and_the_path_as_the_filesystem_does(library: CatalogCache) -> None:
     """The root's label is matched ignoring ASCII case; the path beneath it by its key (#454), which folds as this
-    filesystem does -- so ``BLENDER`` finds ``blender`` where ``normcase`` says they are one folder, and only there."""
+    filesystem does -- so ``BLENDER`` finds ``blender`` where ``normcase`` says they are one folder, and only there.
+
+    **Test steps:**
+
+    * query the library with a ``folder`` token holding a root's label in capitals
+    * query it with a token whose folder is spelled in capitals
+    * verify the label matches whatever its case
+    * verify the shouted folder finds a result exactly when the path keys of its two spellings are equal
+    """
     assert titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "TUTORIALS"),))) == [
         "Donut 100%",
         "Rigging",
@@ -1292,14 +1537,28 @@ def test_a_folder_token_folds_the_label_as_ascii_and_the_path_as_the_filesystem_
 
 
 def test_a_folder_token_takes_like_wildcards_literally(library: CatalogCache) -> None:
-    """``%`` and ``_`` in a folder are characters, not patterns."""
+    """``%`` and ``_`` in a folder are characters, not patterns.
+
+    **Test steps:**
+
+    * query the library with a ``folder`` token whose ``_`` would match a letter if it were a wildcard
+    * query it with a token ending in ``%``
+    * verify both find nothing
+    """
     assert not titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "tutorials/_lender"),)))
     assert not titles(library, CatalogQuery(tokens=((CatalogField.FOLDER, "tutorials/%"),)))
 
 
 def test_two_resources_sharing_a_value_under_different_spellings_each_keep_their_own(cache: CatalogCache) -> None:
     """The value row keeps the first spelling ever written; each resource's join keeps what its record said, and a
-    token finds both whatever its case."""
+    token finds both whatever its case.
+
+    **Test steps:**
+
+    * scan two records whose authors are the same name spelled in two cases
+    * query with an ``authors`` token in a third case
+    * verify both records come back, each with the spelling its own record gave
+    """
     rehuco, first, _ = two_roots()
     cache.reconcile_roots(mapped(rehuco))
     cache.apply_root_scan(
@@ -1313,7 +1572,13 @@ def test_two_resources_sharing_a_value_under_different_spellings_each_keep_their
 
 
 def test_a_repeated_value_field_must_match_both_values(library: CatalogCache) -> None:
-    """Two tokens of one field narrow, each an independent clause."""
+    """Two tokens of one field narrow, each an independent clause.
+
+    **Test steps:**
+
+    * query the library with two ``tags`` tokens
+    * verify only the resource that carries both tags comes back
+    """
     both = CatalogQuery(tokens=((CatalogField.TAGS, "3d"), (CatalogField.TAGS, "rig")))
 
     assert titles(library, both) == ["Rigging"]
@@ -1336,7 +1601,15 @@ def test_a_token_on_its_own_reads_resources_through_an_index_never_a_scan(
     probes a join once per row is what made ``authors:`` cost 758 ms at 100k resources, and a folder token ORed over
     its label splits scans unless every term is on the table's own indexed columns. The planner's choice here does not
     depend on the row count, so the small library is enough -- but each token is asked alone, since beside another
-    it may ride that one's index as a mere filter."""
+    it may ride that one's index as a mere filter.
+
+    **Test steps:**
+
+    * trace the statements the connection runs while the library is read with the one token
+    * ask the planner for the query plan of each statement that reads ``resources``
+    * verify there are six such statements
+    * verify no plan has a full ``SCAN`` of ``resources``
+    """
     statements: list[str] = []
     connection = library.connection
     connection.set_trace_callback(statements.append)
@@ -1355,14 +1628,26 @@ def test_a_token_on_its_own_reads_resources_through_an_index_never_a_scan(
 
 
 def test_tokens_and_text_must_all_match(library: CatalogCache) -> None:
-    """Every condition narrows."""
+    """Every condition narrows.
+
+    **Test steps:**
+
+    * query the library with free text, an author token and a tag token together
+    * verify only the resource that satisfies all three comes back
+    """
     query = CatalogQuery(("o",), ((CatalogField.AUTHORS, "Ann"), (CatalogField.TAGS, "3d")))
 
     assert titles(library, query) == ["Donut 100%"]
 
 
 def test_a_matching_row_still_carries_all_its_values(library: CatalogCache) -> None:
-    """Narrowing by one tag does not narrow the tags a row reads back."""
+    """Narrowing by one tag does not narrow the tags a row reads back.
+
+    **Test steps:**
+
+    * query the library with one ``tags`` token
+    * verify the one row's record still carries all its tags
+    """
     (row,) = library.rows(CatalogQuery(tokens=((CatalogField.TAGS, "rig"),)))
 
     assert row.record.tags == ("3d", "rig")
