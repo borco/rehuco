@@ -292,6 +292,7 @@ class FilesView(QWidget):
             self.__ui.path_label.setText("")
             self.__ui.summary_label.setText(NO_PATH_SUMMARY)
             return
+        self.__ui.path_label.setText(FilesView.__relative_label(directory, path.parent))
         self.__ui.summary_label.setText(LOADING_SUMMARY)
         reader = FilesRowsReader(
             path,
@@ -330,7 +331,6 @@ class FilesView(QWidget):
         if navigated:
             self.__ui.file_view.clearSelection()
             self.__ui.file_view.scrollToTop()
-        self.__ui.path_label.setText(self.__relative_label(rows.directory))
         self.__ui.summary_label.setText(FilesView.__summary(rows))
 
     def __apply_progress(self, *_args: object) -> None:
@@ -370,19 +370,19 @@ class FilesView(QWidget):
         for action in (self.__ui.home_action, self.__ui.up_action):
             action.setEnabled(below_root)
 
-    def __relative_label(self, directory: Path) -> str:
+    @staticmethod
+    def __relative_label(directory: Path, root: Path) -> str:
         """Where the reader is, spelled from the resource's own folder.
 
         The absolute path is on every row's tooltip; what a reader browsing needs above the table is how
-        deep they have walked, and a full path would only be the resource's whole location repeated.
+        deep they have walked, and a full path would only be the resource's whole location repeated. **It follows
+        the target, not the read**, as Home and Up do (:meth:`__go_to`): written when the read goes out, from the
+        folder it was sent to.
 
-        :param directory: the folder being shown.
+        :param directory: the folder being read.
+        :param root: the resource's own folder.
         :returns: the resource's own name at the root, else the path under it.
         """
-        path = self.__model.path
-        if path is None:
-            return ""
-        root = path.parent
         if directory == root:
             return root.name
         return f"{root.name}/{directory.relative_to(root).as_posix()}"
@@ -465,9 +465,14 @@ class FilesView(QWidget):
         invited a second click that only re-read the same folder. It also means a superseded read can
         never mis-set them -- there is nothing left in the read's arrival that decides it.
 
+        **Pointed at no folder, it disowns the read still out**: one started while the document had a path would
+        otherwise land as the browsed folder of a document that has none, shown or hidden.
+
         :param directory: the folder to show, or ``None`` for a document that has no folder yet.
         """
         path = self.__model.path
+        if directory is None:
+            self.__loader.disown()
         self.__directory = directory
         self.__root = None if path is None else path.parent
         self.__set_navigable(path is not None and directory is not None and directory != path.parent)
