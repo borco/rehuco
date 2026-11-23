@@ -82,6 +82,16 @@ SCRAPED_FIELD_NAMES: Final = (
     "advertised_duration",
     "advertised_count",
     "level",
+    "kind",
+    "license",
+    "license_url",
+    "formats",
+    "compatibility",
+    "source_updated",
+    "advertised_version",
+    "advertised_size",
+    "advertised_triangles",
+    "advertised_texture_size",
 )
 """The fields a `ScrapeResult` may carry ([[acquisition-tooling#scraper-protocols]]): the part of the
 plugin field-name vocabulary a web page can actually show. A scraper only converts the page it fetched
@@ -89,6 +99,11 @@ into JSON; the values the app computes from the local files (`original_size`, `c
 measured durations, `current_count`) and the user's own state (`hidden_images`, `extra_tags`, the
 boolean flags, `rating`, `learning_paths`, the `.rehu` timestamps) come from elsewhere and have no page to
 be read from, so :data:`SCRAPE_RESULT_SCHEMA` rejects them rather than accept a guess.
+
+**The asset block's** scraped fields ([[assets#block]], #701) are the ones a store states: ``kind``, the
+license pair, ``formats``, ``compatibility``, ``source_updated``, ``advertised_version``, ``advertised_size``
+and the two advertised counts (a range's text, `rehuco_core.ValueRange`). Not ``acquired``, which only the
+library scan knows from the account, and not the measured ``triangles`` and ``texture_size``.
 
 ``site_id`` is the store's own id for the item ([[assets#site-id]]): like ``url``, it lands on the scraped page's
 source rather than in a field of its own.
@@ -98,7 +113,7 @@ distinct from :attr:`ScrapeResult.description`, the scrape's own Markdown write-
 fill both, or neither."""
 
 
-INTEGER_FIELD_NAMES: Final = frozenset({"advertised_duration"})
+INTEGER_FIELD_NAMES: Final = frozenset({"advertised_duration", "advertised_size"})
 """The entries of :data:`SCRAPED_FIELD_NAMES` the schema types as ``integer``. JSON Schema's ``integer``
 admits an integral float (``3600.0``), which the document's own getter (`rehuco_core.rehu_locks.optional_int`)
 would read as malformed, so `ScrapeResult.from_mapping` stores these as the `int` they denote. Spelled out

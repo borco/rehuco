@@ -1,0 +1,40 @@
+{
+  "assetFormatType": {
+    "code": "unreal-engine",
+    "name": "Unreal Engine",
+    "extensions": [
+      "uasset",
+      "uproject",
+      "uplugin"
+    ]
+  },
+  "files": [],
+  "techDetails": {
+    "threeDModel": {
+      "totalTrianglesCountRange": null,
+      "textureResolutionRange": null
+    }
+  },
+  "versions": [
+    {
+      "name": "v001",
+      "engineVersions": [
+        "UE_5.0"
+      ],
+      "targetPlatforms": [
+        "Windows",
+        "Win32",
+        "Mac"
+      ]
+    },
+    {
+      "name": "v002",
+      "engineVersions": [
+        "UE_5.5"
+      ],
+      "targetPlatforms": [
+        "Windows"
+      ]
+    }
+  ]
+}

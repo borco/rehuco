@@ -2251,6 +2251,28 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__set_active_or_remove("advertised_size", value)
 
     @property
+    def advertised_triangles(self) -> str | None:
+        """The triangle count the store states ([[assets#block]]), as a range's text
+        (:class:`~rehuco_core.ValueRange`: ``12``, ``1000-4999``); ``None`` when absent or JSON ``null``; a present
+        non-string reads ``None`` and locks. Not the measured :attr:`triangles`."""
+        return optional_str(self.active_field("advertised_triangles"))
+
+    @advertised_triangles.setter
+    def advertised_triangles(self, value: str | None) -> None:
+        self.__set_active_or_remove("advertised_triangles", value)
+
+    @property
+    def advertised_texture_size(self) -> str | None:
+        """The longest side, in pixels, of the largest texture the store states ([[assets#block]]), as a
+        range's text (:class:`~rehuco_core.ValueRange`: ``1024``, ``1024,2048``); ``None`` when absent or JSON
+        ``null``; a present non-string reads ``None`` and locks. Not the measured :attr:`texture_size`."""
+        return optional_str(self.active_field("advertised_texture_size"))
+
+    @advertised_texture_size.setter
+    def advertised_texture_size(self, value: str | None) -> None:
+        self.__set_active_or_remove("advertised_texture_size", value)
+
+    @property
     def triangles(self) -> int | None:
         """The triangle count of an asset's heaviest mesh at full detail ([[assets#block]]), measured, never scraped;
         ``None`` when absent or JSON ``null``; a present non-int reads ``None`` and locks."""

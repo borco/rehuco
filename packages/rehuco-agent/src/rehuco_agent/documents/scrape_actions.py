@@ -410,7 +410,7 @@ class ScrapeActions(QObject):  # pylint: disable=too-many-instance-attributes
             # a result is applied only while the document is open at the path it was dropped on
             image_stem=cast(Path, model.path).stem,
             declared=declared_field_names(model),
-            write_field=lambda name, value: setattr(model, name, value),
+            write_field=model.write_declared_field,
         )
         for image in images:
             self.__image_downloads.submit(image.url, image.referrer, image.slot)

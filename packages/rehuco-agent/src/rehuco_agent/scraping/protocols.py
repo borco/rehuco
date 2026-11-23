@@ -29,6 +29,15 @@ class LoginRequiredError(Exception):
     """
 
 
+class PageGoneError(Exception):
+    """Raised by a scraper that finds the item no longer public -- Fab's listing answering 404, a delisted product --
+    with the sentence to show ([[acquisition-tooling#scraper-protocols]], #701).
+
+    Not a re-fetch, which asks the same site again: the item is gone, and a drop fails with this message as it is. It
+    is the scraper's to raise, since only the scraper knows a 404 of its own API from a 404 of anything else.
+    """
+
+
 class RefetchRequestedError(Exception):
     """Raised by :meth:`SiteScraper.scrape_page` to ask for the page again after a pause, optionally from
     another URL ([[acquisition-tooling#scrape-job]]) -- the answer to a transient refusal, such as a
@@ -134,4 +143,34 @@ class SiteScraper(Protocol):
             `~.results.ScrapeResult.coerce` normalizes either form, and validates it, before it is used.
         :raises LoginRequiredError: the page is a login wall.
         :raises RefetchRequestedError: the page is a transient refusal worth asking for again.
+        :raises PageGoneError: the page says its item is no longer public.
+        """
+
+
+@runtime_checkable
+class FetchingScraper(SiteScraper, Protocol):
+    """A scraper that does its own downloads: the one page the app would fetch for it holds too little, so it is handed
+    the fetcher instead and asks for what it needs ([[acquisition-tooling#scraper-protocols]], #701).
+
+    Fab's listing page is a shell; its data is JSON at another address, and a format's size and engine versions are at
+    one more address each. An optional second protocol: a scraper that has :meth:`scrape_url` is called through it,
+    *instead of* :meth:`~SiteScraper.scrape_page` and with no page fetched for it first; every other scraper, a user's
+    script included, is unchanged.
+    """
+
+    def scrape_url(
+        self,
+        url: str,
+        fetcher: PageFetcher,
+    ) -> ScrapeResult | Mapping[str, object]:  # pyright: ignore[reportReturnType]
+        """Read the item at ``url``, fetching what it needs.
+
+        :param url: the URL a scrape was asked to run against, as dropped.
+        :param fetcher: what to fetch with: plain HTTP, or the persona browser where the scraper needs it or the user
+            ticked **Use browser** (`~.scrape_job.ScrapeJob`), so a scraper never picks one itself.
+        :returns: what :meth:`~SiteScraper.scrape_page` returns.
+        :raises FetchError: a fetch failed; so may `requests.RequestException`, both reported as "Could not fetch".
+        :raises LoginRequiredError: a fetch landed on a login wall.
+        :raises RefetchRequestedError: the whole scrape is worth asking for again.
+        :raises PageGoneError: the item is no longer public.
         """

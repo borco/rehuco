@@ -94,6 +94,8 @@ ASSET_FIELD_NAMES: Final = (
     "advertised_version",
     "current_version",
     "advertised_size",
+    "advertised_triangles",
+    "advertised_texture_size",
     "triangles",
     "texture_size",
     "acquired",

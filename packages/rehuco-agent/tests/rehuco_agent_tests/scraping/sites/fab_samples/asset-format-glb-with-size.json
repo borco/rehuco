@@ -1,0 +1,30 @@
+{
+  "assetFormatType": {
+    "code": "glb",
+    "name": "GLB",
+    "extensions": [
+      "glb"
+    ]
+  },
+  "files": [
+    {
+      "name": "1024_mat_049_horizontal_wood_grain_black_walnut.zip",
+      "size": 12096296
+    }
+  ],
+  "techDetails": {
+    "threeDModel": {
+      "totalTrianglesCountRange": {
+        "lower": 12,
+        "upper": 13,
+        "bounds": "[)"
+      },
+      "textureResolutionRange": {
+        "lower": 1024,
+        "upper": 1025,
+        "bounds": "[)"
+      }
+    }
+  },
+  "versions": []
+}

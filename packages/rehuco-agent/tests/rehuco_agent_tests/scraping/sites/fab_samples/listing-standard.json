@@ -1,0 +1,86 @@
+{
+  "uid": "e3ad8089-e375-4f0e-8218-b43345c69d3c",
+  "title": "Conference / Meeting Room Environment ( Conference Meeting Room )",
+  "listingType": "3d-model",
+  "productType": "3d-model",
+  "isMature": false,
+  "isAiForbidden": true,
+  "isAiGenerated": false,
+  "firstPublishedAt": "2024-07-26T16:25:46.947000Z",
+  "publishedAt": "2025-09-08T17:51:39.829004Z",
+  "user": {
+    "sellerName": "Tennur",
+    "profileUrl": "https://www.fab.com/sellers/Tennur"
+  },
+  "category": {
+    "name": "Interior",
+    "path": "environments/interior"
+  },
+  "tags": [
+    {
+      "name": "Level"
+    },
+    {
+      "name": "Conference"
+    },
+    {
+      "name": "Meeting"
+    },
+    {
+      "name": "Studio"
+    },
+    {
+      "name": "Virtual"
+    }
+  ],
+  "assetFormats": [
+    {
+      "assetFormatType": {
+        "code": "unreal-engine",
+        "name": "Unreal Engine",
+        "extensions": [
+          "uasset",
+          "uproject",
+          "uplugin"
+        ]
+      },
+      "containsPack": false
+    }
+  ],
+  "licenses": [
+    {
+      "group": "standard",
+      "slug": "personal",
+      "name": "Personal"
+    },
+    {
+      "group": "standard",
+      "slug": "professional",
+      "name": "Professional"
+    }
+  ],
+  "description": "<p><a target=\"_blank\" href=\"https://cosmos.leartesstudios.com/free\" rel=\"noopener noreferrer nofollow\">HERE, YOU CAN CHECK A NEW ASSET PLATFORM AND GRAB SOME MORE FREE ENVIRONMENT PACKS</a></p><p><a target=\"_blank\" href=\"https://cosmos.leartesstudios.com/free\" rel=\"noopener noreferrer nofollow\">https://cosmos.leartesstudios.com/</a></p><p></p><blockquote><h4><strong>Additional Promotions: 6 More Environments are free on the Cosmos</strong></h4></blockquote><p></p><blockquote><h4><a target=\"_blank\" href=\"https://cosmos.leartesstudios.com/environments/post-apocalyptic-desert\" rel=\"noopener noreferrer nofollow\"><strong>Download the Post-Apocalyptic Desert Environment for free.</strong></a></h4></blockquote><p></p>",
+  "thumbnails": [
+    {
+      "type": "thumbnail",
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/2e1efbee-ab6d-4dfc-bbe7-1bc6f121e542/e7088977-5bd9-4a04-882e-08450f525eae.jpg"
+    }
+  ],
+  "medias": [
+    {
+      "type": "image",
+      "position": 0,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/999ba680-2f0e-4b22-b548-815b179ccbe9/d55fa446-6265-4919-b381-19cda1661711.jpeg"
+    },
+    {
+      "type": "image",
+      "position": 1,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/9b9b3d2b-7f39-4f1b-9e4b-96a6b66ed415/4fee30ab-136a-485c-9f35-c0b33ab28a7d.jpeg"
+    },
+    {
+      "type": "image",
+      "position": 2,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/74fc5dbc-5fb2-4523-98e4-abe74a2bf289/298fd36c-0b68-432c-8e8e-37a47d9ccecc.jpeg"
+    }
+  ]
+}

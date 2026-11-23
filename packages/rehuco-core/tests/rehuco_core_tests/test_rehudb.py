@@ -1708,7 +1708,9 @@ def test_a_type_contributes_the_stored_fields_its_plugin_declares() -> None:
     assert catalog_type_fields("ReferenceImages") == ("advertised_count", "current_count")
     assert catalog_type_fields("asset")[0] == "asset_kind"
     assert tuple(COLUMN_FIELDS.get(column, column) for column in catalog_type_fields("asset")) == tuple(
-        name for name in ASSET_FIELD_NAMES if name not in {"license_url", "formats"}
+        name
+        for name in ASSET_FIELD_NAMES
+        if name not in {"license_url", "formats", "advertised_triangles", "advertised_texture_size"}
     )
 
 

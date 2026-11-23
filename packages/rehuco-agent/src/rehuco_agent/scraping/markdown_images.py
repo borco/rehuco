@@ -4,7 +4,7 @@ fresh and renamed -- nothing here scales anything.
 
 A scraper that embeds images in its description (a future Domestika one) calls
 :func:`rewrite_markdown_images` on its own text; one that only downloads images without mentioning them
-(ArtStation, Udemy) never does. Substituting the real `<stem>` back in
+(ArtStation, Udemy, Fab) never does. Substituting the real `<stem>` back in
 (:func:`substitute_image_stem`) is applied downstream, not by anything in this package.
 """
 

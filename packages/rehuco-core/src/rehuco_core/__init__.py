@@ -600,6 +600,7 @@ from .user_sidecars import (
     user_sidecar_paths,
     user_slug,
 )
+from .value_range import ValueRange, ValueSpan
 from .verified_copy import (
     CarriedFile,
     CarriedSet,
@@ -1033,6 +1034,8 @@ __all__ = [
     "VIDEO_NOTES_KEY",
     "VIDEO_SIZES_KEY",
     "VLC_TOOL",
+    "ValueRange",
+    "ValueSpan",
     "VerifiedCopy",
     "VerifiedCopyError",
     "VerifyChecksumsJob",

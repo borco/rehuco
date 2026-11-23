@@ -11,7 +11,7 @@ from rehuco_agent.scraping.results import (
     ScrapedImage,
     ScrapeResult,
 )
-from rehuco_core import CORE_FIELD_NAMES, DEFAULT_PLUGIN_REGISTRY
+from rehuco_core import ASSET_KINDS, CORE_FIELD_NAMES, DEFAULT_PLUGIN_REGISTRY
 
 FULL_VOCABULARY = frozenset(CORE_FIELD_NAMES) | {name for spec in DEFAULT_PLUGIN_REGISTRY for name in spec.field_names}
 
@@ -102,6 +102,17 @@ def test_an_integral_float_where_an_integer_belongs_is_read_as_that_integer() ->
         param({"fields": {"advertised_duration": True}}, "fields.advertised_duration", id="bool-is-not-an-int"),
         param({"fields": {"site_id": 7}}, "fields.site_id", id="non-string-site-id"),
         param({"fields": {"site_id": ""}}, "fields.site_id", id="empty-site-id"),
+        param({"fields": {"kind": "lamp"}}, "fields.kind", id="kind-outside-the-asset-kinds"),
+        param({"fields": {"formats": "fbx"}}, "fields.formats", id="non-list-formats"),
+        param({"fields": {"formats": ["fbx", 3]}}, "fields.formats[1]", id="number-in-formats"),
+        param({"fields": {"compatibility": {"unreal": 5}}}, "fields.compatibility", id="non-string-compatibility"),
+        param({"fields": {"advertised_size": "1 GB"}}, "fields.advertised_size", id="text-size"),
+        param({"fields": {"advertised_size": -1}}, "fields.advertised_size", id="negative-size"),
+        param({"fields": {"advertised_triangles": 12}}, "fields.advertised_triangles", id="number-triangles"),
+        param({"fields": {"license": 7}}, "fields.license", id="non-string-license"),
+        param({"fields": {"acquired": "2024-05-03"}}, "fields", id="acquired-is-the-scans-alone"),
+        param({"fields": {"triangles": 12}}, "fields", id="measured-triangles"),
+        param({"fields": {"texture_size": 1024}}, "fields", id="measured-texture-size"),
     ],
 )
 def test_each_malformed_field_is_rejected_with_its_path(mapping: dict[str, Any], expected_path_fragment: str) -> None:
@@ -110,6 +121,38 @@ def test_each_malformed_field_is_rejected_with_its_path(mapping: dict[str, Any],
         ScrapeResult.from_mapping(mapping)
 
     assert expected_path_fragment in excinfo.value.path
+
+
+# endregion
+
+
+# region asset fields
+def test_an_asset_listing_s_fields_are_accepted_as_they_are() -> None:
+    """Every field of the asset block a store states passes the schema and is carried through untouched, a
+    size given as an integral float read as the whole number it denotes (#701).
+
+    **Test steps:**
+
+    * build a result from a mapping with each asset field, the size as ``2048.0``
+    * verify each field reads back, the size as an `int`
+    """
+    fields = {
+        "kind": "model",
+        "license": "cc-by-4.0",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "formats": ["blend", "fbx"],
+        "compatibility": {"unreal": "5.0-5.5"},
+        "source_updated": "2025-09-08",
+        "advertised_version": "1.2",
+        "advertised_size": 2048.0,
+        "advertised_triangles": "12-14",
+        "advertised_texture_size": "1024,2048",
+    }
+
+    result = ScrapeResult.from_mapping({"fields": fields})
+
+    assert result.fields == {**fields, "advertised_size": 2048}
+    assert isinstance(result.fields["advertised_size"], int)
 
 
 # endregion
@@ -131,9 +174,23 @@ def test_schema_fields_keys_equal_scraped_field_names() -> None:
 def test_integer_field_names_equal_the_schemas_integer_typed_fields() -> None:
     """`INTEGER_FIELD_NAMES` is spelled out by hand; this holds it to the schema's own `integer` typing."""
     fields_schema = SCRAPE_RESULT_SCHEMA["properties"]["fields"]["properties"]  # type: ignore[index]
-    integer_typed = {name for name, spec in fields_schema.items() if "integer" in spec["type"]}
+    integer_typed = {name for name, spec in fields_schema.items() if "integer" in spec.get("type", ())}
 
     assert integer_typed == INTEGER_FIELD_NAMES
+
+
+def test_the_schemas_kind_list_is_the_asset_kinds() -> None:
+    """The ``kind`` a scrape may carry is one of the asset block's own kinds, in its order -- a drift guard for
+    the list the schema spells out by hand (#701).
+
+    **Test steps:**
+
+    * read the kind enum out of the schema
+    * verify it equals `ASSET_KINDS`
+    """
+    fields_schema = SCRAPE_RESULT_SCHEMA["properties"]["fields"]["properties"]  # type: ignore[index]
+
+    assert tuple(fields_schema["kind"]["enum"]) == ASSET_KINDS
 
 
 def test_a_measured_field_is_not_in_the_scraped_vocabulary() -> None:
