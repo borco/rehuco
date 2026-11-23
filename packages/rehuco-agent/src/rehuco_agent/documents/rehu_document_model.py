@@ -100,21 +100,42 @@ TYPE_FIELD_INT_NAMES: Final = (
     "original_duration",
     "current_duration",
     "advertised_duration",
+    "advertised_size",
+    "triangles",
+    "texture_size",
 )
 """The type-field integer fields ([[field-schema#field-types]]); ``rating`` may be negative, the
-``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]]). Defaults live on each
+``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]]), and the last three are an
+asset's ([[assets#block]]). Defaults live on each
 ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
 
-TYPE_FIELD_STR_NAMES: Final = ("advertised_count",)
+TYPE_FIELD_STR_NAMES: Final = (
+    "advertised_count",
+    "kind",
+    "license",
+    "license_url",
+    "source_updated",
+    "advertised_version",
+    "current_version",
+    "advertised_triangles",
+    "advertised_texture_size",
+    "acquired",
+)
 """The type-field **optional string** fields ([[field-schema#field-types]]): absent reads as ``None``, not
 ``""``, and writing ``None`` removes the key, exactly as the optional integers above behave
 ([[field-schema#deferred-items]]). ``advertised_count`` is text rather than a number because the claim it
-carries may be open-ended (``500+``, #198)."""
+carries may be open-ended (``500+``, #198); the rest are an asset's ([[assets#block]], #701), its dates and
+its advertised counts being text too."""
 
-TYPE_FIELD_STR_LIST_NAMES: Final = ("level",)
+TYPE_FIELD_STR_LIST_NAMES: Final = ("level", "formats")
 """The type-field string-list fields ([[field-schema#field-types]]); ``level`` is multi-choice, not a
 mutually-exclusive single value -- tc4 could tag more than one of beginner/intermediate/advanced/any
-at once. Defaults live on each ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
+at once; ``formats`` is an asset's file formats ([[assets#block]]). Defaults live on each ``SimpleProperty``
+declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
+
+TYPE_FIELD_STR_MAP_NAMES: Final = ("compatibility",)
+"""The type-field string-to-string maps: an asset's ``compatibility``, what it works with to the versions it
+works in ([[assets#block]], #701). A value that is not a string is skipped when read, as the record skips it."""
 
 USER_FIELD_NAMES: Final = frozenset(("rating", "viewed", "todo", "keep", "favorite"))
 """The subset of the groups above that is **per-user** ([[field-schema#per-user-shared]], #99): these
@@ -405,6 +426,52 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     open-ended ``500+`` stays the weaker claim it is, or ``None`` when absent
     ([[field-schema#deferred-items]]). Nothing measures it -- :attr:`current_count` is the measured half."""
 
+    kind = SimpleProperty[str | None](None)
+    """What an asset is, one of `~rehuco_core.ASSET_KINDS` ([[assets#kind]]), or ``None`` when not known."""
+
+    license = SimpleProperty[str | None](None)
+    """An asset's license short id, such as ``fab-standard`` ([[assets#licenses]]), or ``None`` when absent."""
+
+    license_url = SimpleProperty[str | None](None)
+    """Where the store states an asset's terms ([[assets#licenses]]), or ``None`` when absent."""
+
+    formats = SimpleProperty[list[str]](default_factory=list)
+    """The file formats an asset is delivered in, such as ``fbx`` or ``blend`` ([[assets#block]])."""
+
+    compatibility = SimpleProperty[dict[str, str]](default_factory=dict)
+    """What an asset works with, and in which versions, such as ``{"unreal": "5.0-5.5"}`` ([[assets#block]])."""
+
+    source_updated = SimpleProperty[str | None](None)
+    """The partial-precision date the store last changed an asset ([[assets#block]]), or ``None`` when absent;
+    not the record's own ``updated``."""
+
+    advertised_version = SimpleProperty[str | None](None)
+    """The version of an asset the store offers ([[assets#block]]), or ``None`` when absent."""
+
+    current_version = SimpleProperty[str | None](None)
+    """The version of an asset's local files ([[assets#block]]), or ``None`` when absent."""
+
+    advertised_size = SimpleProperty[int | None](None)
+    """The download size, in bytes, the store states for an asset ([[assets#block]]), or ``None`` when absent."""
+
+    advertised_triangles = SimpleProperty[str | None](None)
+    """The triangle count the store states, as a range's text ([[assets#ranges]]), or ``None`` when absent."""
+
+    advertised_texture_size = SimpleProperty[str | None](None)
+    """The longest side of the largest texture the store states, as a range's text ([[assets#ranges]]), or
+    ``None`` when absent."""
+
+    triangles = SimpleProperty[int | None](None)
+    """The measured triangle count of an asset's heaviest mesh ([[assets#block]]), or ``None`` when unmeasured."""
+
+    texture_size = SimpleProperty[int | None](None)
+    """The measured longest side, in pixels, of an asset's largest texture ([[assets#block]]), or ``None`` when
+    unmeasured."""
+
+    acquired = SimpleProperty[str | None](None)
+    """When the account got an asset, a UTC time or a partial-precision date ([[assets#block]]), or ``None`` when
+    the store does not say."""
+
     level = SimpleProperty[list[str]](default_factory=list)
     """The Tutorial-only multi-choice level tags ([[field-schema#field-types]]); beginner /
     intermediate / advanced / any, zero or more at once."""
@@ -662,7 +729,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         for name in COMMON_FIELD_NAMES:
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_common_field_changed(key, value))
-        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
+        for name in (
+            *TYPE_FIELD_BOOL_NAMES,
+            *TYPE_FIELD_INT_NAMES,
+            *TYPE_FIELD_STR_NAMES,
+            *TYPE_FIELD_STR_LIST_NAMES,
+            *TYPE_FIELD_STR_MAP_NAMES,
+        ):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
         self.sources_changed.connect(self.__on_sources_changed)  # type: ignore[attr-defined]
@@ -2396,6 +2469,25 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # see ScrapeTarget: this model's SimpleProperty attributes are its properties
         ScrapeApplication.add_source(cast(ScrapeTarget, self), publisher, url, site_id)
 
+    def write_declared_field(self, name: str, value: object) -> None:
+        """Write one field this document's type declares, as a scrape hands it over (#701).
+
+        Through this model's own property where it has one, so the edit is the one a field editor makes. A
+        declared field with no property here -- a plugin's, ahead of this model -- is written into the type's
+        block and marks the model dirty. A plain ``setattr`` on this model would keep such a value as a stray
+        attribute and save nothing, which is how a drop lost every asset field before they had properties.
+
+        :param name: a field the type declares (:func:`~.document_fields.declared_field_names`).
+        :param value: its value.
+        """
+        try:
+            SimpleProperty.notify_signal_name(type(self), name)
+        except KeyError:
+            self.__document.set_active_field(name, value)
+            self.dirty = True
+        else:
+            setattr(self, name, value)
+
     def rescan_images(self) -> None:
         """Send this resource's ``<stem>NN`` set back to the directory (#73).
 
@@ -2542,6 +2634,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             value = self.__read_field(name, default)
             coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
             setattr(self, name, coerced)
+        for name in TYPE_FIELD_STR_MAP_NAMES:
+            value = self.__read_field(name, None)
+            entries = value.items() if isinstance(value, dict) else ()
+            setattr(self, name, {key: entry for key, entry in entries if isinstance(entry, str)})
         # the record lists take the document's own record accessors whole rather than a generic block read
         # plus a coercion here: *which* keys a membership record may carry is not this model's to decide
         # (that is the merge contract, #235), and *where* a learning path sits is half of what it means

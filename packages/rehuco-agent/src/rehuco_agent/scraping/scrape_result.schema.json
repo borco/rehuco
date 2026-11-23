@@ -33,7 +33,35 @@
         "level": {
           "type": "array",
           "items": { "enum": ["beginner", "intermediate", "advanced", "any"] }
-        }
+        },
+        "kind": {
+          "enum": [
+            "model",
+            "pack",
+            "character",
+            "animation",
+            "material",
+            "texture",
+            "decal",
+            "brush",
+            "hdri",
+            "audio",
+            "vfx",
+            "plugin",
+            "tool",
+            "template",
+            "unknown"
+          ]
+        },
+        "license": { "type": "string" },
+        "license_url": { "type": "string" },
+        "formats": { "type": "array", "items": { "type": "string" } },
+        "compatibility": { "type": "object", "additionalProperties": { "type": "string" } },
+        "source_updated": { "type": ["string", "null"] },
+        "advertised_version": { "type": "string" },
+        "advertised_size": { "type": ["integer", "null"], "minimum": 0 },
+        "advertised_triangles": { "type": "string" },
+        "advertised_texture_size": { "type": "string" }
       }
     },
     "description": { "type": ["string", "null"] },

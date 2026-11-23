@@ -1,0 +1,69 @@
+{
+  "uid": "785da98f-3c56-4736-b898-826116d8f06f",
+  "title": "Old West Learning",
+  "listingType": "tutorials-examples",
+  "productType": "tutorials-examples",
+  "isMature": false,
+  "isAiForbidden": true,
+  "isAiGenerated": false,
+  "firstPublishedAt": "2023-02-14T15:23:40.777000Z",
+  "publishedAt": "2024-10-10T19:49:27.111591Z",
+  "user": {
+    "sellerName": "Epic Education Learning and Training",
+    "profileUrl": "https://www.fab.com/sellers/Epic%20Education%20Learning%20and%20Training"
+  },
+  "category": {
+    "name": "Unreal Engine",
+    "path": "tools/unreal-engine"
+  },
+  "tags": [
+    {
+      "name": "Education"
+    }
+  ],
+  "assetFormats": [
+    {
+      "assetFormatType": {
+        "code": "unreal-engine",
+        "name": "Unreal Engine",
+        "extensions": [
+          "uasset",
+          "uproject",
+          "uplugin"
+        ]
+      },
+      "containsPack": false
+    }
+  ],
+  "licenses": [
+    {
+      "group": "legacy",
+      "slug": "legacy-uem",
+      "name": "UE Marketplace License"
+    }
+  ],
+  "description": "<p>Check out our <a href=\"https://dev.epicgames.com/community/learning/tutorials/OkJl/tips-for-learning-unreal-engine-from-the-epic-online-learning-team\" rel=\"noopener noreferrer nofollow\">Tips for Learning Unreal Engine from the Epic Online Learning Team</a> featuring this project on the <a href=\"https://dev.epicgames.com/community\" rel=\"noopener noreferrer nofollow\">Epic Developer Community</a> site.</p><p></p><p>Explore Northwood, USA -- This lumbertown situated in the lower drylands along the river coming down from the mountains hosts the workers and residents of Northwood. This small lumber and work based town is used to float lumber from high up in the mountains down to be processed and then taken into neighboring cities for use.</p><p></p>",
+  "thumbnails": [
+    {
+      "type": "thumbnail",
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/2663f4b9-06da-4d6b-b7f6-eb3c0fa47119/5e25bf84-6b76-4058-9aeb-7afc866a8f85.png"
+    }
+  ],
+  "medias": [
+    {
+      "type": "image",
+      "position": 0,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/531c2973-23bb-4fa3-8c3f-f42e66f8a715/aa85ae19-33dd-4881-a43c-cafaf2a84090.jpg"
+    },
+    {
+      "type": "image",
+      "position": 1,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/7e7684ac-a78e-4987-8b75-c3c4ba60ee01/f1157fe2-2b15-4a78-8bf1-56758b82e89a.jpg"
+    },
+    {
+      "type": "image",
+      "position": 2,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/8ce464f2-be04-42cf-bfc8-ddd7f54998b8/c7df3760-a8c8-4e08-8899-045d16335f40.jpg"
+    }
+  ]
+}

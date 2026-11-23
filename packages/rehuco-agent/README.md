@@ -30,7 +30,7 @@ macOS and Linux.
 - **Viewer and editor** — common fields, a Markdown description, and the resource's screenshots as a
   thumbnail strip with a double-click lightbox; a reference pack also shows its own images, inside its archives
   and loose in its folders
-- **Fields filled from a dropped page** — drop an ArtStation or Udemy URL, or one a user's own scraper script
+- **Fields filled from a dropped page** — drop an ArtStation, Udemy or Fab URL, or one a user's own scraper script
   reads, and review the result as an ordinary edit before saving
 - **Editing that saves atomically** — with unrecognized fields left untouched, and a file from a newer
   format version opened read-only rather than rewritten

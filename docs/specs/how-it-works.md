@@ -205,7 +205,7 @@ finishes, a sweep interrupted halfway carries on from where it was the next time
 kept in memory to lose. How long a check stays good for, and which hash is used, are settings.
 
 Details can also be **scraped** instead of typed: drop a page's URL on the editor and a scraper — built in
-for ArtStation and Udemy, or a script of your own — fills the fields and fetches the screenshots, as an
+for ArtStation, Udemy and Fab, or a script of your own — fills the fields and fetches the screenshots, as an
 ordinary edit you read before saving. The toolbar's **Search the Web** button goes the other way: it opens
 your browser on a search for the words of the resource's location name, through an engine chosen (or added, as a name and a URL
 template) on the Scrapers settings page.

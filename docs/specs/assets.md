@@ -51,6 +51,8 @@ block does ([[plugins#plugin-blocks]]).
 | `advertised_version` | string | scan | the version the store offers |
 | `current_version` | string | by hand, or an install manager | the version of the local files |
 | `advertised_size` | size (bytes) | scan | the download size the store states |
+| `advertised_triangles` | range text | scan | the triangle count the store states, per format ([[assets#ranges]]) |
+| `advertised_texture_size` | range text | scan | the longest side of the largest texture the store states ([[assets#ranges]]) |
 | `triangles` | integer | measured | triangle count of the heaviest mesh at full detail |
 | `texture_size` | integer | measured | longest side, in pixels, of its largest texture |
 | `acquired` | UTC time, or a partial-precision date | scan | when the account got it, where the store says |
@@ -67,8 +69,9 @@ block does ([[plugins#plugin-blocks]]).
   is: it is what a download is planned with.
 - **The version pair is the size pair's shape:** what the store offers beside what is on disk. An item whose two
   versions differ has an update waiting.
-- **The measured fields are filled after a download**, by hand until something measures them. No store publishes them
-  reliably, so the scan never guesses. `triangles` is the heaviest single mesh because a pack's total says nothing
+- **The advertised counts are what the store states, as text** ([[assets#ranges]]); the **measured** ones are
+  filled after a download, by hand until something measures them, and the scan never guesses them.
+  The measured fields are `triangles` and `texture_size`. `triangles` is the heaviest single mesh because a pack's total says nothing
   about what one object costs to draw.
 - **`acquired` is never asked for.** Where the store shows the date the scan records it; where it does not, the field
   stays empty. Fab states it for every owned item (the entitlement's `createdAt`). It sorts the library, and beside
@@ -100,7 +103,22 @@ block does ([[plugins#plugin-blocks]]).
 - **What an item needs or supplies is not here.** No Fab listing states it; Daz3D's products do, and its design adds
   `requires` / `provides` when it is made ([[assets#install]]).
 
-### §19.1.1 `kind`
+### §19.1.1 A count the store states as a range
+
+[[[assets#ranges]]]
+
+A store gives some figures as a band: Fab's triangle count of a format is `[12, 13)`, a texture's longest side
+`[1024, 2049)`. `advertised_triangles` and `advertised_texture_size` keep them as **text a person reads at a
+glance and types by hand**, inclusive at both ends: a value alone (`12`), a band (`1000-4999`), several values or
+bands apart as a comma list, ascending (`1024,2048`, `12,40-60`), written and read only by
+`rehuco_core.ValueRange`. A count the store states no range for, or one with nothing inside it, is left out.
+A text typed that is no range stays as it was typed: it never locks the document, and a search finds nothing in it.
+
+**A search compares by the bounds** (#678's): `triangles < 15` finds a record when **any** value of its range is
+below 15, so `14`, `12-13`, `1-14` and `10-20` all match; `> 15` finds one whose largest value is above it. The
+cache keeps the two bounds of each field in columns of their own, so the comparison is an integer one.
+
+### §19.1.2 `kind`
 
 [[[assets#kind]]]
 
@@ -119,7 +137,7 @@ One value from a closed list: `model`, `pack`, `character`, `animation`, `materi
 - A site's scan maps the store's own listing type to a kind where the store states one, and writes `unknown`
   otherwise. It does not infer a kind from a title.
 
-### §19.1.2 A record keeps its license text
+### §19.1.3 A record keeps its license text
 
 [[[assets#licenses]]]
 
@@ -169,7 +187,7 @@ A few thousand copies of two or three texts is the price, and it is paid on purp
 cache, or a license record of its own each leave some record without its terms the day a root is offline, a file is
 moved by hand, or a store is gone.
 
-### §19.1.3 A source carries the store's id
+### §19.1.4 A source carries the store's id
 
 [[[assets#site-id]]]
 

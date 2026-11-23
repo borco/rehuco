@@ -1,0 +1,114 @@
+{
+  "uid": "5be9349e-acb1-4a0b-8811-9e999e036755",
+  "title": "Dark Knight - Female Character",
+  "listingType": "3d-model",
+  "productType": "3d-model",
+  "isMature": false,
+  "isAiForbidden": false,
+  "isAiGenerated": false,
+  "firstPublishedAt": "2025-11-27T18:26:13.068586Z",
+  "publishedAt": "2025-11-27T18:26:13.068586Z",
+  "user": {
+    "sellerName": "Hawtor Studio",
+    "profileUrl": "https://www.fab.com/sellers/Hawtor%20Studio"
+  },
+  "category": {
+    "name": "Humans",
+    "path": "characters-creatures/humans"
+  },
+  "tags": [
+    {
+      "name": "Fantasy"
+    },
+    {
+      "name": "Warrior"
+    },
+    {
+      "name": "Female"
+    },
+    {
+      "name": "Medieval"
+    },
+    {
+      "name": "Knight"
+    },
+    {
+      "name": "Armor"
+    },
+    {
+      "name": "Girl"
+    },
+    {
+      "name": "Sword"
+    },
+    {
+      "name": "Dark"
+    },
+    {
+      "name": "Character"
+    }
+  ],
+  "assetFormats": [
+    {
+      "assetFormatType": {
+        "code": "blender",
+        "name": "Blender",
+        "extensions": [
+          "blend"
+        ]
+      },
+      "containsPack": false
+    },
+    {
+      "assetFormatType": {
+        "code": "fbx",
+        "name": "FBX",
+        "extensions": [
+          "fbx"
+        ]
+      },
+      "containsPack": false
+    },
+    {
+      "assetFormatType": {
+        "code": "obj",
+        "name": "OBJ",
+        "extensions": [
+          "obj"
+        ]
+      },
+      "containsPack": false
+    }
+  ],
+  "licenses": [
+    {
+      "group": "cc",
+      "slug": "cc-by",
+      "name": "CC-BY"
+    }
+  ],
+  "description": "<p>Hi! My name is Toni, the creator of this model. I really hope you like the model and find it useful. If you have any questions or issues, you can reach me via ArtStation, and I will try to help if I can. Thank you.</p><p></p><p><strong>Description</strong>:</p><p></p><p><strong>I higly recommend using the Blender archive.</strong></p><p></p><p>This model was made in Blender 4.5 - Renders made with Cycles.<br>Approximately 53k vertices.</p><p><br>Consists of 6 materials:</p><ul><li><p>Hair - 2k textures (Color, Roughness, Alpha, Normal)</p></li><li><p>Armor - 4k textures (Color, Roughness, Metallic, Normal)</p></li><li><p>Skin - 2k textures (Color, Roughness, Normal)</p></li><li><p>Eye - 512 textures (Color, Roughness, Normal)</p></li><li><p>Eyer Lens - No textures</p></li><li><p>Sword - 1024x4096 (Color, Roughness, Normal)</p><p></p>",
+  "thumbnails": [
+    {
+      "type": "thumbnail",
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/9ea02afd-d416-494f-9871-8435c16e5de3/7a188d28-7b52-41af-8e70-96d262f82468.jpg"
+    }
+  ],
+  "medias": [
+    {
+      "type": "image",
+      "position": 0,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/be644860-8454-44c6-a8b7-4620d972dbb3/d2711488-f8d1-4057-b28a-8f26f8ef1131.jpg"
+    },
+    {
+      "type": "image",
+      "position": 1,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/64918f6b-f2c9-4d2a-a69d-cf4c9baf78f9/102f5ac4-b469-4429-9a9b-59e13972ae99.jpg"
+    },
+    {
+      "type": "image",
+      "position": 2,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/2638835f-10b7-4115-b54e-08b4c1a8c433/54f740cc-3d21-4ec5-a9ec-891b9ca92ee4.jpg"
+    }
+  ]
+}

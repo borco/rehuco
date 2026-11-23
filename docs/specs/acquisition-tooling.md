@@ -188,7 +188,18 @@ structural, both plain classes:
   (e.g. "ArtStation answered 503"), the `url` to fetch next (the same one for a plain retry) and a `(min, max)`
   `delay` in seconds, both optional ([[acquisition-tooling#scrape-job]] for how it is carried out). A scraper
   that ignores the status and returns normally from an error page fails with the same "Could not fetch" the
-  fetcher itself used to raise, so a scraper that never heard of statuses behaves exactly as before.
+  fetcher itself used to raise, so a scraper that never heard of statuses behaves exactly as before. A third:
+  **`PageGoneError`** — the item is no longer public — carrying the sentence the drop fails with (#701).
+- **`FetchingScraper`** (#701) — a `SiteScraper` that also has `scrape_url(url, fetcher) -> ScrapeResult`, for a
+  site whose page holds too little: Fab's listing is a shell, its data is JSON at `/i/listings/<uid>`, and a
+  format's size and engine versions at one more address each. **Optional, and instead of `scrape_page`**: a
+  scraper that has it is called with the URL dropped and the fetcher the scrape resolved for it, plain HTTP or
+  the persona browser as the table's ticks say, never one of its own choosing, and no page is fetched for it
+  first; a dropped fragment is not used. The record's source is the URL dropped, not an address it asked for.
+  Its failed fetches are reported as the page's own are (`Could not fetch …`), and `PageGoneError` fails the drop
+  with its sentence. Every other scraper, a user's script included, is unchanged. The library scan
+  ([[acquisition-tooling#library-scan-job]]) reads an item through the same mapping, handing the scraper a
+  fetcher over its own lease.
 
 A `ScrapeResult` holds three things. **`fields`** is a plain mapping spelled from `SCRAPED_FIELD_NAMES`
 ([[field-schema#resource-types]], e.g. `"title"`, `"advertised_duration"`) — the part of the plugin field-name
@@ -198,7 +209,10 @@ at scrape time. Left out on purpose are what the app measures from the local fil
 `original_duration`, `current_duration`, `current_count` — a page's own claim goes in `advertised_duration` /
 `advertised_count` instead) and the user's own state (`hidden_images`, `extra_tags`, the boolean flags, `rating`,
 `learning_paths`, the `.rehu` timestamps): a scraper converts the page it fetched, and none of those come from a
-page. **`description`** is Markdown, with any images the scraper chooses to embed already rewritten to a stem-less
+page. **The asset block's** scraped fields ([[assets#block]], #701) are the ones a store states: `kind`, `license`
+and `license_url`, `formats`, `compatibility`, `source_updated`, `advertised_version`, `advertised_size` and the
+two advertised counts; never `acquired`, which only the library scan knows from the account, nor the measured
+`triangles` and `texture_size`. **`description`** is Markdown, with any images the scraper chooses to embed already rewritten to a stem-less
 placeholder in encounter order (the `<stem>` of `<stem>NN` is a per-document fact no scraper knows). **`images`**
 are the `(slot, url, referrer)` triples the image pipeline of
 [[acquisition-tooling#drag-drop-aids]] downloads, substituting the real stem in. A scraper decides for itself whether
@@ -252,7 +266,44 @@ retryable status counts, never a product whose name starts with a number. A prod
 scrapes was tried and dropped: it only ever helps a product scraped before, and a re-scraped document already
 names its store in its own sources and author link.
 
-### §15.2.2 Legacy `.tc` author-URL upgrade
+### §15.2.2 The Fab scraper
+
+[[[acquisition-tooling#fab-scraper]]]
+
+A `fab.com/listings/<uid>` URL dropped on an open record fills it from the listing's JSON, which reads logged out
+(#686), so the scraper needs no browser (`needs_browser` false) and is a `FetchingScraper`. It asks for
+`/i/listings/<uid>` and, for each of the listing's formats, `/i/listings/<uid>/asset-formats/<code>`; a format
+whose request fails costs only what it would have given, and is logged.
+
+- **From the listing**: `title`; the seller as an author with the seller's page; `released` from the first
+  publication and `source_updated` from the latest, each a day; the description as Markdown; `site_id` the uid and
+  `url` the listing's page; `kind` from `listingType` (`3d-model` a `model`, or a `pack` where a format
+  `containsPack`; `decal`, `brush`, `material`, `animation`, `hdri`, `audio`, `vfx` as themselves;
+  `tool-and-plugin` a `plugin`; `tutorials-examples` a `template`; any other type `unknown`); `formats`, each
+  format's first extension that is not an archive's (a *Texture Set* states only `zip`, which names a
+  container, so it gives none); the pictures, the gallery the page shows by position (the cover the search cards use is a file of its
+  own the page never shows, so it is taken only when the gallery holds no picture).
+- **Tags**: the category's name and the listing's tags as they are, then the store's labels as prefixed tags
+  ([[assets#block]]): `rating-mature`, `ai-forbidden`, `ai-generated`, and `platform-<name>` for each platform an
+  Unreal format is limited to, the name lower-cased and slugged (`platform-xbox-one`,
+  `platform-steamvr-htc-vive`), since a space or a slash would split a tag on the search line.
+- **From the formats**: `advertised_size` is the sum of the **lead** format's files, written only when every file
+  states a size; `compatibility` holds `unreal`, the oldest to the newest engine version of the formats
+  (`5.0-5.6`, compared as numbers); `advertised_triangles` and `advertised_texture_size` are the ranges the
+  formats state, as a value, a band or a list (`12`, `1000-4999`, `1024,2048`: [[assets#block]]).
+- **A license only when the listing offers one**, by Fab's `(group, slug)`: Standard's tiers `fab-standard`
+  with the EULA's address, `cc-by` `cc-by-4.0` with its page, the Marketplace license `fab-ue-only` with none, and
+  Standard's *UEFN - Reference only* tier `fab-uefn-reference-only` with the EULA's address, a restriction
+  being a license of its own ([[assets#licenses]]).
+  A listing of several tiers, or a license with no id here, is left out: the account owns one tier, which only
+  the library says ([[assets#licenses]]).
+- **Never written**: `acquired` (the library's), the measured counts, a size or a count the listing does not
+  state, a kind it does not name (`unknown` instead).
+- **A listing that answers 404** (delisted: 102 of 4,250 in the owner's library) fails the drop with *This Fab
+  listing is no longer public* and the listing's page; writing such an item from its library entry is the
+  library scan's ([[acquisition-tooling#library-scan-job]]). A `429` or a `5xx` is a re-fetch request.
+
+### §15.2.3 Legacy `.tc` author-URL upgrade
 
 [[[acquisition-tooling#legacy-author-url]]]
 
@@ -260,7 +311,7 @@ tc4 kept only the author's name; the sites both built-in scrapers cover always c
 was simply dropped on the floor. Nothing above changes for `.tc` migration ([[acquisition-tooling#tc-to-rehu]]):
 a migrated document's `authors` stays name-only, since the source format never captured the URL to carry forward.
 
-### §15.2.3 The registry, and the user's own scrapers
+### §15.2.4 The registry, and the user's own scrapers
 
 [[[acquisition-tooling#scraper-registry]]]
 
@@ -286,7 +337,8 @@ is not text. A replaced wizard says what replaced it, as a note and no error.
 A user's own script needs no import from this package at all: `SiteScraper` is a plain structural Protocol, so a copied-and-edited file satisfies it by shape alone, with
 no registration step beyond being a `.py` file in the folder. Scripts in that folder are **trusted local code**, run
 with the app's own privileges; the page says so and the app does nothing to sandbox them. Built-in scrapers ship for
-**ArtStation** and **Udemy** first, the two the predecessors kept alive longest. A script author gets the schema
+**ArtStation** and **Udemy** first, the two the predecessors kept alive longest, then **Fab** (#701,
+[[acquisition-tooling#fab-scraper]]). A script author gets the schema
 every result is validated against ([[acquisition-tooling#scraper-protocols]]) by running `rehuco-agent --scrape-schema PATH`,
 which writes it to a file. It writes a file rather than printing because the packaged Windows build prints nothing
 to a console ([[appendices.release-runbook#windows-console]]), and it is the same schema the installed app uses.
@@ -295,7 +347,7 @@ console: `--scrapers-folder` builds the registry over that folder for this call 
 Scrapers setting, so a script can be developed and tested end to end without opening the GUI; the result prints to
 stdout, or to `--output PATH` when the packaged build's silent console makes that the only way to see it.
 
-### §15.2.4 The browser fetcher and its persona
+### §15.2.5 The browser fetcher and its persona
 
 [[[acquisition-tooling#browser-persona]]]
 
@@ -363,7 +415,7 @@ The profile is a **credential store**: it lives only under the config directory,
 and is never synced or copied by anything the app does. Sessions expire and two-factor sites re-ask; the app does
 not try to keep a login alive, it only keeps the door to renewing one open.
 
-### §15.2.5 The scrape runs on its own pool, not the app-wide task queue
+### §15.2.6 The scrape runs on its own pool, not the app-wide task queue
 
 [[[acquisition-tooling#scrape-job]]]
 
@@ -395,7 +447,7 @@ counting down to it — `ArtStation answered 503 — trying <url> in 4 s (attemp
 document closes or its path changes, the same staleness a landing result is already checked for. The
 `--scrape` CLI runs the same attempts synchronously, sleeping between them and announcing each wait on stderr.
 
-### §15.2.6 The LLM fallback, deferred
+### §15.2.7 The LLM fallback, deferred
 
 [[[acquisition-tooling#llm-url-extract]]]
 

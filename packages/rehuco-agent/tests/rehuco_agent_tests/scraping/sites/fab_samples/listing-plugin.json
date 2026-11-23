@@ -1,0 +1,107 @@
+{
+  "uid": "bfc6b8a2-967e-45a8-bfa7-d947340992a8",
+  "title": "Water Physics",
+  "listingType": "tool-and-plugin",
+  "productType": "tool-and-plugin",
+  "isMature": false,
+  "isAiForbidden": true,
+  "isAiGenerated": false,
+  "firstPublishedAt": "2021-04-23T17:39:12.039000Z",
+  "publishedAt": "2026-03-02T18:38:53.376405Z",
+  "user": {
+    "sellerName": "Mans Isaksson",
+    "profileUrl": "https://www.fab.com/sellers/Mans%20Isaksson"
+  },
+  "category": {
+    "name": "Physics",
+    "path": "physics"
+  },
+  "tags": [
+    {
+      "name": "Based"
+    },
+    {
+      "name": "Plugin"
+    },
+    {
+      "name": "Vehicle"
+    },
+    {
+      "name": "Watercraft"
+    },
+    {
+      "name": "Water"
+    },
+    {
+      "name": "Realistic"
+    },
+    {
+      "name": "Boat"
+    },
+    {
+      "name": "Ocean"
+    },
+    {
+      "name": "Buoy"
+    },
+    {
+      "name": "Chaos"
+    },
+    {
+      "name": "Code"
+    },
+    {
+      "name": "Simulation"
+    }
+  ],
+  "assetFormats": [
+    {
+      "assetFormatType": {
+        "code": "unreal-engine",
+        "name": "Unreal Engine",
+        "extensions": [
+          "uasset",
+          "uproject",
+          "uplugin"
+        ]
+      },
+      "containsPack": false
+    }
+  ],
+  "licenses": [
+    {
+      "group": "standard",
+      "slug": "personal",
+      "name": "Personal"
+    },
+    {
+      "group": "standard",
+      "slug": "professional",
+      "name": "Professional"
+    }
+  ],
+  "description": "<p>This <a href=\"http://waterphysics.mansisaksson.com/\" rel=\"noopener noreferrer nofollow\"><strong><u>Water Physics</u></strong></a> plugin allows you to add water physics simulations to any physics body with minimal setup. This plugin specializes in water physics for boats and other watercrafts but can also be used for general purpose buoyancy simulations.</p><p></p><p><u>NOTE: PLUGIN IS NOW FREE, READ MORE </u><a href=\"https://mansisaksson.com/view/making-my-plugins-free/\" rel=\"noopener noreferrer nofollow\"><u>HERE</u></a></p><p></p><p><a href=\"https://youtu.be/uwd_RWTy9wk\" rel=\"noopener noreferrer nofollow\">[Preview Video]</a></p><p></p><p><strong>List of features</strong></p>",
+  "thumbnails": [
+    {
+      "type": "thumbnail",
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/1fa4d1e8-30dc-428e-a905-56262cbe4058/69daf250-13fc-4723-be96-b75648bd817b.png"
+    }
+  ],
+  "medias": [
+    {
+      "type": "image",
+      "position": 0,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/8b074008-c383-4f13-984b-20ecd32bea65/99651d2c-d6ad-49e6-9387-700c5940c213.png"
+    },
+    {
+      "type": "image",
+      "position": 1,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/d44306ea-ee04-4645-8e95-48a439e4d22d/1f3f3a8d-b27b-4a37-be3d-d49d23af66cd.png"
+    },
+    {
+      "type": "image",
+      "position": 2,
+      "mediaUrl": "https://media.fab.com/image_previews/gallery_images/8dae03fd-8e2a-497b-9734-24b04376f1cf/356e4f5a-3538-44e3-ab16-27408f0c91d5.png"
+    }
+  ]
+}

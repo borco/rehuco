@@ -33,6 +33,7 @@ from rehuco_agent.fields import FieldsTab, UnknownField
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_core import (
+    ASSET_FIELD_NAMES,
     CURRENT_FORMAT_VERSION,
     EXCLUDED_FILE_PATTERNS,
     FORMAT_VERSION_KEY,
@@ -4239,6 +4240,145 @@ def test_a_failed_rename_is_logged_as_an_error(scoped_sink: Callable[..., Record
 
     assert model.rename_error
     assert model.rename_error in sink.messages_at(logging.ERROR)
+
+
+# endregion
+
+# region write_declared_field
+
+
+def test_a_declared_field_is_written_through_the_model_s_property_where_it_has_one() -> None:
+    """A field with a property on the model is set through it, so its signal fires as for an edit (#701).
+
+    **Test steps:**
+
+    * write ``released`` on a tutorial's model, watching its notify signal
+    * verify the signal fired, the model and the record hold the value, and the model is dirty
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
+
+    received: list[str] = []
+    model.released_changed.connect(received.append)  # type: ignore[attr-defined]
+
+    model.write_declared_field("released", "2020")
+
+    assert received == ["2020"]
+    assert (model.released, model.document.released, model.dirty) == ("2020", "2020", True)
+
+
+def test_a_declared_field_with_no_model_property_is_written_into_the_block() -> None:
+    """A field the model has no property for reaches the record's block and dirties the model, instead of
+    staying behind as an attribute of the model (#701).
+
+    **Test steps:**
+
+    * write a field no property of the model is named for, on an asset's model
+    * verify the asset block holds the value and the model is dirty
+    * verify the model itself gained no attribute of that name
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "asset"}))
+
+    model.write_declared_field("made_up", ["a"])
+
+    assert (model.document.active_field("made_up"), model.dirty) == (["a"], True)
+    assert not hasattr(model, "made_up")
+
+
+ASSET_BLOCK: Final = {
+    "kind": "model",
+    "license": "cc-by-4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "formats": ["fbx", "obj"],
+    "compatibility": {"unreal": "5.0-5.5"},
+    "source_updated": "2025-09-08",
+    "advertised_version": "1.2",
+    "current_version": "1.1",
+    "advertised_size": 123,
+    "advertised_triangles": "1000-4999",
+    "advertised_texture_size": "1024,2048",
+    "triangles": 4200,
+    "texture_size": 2048,
+    "acquired": "2024-05-03T12:34:56.789123Z",
+}
+"""Every field of the asset block ([[assets#block]]), each holding a value of its own type."""
+
+
+def test_the_model_seeds_every_asset_field_from_the_block() -> None:
+    """Each field the asset type declares of its own has a property on the model, read from the block (#701).
+
+    **Test steps:**
+
+    * verify the sample block names every asset field the core declares
+    * construct a model over an asset whose block holds them all
+    * verify each property holds its value, and the model is not dirty
+    """
+    assert set(ASSET_BLOCK) == set(ASSET_FIELD_NAMES)
+    model = RehuDocumentModel(RehuDocument({"type": "asset", "asset": dict(ASSET_BLOCK)}))
+
+    assert {name: getattr(model, name) for name in ASSET_BLOCK} == ASSET_BLOCK
+    assert model.dirty is False
+
+
+def test_the_model_reads_a_malformed_or_absent_asset_field_as_not_known() -> None:
+    """A value of the wrong type reads as the field's empty value, and a map keeps only its string values (#701).
+
+    **Test steps:**
+
+    * construct a model over an asset whose text, number, list and map fields each hold the wrong type
+    * verify each reads empty, and a map with one string value keeps that one
+    * verify an asset with an empty block reads every field empty
+    """
+    block = {"kind": 7, "advertised_size": "big", "formats": "fbx", "compatibility": ["unreal"]}
+    malformed = RehuDocumentModel(RehuDocument({"type": "asset", "asset": block}))
+    mixed = RehuDocumentModel(
+        RehuDocument({"type": "asset", "asset": {"compatibility": {"unreal": "5.5", "unity": 6}}})
+    )
+    absent = RehuDocumentModel(RehuDocument({"type": "asset"}))
+
+    for model in (malformed, absent):
+        assert (model.kind, model.advertised_size, model.formats, model.compatibility) == (None, None, [], {})
+    assert mixed.compatibility == {"unreal": "5.5"}
+
+
+@mark.parametrize(
+    ("name", "value"),
+    [
+        param("kind", "plugin", id="text"),
+        param("advertised_size", 2048, id="a number"),
+        param("formats", ["glb"], id="a list"),
+        param("compatibility", {"blender": ">=4,<5"}, id="a map"),
+    ],
+)
+def test_setting_an_asset_field_writes_through_to_the_block(name: str, value: object) -> None:
+    """An edit of an asset property lands in the asset block and dirties the model (#701).
+
+    **Test steps:**
+
+    * set the property on an asset's model
+    * verify the block holds the value and the model is dirty
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "asset"}))
+
+    setattr(model, name, value)
+
+    assert (model.document.active_field(name), model.dirty) == (value, True)
+
+
+def test_clearing_an_optional_asset_field_removes_its_key() -> None:
+    """An optional asset field set to ``None`` leaves the block, never a JSON ``null`` (#701).
+
+    **Test steps:**
+
+    * over an asset holding a license and a size, set both to ``None``
+    * verify neither key is in the block
+    """
+    document = RehuDocument({"type": "asset", "asset": {"license": "fab-standard", "advertised_size": 5}})
+    model = RehuDocumentModel(document)
+
+    model.license = None
+    model.advertised_size = None
+
+    assert not {"license", "advertised_size"} & set(document.active_block)
 
 
 # endregion

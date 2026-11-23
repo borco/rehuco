@@ -3,7 +3,8 @@
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Final
 from urllib.parse import urlsplit
 
@@ -13,7 +14,15 @@ from requests import RequestException
 from ..settings.scrapers_settings import ScrapersSettings, shared_scrapers_settings
 from .browser_fetcher import BrowserPageFetcher
 from .http_fetcher import HttpPageFetcher
-from .protocols import FetchError, LoginRequiredError, PageFetcher, RefetchRequestedError
+from .protocols import (
+    FetchError,
+    FetchingScraper,
+    LoginRequiredError,
+    PageFetcher,
+    PageGoneError,
+    RefetchRequestedError,
+    SiteScraper,
+)
 from .registry import ScraperRegistry
 from .results import InvalidScrapeResultError, Page, ScrapeResult
 
@@ -280,13 +289,16 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         """Resolve, refuse or fetch, re-resolve a redirect, parse, validate -- the synchronous half of
         :meth:`run`, and what the ``--scrape`` CLI calls directly.
 
+        A `~.protocols.FetchingScraper` is not handed a page: it is called with this job's fetcher and fetches
+        what it needs, and its :attr:`page_url` is the URL dropped (#701).
+
         Also resolves :attr:`publisher` and :attr:`page_url`, set before returning.
 
         :returns: the scraper's result, validated against `~.results.SCRAPE_RESULT_SCHEMA`
             (`~.results.ScrapeResult.coerce`).
         :raises ScrapeError: no scraper matches, the fetch failed, the fetch landed on a login wall, the
-            page came back with an error status its scraper did not ask to re-fetch, or the result failed
-            the schema.
+            page came back with an error status its scraper did not ask to re-fetch, the scraper found its
+            item no longer public, or the result failed the schema.
         :raises RefetchRequestedError: the scraper asked for the page again -- normalized, so its ``url``
             (this job's own URL for a plain retry) and ``delay`` (:data:`DEFAULT_REFETCH_DELAY`) are both
             set.
@@ -294,6 +306,45 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         scraper = self.__registry.find(self.__url)
         if scraper is None:
             raise NoScraperError(self.__url)
+        if isinstance(scraper, FetchingScraper):
+            raw_result, page_url = self.__scrape_url(scraper), self.__url
+        else:
+            scraper, raw_result, page_url = self.__scrape_fetched(scraper)
+        try:
+            result = ScrapeResult.coerce(raw_result)
+        except InvalidScrapeResultError as error:
+            raise ScrapeError(f"{scraper.label} returned an invalid result for {self.__url}: {error}") from error
+        self.__publisher = scraper.publisher
+        self.__page_url = page_url
+        return result
+
+    def __scrape_url(self, scraper: FetchingScraper) -> object:
+        """Let a scraper that downloads for itself read the item, with the fetcher this scrape resolves for it.
+
+        A dropped fragment is not used: such a scraper asks for what it needs.
+
+        :param scraper: the scraper.
+        :returns: what it returned, not yet validated.
+        :raises ScrapeError: a fetch it made failed, the item is gone, or a login wall stopped it.
+        :raises RefetchRequestedError: it asked for the scrape again, normalized.
+        """
+        fetcher = self.__fetcher_for(scraper)
+        with self.__translated(scraper, self.__url):
+            try:
+                return scraper.scrape_url(self.__url, fetcher)
+            except (RequestException, FetchError) as error:
+                raise ScrapeError(f"Could not fetch {self.__url}: {error}") from error
+
+    def __scrape_fetched(self, scraper: SiteScraper) -> tuple[SiteScraper, object, str]:
+        """Fetch the page, re-resolve a redirect, and let the scraper parse it.
+
+        :param scraper: the scraper the URL dispatched to.
+        :returns: the scraper that parsed -- the redirect's, when the page landed on another one -- what it
+            returned, not yet validated, and the URL actually read.
+        :raises ScrapeError: the fetch failed, a login wall stopped it, or the page was an error status the
+            scraper did not ask to re-fetch.
+        :raises RefetchRequestedError: the scraper asked for the page again, normalized.
+        """
         page = self.__page if self.__page is not None else self.__fetch(self.__url, scraper)
         if page.final_url != self.__url:
             redirected = self.__registry.find(page.final_url)
@@ -309,29 +360,37 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
                     # browser for -- re-fetch through it rather than handing over an HTTP-fetched page
                     page = self.__fetch(page.final_url, redirected)
                 scraper = redirected
-        try:
+        with self.__translated(scraper, page.final_url):
             raw_result = scraper.scrape_page(page)
+        if page.status is not None and page.status >= 400:
+            # the fetcher hands a transient error page over for the scraper to read; one that parsed it
+            # anyway, rather than asking again, fails exactly the way the fetch used to on its own
+            raise ScrapeError(f"Could not fetch {page.url}: HTTP {page.status}")
+        return scraper, raw_result, page.final_url
+
+    @contextmanager
+    def __translated(self, scraper: SiteScraper, url: str) -> Iterator[None]:
+        """Turn what a scraper raises on purpose into what this job reports.
+
+        :param scraper: the scraper that runs inside.
+        :param url: the address a login wall is reported for.
+        :raises LoginRequiredScrapeError: the scraper found a login wall.
+        :raises RefetchRequestedError: the scraper asked again -- this job's own URL for a plain retry, and
+            :data:`DEFAULT_REFETCH_DELAY` when it named no pause.
+        :raises ScrapeError: the scraper found its item no longer public, with the scraper's own sentence.
+        """
+        try:
+            yield
         except LoginRequiredError as error:
-            raise LoginRequiredScrapeError(
-                scraper.label, urlsplit(page.final_url).hostname or page.final_url
-            ) from error
+            raise LoginRequiredScrapeError(scraper.label, urlsplit(url).hostname or url) from error
         except RefetchRequestedError as request:
             raise RefetchRequestedError(
                 request.message,
                 url=request.url if request.url is not None else self.__url,
                 delay=request.delay if request.delay is not None else DEFAULT_REFETCH_DELAY,
             ) from request
-        if page.status is not None and page.status >= 400:
-            # the fetcher hands a transient error page over for the scraper to read; one that parsed it
-            # anyway, rather than asking again, fails exactly the way the fetch used to on its own
-            raise ScrapeError(f"Could not fetch {page.url}: HTTP {page.status}")
-        try:
-            result = ScrapeResult.coerce(raw_result)
-        except InvalidScrapeResultError as error:
-            raise ScrapeError(f"{scraper.label} returned an invalid result for {self.__url}: {error}") from error
-        self.__publisher = scraper.publisher
-        self.__page_url = page.final_url
-        return result
+        except PageGoneError as error:
+            raise ScrapeError(str(error)) from error
 
     def __fetch(self, url: str, scraper: object) -> Page:
         """Fetch ``url`` with the fetcher ``scraper`` dispatches to, wrapping a failure as a

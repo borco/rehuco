@@ -62,9 +62,18 @@ OPTIONAL_INT_ASSET_KEYS: Final = ("advertised_size", "triangles", "texture_size"
 (:func:`invalid_asset_reasons`): the names are common words, and another type's ``kind`` or ``formats`` is not this
 rule's to judge."""
 
-OPTIONAL_TEXT_ASSET_KEYS: Final = ("license", "license_url", "advertised_version", "current_version")
+OPTIONAL_TEXT_ASSET_KEYS: Final = (
+    "license",
+    "license_url",
+    "advertised_version",
+    "current_version",
+    "advertised_triangles",
+    "advertised_texture_size",
+)
 """An asset block's optional free-text scalars ([[assets#block]]): absent (or JSON ``null``) reads as ``None``; a
-present non-string reads as ``None`` and locks."""
+present non-string reads as ``None`` and locks. The two advertised counts are text because a store states them as a
+range (``12``, ``1024-2048``, :class:`~rehuco_core.ValueRange`); what is typed that is no range is left as it is,
+since a search simply finds nothing in it."""
 
 OPTIONAL_DATE_ASSET_KEYS: Final = ("source_updated", "acquired")
 """An asset block's optional dates ([[assets#block]]): when the store last changed the item, a partial-precision date,

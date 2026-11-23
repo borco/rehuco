@@ -277,6 +277,40 @@ def test_scraped_fields_land_and_dirty_the_model(qtbot: QtBot, image_downloads: 
     assert doc_model.dirty is True
 
 
+def test_an_asset_s_scraped_fields_reach_the_record(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
+    """A drop on an asset writes the asset block's fields onto the record; before the model had properties for
+    them they stayed behind as stray attributes of the model and nothing was saved (#701).
+
+    **Test steps:**
+
+    * drop a page whose result carries a title and asset fields onto an asset document
+    * verify the record holds each asset field, read as its own property reads it
+    * verify the title landed and the model is dirty
+    """
+    doc_model = model("asset")
+    fields = {
+        "title": "New Title",
+        "kind": "model",
+        "license": "cc-by-4.0",
+        "formats": ["fbx", "obj"],
+        "compatibility": {"unreal": "5.0-5.5"},
+        "source_updated": "2025-09-08",
+        "advertised_size": 123,
+        "advertised_triangles": "12",
+    }
+    result = ScrapeResult(fields=fields, description=None, images=())
+    doc_actions = actions(doc_model, FakeScraper(result=result), image_downloads)
+
+    resolve(qtbot, doc_actions, drop())
+
+    record = doc_model.document
+    assert (record.kind, record.license, record.formats) == ("model", "cc-by-4.0", ["fbx", "obj"])
+    assert record.compatibility == {"unreal": "5.0-5.5"}
+    assert (record.source_updated, record.advertised_size, record.advertised_triangles) == ("2025-09-08", 123, "12")
+    assert doc_model.title == "New Title"
+    assert doc_model.dirty is True
+
+
 def test_a_field_the_result_does_not_carry_is_left_untouched(qtbot: QtBot, image_downloads: ImageDownloads) -> None:
     """A field absent from the result's `fields` keeps its current value (#272).
 
