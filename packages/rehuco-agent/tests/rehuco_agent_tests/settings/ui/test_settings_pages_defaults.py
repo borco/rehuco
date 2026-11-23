@@ -12,11 +12,13 @@ for. The System Integration page and its platform frames are covered in their ow
 
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import Mock
 
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.scraping.registry import ScraperRow
+from rehuco_agent.scraping.scraper_wizard_registry import ScraperWizardRegistry
 from rehuco_agent.settings.ui import scrapers_page, session_page
 from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
@@ -117,9 +119,13 @@ class FakeRegistry:  # pylint: disable=missing-function-docstring,too-few-public
 @fixture(autouse=True)
 def isolate_the_pages_conftest_leaves_alone(mocker: MockerFixture) -> None:
     """The two pages ``conftest.py`` does not already isolate: `SessionPage` reads storage through its
-    own module's ``persistent_settings``, and `ScrapersPage` scans the shared registry."""
+    own module's ``persistent_settings``, and `ScrapersPage` scans the shared registry, and merges the
+    shared wizards' into its rows."""
     mocker.patch.object(session_page, "persistent_settings", return_value=FakeSettings())
     mocker.patch.object(scrapers_page, "shared_scraper_registry", return_value=FakeRegistry())
+    wizards = Mock(spec=ScraperWizardRegistry)
+    wizards.merged_rows.side_effect = tuple
+    mocker.patch.object(scrapers_page, "shared_scraper_wizard_registry", return_value=wizards)
 
 
 # endregion

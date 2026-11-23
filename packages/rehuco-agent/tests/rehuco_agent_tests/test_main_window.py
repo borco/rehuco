@@ -6065,6 +6065,33 @@ def test_each_clear_on_restart_setting_drops_only_its_own_kind(
     assert [item["label"] for item in restore.call_args.args[0]] == kept
 
 
+def test_the_library_scan_kind_is_registered_before_the_saved_queue_is_read(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A saved library scan can only come back if its kind is known when the queue file is read (#683).
+
+    **Test steps:**
+
+    * spy on the registration and on the reading of the queue file, in the order they are called
+    * construct a window
+    * verify the kind was registered once, before the file was read
+    """
+    calls: list[str] = []
+    mocker.patch("rehuco_agent.main_window.register_library_scan_kind", side_effect=lambda: calls.append("register"))
+
+    def read_items(self: object) -> list[dict[str, object]]:
+        del self
+        calls.append("read")
+        return []
+
+    mocker.patch("rehuco_agent.tasks.task_queue_store.TaskQueueStore.read_items", read_items)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert calls == ["register", "read"]
+
+
 def test_restored_unfinished_work_comes_back_held_unless_resuming_is_asked_for(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:

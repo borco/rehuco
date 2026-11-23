@@ -106,6 +106,7 @@ from .rehuco.selection_preview import SelectionPreview
 from .rehuco.table_browser import TableBrowser
 from .remembered_paths import RememberedPaths
 from .resource_events import ResourceEvents
+from .scraping.scraper_wizard_registry import register_library_scan_kind
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.checksum_trust_store import checksum_trust_path
 from .settings.document_session_settings import DocumentSessionSettings
@@ -1694,6 +1695,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         *resume tasks on restart*'s to decide, not this method's: eligibility is per-job, so a newly
         enqueued job runs immediately regardless.
         """
+        register_library_scan_kind()
         settings = TasksSettings()
         settings.load(persistent_settings())
         items = self.__task_queue_store.read_items()

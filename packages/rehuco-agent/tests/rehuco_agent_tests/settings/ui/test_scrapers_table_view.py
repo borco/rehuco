@@ -7,7 +7,7 @@ from PySide6.QtGui import QMouseEvent
 from pytestqt.qtbot import QtBot
 from rehuco_agent.scraping.registry import ScraperRow
 from rehuco_agent.settings.ui.scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
-from rehuco_agent.settings.ui.scrapers_table_model import SCRAPER_COLUMN, SOURCE_COLUMN, ScrapersTableModel
+from rehuco_agent.settings.ui.scrapers_table_model import SCRAPER_NAME_COLUMN, SOURCE_COLUMN, ScrapersTableModel
 from rehuco_agent.settings.ui.scrapers_table_view import ScrapersTableView
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
@@ -120,8 +120,8 @@ def build_view(qtbot: QtBot, row: ScraperRow) -> ScrapersTableView:
     model = ScrapersTableModel()
     model.set_rows((row,))
     view.setModel(model)
-    view.setItemDelegateForColumn(SCRAPER_COLUMN, ScrapersScraperColumnDelegate(view))
-    view.setColumnWidth(SCRAPER_COLUMN, 200)
+    view.setItemDelegateForColumn(SCRAPER_NAME_COLUMN, ScrapersScraperColumnDelegate(view))
+    view.setColumnWidth(SCRAPER_NAME_COLUMN, 200)
     view.setRowHeight(0, 24)
     return view
 
@@ -136,7 +136,7 @@ def test_hovering_the_link_shows_a_pointing_hand_cursor(qtbot: QtBot) -> None:
     * verify the viewport's cursor is the pointing hand
     """
     view = build_view(qtbot, ROW)
-    rect = view.visualRect(view.model().index(0, SCRAPER_COLUMN))
+    rect = view.visualRect(view.model().index(0, SCRAPER_NAME_COLUMN))
 
     move_to(view, rect.topLeft() + QPoint(10, rect.height() // 2))
 
@@ -154,7 +154,7 @@ def test_hovering_past_the_link_shows_the_arrow_cursor(qtbot: QtBot) -> None:
     * verify the viewport's cursor is the ordinary arrow
     """
     view = build_view(qtbot, ROW)
-    rect = view.visualRect(view.model().index(0, SCRAPER_COLUMN))
+    rect = view.visualRect(view.model().index(0, SCRAPER_NAME_COLUMN))
 
     move_to(view, rect.topRight() + QPoint(-2, rect.height() // 2))
 
@@ -172,7 +172,7 @@ def test_hovering_a_row_with_no_site_url_shows_the_arrow_cursor(qtbot: QtBot) ->
     * verify the viewport's cursor is the ordinary arrow
     """
     view = build_view(qtbot, PLAIN_ROW)
-    rect = view.visualRect(view.model().index(0, SCRAPER_COLUMN))
+    rect = view.visualRect(view.model().index(0, SCRAPER_NAME_COLUMN))
 
     move_to(view, rect.topLeft() + QPoint(10, rect.height() // 2))
 
@@ -215,9 +215,9 @@ def test_hovering_with_no_delegate_on_the_scraper_column_shows_the_arrow_cursor(
     model = delete_at_teardown(ScrapersTableModel())
     model.set_rows((ROW,))
     view.setModel(model)
-    view.setColumnWidth(SCRAPER_COLUMN, 200)
+    view.setColumnWidth(SCRAPER_NAME_COLUMN, 200)
     view.setRowHeight(0, 24)
-    rect = view.visualRect(model.index(0, SCRAPER_COLUMN))
+    rect = view.visualRect(model.index(0, SCRAPER_NAME_COLUMN))
 
     move_to(view, rect.topLeft() + QPoint(10, rect.height() // 2))
 

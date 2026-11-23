@@ -10,8 +10,9 @@ from pathlib import Path
 
 from pytest import mark
 from pytest_mock import MockerFixture
-from rehuco_agent.scraping.registry import ScraperRegistry, shared_scraper_registry
+from rehuco_agent.scraping.registry import NOTHING_DECLARED_WARNING, ScraperRegistry, shared_scraper_registry
 from rehuco_agent.scraping.results import Page, ScrapeResult
+from rehuco_agent.scraping.role_report import RoleState
 
 FOLDER_SCRAPER_SOURCE = """
 class FolderScraper:
@@ -36,6 +37,22 @@ def helper():
 """
 
 BROKEN_SOURCE = "this is not valid python :::"
+
+HALF_SCRAPER_SOURCE = """
+class Helper:
+    label = "Helper"
+
+
+class Half:
+    label = "Half"
+    publisher = "Half Co"
+    site_name = "Half"
+    site_url = "https://example.com"
+    needs_browser = False
+
+    def scrape_page(self, page):
+        raise NotImplementedError
+"""
 
 CONSTRUCTOR_ARGS_SOURCE = """
 class NeedsArgs:
@@ -195,8 +212,8 @@ def test_a_file_defining_no_scraper_contributes_nothing(tmp_path: Path) -> None:
 
 @mark.disk
 def test_a_class_needing_constructor_arguments_is_skipped_not_an_error(tmp_path: Path) -> None:
-    """A class this loader cannot build with no arguments is simply not a scraper, not a load failure
-    (#269).
+    """A class this loader cannot build with no arguments is not a working scraper, and not a failure of its
+    file to load either (#269); its own row says why (#683).
 
     **Test steps:**
 
@@ -333,20 +350,84 @@ def test_rows_has_no_key_for_an_empty_or_broken_file(tmp_path: Path) -> None:
     assert rows["broken_scraper.py"].error is not None
 
 
-def test_rows_skips_a_built_in_that_cannot_be_constructed_with_no_arguments(tmp_path: Path) -> None:
-    """A built-in class that cannot be built with no arguments contributes no row, the same way an
-    unbuildable folder scraper is skipped rather than reported as an error (#278).
+def test_rows_reports_a_built_in_that_cannot_be_constructed_with_no_arguments(tmp_path: Path) -> None:
+    """A built-in class that cannot be built with no arguments gets a row saying so, with no key to tick,
+    and is never tried for a URL (#683; skipped in silence before).
 
     **Test steps:**
 
     * build a registry with a built-in requiring a constructor argument, alongside a real one
-    * verify only the real built-in shows up in `rows`
+    * verify both show up in `rows`: the broken one named by its class, in error, with no key
+    * verify a URL both would claim finds the real one
     """
     registry = ScraperRegistry(folder=tmp_path, builtins=(BuiltinNeedsArgsStub, BuiltinScraperStub))
 
     rows = registry.rows
+    assert len(rows) == 2
+    broken, working = rows[0], rows[1]
 
-    assert [row.label for row in rows] == ["Built-in"]
+    assert (broken.site_name, broken.source, broken.key) == ("BuiltinNeedsArgsStub", "Built-in", None)
+    assert broken.scraper is RoleState.ERROR
+    assert broken.error is not None
+    assert broken.error.startswith("BuiltinNeedsArgsStub cannot be set up with no arguments: TypeError")
+    assert (working.label, working.scraper, working.error) == ("Built-in", RoleState.OK, None)
+    assert working.key == working.class_key
+    found = registry.find("https://example.com/page")
+    assert found is not None
+    assert found.label == "Built-in"
+
+
+@mark.disk
+def test_rows_reports_a_folder_class_that_declares_a_scraper_and_cannot_be_one(tmp_path: Path) -> None:
+    """A script's class with ``scrape_page`` that needs arguments, or lacks another member, is a row in error
+    naming the cause; a class without ``scrape_page`` is no scraper and no row (#683).
+
+    **Test steps:**
+
+    * write a script whose scraper needs arguments, and one with a helper class and a scraper lacking ``matches``
+    * build a registry over the folder
+    * verify one row per declared scraper, each in error with its reason and no key, and none for the helper
+    * verify the helper is still among the classes the file defines, for the wizards' registry to look through
+    * verify no URL finds either
+    """
+    (tmp_path / "a_needs_args.py").write_text(CONSTRUCTOR_ARGS_SOURCE)
+    (tmp_path / "b_half.py").write_text(HALF_SCRAPER_SOURCE)
+    registry = ScraperRegistry(folder=tmp_path, builtins=())
+
+    rows = registry.rows
+    assert len(rows) == 2
+    needs_args, half = rows[0], rows[1]
+
+    assert (needs_args.site_name, needs_args.source, needs_args.key) == ("NeedsArgs", "a_needs_args.py", None)
+    assert needs_args.scraper is RoleState.ERROR
+    assert needs_args.class_key == "rehuco_user_scrapers.a_needs_args.NeedsArgs"
+    assert (half.site_name, half.scraper, half.error) == ("Half", RoleState.ERROR, "Half lacks matches")
+    assert not half.warning
+    assert [candidate.__name__ for candidate in registry.modules[1].classes] == ["Half", "Helper"]
+    assert registry.find("https://example.com/page") is None
+
+
+@mark.disk
+def test_rows_warns_of_a_file_that_declares_nothing(tmp_path: Path) -> None:
+    """A file that loaded and declares no scraper carries the warning, for the wizards' registry to lift when it
+    declares a wizard; a file that failed to load carries its error and no warning (#683).
+
+    **Test steps:**
+
+    * write a file of no class and a broken file
+    * build a registry over the folder
+    * verify the first row's warning and the second's error
+    """
+    (tmp_path / "no_scraper.py").write_text(NO_SCRAPER_SOURCE)
+    (tmp_path / "broken_scraper.py").write_text(BROKEN_SOURCE)
+    registry = ScraperRegistry(folder=tmp_path, builtins=())
+
+    rows = {row.source: row for row in registry.rows}
+
+    assert rows["no_scraper.py"].warning == NOTHING_DECLARED_WARNING
+    assert rows["no_scraper.py"].error is None
+    assert rows["broken_scraper.py"].warning == ""
+    assert rows["broken_scraper.py"].error is not None
 
 
 def test_shared_scraper_registry_is_a_singleton() -> None:
