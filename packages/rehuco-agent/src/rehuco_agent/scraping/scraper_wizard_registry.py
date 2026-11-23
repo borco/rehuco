@@ -15,11 +15,12 @@ from .library_site import LibrarySite
 from .registry import BUILTIN_SOURCE_LABEL, ScraperRegistry, ScraperRow, shared_scraper_registry
 from .role_report import RoleReport, RoleState
 from .scraper_wizard import ScraperWizard
+from .sites.fab_library import FabLibrary
 
 LOG: Final = logging.getLogger(__name__)
 
-BUILTIN_WIZARDS: Final[tuple[type[ScraperWizard], ...]] = ()
-"""The wizards this build ships: none until the first store's library scan (#684)."""
+BUILTIN_WIZARDS: Final[tuple[type[ScraperWizard], ...]] = (FabLibrary,)
+"""The wizards this build ships: Fab's library scan (#684)."""
 
 WIZARD_MARKER: Final = "create_job"
 """The `~.scraper_wizard.ScraperWizard` method that declares a class a wizard: one without it never meant to be one,
