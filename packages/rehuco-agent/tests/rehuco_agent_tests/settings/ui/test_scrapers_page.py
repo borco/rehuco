@@ -5,6 +5,7 @@ import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QPoint, Qt, QUrl
@@ -15,12 +16,21 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.scraping.browser_fetcher import PersonaAction
 from rehuco_agent.scraping.protocols import FetchError
 from rehuco_agent.scraping.registry import ScraperRow
+from rehuco_agent.scraping.role_report import RoleState
+from rehuco_agent.scraping.scraper_wizard_registry import ScraperWizardRegistry
 from rehuco_agent.settings import scrapers_settings
 from rehuco_agent.settings.scrapers_settings import Browser, shared_scrapers_settings
 from rehuco_agent.settings.ui import scrapers_page
 from rehuco_agent.settings.ui.scrapers_page import ScrapersPage
+from rehuco_agent.settings.ui.scrapers_role_delegate import ScrapersRoleDelegate
 from rehuco_agent.settings.ui.scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
-from rehuco_agent.settings.ui.scrapers_table_model import SCRAPER_COLUMN
+from rehuco_agent.settings.ui.scrapers_table_model import (
+    ROLE_ICON_ROLE,
+    ROLE_ICONS,
+    SCRAPER_NAME_COLUMN,
+    SCRAPER_ROLE_COLUMN,
+    WIZARD_ROLE_COLUMN,
+)
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.web_search_engines_model import ACTIVE_COLUMN, NAME_COLUMN
@@ -120,6 +130,18 @@ def registry(mocker: MockerFixture) -> FakeRegistry:
     """
     fake = FakeRegistry()
     mocker.patch.object(scrapers_page, "shared_scraper_registry", return_value=fake)
+    return fake
+
+
+@fixture(autouse=True)
+def wizards(mocker: MockerFixture) -> Mock:
+    """Stand in for the shared scraper wizards' registry, which adds no row of its own unless a test says so.
+
+    :returns: the stand-in, for asserting on what the page asked of it.
+    """
+    fake = Mock(spec=ScraperWizardRegistry)
+    fake.merged_rows.side_effect = tuple
+    mocker.patch.object(scrapers_page, "shared_scraper_wizard_registry", return_value=fake)
     return fake
 
 
@@ -529,7 +551,7 @@ def test_a_site_link_while_a_persona_action_runs_is_refused(qtbot: QtBot, mocker
     persona_browser.open_for_login.side_effect = open_for_login
     mocker.patch("rehuco_agent.settings.ui.scrapers_page.shared_persona_browser", return_value=persona_browser)
     warning = mocker.patch("rehuco_agent.settings.ui.scrapers_page.QMessageBox.warning")
-    delegate = ui.scrapers_table.itemDelegateForColumn(SCRAPER_COLUMN)
+    delegate = ui.scrapers_table.itemDelegateForColumn(SCRAPER_NAME_COLUMN)
     assert isinstance(delegate, ScrapersScraperColumnDelegate)
 
     ui.open_browser_button.click()
@@ -667,7 +689,7 @@ def test_the_scraper_column_uses_the_link_delegate(qtbot: QtBot) -> None:
     qtbot.addWidget(page)
     ui = page_ui(page)
 
-    delegate = ui.scrapers_table.itemDelegateForColumn(SCRAPER_COLUMN)
+    delegate = ui.scrapers_table.itemDelegateForColumn(SCRAPER_NAME_COLUMN)
 
     assert isinstance(delegate, ScrapersScraperColumnDelegate)
 
@@ -687,7 +709,7 @@ def test_activating_a_scraper_cells_link_opens_it_in_the_persona_browser(qtbot: 
     ui = page_ui(page)
     persona_browser = mocker.Mock()
     mocker.patch("rehuco_agent.settings.ui.scrapers_page.shared_persona_browser", return_value=persona_browser)
-    delegate = ui.scrapers_table.itemDelegateForColumn(SCRAPER_COLUMN)
+    delegate = ui.scrapers_table.itemDelegateForColumn(SCRAPER_NAME_COLUMN)
     assert isinstance(delegate, ScrapersScraperColumnDelegate)
 
     delegate.link_activated.emit(TICKED_ROW.site_url)
@@ -909,3 +931,49 @@ def test_drop_and_defaults_restore_the_saved_and_the_shipped_engines(qtbot: QtBo
 
 
 # endregion
+
+
+def test_the_table_shows_the_wizards_merged_into_the_scrapers_rows(
+    qtbot: QtBot, registry: FakeRegistry, wizards: Mock
+) -> None:
+    """The table's rows are the scraper registry's with the wizards' registry's merged in, drawn by the role
+    delegate in both role columns; a Reload asks only the scrapers' registry to scan, and merges again (#683).
+
+    **Test steps:**
+
+    * have the wizards' registry add a wizard-only row to whatever it is handed
+    * build the page
+    * verify the table holds the scrapers' rows and the added one, whose Wizard cell carries the glyph
+    * verify both role columns are drawn by one role delegate
+    * click Reload
+    * verify the scrapers' registry reloaded once and the rows were merged again from its rows
+    """
+    wizard_row = ScraperRow(
+        key=None,
+        label="",
+        publisher="",
+        site_name="Shop",
+        site_url="",
+        source="shop.py",
+        needs_browser=False,
+        error=None,
+        wizard=RoleState.OK,
+    )
+    wizards.merged_rows.side_effect = lambda rows: (*rows, wizard_row)
+
+    page = ScrapersPage()
+    qtbot.addWidget(page)
+    ui = page_ui(page)
+    model = ui.scrapers_table.model()
+
+    assert model.rowCount() == len(registry.rows) + 1
+    assert model.data(model.index(model.rowCount() - 1, WIZARD_ROLE_COLUMN), ROLE_ICON_ROLE) == ROLE_ICONS[RoleState.OK]
+    delegate = ui.scrapers_table.itemDelegateForColumn(SCRAPER_ROLE_COLUMN)
+    assert isinstance(delegate, ScrapersRoleDelegate)
+    assert ui.scrapers_table.itemDelegateForColumn(WIZARD_ROLE_COLUMN) is delegate
+
+    wizards.merged_rows.reset_mock()
+    ui.reload_button.click()
+
+    assert registry.reloads == 1
+    wizards.merged_rows.assert_called_once_with(registry.rows)

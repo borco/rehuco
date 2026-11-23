@@ -1,4 +1,4 @@
-"""Draws the Scrapers table's Scraper column: a plain elided cell for a file that loaded no scraper, or
+"""Draws the Scrapers table's Name column: a plain elided cell for a row with no site to open, or
 a real hyperlink -- via `QTextDocument`, not an embedded per-cell widget -- for a row carrying a
 `~.scrapers_table_model.SITE_URL_ROLE` (#278).
 
@@ -9,7 +9,7 @@ exactly the way `~borco_pyside.widgets.ElidedLabel`'s rich-text link does -- col
 anchor -- with none of that, since nothing but this delegate ever draws the cell.
 
 Installed with `QTableView.setItemDelegateForColumn`, not the view's general delegate
-(`~borco_pyside.widgets.RowBandDelegate`), which this subclasses: a non-link Scraper cell (a file row's
+(`~borco_pyside.widgets.RowBandDelegate`), which this subclasses: a non-link Name cell (a file row's
 ``"—"``) is left to the base paint, and a link cell takes the same selection band under its document.
 """
 
@@ -26,7 +26,7 @@ from .scrapers_table_model import SITE_URL_ROLE
 
 
 class ScrapersScraperColumnDelegate(RowBandDelegate):
-    """Paints the Scraper column, and reports a click on its link.
+    """Paints the Name column, and reports a click on its link.
 
     :param parent: optional Qt parent.
     """

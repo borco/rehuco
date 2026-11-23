@@ -14,7 +14,7 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.scraping.registry import ScraperRow
 from rehuco_agent.settings.ui.scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
-from rehuco_agent.settings.ui.scrapers_table_model import SCRAPER_COLUMN, ScrapersTableModel
+from rehuco_agent.settings.ui.scrapers_table_model import SCRAPER_NAME_COLUMN, ScrapersTableModel
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
 
@@ -59,7 +59,7 @@ def index_for(delete_at_teardown: DeleteAtTeardown, row: ScraperRow) -> tuple[Sc
     """
     model = delete_at_teardown(ScrapersTableModel())
     model.set_rows((row,))
-    return model, model.index(0, SCRAPER_COLUMN)
+    return model, model.index(0, SCRAPER_NAME_COLUMN)
 
 
 def option_for() -> QStyleOptionViewItem:

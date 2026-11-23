@@ -10,7 +10,7 @@ from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QStyleOptionViewItem, QTableView, QWidget
 
 from .scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
-from .scrapers_table_model import SCRAPER_COLUMN, ScrapersTableModel
+from .scrapers_table_model import SCRAPER_NAME_COLUMN, ScrapersTableModel
 
 
 class ScrapersTableView(QTableView):
@@ -18,7 +18,7 @@ class ScrapersTableView(QTableView):
     way `~.color_swatch_button.ColorSwatchButton` does: its "value" is the staged **Use browser** set,
     which `~.settings_frame_filter.SettingsFrameFilter` cannot read off a table by any generic rule.
 
-    Also gives the mouse a pointing-hand cursor over a Scraper cell's link, the same hover cue
+    Also gives the mouse a pointing-hand cursor over a Name cell's link, the same hover cue
     `~borco_pyside.widgets.ElidedLabel`'s own links give -- `QTableView` has no concept of "this cell is
     a link" to hand that off to, since the link itself is delegate-painted rich text
     (`~.scrapers_scraper_column_delegate.ScrapersScraperColumnDelegate`), not a widget with its own
@@ -33,10 +33,10 @@ class ScrapersTableView(QTableView):
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802  (Qt API name)
         super().mouseMoveEvent(event)
         index = self.indexAt(event.position().toPoint())
-        delegate = self.itemDelegateForColumn(SCRAPER_COLUMN)
+        delegate = self.itemDelegateForColumn(SCRAPER_NAME_COLUMN)
         over_link = (
             index.isValid()
-            and index.column() == SCRAPER_COLUMN
+            and index.column() == SCRAPER_NAME_COLUMN
             and isinstance(delegate, ScrapersScraperColumnDelegate)
             and bool(delegate.link_at(self.__option_for(index), index, event.position()))
         )

@@ -267,14 +267,23 @@ a migrated document's `authors` stays name-only, since the source format never c
 Scrapers are looked up in an **ordered list**, first `matches()` wins, and the list is the **user's scripts folder
 first, then the built-ins** — so a user's module overrides a shipped scraper for the same host. That is the whole answer
 to brittleness: when a site changes, the fix is a `.py` file in a folder, not a release. The folder is a settings page,
-**Scrapers** ([[appendices.settings-pages#category-groups]]): the folder path; a table with **one row per scraper**,
-built-ins included — naming it as a link (`site_name`, opening `site_url` in the persona browser on a click), its
-source file (or "Built-in"), and a **Use browser** checkbox ([[acquisition-tooling#browser-persona]]) — plus one row
-per file that loaded no scraper or failed to,
-carrying the import error, since a scraper that silently did not load is indistinguishable from one that matched
-nothing; and a **Reload** that re-scans the saved folder without a restart. A user's own script needs no import from
-this package
-at all: `SiteScraper` is a plain structural Protocol, so a copied-and-edited file satisfies it by shape alone, with
+**Scrapers** ([[appendices.settings-pages#category-groups]]): the folder path; a table with **one row per class
+that declares itself a scraper, a scraper wizard ([[acquisition-tooling#library-wizard-protocol]]) or both**,
+built-ins included — naming it as a link (`site_name`, opening `site_url` in the persona browser on a click; a
+wizard's label for a class that is only a wizard), its source file (or "Built-in"), a **Scraper** and a **Wizard**
+column, and a **Use browser** checkbox ([[acquisition-tooling#browser-persona]]) — plus one row per file that failed
+to load, carrying the import error, or that declares neither, carrying a warning; and a **Reload** that re-scans the
+saved folder without a restart.
+
+**The two role columns hold a glyph each** (#683): a check for a role the class fills, an exclamation for one it
+declares and cannot fill, each grayed when another class with the same wizard key is the one used, and nothing for a
+role it does not declare. A class *declares* a role by having its telling method, `scrape_page` for a scraper and
+`create_job` for a wizard: the protocols are structural, so without that rule a class missing one member would be
+indistinguishable from a helper, and would vanish in silence. A declared role that cannot be filled says why in the
+Error column: the class cannot be built with no arguments, lacks a member, or (a wizard) names a key or a label that
+is not text. A replaced wizard says what replaced it, as a note and no error.
+
+A user's own script needs no import from this package at all: `SiteScraper` is a plain structural Protocol, so a copied-and-edited file satisfies it by shape alone, with
 no registration step beyond being a `.py` file in the folder. Scripts in that folder are **trusted local code**, run
 with the app's own privileges; the page says so and the app does nothing to sandbox them. Built-in scrapers ship for
 **ArtStation** and **Udemy** first, the two the predecessors kept alive longest. A script author gets the schema
@@ -655,7 +664,8 @@ local-viewer or tablet-watching milestones.
 - [#686: spike: what Fab's library and listings return to a logged-in session](https://github.com/borco/rehuco/issues/686)
 - [#687: feat: a tool that adds a Fab results page's free listings to the library](https://github.com/borco/rehuco/issues/687)
 
-**Partly built**: the scan job is (#682); no store plugs into it yet, and there is no dialog to start one. A scrape
+**Partly built**: the scan job is (#682), and the protocol and registry a store plugs in through (#683); no store does
+yet, and there is no dialog to start one. A scrape
 ([[acquisition-tooling#url-extract]]) fills the one document that is open and never creates a record. This is the other
 direction: **read what a store account owns and write one record per item**, the new ones added and the ones already
 filed left as they are. It is what the *account-side import of what the user owns* in
@@ -671,7 +681,17 @@ same means.
 
 - **`key`**: a stable string that identifies the wizard, in settings and in a saved queue.
 - **`label`**: what the user picks it by.
-- **`create_job(root)`**: the scan of that site into that root, as a job for the task queue.
+- **`create_job(target)`**: the scan of that site into the root the dialog chose (a `LibraryScanTarget`: the root, its
+  `.rehuroot`, its catalog's cache, and whether the whole library is read again), as a job for the task queue.
+
+**The registry** (`ScraperWizardRegistry`, #683) holds the wizards, a `.py` file in the Scrapers folder satisfying the
+protocol by shape alone, as a scraper does, and **the user's wins on a shared key**: the first working wizard under a
+key is the one offered, the folder's files in name order before the built-ins, and a later one is shown as replaced.
+This build ships none until the first store (#684). It scans nothing itself: each script is executed once, by the
+scraper registry, and the wizards are looked for among its classes again whenever that registry reloads, so the
+Scrapers page's Reload and Save reach both. A wizard that also has a site's `name` and `session` is the library its
+scan reads through, the registry handing the job that same object by its key on every run. The job's kind is
+registered at start, so a saved queue restores a scan.
 
 **Nothing else is exposed.** How a site lists a library, in what order, and how it tells a challenge page from a
 logged-out one are the job's own business, as [[appendices.task-queue#job-responsibility]] already rules. In

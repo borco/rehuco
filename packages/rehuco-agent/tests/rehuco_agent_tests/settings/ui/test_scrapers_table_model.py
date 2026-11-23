@@ -5,16 +5,22 @@ from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QBrush, QColor
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.colors import ERROR_COLOR
+from rehuco_agent.fields.colors import ERROR_COLOR, WARNING_COLOR
 from rehuco_agent.scraping.registry import ScraperRow
+from rehuco_agent.scraping.role_report import RoleState
 from rehuco_agent.settings.ui.scrapers_table_model import (
     COLUMN_COUNT,
     COLUMN_TITLES,
     ERROR_COLUMN,
     NO_SCRAPERS_TEXT,
-    SCRAPER_COLUMN,
+    ROLE_ICON_ROLE,
+    ROLE_ICONS,
+    ROLE_TOOLTIPS,
+    SCRAPER_NAME_COLUMN,
+    SCRAPER_ROLE_COLUMN,
     SOURCE_COLUMN,
     USE_BROWSER_COLUMN,
+    WIZARD_ROLE_COLUMN,
     ScrapersTableModel,
 )
 
@@ -120,10 +126,10 @@ def test_cells_show_the_scraper_the_source_and_the_error(model: ScrapersTableMod
     def cell(row: int, column: int) -> object:
         return model.data(model.index(row, column))
 
-    assert cell(0, SCRAPER_COLUMN) == "ArtStation"
+    assert cell(0, SCRAPER_NAME_COLUMN) == "ArtStation"
     assert cell(0, SOURCE_COLUMN) == "art_scraper.py"
     assert cell(0, ERROR_COLUMN) == ""
-    assert cell(2, SCRAPER_COLUMN) == NO_SCRAPERS_TEXT
+    assert cell(2, SCRAPER_NAME_COLUMN) == NO_SCRAPERS_TEXT
     assert cell(3, ERROR_COLUMN) == "SyntaxError: bad"
 
 
@@ -135,7 +141,7 @@ def test_a_scraper_naming_itself_as_its_own_publisher_shows_just_the_label(model
 
     * read the Scraper column of a row whose label and publisher are the same word
     """
-    assert model.data(model.index(4, SCRAPER_COLUMN)) == "Udemy"
+    assert model.data(model.index(4, SCRAPER_NAME_COLUMN)) == "Udemy"
 
 
 def test_only_an_error_cell_is_tinted(model: ScrapersTableModel) -> None:
@@ -150,8 +156,8 @@ def test_only_an_error_cell_is_tinted(model: ScrapersTableModel) -> None:
     foreground = Qt.ItemDataRole.ForegroundRole
     assert model.data(model.index(3, ERROR_COLUMN), foreground) == QBrush(QColor(ERROR_COLOR))
     assert model.data(model.index(0, ERROR_COLUMN), foreground) is None
-    assert model.data(model.index(3, SCRAPER_COLUMN), foreground) is None
-    assert model.data(model.index(0, SCRAPER_COLUMN), Qt.ItemDataRole.ToolTipRole) is None
+    assert model.data(model.index(3, SCRAPER_NAME_COLUMN), foreground) is None
+    assert model.data(model.index(0, SCRAPER_NAME_COLUMN), Qt.ItemDataRole.ToolTipRole) is None
     assert model.data(QModelIndex()) is None
 
 
@@ -181,7 +187,7 @@ def test_the_use_browser_column_carries_no_text_alignment_role(model: ScrapersTa
     * verify neither carries one
     """
     assert model.data(model.index(0, USE_BROWSER_COLUMN), Qt.ItemDataRole.TextAlignmentRole) is None
-    assert model.data(model.index(0, SCRAPER_COLUMN), Qt.ItemDataRole.TextAlignmentRole) is None
+    assert model.data(model.index(0, SCRAPER_NAME_COLUMN), Qt.ItemDataRole.TextAlignmentRole) is None
 
 
 def test_a_needs_browser_scraper_is_checked_and_disabled(model: ScrapersTableModel) -> None:
@@ -277,7 +283,7 @@ def test_flags_for_other_columns_are_left_alone(model: ScrapersTableModel) -> No
     * read the flags of a Scraper-column cell
     * verify it is not checkable
     """
-    index = model.index(0, SCRAPER_COLUMN)
+    index = model.index(0, SCRAPER_NAME_COLUMN)
 
     assert not model.flags(index) & Qt.ItemFlag.ItemIsUserCheckable
 
@@ -292,7 +298,7 @@ def test_setdata_outside_the_use_browser_column_or_wrong_role_is_refused(model: 
     * try `setData` on the Use browser cell with `EditRole`
     * verify both are refused
     """
-    wrong_column = model.index(0, SCRAPER_COLUMN)
+    wrong_column = model.index(0, SCRAPER_NAME_COLUMN)
     assert model.setData(wrong_column, Qt.CheckState.Checked.value, Qt.ItemDataRole.CheckStateRole) is False
 
     wrong_role = model.index(0, USE_BROWSER_COLUMN)
@@ -329,3 +335,127 @@ def test_set_browser_scrapers_replaces_the_staged_set(model: ScrapersTableModel)
     model.set_browser_scrapers(frozenset())
 
     assert model.browser_scrapers() == frozenset()
+
+
+# region Roles, warnings and notes (#683)
+
+BOTH_ROLES_ROW = ScraperRow(
+    key="rehuco_user_scrapers.shop.Shop",
+    label="Shop",
+    publisher="Shop",
+    site_name="Shop",
+    site_url="https://shop.example.com",
+    source="shop.py",
+    needs_browser=False,
+    error=None,
+    scraper=RoleState.OK,
+    wizard=RoleState.ERROR,
+)
+WIZARD_ONLY_ROW = ScraperRow(
+    key=None,
+    label="",
+    publisher="",
+    site_name="Built-in Shop",
+    site_url="",
+    source="Built-in",
+    needs_browser=False,
+    error=None,
+    wizard=RoleState.OVERRIDDEN_OK,
+    note="Replaced by the one in shop.py",
+)
+NOTHING_ROW = ScraperRow(
+    key=None,
+    label="",
+    publisher="",
+    site_name="",
+    site_url="",
+    source="helpers.py",
+    needs_browser=False,
+    error=None,
+    warning="Declares neither a scraper nor a scraper wizard.",
+)
+
+
+@fixture
+def roles_model(qtbot: QtBot, delete_at_teardown: DeleteAtTeardown) -> ScrapersTableModel:
+    """A model holding a class in both roles, a replaced wizard and a file that declares nothing."""
+    del qtbot
+    built = delete_at_teardown(ScrapersTableModel())
+    built.set_rows((BOTH_ROLES_ROW, WIZARD_ONLY_ROW, NOTHING_ROW))
+    return built
+
+
+def test_a_role_cell_carries_the_glyph_of_how_the_class_fares(roles_model: ScrapersTableModel) -> None:
+    """The Scraper and Wizard cells name the glyph of the class's state in that role, say it in a tooltip and show
+    no text; a role the class does not declare, and every other column, has no glyph (#683).
+
+    **Test steps:**
+
+    * read the glyph, the tooltip and the text of both role cells of a class working as a scraper and broken as a
+      wizard
+    * read the glyphs of a wizard-only row and of a file's own row, and of a column of no role
+    """
+
+    def glyph(row: int, column: int) -> object:
+        return roles_model.data(roles_model.index(row, column), ROLE_ICON_ROLE)
+
+    tooltip = Qt.ItemDataRole.ToolTipRole
+    assert glyph(0, SCRAPER_ROLE_COLUMN) == ROLE_ICONS[RoleState.OK]
+    assert glyph(0, WIZARD_ROLE_COLUMN) == ROLE_ICONS[RoleState.ERROR]
+    assert roles_model.data(roles_model.index(0, SCRAPER_ROLE_COLUMN), tooltip) == ROLE_TOOLTIPS[RoleState.OK]
+    assert roles_model.data(roles_model.index(0, WIZARD_ROLE_COLUMN), tooltip) == ROLE_TOOLTIPS[RoleState.ERROR]
+    assert roles_model.data(roles_model.index(0, SCRAPER_ROLE_COLUMN)) == ""
+    assert glyph(1, SCRAPER_ROLE_COLUMN) is None
+    assert glyph(1, WIZARD_ROLE_COLUMN) == ROLE_ICONS[RoleState.OVERRIDDEN_OK]
+    assert glyph(2, SCRAPER_ROLE_COLUMN) is None
+    assert glyph(2, WIZARD_ROLE_COLUMN) is None
+    assert glyph(0, SOURCE_COLUMN) is None
+    assert roles_model.data(roles_model.index(1, SCRAPER_ROLE_COLUMN), tooltip) is None
+
+
+def test_every_role_state_has_a_glyph_and_a_tooltip() -> None:
+    """No state is left without its glyph or its words (#683).
+
+    **Test steps:**
+
+    * verify both maps hold every state, each glyph a resource of its own
+    """
+    assert set(ROLE_ICONS) == set(RoleState) == set(ROLE_TOOLTIPS)
+    assert len(set(ROLE_ICONS.values())) == len(RoleState)
+    assert all(path.startswith(":/icons/module_") for path in ROLE_ICONS.values())
+
+
+def test_the_error_column_says_a_warning_in_its_color_and_a_note_in_none(roles_model: ScrapersTableModel) -> None:
+    """A file that declares nothing reads its warning in the warning color; what replaced a class is a note in the
+    plain text color; both are whole in the tooltip (#683).
+
+    **Test steps:**
+
+    * read the text, the foreground and the tooltip of the Error cell of the file's row and of the replaced wizard's
+    """
+    foreground, tooltip = Qt.ItemDataRole.ForegroundRole, Qt.ItemDataRole.ToolTipRole
+    warned, noted = roles_model.index(2, ERROR_COLUMN), roles_model.index(1, ERROR_COLUMN)
+
+    assert roles_model.data(warned) == NOTHING_ROW.warning
+    assert roles_model.data(warned, foreground) == QBrush(QColor(WARNING_COLOR))
+    assert roles_model.data(warned, tooltip) == NOTHING_ROW.warning
+    assert roles_model.data(noted) == WIZARD_ONLY_ROW.note
+    assert roles_model.data(noted, foreground) is None
+    assert roles_model.data(noted, tooltip) == WIZARD_ONLY_ROW.note
+
+
+def test_a_row_with_no_working_scraper_is_named_and_has_no_checkbox(roles_model: ScrapersTableModel) -> None:
+    """A wizard-only row shows its name, where a file's own row shows the dash, and offers no Use browser tick
+    (#683).
+
+    **Test steps:**
+
+    * read the Name cell of the wizard-only row and of the file's row
+    * read the wizard-only row's Use browser check state
+    """
+    assert roles_model.data(roles_model.index(1, SCRAPER_NAME_COLUMN)) == "Built-in Shop"
+    assert roles_model.data(roles_model.index(2, SCRAPER_NAME_COLUMN)) == NO_SCRAPERS_TEXT
+    assert roles_model.data(roles_model.index(1, USE_BROWSER_COLUMN), Qt.ItemDataRole.CheckStateRole) is None
+
+
+# endregion

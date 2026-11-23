@@ -14,13 +14,21 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from ...scraping.browser_fetcher import PersonaAction, shared_persona_browser
 from ...scraping.registry import shared_scraper_registry
+from ...scraping.scraper_wizard_registry import shared_scraper_wizard_registry
 from ..persistent_settings import persistent_settings
 from ..scrapers_settings import Browser, ScrapersSettings, persona_folder, shared_scrapers_settings
 from ..web_search_settings import WebSearchSettings, shared_web_search_settings
 from .scrapers_checkbox_delegate import ScrapersCheckboxDelegate
 from .scrapers_page_ui import Ui_ScrapersPage
+from .scrapers_role_delegate import ScrapersRoleDelegate
 from .scrapers_scraper_column_delegate import ScrapersScraperColumnDelegate
-from .scrapers_table_model import SCRAPER_COLUMN, USE_BROWSER_COLUMN, ScrapersTableModel
+from .scrapers_table_model import (
+    SCRAPER_NAME_COLUMN,
+    SCRAPER_ROLE_COLUMN,
+    USE_BROWSER_COLUMN,
+    WIZARD_ROLE_COLUMN,
+    ScrapersTableModel,
+)
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -45,7 +53,9 @@ RESET_PERSONA_QUESTION: Final = (
 
 class ScrapersPage(QWidget):
     """Configure the folder `rehuco_agent.scraping.registry.ScraperRegistry` loads user scripts from,
-    and the browser persona `~rehuco_agent.scraping.browser_fetcher.BrowserPageFetcher` fetches through.
+    and the browser persona `~rehuco_agent.scraping.browser_fetcher.BrowserPageFetcher` fetches through. Its
+    table lists what the folder's scripts and this build declare, scrapers and scraper wizards alike, with a
+    glyph for each role and what is wrong with one that cannot be used (#683).
 
     Edits are staged until :meth:`save_changes` pushes them into the shared
     `rehuco_agent.settings.scrapers_settings.ScrapersSettings`, persists them, and reloads the shared
@@ -70,9 +80,12 @@ class ScrapersPage(QWidget):
         self.__ui.scrapers_table.setModel(self.__model)
         self.__ui.scrapers_table.setItemDelegate(RowBandDelegate(self))
         self.__ui.scrapers_table.setItemDelegateForColumn(USE_BROWSER_COLUMN, ScrapersCheckboxDelegate(self))
+        role_delegate = ScrapersRoleDelegate(self)
+        self.__ui.scrapers_table.setItemDelegateForColumn(SCRAPER_ROLE_COLUMN, role_delegate)
+        self.__ui.scrapers_table.setItemDelegateForColumn(WIZARD_ROLE_COLUMN, role_delegate)
         scraper_column_delegate = ScrapersScraperColumnDelegate(self)
         scraper_column_delegate.link_activated.connect(self.__on_site_link_activated)
-        self.__ui.scrapers_table.setItemDelegateForColumn(SCRAPER_COLUMN, scraper_column_delegate)
+        self.__ui.scrapers_table.setItemDelegateForColumn(SCRAPER_NAME_COLUMN, scraper_column_delegate)
         self.__ui.persona_path_link.linkActivated.connect(self.__on_path_link_activated)
         self.__ui.scanned_path_link.linkActivated.connect(self.__on_path_link_activated)
         self.__ui.browse_button.clicked.connect(self.__on_browse_clicked)
@@ -141,14 +154,17 @@ class ScrapersPage(QWidget):
         self.__ui.web_search_engines_editor.values = settings.engines
 
     def __refresh_table(self) -> None:
-        """Show the registry's current rows, and name the folder they came from."""
-        registry = shared_scraper_registry()
-        self.__model.set_rows(registry.rows)
+        """Show the scrapers' and the scraper wizards' current rows, and name the folder they came from.
+
+        The wizards' registry looks through the scripts again by itself once the scrapers' has reloaded, so a
+        Reload or a Save reaches both (#683)."""
+        rows = shared_scraper_wizard_registry().merged_rows(shared_scraper_registry().rows)
+        self.__model.set_rows(rows)
         folder = shared_scrapers_settings().effective_scripts_folder
         self.__set_path_link(self.__ui.scanned_path_link, folder)
 
     def __on_site_link_activated(self, href: str) -> None:
-        """Open a clicked Scraper-cell link in the persona browser -- a new tab if it is already open,
+        """Open a clicked Name-cell link in the persona browser -- a new tab if it is already open,
         a fresh window otherwise, both `~.browser_fetcher.PersonaBrowser.open_for_login`'s own doing.
 
         :param href: the site URL `~.scrapers_scraper_column_delegate.ScrapersScraperColumnDelegate`
