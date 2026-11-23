@@ -50,6 +50,10 @@ LISTING_JSON_URL: Final = SITE_URL + "/i/listings/{uid}"
 FORMAT_JSON_URL: Final = SITE_URL + "/i/listings/{uid}/asset-formats/{code}"
 """One format of a listing: its files with their sizes, its engine versions and platforms, its technical ranges."""
 
+LIBRARY_ASSET_URL: Final = SITE_URL + "/library/assets/{entitlement}"
+"""An owned item's page in the account's library, by its entitlement's uid: where a listing that left the store is
+still found (#684)."""
+
 EULA_URL: Final = SITE_URL + "/eula"
 """Where Fab states the Standard License."""
 
@@ -182,6 +186,80 @@ class Fab:
             code for code in (Fab.__format_code(entry) for entry in Fab.__entries(listing, "assetFormats")) if code
         ]
         return Fab.__result(listing, tuple(Fab.__format_of(fetcher, uid, code) for code in codes))
+
+    @staticmethod
+    def license_fields(group: object, slug: object) -> dict[str, str]:
+        """The record's license fields for one of Fab's license tiers, which the library scan uses for the tier the
+        account owns.
+
+        :param group: the tier's group slug (``standard``).
+        :param slug: the tier's own slug (``personal``).
+        :returns: ``license`` and, where Fab states terms, ``license_url``; empty for a tier this scraper has no id for.
+        """
+        known = LICENSES.get((str(group), str(slug)))
+        if known is None:
+            return {}
+        short_id, url = known
+        return {"license": short_id, **({"license_url": url} if url else {})}
+
+    @staticmethod
+    def scrape_library_entry(entry: Mapping[str, Any]) -> ScrapeResult:
+        """An item written from its library entry alone: one whose listing left the store (#684), so Fab has no page
+        to read but the account still owns it.
+
+        What the entry does not say is left out, never guessed: no description, category, tags, formats or size. The
+        source is the library link, since the public listing is dead.
+
+        :param entry: one ``/i/library/search`` result, with its ``uid`` the entitlement's and its ``listing``.
+        :returns: the item's fields and its cover picture.
+        :raises FetchError: the entry names no listing uid or no entitlement.
+        """
+        listing = entry.get("listing")
+        entitlement = entry.get("uid")
+        uid = listing.get("uid") if isinstance(listing, dict) else None
+        if not isinstance(listing, dict) or not isinstance(uid, str) or not isinstance(entitlement, str):
+            raise FetchError(NOT_A_LISTING_MESSAGE.format(url=SITE_URL + "/library"))
+        page_url = LIBRARY_ASSET_URL.format(entitlement=entitlement)
+        fields: dict[str, Any] = {"url": page_url, "site_id": uid.lower()}
+        title = listing.get("title")
+        if isinstance(title, str) and title:
+            fields["title"] = title
+        name = Fab.__dig(listing, "publisher", "sellerName")
+        if isinstance(name, str) and name:
+            fields["authors"] = [name]
+        day = Fab.__day_of(listing.get("lastUpdatedAt"))
+        if day is not None:
+            fields["source_updated"] = day
+        fields["kind"] = KINDS.get(str(listing.get("listingType")), UNKNOWN_KIND)
+        versions = Fab.__spec_values(listing, "unrealEngineEngineVersions")
+        compatibility = Fab.__engine_range(versions)
+        if compatibility:
+            fields["compatibility"] = {UNREAL_FORMAT_KEY: compatibility}
+        tags = Fab.__label_tags(listing, Fab.__spec_values(listing, "unrealEngineTargetPlatforms"))
+        if tags:
+            fields["advertised_tags"] = tags
+        cover = Fab.__entries(listing, "thumbnails")[:1]
+        urls = [media["mediaUrl"] for media in cover if isinstance(media.get("mediaUrl"), str) and media["mediaUrl"]]
+        return ScrapeResult(
+            fields=fields,
+            description=None,
+            images=tuple(ScrapedImage(slot, url, page_url) for slot, url in enumerate(urls)),
+        )
+
+    @staticmethod
+    def __spec_values(listing: Mapping[str, Any], key: str) -> list[object]:
+        """What the formats of a library entry's listing state under one technical key, all formats together.
+
+        :param listing: the library entry's listing.
+        :param key: the key under each format's ``technicalSpecs``.
+        :returns: the values; empty when no format states any.
+        """
+        values: list[object] = []
+        for format_ in Fab.__entries(listing, "assetFormats"):
+            stated = Fab.__dig(format_, "technicalSpecs", key)
+            if isinstance(stated, list):
+                values.extend(stated)
+        return values
 
     @staticmethod
     def __uid_of(url: str) -> str | None:
@@ -372,11 +450,7 @@ class Fab:
         licenses = Fab.__entries(listing, "licenses")
         if len(licenses) != 1:
             return {}
-        known = LICENSES.get((str(licenses[0].get("group")), str(licenses[0].get("slug"))))
-        if known is None:
-            return {}
-        short_id, url = known
-        return {"license": short_id, **({"license_url": url} if url else {})}
+        return Fab.license_fields(licenses[0].get("group"), licenses[0].get("slug"))
 
     @staticmethod
     def __format_fields(formats: tuple[dict[str, Any], ...]) -> dict[str, Any]:
@@ -410,13 +484,25 @@ class Fab:
         :param formats: the JSON of each format.
         :returns: ``5.0-5.5``, or ``5.5`` for one; empty when none states a version.
         """
+        return Fab.__engine_range(
+            name
+            for entry in formats
+            for version in Fab.__entries(entry, "versions")
+            for name in version.get("engineVersions") or ()
+        )
+
+    @staticmethod
+    def __engine_range(names: Iterable[object]) -> str:
+        """The range the engine versions named cover, however the JSON that held them was shaped.
+
+        :param names: versions as Fab states them, ``UE_5.5``; anything else is skipped.
+        :returns: ``5.0-5.5``, or ``5.5`` for one; empty when none is a version.
+        """
         found: set[tuple[int, int]] = set()
-        for entry in formats:
-            for version in Fab.__entries(entry, "versions"):
-                for name in version.get("engineVersions") or ():
-                    matched = UNREAL_VERSION.match(str(name))
-                    if matched is not None:
-                        found.add((int(matched.group(1)), int(matched.group(2))))
+        for name in names:
+            matched = UNREAL_VERSION.match(str(name))
+            if matched is not None:
+                found.add((int(matched.group(1)), int(matched.group(2))))
         if not found:
             return ""
         low, high = min(found), max(found)
@@ -452,6 +538,33 @@ class Fab:
         """
         names: list[str] = [str(Fab.__dig(listing, "category", "name") or "")]
         names.extend(str(tag.get("name") or "") for tag in Fab.__entries(listing, "tags"))
+        platforms = [
+            platform
+            for entry in formats
+            for version in Fab.__entries(entry, "versions")
+            for platform in version.get("targetPlatforms") or ()
+        ]
+        return Fab.__distinct([*names, *Fab.__labels(listing, platforms)])
+
+    @staticmethod
+    def __label_tags(listing: Mapping[str, Any], platforms: Iterable[object]) -> list[str]:
+        """The tags Fab states as labels only, for an item with no listing JSON to read the rest from.
+
+        :param listing: the library entry's listing.
+        :param platforms: the platforms its formats are limited to, as Fab spells them.
+        :returns: the tags, none twice by name.
+        """
+        return Fab.__distinct(Fab.__labels(listing, platforms))
+
+    @staticmethod
+    def __labels(listing: Mapping[str, Any], platforms: Iterable[object]) -> list[str]:
+        """The prefixed tags the flags and platforms of an item give ([[assets#block]]).
+
+        :param listing: a listing's JSON, or a library entry's listing; each states the flags it knows.
+        :param platforms: the platforms an Unreal format is limited to.
+        :returns: the tags; a flag a shape does not state gives none.
+        """
+        names: list[str] = []
         for key, tag in (
             ("isMature", TAG_MATURE),
             ("isAiForbidden", TAG_AI_FORBIDDEN),
@@ -459,12 +572,19 @@ class Fab:
         ):
             if listing.get(key) is True:
                 names.append(tag)
-        for entry in formats:
-            for version in Fab.__entries(entry, "versions"):
-                for platform in version.get("targetPlatforms") or ():
-                    slug = NON_SLUG.sub("-", platform.lower()).strip("-") if isinstance(platform, str) else ""
-                    if slug:
-                        names.append(f"{TAG_PLATFORM_PREFIX}{slug}")
+        for platform in platforms:
+            slug = NON_SLUG.sub("-", platform.lower()).strip("-") if isinstance(platform, str) else ""
+            if slug:
+                names.append(f"{TAG_PLATFORM_PREFIX}{slug}")
+        return names
+
+    @staticmethod
+    def __distinct(names: Iterable[str]) -> list[str]:
+        """Tags with the blank ones dropped and none kept twice by name, the first spelling winning.
+
+        :param names: the tags.
+        :returns: the kept ones, in order.
+        """
         kept: dict[str, str] = {}
         for name in names:
             if name.strip():

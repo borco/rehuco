@@ -96,8 +96,12 @@ block does ([[plugins#plugin-blocks]]).
   - `ai-forbidden` where the listing is `isAiForbidden`, Fab's *NoAI* mark: no generative-AI datasets, development
     or training under a Standard License, as the item was tagged when it was got. It does not bar using AI tools on
     the file ([[appendices.assets#ai-tags]]);
-  - `ai-generated` where the listing is `isAiGenerated`, Fab's *CreatedWithAI* mark.
-- **A delisted item**, written without its listing, carries none of these.
+  - `ai-generated` where the listing is `isAiGenerated`, Fab's *CreatedWithAI* mark;
+  - `license-<id>` for each license tier the account owns the item under, `<id>` the short id the tier gets as a
+    `license` (`license-fab-standard`, `license-fab-uefn-reference-only`), so a library can be filtered by every tier an
+    item is held under, though `license` itself holds one ([[assets#licenses]]).
+- **A delisted item**, written without its listing, carries only the labels its library entry states: `rating-mature`
+  and `platform-<name>`, and `license-<id>`. The AI marks are a listing's alone.
 - **A rig and levels of detail are the user's tags** (`extra_tags`). Fab states them per format and mostly leaves
   them empty, so the scan writes nothing for them.
 - **What an item needs or supplies is not here.** No Fab listing states it; Daz3D's products do, and its design adds
@@ -161,6 +165,10 @@ the terms.
   once per run, keyed by the store's license **path** rather than by `license_url`, which differs between labels of
   one license and may be empty (below). The text is therefore the terms on the day of the scan, which for an item got years
   earlier is not the day it was got; `acquired` beside `read` shows the gap, and nothing recovers the older text.
+- **An item owned under several tiers holds under the broadest** (#684): `license` and the text saved are those of the
+  first tier owned of Professional, Personal, *CC BY*, *UE Marketplace* and *UEFN - Reference only*, a tier no list
+  names coming after; every owned tier is also a `license-<id>` tag ([[assets#block]]). The tiers are the library
+  entry's, never the public listing's, which offers all of them.
 - **What Fab gives** (#686): each owned item names its license(s) as a `group` (`name`, `slug`, `url`) and a `path`
   (`license/standard/reference-plus-source`, `license/cc/cc-by`, `license/legacy/uem`). **The `path` is the stable
   identifier** and the short id is derived from it; the label is not (*Creative Commons* and *Creative Commons

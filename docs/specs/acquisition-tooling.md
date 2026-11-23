@@ -717,8 +717,8 @@ local-viewer or tablet-watching milestones.
 - [#686: spike: what Fab's library and listings return to a logged-in session](https://github.com/borco/rehuco/issues/686)
 - [#687: feat: a tool that adds a Fab results page's free listings to the library](https://github.com/borco/rehuco/issues/687)
 
-**Partly built**: the scan job is (#682), and the protocol and registry a store plugs in through (#683); no store does
-yet, and there is no dialog to start one. A scrape
+**Partly built**: the scan job is (#682), the protocol and registry a store plugs in through (#683) and Fab's library
+(#684); there is no dialog to start a scan yet. A scrape
 ([[acquisition-tooling#url-extract]]) fills the one document that is open and never creates a record. This is the other
 direction: **read what a store account owns and write one record per item**, the new ones added and the ones already
 filed left as they are. It is what the *account-side import of what the user owns* in
@@ -740,10 +740,12 @@ same means.
 **The registry** (`ScraperWizardRegistry`, #683) holds the wizards, a `.py` file in the Scrapers folder satisfying the
 protocol by shape alone, as a scraper does, and **the user's wins on a shared key**: the first working wizard under a
 key is the one offered, the folder's files in name order before the built-ins, and a later one is shown as replaced.
-This build ships none until the first store (#684). It scans nothing itself: each script is executed once, by the
+This build ships Fab's (#684), one class with the Fab scraper so the Scrapers page shows Fab once. It scans nothing
+itself: each script is executed once, by the
 scraper registry, and the wizards are looked for among its classes again whenever that registry reloads, so the
 Scrapers page's Reload and Save reach both. A wizard that also has a site's `name` and `session` is the library its
-scan reads through, the registry handing the job that same object by its key on every run. The job's kind is
+scan reads through: a job the dialog creates reads through the wizard that made it, and a job restored from a saved
+queue is handed that same object by its key in the registry on every run. The job's kind is
 registered at start, so a saved queue restores a scan.
 
 **Nothing else is exposed.** How a site lists a library, in what order, and how it tells a challenge page from a
@@ -792,6 +794,18 @@ queue is right for.
 - **An item whose public page is gone** (Fab: `isActiveInLive` false, its listing a 404; 102 of 4,250) is still in the
   account, so it is written from the library entry alone, its unknown fields left empty and `online` left true, and
   **its source URL is the library link** (`/library/assets/<entitlement id>`) instead of the dead public one.
+- **Fab's library is read from inside the persona's page** (#684): a `fetch` run in a Fab page of the persona,
+  same-origin, as #686 read it, so the account's cookies go with it and no challenge was met at 1.5 s a page. Each
+  request waits out one second since the last, on top of the paced pause between pages, since reading an item makes a
+  request for its listing and one per format. **The listing is resumed from the millisecond alone**: Fab's cursor,
+  `v=[<epoch ms>, "<entitlement id>"]` quoted and base64, is built with the cursor's millisecond and a null id, so it
+  stands before every entry of that millisecond, and what is filed already is skipped by the id. A challenge page (the
+  title *Just a moment...*, a `cf-mitigated` header, a 403 that is HTML) or a 401 and 403 that is JSON pauses the scan
+  with the persona browser opened, at Fab's home page or at the library; a 429, a 5xx, a request that does not
+  complete, a script that times out, and a browser that went away (given up, so the next request starts another) are
+  waited for. A live item is read through the Fab scraper ([[acquisition-tooling#fab-scraper]]); the library adds
+  `acquired`, the owned license ([[assets#licenses]]) and its `license-` tags. The license texts: the Standard
+  License's JSON at `/i/eula/fab_eula`, Creative Commons' plain legal code from its own site, none for the Marketplace.
 - **A known item is skipped**: one the root already holds a record of, found by its source's `site_id`
   ([[assets#site-id]]), is neither read again nor written over (owner, 2026-11-22). The record is the user's from the
   moment it is written, so a scan run again and again only adds what was acquired since, and keeps no copy of what it

@@ -24,6 +24,7 @@ from rehuco_agent.scraping.protocols import (
 from rehuco_agent.scraping.registry import BUILTIN_SCRAPERS
 from rehuco_agent.scraping.results import Page, ScrapeResult
 from rehuco_agent.scraping.sites.fab import Fab
+from rehuco_agent.scraping.sites.fab_library import FabLibrary
 from requests import HTTPError, RequestException, Response
 
 SAMPLES: Final = Path(__file__).parent / "fab_samples"
@@ -154,7 +155,7 @@ def test_the_fab_scraper_is_built_in_and_downloads_for_itself() -> None:
     * look for it among the built-in scrapers and build one
     * verify it is there, and that it satisfies the protocol of a scraper that downloads for itself
     """
-    assert Fab in BUILTIN_SCRAPERS
+    assert FabLibrary in BUILTIN_SCRAPERS
     assert isinstance(Fab(), FetchingScraper)
     assert (Fab.label, Fab.publisher, Fab.site_name, Fab.site_url, Fab.needs_browser) == (
         "Fab",
