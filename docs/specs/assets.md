@@ -177,7 +177,8 @@ the terms.
   the license, both dates and how many records hold the older text, and it is replaced only on a yes. The text an item
   was got under may be the one that still applies to it, so it is not the tool's to overwrite.
 - **A restriction is a different license, never a note.** Content a store limits to one engine gets an id of its own
-  (`fab-ue-only`) so the limit is a filter, not a sentence in a description.
+  (`fab-ue-only`; Fab's UEFN *reference only* tier, `fab-uefn-reference-only`) so the limit is a filter, not a
+  sentence in a description.
 - ***Copy as JSON* names the file.** Each asset that has one carries its sidecar's path, so whatever reads the
   selection can read the terms.
 
