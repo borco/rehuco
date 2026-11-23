@@ -543,6 +543,38 @@ def test_counts_across_formats_are_joined_in_order_without_repeats() -> None:
     assert fields["advertised_triangles"] == "1000-4999"
 
 
+def test_a_range_of_only_zero_is_not_stated() -> None:
+    """A format whose range holds only zero states nothing -- a seller's placeholder, as a ZBrush sculpt's ``[0, 1)``
+    beside its FBX's real band -- so it is left out of the joined text rather than read as a zero count (#701).
+
+    **Test steps:**
+
+    * scrape a listing whose FBX format states real ranges and whose ZBrush format states ``[0, 1)`` for both
+    * verify the two counts hold only the FBX's values
+    * verify a listing whose only format states ``[0, 1)`` gets neither count
+    """
+    zero = {"lower": 0, "upper": 1, "bounds": "[)"}
+    fbx = {
+        "files": [],
+        "techDetails": {
+            "threeDModel": {
+                "totalTrianglesCountRange": {"lower": 854, "upper": 999995, "bounds": "[)"},
+                "textureResolutionRange": {"lower": 8192, "upper": 8193, "bounds": "[)"},
+            }
+        },
+    }
+    sculpt = {
+        "files": [],
+        "techDetails": {"threeDModel": {"totalTrianglesCountRange": zero, "textureResolutionRange": zero}},
+    }
+
+    both = scrape(sample("listing-cc-by"), {"fbx": fbx, "blender": sculpt}).fields
+    alone = scrape(sample("listing-cc-by"), {"blender": sculpt}).fields
+
+    assert (both["advertised_triangles"], both["advertised_texture_size"]) == ("854-999994", "8192")
+    assert not {"advertised_triangles", "advertised_texture_size"} & alone.keys()
+
+
 @mark.parametrize(
     "stated",
     [

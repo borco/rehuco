@@ -428,7 +428,9 @@ class Fab:
         """The whole numbers a range Fab states holds.
 
         :param stated: ``{"lower": 12, "upper": 13, "bounds": "[)"}``, or anything else.
-        :returns: the span; ``None`` when there is no range or it holds nothing.
+        :returns: the span; ``None`` when there is no range, it holds nothing, or it holds only zero -- a seller's
+            "not stated" (a ZBrush sculpt's ``[0, 1)`` beside its FBX's real band), since no model has zero triangles
+            or a zero-pixel texture.
         """
         if not isinstance(stated, dict):
             return None
@@ -436,7 +438,8 @@ class Fab:
         ends = (lower, upper)
         if not all(end is None or (isinstance(end, int) and not isinstance(end, bool)) for end in ends):
             return None
-        return ValueSpan.from_bounds(lower, upper, bounds if isinstance(bounds, str) else "[)")
+        span = ValueSpan.from_bounds(lower, upper, bounds if isinstance(bounds, str) else "[)")
+        return None if span is None or span.upper == 0 else span
 
     @staticmethod
     def __tags(listing: Mapping[str, Any], formats: tuple[dict[str, Any], ...]) -> list[str]:

@@ -290,7 +290,8 @@ whose request fails costs only what it would have given, and is logged.
 - **From the formats**: `advertised_size` is the sum of the **lead** format's files, written only when every file
   states a size; `compatibility` holds `unreal`, the oldest to the newest engine version of the formats
   (`5.0-5.6`, compared as numbers); `advertised_triangles` and `advertised_texture_size` are the ranges the
-  formats state, as a value, a band or a list (`12`, `1000-4999`, `1024,2048`: [[assets#block]]).
+  formats state, as a value, a band or a list (`12`, `1000-4999`, `1024,2048`: [[assets#block]]); a format whose
+  range holds only zero (`[0, 1)`, a ZBrush sculpt's placeholder beside its FBX's real band) states nothing.
 - **A license only when the listing offers one**, by Fab's `(group, slug)`: Standard's tiers `fab-standard`
   with the EULA's address, `cc-by` `cc-by-4.0` with its page, the Marketplace license `fab-ue-only` with none, and
   Standard's *UEFN - Reference only* tier `fab-uefn-reference-only` with the EULA's address, a restriction
