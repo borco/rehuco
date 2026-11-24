@@ -11,7 +11,7 @@
 - [#675: feat(core): a source's site_id, and finding a record by site and id](https://github.com/borco/rehuco/issues/675)
 - [#676: feat(core): asset columns and a formats link table in the cache](https://github.com/borco/rehuco/issues/676)
 - [#677: feat(core): the .rehuterms license sidecar](https://github.com/borco/rehuco/issues/677)
-- [#678: feat(agent): asset fields in the editor, the browser and the settings](https://github.com/borco/rehuco/issues/678)
+- [#678: feat(agent): asset fields in the editor, the browser and the search line](https://github.com/borco/rehuco/issues/678)
 - [#679: feat(agent): Open in Web Browser on the browser's selection](https://github.com/borco/rehuco/issues/679)
 - [#688: feat(agent): the license subdock, Refresh License, and the sidecar's path in Copy as JSON](https://github.com/borco/rehuco/issues/688)
 
