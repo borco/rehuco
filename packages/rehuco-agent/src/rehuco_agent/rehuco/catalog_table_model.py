@@ -522,6 +522,16 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
             return ()
         return tuple(self.__rows[row].record.authors)
 
+    def url_of(self, row: int) -> str:
+        """The primary source's URL of a row's record, as stored, without the blanks around it.
+
+        :param row: the row.
+        :returns: the URL; empty out of range or for a record with none.
+        """
+        if not 0 <= row < len(self.__rows):
+            return ""
+        return self.__rows[row].record.url.strip()
+
     # region Sorting
 
     @override

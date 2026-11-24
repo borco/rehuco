@@ -744,6 +744,11 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     a quote written `\n`, `\r` and `\"` and nothing else escaped, so it reads, not reverses (`C:\Users\new` already
     holds `\n`). *Copy paths as JSON* is for scripts — a list of strings, one per line, that reads back exactly. Both
     copy plain text only, never a file list, so a paste into Explorer copies no folders.
+  - **Open in Web Browser** (#679, [[assets#install]]). With rows selected, the entry above the copies opens each
+    selected record's primary source URL in the system's browser, from the cache alone, so an offline root does not
+    matter: the table's order, an address shared by several records once, and only `http` and `https` addresses naming a host
+    (`web_pages.is_web_page`, the rule of the Roots preview's link). It is disabled when no selected record has one.
+    More than ten pages asks "Open N pages in the web browser?" first, Cancel the default.
   - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
     (`folder`, `authors`, `tags`, `publishers`, `type`, and an asset's `kind`, `license` and `formats`), all ANDed. Free text is **one term per word**, each found in a
     title, a path, or part of any author, publisher or tag name (any one of them), so `foo bar` finds "bar then foo"; a

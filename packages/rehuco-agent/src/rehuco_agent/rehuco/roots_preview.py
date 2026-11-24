@@ -56,16 +56,13 @@ from .roots_folder_model import RootsFolderModel
 from .roots_management import PackInfo, PackState
 from .roots_node import NodeListing, RootsNodeKind, ShownRoot, root_where
 from .roots_preview_ui import Ui_RootsPreview
+from .web_pages import is_web_page
 
 LOG: Final = logging.getLogger(__name__)
 
 type ActionsForRow = Callable[[QModelIndex], tuple[Sequence[QAction], QAction | None]]
 """What the pane asks its owner for a row: the actions its context menu holds, separators among them, and the one of
 them that is its default."""
-
-OPENABLE_SCHEMES: Final = frozenset({"http", "https"})
-"""The schemes a record's URL is a link for. A ``.rehu`` is outside input, so what it says is shown, and only a web
-address is handed to the system to open."""
 
 type RecordForRow = Callable[[QModelIndex], Path | None]
 """What the pane asks its owner for a folder row: the record that stands for it -- its ``info.rehu`` or ``info.tc`` --
@@ -918,8 +915,7 @@ class RootsPreview(QWidget):
         """
         ui = self.__ui
         self.__url = url
-        openable = QUrl(url).scheme().lower() in OPENABLE_SCHEMES
-        ui.url_value.set_text(url, href=url if openable else "")
+        ui.url_value.set_text(url, href=url if is_web_page(url) else "")
         ui.url_value.setVisible(bool(url))
         ui.description_view.set_markdown(description)
         ui.description_view.setVisible(bool(description))
