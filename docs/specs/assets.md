@@ -15,10 +15,10 @@
 - [#679: feat(agent): Open in Web Browser on the browser's selection](https://github.com/borco/rehuco/issues/679)
 - [#688: feat(agent): the license subdock, Refresh License, and the sidecar's path in Copy as JSON](https://github.com/borco/rehuco/issues/688)
 
-**The block, the cache, the license sidecar, the editor and the browser are built** (#674, #676, #677, #678): `asset` is a
+**The block, the cache, the license sidecar, the editor and the browser are built** (#674, #676, #677, #678, #679): `asset` is a
 declared type whose fields are read and checked as §19.1 says, kept in the catalog cache, one column each and `formats` in
 a link table of its own, shown and edited beside a record's other fields, and a column, a preset and a filter token of
-the browsers. The rest is the design for this fourth resource type: something
+the browsers, with *Open in Web Browser* on their selection. The rest is the design for this fourth resource type: something
 acquired from a store to be used in other work, such as a 3D model, a texture set, an animation pack, an audio pack, a
 Blender add-on or an Unreal plugin. It answers the *3D objects as a resource category* question
 [[appendices.open-questions#still-open]] left open.
@@ -196,7 +196,7 @@ the terms.
 - **A restriction is a different license, never a note.** Content a store limits to one engine gets an id of its own
   (`fab-ue-only`; Fab's UEFN *reference only* tier, `fab-uefn-reference-only`) so the limit is a filter, not a
   sentence in a description.
-- ***Copy as JSON* names the file.** Each asset that has one carries its sidecar's path, so whatever reads the
+- ***Copy paths as JSON* names the file.** Each asset that has one carries its sidecar's path, so whatever reads the
   selection can read the terms.
 
 Why the text is kept, and when a license binds the buyer, is [[appendices.assets#acquisition]].
@@ -247,9 +247,11 @@ packs to a project, a Blender add-on installs through Blender, and a loose model
 the project has. Unlike Daz3D ([[plugins#daz3d-plugin]]), where installing is registering with one application, none
 of that is rehuco's to drive.
 
-- **What the browser offers instead is *Open in Web Browser*** on the selected records, beside *Copy as Path* and
-  *Copy as JSON*: each record's primary source URL, opened in the user's everyday browser. From there the store's own
-  page does the rest.
+- **What the browser offers instead is *Open in Web Browser*** (#679) on the selected records, in the table's context
+  menu above *Copy paths* and *Copy paths as JSON*: each record's primary source URL, opened in the user's everyday
+  browser, in the table's order and once however many records share it. From there the store's own page does the rest.
+  Only an `http` or `https` address naming a host counts, since a `.rehu` is outside input; a record with none adds nothing, and with
+  none selected that has one the entry is disabled. More than ten pages asks first, with Cancel the default.
 - **A site may bring its own install manager later.** Daz3D is the first, and the per-user, per-machine `installed`
   field [[data-model]] reserves for it belongs to that manager's block, as does `current_version` when a manager sets
   it. A store that turns out to be worth the same treatment gets the same shape.

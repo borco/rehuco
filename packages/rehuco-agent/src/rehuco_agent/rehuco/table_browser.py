@@ -30,6 +30,7 @@ from .copied_paths import PathsWriter, json_paths, quoted_paths
 from .filter_line import SCOPE_SEPARATOR, SCOPE_TOKEN, parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 from .status_line_label import StatusLineLabel
+from .web_pages import is_web_page, open_web_pages
 
 FILTER_SETTLE_MS: Final = 250
 """How long the filter line waits after the last keystroke before its rows are read again; Enter does not wait."""
@@ -54,6 +55,9 @@ COPY_PATHS_ENTRIES: Final[tuple[tuple[str, PathsWriter], ...]] = (
     ("Copy paths as JSON", json_paths),
 )
 """The menu's entries for a selection (#646), in menu order: each one's text and the format it copies in."""
+
+OPEN_PAGES_TEXT: Final = "Open in Web Browser"
+"""The menu's entry that opens the selected records' pages (#679)."""
 
 
 class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -336,9 +340,24 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :returns: their keys, in the table's order -- not the order they were selected in.
         """
-        rows = sorted(index.row() for index in self.__ui.catalog_view.selectionModel().selectedRows())
-        keys = (self.__model.row_key(row) for row in rows)
+        keys = (self.__model.row_key(row) for row in self.__selected_rows())
         return tuple(key for key in keys if key is not None)
+
+    def __selected_rows(self) -> list[int]:
+        """Which rows are selected.
+
+        :returns: their numbers, in the table's order -- not the order they were selected in.
+        """
+        return sorted(index.row() for index in self.__ui.catalog_view.selectionModel().selectedRows())
+
+    def __selected_pages(self) -> tuple[str, ...]:
+        """The web pages of the selected rows' records (#679).
+
+        :returns: each address once, in the table's order; a record with no URL, or one that is not a web address,
+            adds none.
+        """
+        urls = (self.__model.url_of(row) for row in self.__selected_rows())
+        return tuple(dict.fromkeys(url for url in urls if is_web_page(url)))
 
     def __restore_selection(self) -> None:
         """Select the rows remembered, now every row is here, and say nothing: nothing follows a restored selection.
@@ -412,8 +431,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __on_context_menu(self, position: QPoint) -> None:
         """Open the table's menu, if it has anything to offer: an Authors cell offers to filter by each of its authors
-        (#460), and a selection to copy its rows' paths (#646), after a separator when both do. A cell with no authors
-        and nothing selected opens nothing.
+        (#460), and a selection to open its rows' pages (#679) or copy their paths (#646), after a separator when both
+        do. A cell with no authors and nothing selected opens nothing.
 
         :param position: where it was asked for, in the table's viewport coordinates.
         """
@@ -430,6 +449,10 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
             if authors and selected:
                 menu.addSeparator()
             if selected:
+                pages = self.__selected_pages()
+                open_pages = menu.addAction(OPEN_PAGES_TEXT)
+                open_pages.setEnabled(bool(pages))
+                open_pages.triggered.connect(lambda _checked=False: open_web_pages(self, pages))
                 for text, write in COPY_PATHS_ENTRIES:
                     action = menu.addAction(text)
                     action.triggered.connect(
