@@ -22,6 +22,10 @@ from ..settings.scrapers_settings import Browser
 FIREFOX_HEADLESS_ARG: Final = "-headless"
 CHROMIUM_HEADLESS_ARG: Final = "--headless=new"
 
+FIREFOX_JSON_VIEWER_PREFERENCE: Final = "devtools.jsonview.enabled"
+"""Whether Firefox shows a JSON document in its own viewer, which replaces the document with the viewer's markup: the
+page a scrape reads then holds no JSON at all. Off, it shows the text in a ``<pre>``, as Chrome and Edge do."""
+
 BROWSER_BINARY_NAMES: Final[dict[Browser, tuple[str, ...]]] = {
     Browser.FIREFOX: ("firefox",),
     Browser.CHROME: ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"),
@@ -132,9 +136,11 @@ def start_firefox(*, headless: bool, profile_folder: Path) -> WebDriver:
 
     ``-profile`` is a command-line argument, not `FirefoxOptions.profile`: that property copies the
     profile into a temporary directory before launching, which would make every login vanish the
-    moment the browser closes.
+    moment the browser closes. The JSON viewer is off (:data:`FIREFOX_JSON_VIEWER_PREFERENCE`), so a scraper that
+    reads a site's JSON gets it here as it does over plain HTTP; the preference stays in the profile.
     """
     options = webdriver.FirefoxOptions()
+    options.set_preference(FIREFOX_JSON_VIEWER_PREFERENCE, False)
     if headless:
         options.add_argument(FIREFOX_HEADLESS_ARG)
     options.add_argument("-profile")

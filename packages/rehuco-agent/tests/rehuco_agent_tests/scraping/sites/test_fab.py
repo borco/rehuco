@@ -8,6 +8,7 @@
 import json
 import re
 from collections.abc import Callable, Mapping
+from html import escape
 from pathlib import Path
 from typing import Any, Final, cast
 from unittest.mock import Mock
@@ -846,20 +847,28 @@ def test_a_body_that_is_not_a_listing_fails_the_fetch(body: str) -> None:
 
 
 def test_a_page_a_browser_wrapped_the_json_in_is_read_from_its_pre() -> None:
-    """Through the persona browser a JSON document may arrive inside a ``<pre>`` (#701).
+    """Through the persona browser a JSON document arrives inside a ``<pre>``, its text escaped as the browser
+    serializes it, the markup in the description included (#701).
 
     **Test steps:**
 
-    * scrape a listing whose JSON arrives as ``<html><body><pre>…</pre></body></html>``
-    * verify it reads as the same listing
+    * scrape a listing over plain HTTP, then as the page Firefox hands over with its JSON viewer off
+    * verify both read alike, the description included
     """
     listing = sample("listing-cc-by")
-    wrapped = f"<html><body><pre>{json.dumps(listing)}</pre></body></html>"
-    fetcher = fetcher_for(page_of(f"{SITE}/i/listings/{listing['uid']}", wrapped))
+    address = f"{SITE}/i/listings/{listing['uid']}"
+    body = json.dumps(listing)
+    wrapped = (
+        '<html><head><link rel="stylesheet" href="resource://content-accessible/plaintext.css"></head>'
+        f"<body><pre>{escape(body, quote=False)}</pre></body></html>"
+    )
 
-    result = Fab().scrape_url(listing_url(listing), fetcher)
+    plain = Fab().scrape_url(listing_url(listing), fetcher_for(page_of(address, body)))
+    browsed = Fab().scrape_url(listing_url(listing), fetcher_for(page_of(address, wrapped)))
 
-    assert result.fields["title"] == "Dark Knight - Female Character"
+    assert browsed == plain
+    assert browsed.fields["title"] == "Dark Knight - Female Character"
+    assert browsed.description
 
 
 def test_a_url_that_is_no_listing_page_fails_before_any_request() -> None:

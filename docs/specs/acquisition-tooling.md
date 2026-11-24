@@ -379,7 +379,9 @@ The one thing the two cannot do is run at once: a profile can be held open by on
 plain or Selenium-driven alike, so a scrape attempted while the login window is still open fails to start its own
 session, with a message naming that as the likely cause. A scrape itself always starts a short-lived Selenium
 session (headless unless **Show the browser while scraping** is ticked) and quits it when done — there is nothing
-left running for a next scrape, or a login, to find.
+left running for a next scrape, or a login, to find. Firefox's JSON viewer is off in that session: it replaces a JSON
+document with the viewer's own markup, and a scraper that reads a site's JSON has to find it through the browser as it
+does over plain HTTP. The preference stays in the persona's profile.
 
 Controls on the Scrapers page:
 

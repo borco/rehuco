@@ -8,6 +8,7 @@ from pytest_mock import MockerFixture
 from rehuco_agent.scraping.browser_drivers import (
     CHROMIUM_HEADLESS_ARG,
     FIREFOX_HEADLESS_ARG,
+    FIREFOX_JSON_VIEWER_PREFERENCE,
     find_browser_binary,
     login_command,
     start_driver,
@@ -40,6 +41,24 @@ def test_firefox_is_started_on_the_profile_folder_via_the_profile_argument(mocke
     options.add_argument.assert_any_call(str(PROFILE_FOLDER))
     assert mocker.call(FIREFOX_HEADLESS_ARG) not in options.add_argument.call_args_list
     firefox.assert_called_once_with(options=options)
+
+
+def test_firefox_is_started_with_its_json_viewer_off(mocker: MockerFixture) -> None:
+    """Firefox replaces a JSON document with its viewer's markup, which holds no JSON to read: a scraper that reads a
+    site's JSON through the browser found no listing in it (#701).
+
+    **Test steps:**
+
+    * stand in for `FirefoxDriver` alone, so the options are real
+    * start a Firefox driver
+    * verify the options it was given turn the viewer off
+    """
+    mocker.patch.object(Path, "mkdir")
+    firefox = mocker.patch("rehuco_agent.scraping.browser_drivers.FirefoxDriver")
+
+    start_driver(Browser.FIREFOX, headless=False, profile_folder=PROFILE_FOLDER)
+
+    assert firefox.call_args.kwargs["options"].preferences[FIREFOX_JSON_VIEWER_PREFERENCE] is False
 
 
 def test_firefox_headless_adds_the_headless_argument(mocker: MockerFixture) -> None:
