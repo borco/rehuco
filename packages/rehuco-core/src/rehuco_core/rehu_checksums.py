@@ -883,6 +883,11 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         (:func:`~rehuco_core.checksum_entry_merge.merge_checksum_entries`); a record that is gone meanwhile is written
         as this run leaves it.
 
+        **A record with no content gets its record too**: a resource that is metadata alone -- a store item whose
+        files have not arrived -- has nothing to hash, and an empty record is what says *checked, and nothing to
+        check*; without one, the next verify, and the move that runs it, would find no record at all
+        (:meth:`__creates_empty`).
+
         :param rewritten: the record's entries as this run leaves them.
         """
         if self.__only is not None:
@@ -895,7 +900,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
                     and name not in self.__moved
                 ):
                     self.__statuses[name] = "missing"
-        if rewritten != self.__entries or self.__seed is not None:
+        if rewritten != self.__entries or self.__seed is not None or self.__creates_empty():
             self.__record[CHECKSUM_FILES_KEY] = rewritten
             base = self.__entries if self.__from_disk else []
 
@@ -911,6 +916,16 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
                 return current
 
             update_checksum_record(checksum_record_path(self.__rehu_location.path), merged)
+
+    def __creates_empty(self) -> bool:
+        """Whether this run starts the record of a resource that has no content: one it did not read from disk, over
+        the whole resource and not a selection of names, which a typo must not turn into a record.
+
+        A resource whose content could not be read is not one with none, and gets no record from this.
+
+        :returns: whether an empty record is to be written.
+        """
+        return not self.__from_disk and self.__only is None and not self.__content
 
     def __report(self) -> ChecksumReport:
         """The run's answers, frozen for the caller."""

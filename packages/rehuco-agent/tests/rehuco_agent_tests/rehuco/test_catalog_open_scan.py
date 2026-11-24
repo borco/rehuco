@@ -220,3 +220,16 @@ def test_a_cache_whose_roots_cannot_be_read_scans_nothing_and_says_why(
 
     assert not queue.jobs()
     assert "the cache is gone" in caplog.text
+
+
+def test_the_catalog_names_the_cache_a_scan_into_it_opens(dock: CatalogDocks, catalog: Mock) -> None:
+    """A job that scans into the open file is handed its cache's path by the catalog (#685).
+
+    **Test steps:**
+
+    * make the mock catalog's cache a file
+    * verify the root catalog gives that path
+    """
+    catalog.cache_path = REHUCO_PATH.with_suffix(".rehudb")
+
+    assert dock.catalog.cache_path == REHUCO_PATH.with_suffix(".rehudb")

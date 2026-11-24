@@ -66,7 +66,7 @@ class RootRowDelegate(RootsItemDelegate):
         if self.__is_duplicate(opt, index):
             color = BAD_INK
             painter.setPen(color)
-        folder_font = RootRowDelegate.__folder_font(opt.font)
+        folder_font = RootRowDelegate.folder_font(opt.font)
         name_height = QFontMetrics(opt.font).height()
         folder_height = QFontMetrics(folder_font).height()
         top = rect.top() + (rect.height() - name_height - folder_height) // 2
@@ -77,13 +77,11 @@ class RootRowDelegate(RootsItemDelegate):
             self.draw_icon(painter, icon, color, QRect(left, rect.top() + (rect.height() - size) // 2, size, size))
             left += size + ICON_TEXT_GAP
         width = rect.right() - left + 1
-        RootRowDelegate.__draw_line(
-            painter, opt.font, opt.text, opt.textElideMode, QRect(left, top, width, name_height)
-        )
+        RootRowDelegate.draw_line(painter, opt.font, opt.text, opt.textElideMode, QRect(left, top, width, name_height))
         faint = QColor(color)
         faint.setAlpha(PATH_ALPHA)
         painter.setPen(faint)
-        RootRowDelegate.__draw_line(
+        RootRowDelegate.draw_line(
             painter,
             folder_font,
             str(index.data(RootsFolderModel.PATH_ROLE) or ""),
@@ -104,7 +102,7 @@ class RootRowDelegate(RootsItemDelegate):
         return root is not None and not selected and root.root_id in self.__duplicates()
 
     @staticmethod
-    def __draw_line(painter: QPainter, font: QFont, text: str, elide: Qt.TextElideMode, line: QRect) -> None:
+    def draw_line(painter: QPainter, font: QFont, text: str, elide: Qt.TextElideMode, line: QRect) -> None:
         """Draw one line of text, elided to fit, vertically centered in its rect.
 
         :param painter: the painter, its pen already set.
@@ -140,7 +138,7 @@ class RootRowDelegate(RootsItemDelegate):
         hint = super().sizeHint(option, index)
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
-        lines = QFontMetrics(opt.font).height() + QFontMetrics(RootRowDelegate.__folder_font(opt.font)).height()
+        lines = QFontMetrics(opt.font).height() + QFontMetrics(RootRowDelegate.folder_font(opt.font)).height()
         height = max(hint.height(), lines + 2 * ROW_PADDING)
         if not isinstance(index.data(RootsFolderModel.ICON_PATH_ROLE), str):
             return QSize(hint.width(), height)
@@ -148,7 +146,7 @@ class RootRowDelegate(RootsItemDelegate):
         return QSize(hint.width() + self.glyph_size(option, index, height) - ICON_SIZE, height)
 
     @staticmethod
-    def __folder_font(name_font: QFont) -> QFont:
+    def folder_font(name_font: QFont) -> QFont:
         """The font of the folder line: the name's, smaller.
 
         :param name_font: the name's font.

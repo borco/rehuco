@@ -364,6 +364,13 @@ shows an image its checksum does not cover:
     That setting means *start from an empty record when there is nothing at all to start from*, and a resource with a
     `.sfv` has something. A manifest that yields no usable entry yields no record either, and the run refuses as it
     would have before — the setting's meaning is untouched.
+  - **A resource with no content still gets its record, an empty one** (#685). A store item filed by a library scan
+    is metadata alone until its files arrive, and a run over it has nothing to hash. Generate, and a verify with
+    *Create missing checksum on verify* on, write a record that lists no file, which says *checked, and nothing to
+    check*: without it the next verify finds no record at all, and a move that verifies its original is refused. The
+    record is written once, and a later run that still finds nothing leaves the file alone. A run over a selection
+    of names starts no record, so a typo leaves nothing behind, and neither does a resource whose content could not
+    be read, which is not one with none.
   - **Only content is seeded, and *not there* is not the same as *excluded*.** A name that resolves to a file today's
     enumeration leaves out — a screenshot, a `Thumbs.db`, another record's bookkeeping — is dropped, because a
     predecessor was free to checksum files this app deliberately does not, and carrying such an entry would make every

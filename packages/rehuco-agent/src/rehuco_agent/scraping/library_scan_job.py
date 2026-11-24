@@ -11,6 +11,9 @@ full rescan's own position is saved as the queue is, on a pause or a close, so a
 *full rescan* walks the whole library again and does one thing more, marking the records no longer in the account
 ``online: false`` ([[assets#online-only]]); it never deletes.
 
+**A root removed from the catalog pauses the scan** before its next item (#685): the root's file and this machine's
+mapping of it outlive the removal, so the records would otherwise go on being written where no catalog lists them.
+
 **Three ways to stop, one way back.** A pause or an app close is seen inside the paced wait between two pages; a store
 that challenges the persona or forgets its login ends the run paused with the reason, the persona browser opened at
 the page; a store, a root or a disk that does not answer waits, or pauses for what only the user can fix. Resume runs
@@ -81,6 +84,10 @@ PRESENT_LINE: Final = "%s — %s: already there"
 
 GONE_LINE: Final = "%s is no longer in the account: marked offline."
 """The log line of a record a full rescan did not find in the library."""
+
+REMOVED_REASON: Final = "The root %s was removed from the catalog: add it again, then resume."
+"""Why a scan pauses once the catalog no longer lists its root: its records would be written where no catalog shows
+them, and the cursor, read from the root's rows, would be gone (#685)."""
 
 UNLISTED_LINE: Final = "%s was written, but the catalog places it under no root: it is listed at the next scan."
 """The log line of a record the cache would not enter, which the next run then finds at its place and enters."""
@@ -331,6 +338,7 @@ class LibraryScanJob(TaskJobBase):
             target.root_id, target.root_file, username=identity.current_username, checkpoint=self.checkpoint
         )
         writer.root_folder()
+        self.__require_listed(cache, target)
         cursor = self.__position if target.full_rescan else cache.library_cursor(site.name, target.root_id)
         rescan = (
             LibraryRescan(self.__dated(cache, site, target.root_id), self.__position) if target.full_rescan else None
@@ -347,6 +355,7 @@ class LibraryScanJob(TaskJobBase):
                 self.checkpoint()
                 # an item may load pages of its own, so a drop waits for one item at most, never a whole page of them
                 lease.yield_if_wanted()
+                self.__require_listed(cache, target)
                 if cursor.covers(entry.acquired, entry.site_id):
                     continue
                 if rescan is not None:
@@ -464,6 +473,18 @@ class LibraryScanJob(TaskJobBase):
         if path not in self.__licenses:
             self.__licenses[path] = session.read_license(path)
         return self.__licenses[path]
+
+    @staticmethod
+    def __require_listed(cache: CatalogCache, target: LibraryScanTarget) -> None:
+        """Stop the scan once the catalog no longer lists its root, asked before every item: Remove Root leaves the
+        root's file and this machine's mapping of it, so nothing else would notice.
+
+        :param cache: the catalog's cache.
+        :param target: what is scanned.
+        :raises JobPaused: the root was removed from the catalog.
+        """
+        if all(root.root_id != target.root_id for root in cache.roots()):
+            raise JobPaused(REMOVED_REASON % target.root_label)
 
     @staticmethod
     def __dated(cache: CatalogCache, site: LibrarySite, root_id: UUID) -> Iterator[tuple[str, str]]:

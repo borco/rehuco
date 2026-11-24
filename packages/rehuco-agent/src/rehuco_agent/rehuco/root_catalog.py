@@ -192,6 +192,12 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
         return self.__overlaps
 
     @property
+    def cache_path(self) -> Path | None:
+        """The open file's cache (``.rehudb``), which a job scanning into it opens itself; ``None`` while none is
+        open."""
+        return self.__catalog.cache_path
+
+    @property
     def editable(self) -> bool:
         """Whether a file is open and its roots may be edited: not one newer than this build."""
         return self.__file is not None and self.__file.lock_reason is None
