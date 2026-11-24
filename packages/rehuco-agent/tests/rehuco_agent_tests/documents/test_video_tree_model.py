@@ -12,7 +12,7 @@ from PySide6.QtCore import QModelIndex, Qt
 from pytest import mark
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.clock_text import clock_text
-from rehuco_agent.documents.files_progress import MISSING_TOOLTIP, FilesProgress
+from rehuco_agent.documents.files_progress import MISSING_TOOLTIP, PARTIAL_LENGTH_TOOLTIP, FilesProgress
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.documents.video_tree_model import (
     FAVORITE_COLUMN,
@@ -223,6 +223,40 @@ def test_the_length_column_reads_a_clock_and_is_empty_when_unknown(model: RehuDo
     assert cell(tree, "a.mp4", LENGTH_COLUMN) == clock_text(3_725_000) == "1:02:05"
     assert cell(tree, "01 Basics/b.mp4", LENGTH_COLUMN) == ""
     assert tree.index(0, LENGTH_COLUMN).data() == ""
+
+
+def test_a_folder_reads_the_total_length_of_the_videos_beneath_it(model: RehuDocumentModel) -> None:
+    """**Test steps:**
+
+    * record lengths for the two videos of a folder, and none for the video of the other
+    * verify the first folder reads their sum as a clock and the second, with nothing measured, reads nothing
+    * record the other folder's length and verify its cell follows without a new tree
+    """
+    model.record_progress("01 Basics/b.mp4", 1.0, 3600.0)
+    model.record_progress("01 Basics/c.mp4", 1.0, 125.0)
+    tree = tree_of(model)
+
+    folder, other = tree.index(0, LENGTH_COLUMN), tree.index(1, LENGTH_COLUMN)
+    assert folder.data() == clock_text(3_725_000) == "1:02:05"
+    assert folder.data(Qt.ItemDataRole.ToolTipRole) == ""
+    assert other.data() == ""
+
+    model.record_progress("02 More/d.mp4", 1.0, 60.0)
+    assert tree.index(1, LENGTH_COLUMN).data() == "1:00"
+
+
+def test_a_folder_with_an_unmeasured_video_reads_a_partial_length(model: RehuDocumentModel) -> None:
+    """**Test steps:**
+
+    * record a length for one of a folder's two videos
+    * verify the folder reads it with a ``+`` and the partial tooltip
+    """
+    model.record_progress("01 Basics/b.mp4", 1.0, 90.0)
+    tree = tree_of(model)
+
+    folder = tree.index(0, LENGTH_COLUMN)
+    assert folder.data() == "1:30+"
+    assert folder.data(Qt.ItemDataRole.ToolTipRole) == PARTIAL_LENGTH_TOOLTIP
 
 
 def test_a_starred_video_shows_a_star(model: RehuDocumentModel) -> None:

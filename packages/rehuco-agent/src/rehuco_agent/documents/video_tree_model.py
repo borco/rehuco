@@ -436,6 +436,18 @@ class VideoTreeModel(QAbstractItemModel):
             return progress.for_video(node.key, missing=node.missing)
         return None
 
+    def __row_length(self, node: VideoTreeNode) -> RowProgress | None:
+        """What a folder's Length cell says (#704).
+
+        :param node: the row.
+        :returns: the total length of the videos beneath a folder, or ``None`` for any other row and for a folder with
+            no video of known length.
+        """
+        progress, path = self.__progress, self.__model.path
+        if node.kind is not NodeKind.FOLDER or progress is None or path is None or node.key is None:
+            return None
+        return progress.length_of_folder(path.parent / node.key)
+
     def __length(self, node: VideoTreeNode) -> float | None:
         """A video's length.
 
@@ -463,6 +475,9 @@ class VideoTreeModel(QAbstractItemModel):
             progress = self.__row_progress(node)
             return progress.text if progress is not None else ""
         if column == LENGTH_COLUMN:
+            total = self.__row_length(node)
+            if total is not None:
+                return total.text
             length = self.__length(node)
             return clock_text(round(length * 1000)) if length is not None else ""
         if node.kind is NodeKind.VIDEO and node.key is not None and self.__model.is_favorite(node.key):
@@ -483,6 +498,9 @@ class VideoTreeModel(QAbstractItemModel):
         if column == PROGRESS_COLUMN:
             progress = self.__row_progress(node)
             return progress.tooltip if progress is not None else ""
+        if column == LENGTH_COLUMN:
+            total = self.__row_length(node)
+            return total.tooltip if total is not None else ""
         return ""
 
     def __font(self, node: VideoTreeNode, column: int) -> QFont | None:
