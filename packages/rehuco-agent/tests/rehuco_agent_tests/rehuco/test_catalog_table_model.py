@@ -86,7 +86,22 @@ def test_every_column_has_a_header_and_the_first_four_keep_their_places(model: C
 
     assert model.columnCount() == len(CatalogColumn) == len(COLUMNS)
     assert headers[:4] == ["Authors", "Title", "Type", "Path"]
-    assert "Format" in headers and "Kind" not in headers
+    assert headers.count("Format") == 1
+    assert headers[-13:] == [
+        "Kind",
+        "License",
+        "Formats",
+        "Compatibility",
+        "Source updated",
+        "Advertised version",
+        "Current version",
+        "Advertised size",
+        "Advertised triangles",
+        "Advertised texture size",
+        "Triangles",
+        "Texture size",
+        "Acquired",
+    ]
 
 
 def test_a_plain_browser_hides_the_url_the_root_and_the_type_specific_columns() -> None:
@@ -96,7 +111,8 @@ def test_a_plain_browser_hides_the_url_the_root_and_the_type_specific_columns() 
     **Test steps:**
 
     * read which columns start hidden
-    * verify the URL, the root and the six type-specific ones, and not the server
+    * verify the URL, the root, the six tutorial and reference pack ones and the thirteen an asset adds (#678), and
+      not the server
     """
     assert DEFAULT_HIDDEN == {
         CatalogColumn.URL,
@@ -107,6 +123,7 @@ def test_a_plain_browser_hides_the_url_the_root_and_the_type_specific_columns() 
         CatalogColumn.LEVEL,
         CatalogColumn.ADVERTISED_COUNT,
         CatalogColumn.CURRENT_COUNT,
+        *list(CatalogColumn)[-13:],
     }
 
 

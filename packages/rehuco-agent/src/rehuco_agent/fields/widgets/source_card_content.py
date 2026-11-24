@@ -1,4 +1,4 @@
-"""What one source card holds: Title, URL and Publisher line edits ([[field-schema#sources]], #391)."""
+"""What one source card holds: Title, URL, Publisher and Site id line edits ([[field-schema#sources]], #391)."""
 
 from typing import Any, Final, cast, override
 
@@ -6,6 +6,7 @@ from borco_pyside.widgets import toggle_dynamic_property
 from PySide6.QtCore import QEvent, QObject, Signal
 from PySide6.QtGui import QDropEvent
 from PySide6.QtWidgets import QFormLayout, QLabel, QWidget
+from rehuco_core import SITE_ID_KEY
 
 from ...scraping.url_drop import UrlDrop
 from ..author_url import is_http_author_url
@@ -88,7 +89,7 @@ class LinkDropPassFilter(QObject):
 
 
 class SourceCardContent(QWidget):
-    """One source, as three captioned line edits: a `CardContent` ([[plugins#field-toolkit]]).
+    """One source, as four captioned line edits: a `CardContent` ([[plugins#field-toolkit]]).
 
     **Merge, don't rebuild.** :meth:`item_values` starts from the source the card was shown, changing only
     the keys whose edit was touched: a key this card has no edit for is kept, and an emptied edit deletes its
@@ -99,11 +100,15 @@ class SourceCardContent(QWidget):
     not an http(s) one, are painted in the warning color with the reason as a tooltip; the value is kept
     either way. A card holding nothing yet is not flagged -- it is just started.
 
+    **The site id is the store's own id for the item** ([[assets#site-id]]): a scrape fills it, and it is shown here
+    to be read, corrected or typed in. A library scan finds a record by its publisher and this id, so the two are
+    edited as a pair.
+
     **The top card is the primary**, but nothing on the card says so: the captions stay plain, so dragging a
     card never makes a different one look changed.
 
-    A link dropped on the URL edit replaces its text (:class:`UrlEditDropFilter`); a link dropped on the title
-    or publisher edit reaches the dock behind the editor (:class:`LinkDropPassFilter`), and any other text
+    A link dropped on the URL edit replaces its text (:class:`UrlEditDropFilter`); a link dropped on any other
+    edit reaches the dock behind the editor (:class:`LinkDropPassFilter`), and any other text
     dropped on them is inserted.
 
     :param parent: optional Qt parent.
@@ -129,21 +134,17 @@ class SourceCardContent(QWidget):
         self.__title: Final = LineEdit(self)
         self.__url: Final = LineEdit(self)
         self.__publisher: Final = LineEdit(self)
-        self.__edits: Final = {
-            self.TITLE_KEY: self.__title,
-            self.URL_KEY: self.__url,
-            self.PUBLISHER_KEY: self.__publisher,
-        }
-        self.__captions: Final = [QLabel(text, self) for text in ("Title", "URL", "Publisher")]
+        self.__site_id: Final = LineEdit(self)
+        self.__captions: Final = [QLabel(text, self) for text in ("Title", "URL", "Publisher", "Site id")]
         self.setStyleSheet(self.WARNING_STYLESHEET)
         layout = QFormLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        for caption, edit in zip(self.__captions, self.__edits.values(), strict=True):
+        for caption, edit in zip(self.__captions, self.__edits().values(), strict=True):
             layout.addRow(caption, edit)
-        for edit in (self.__title, self.__publisher):
+        for edit in (self.title_edit, self.publisher_edit, self.site_id_edit):
             LinkDropPassFilter(edit)  # parented to the edit, which is what keeps it alive
-        UrlEditDropFilter(self.__url)
-        for edit in self.__edits.values():
+        UrlEditDropFilter(self.url_edit)
+        for edit in self.__edits().values():
             edit.value_changed.connect(self.__on_edited)
 
     @property
@@ -162,9 +163,26 @@ class SourceCardContent(QWidget):
         return self.__publisher
 
     @property
+    def site_id_edit(self) -> LineEdit:
+        """The Site id line edit."""
+        return self.__site_id
+
+    @property
     def captions(self) -> tuple[QLabel, ...]:
-        """The Title, URL and Publisher captions, in row order."""
+        """The Title, URL, Publisher and Site id captions, in row order."""
         return tuple(self.__captions)
+
+    def __edits(self) -> dict[str, LineEdit]:
+        """Each edit by the source key it shows, in row order.
+
+        :returns: the edits.
+        """
+        return {
+            self.TITLE_KEY: self.__title,
+            self.URL_KEY: self.__url,
+            self.PUBLISHER_KEY: self.__publisher,
+            SITE_ID_KEY: self.__site_id,
+        }
 
     def set_item(self, item: Any) -> None:
         """Show ``item`` without emitting :attr:`value_changed`.
@@ -173,7 +191,7 @@ class SourceCardContent(QWidget):
         """
         self.__item = dict(item)
         self.__shown = {key: value if isinstance(value, str) else "" for key, value in self.__item.items()}
-        for key, edit in self.__edits.items():
+        for key, edit in self.__edits().items():
             edit.set_value(self.__shown.get(key, ""))
         self.__flag()
 
@@ -183,7 +201,7 @@ class SourceCardContent(QWidget):
         :returns: the merged record.
         """
         item = dict(self.__item)
-        for key, edit in self.__edits.items():
+        for key, edit in self.__edits().items():
             text = edit.text()
             if text == self.__shown.get(key, ""):
                 continue
@@ -199,7 +217,7 @@ class SourceCardContent(QWidget):
 
         :returns: the delete button's buddy, then the insert button's.
         """
-        return self.__publisher, self.__title
+        return self.publisher_edit, self.title_edit
 
     def __on_edited(self) -> None:
         """Re-flag the source and pass the edit on."""
@@ -208,12 +226,13 @@ class SourceCardContent(QWidget):
 
     def __flag(self) -> None:
         """Flag the edits whose value the source is faulted for, with the reason as their tooltip."""
-        title, url, publisher = (edit.text() for edit in self.__edits.values())
+        title_edit, url_edit = self.__title, self.__url
+        title, url, publisher = title_edit.text(), url_edit.text(), self.__publisher.text()
         untitled = not title.strip() and bool(url.strip() or publisher.strip())
         bad_url = bool(url.strip()) and not is_http_author_url(url.strip())
         for edit, flagged, reason in (
-            (self.__title, untitled, self.MISSING_TITLE_REASON),
-            (self.__url, bad_url, INVALID_URL_REASON),
+            (title_edit, untitled, self.MISSING_TITLE_REASON),
+            (url_edit, bad_url, INVALID_URL_REASON),
         ):
             toggle_dynamic_property(edit, "warning", flagged)
             edit.setToolTip(reason if flagged else "")

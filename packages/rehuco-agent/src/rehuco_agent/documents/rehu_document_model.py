@@ -137,6 +137,11 @@ TYPE_FIELD_STR_MAP_NAMES: Final = ("compatibility",)
 """The type-field string-to-string maps: an asset's ``compatibility``, what it works with to the versions it
 works in ([[assets#block]], #701). A value that is not a string is skipped when read, as the record skips it."""
 
+EMPTY_IS_ABSENT_NAMES: Final = frozenset(("formats", "compatibility"))
+"""The type-field collections whose empty value removes the key, as ``None`` removes an optional scalar's: an asset's
+fields, every one of which is *not known* when missing ([[assets#block]]), so an emptied editor leaves no ``[]`` or
+``{}`` behind. ``level`` is not one: a tutorial's emptied levels stay an empty list, as they always were."""
+
 USER_FIELD_NAMES: Final = frozenset(("rating", "viewed", "todo", "keep", "favorite"))
 """The subset of the groups above that is **per-user** ([[field-schema#per-user-shared]], #99): these
 route through the document's per-user accessors (`RehuDocument.active_user_field` /
@@ -2911,7 +2916,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         document's own username, the rest inline in the block ([[field-schema#per-user-shared]],
         #99) -- the write half of :meth:`__read_field`'s split. ``None`` (only ever reachable for the
         optional-scalar members of :data:`TYPE_FIELD_INT_NAMES` and :data:`TYPE_FIELD_STR_NAMES` -- the
-        bool/str-list fields never hold it) **removes** the key rather than writing a JSON ``null``: for a
+        bool/str-list fields never hold it) **removes** the key rather than writing a JSON ``null``, and so does an
+        empty value of :data:`EMPTY_IS_ABSENT_NAMES`: for a
         per-user key that rule is core's (``set_active_user_field``, #410), for a shared one it is kept
         here, ``set_active_field`` being a generic value writer with no such rule of its own
         ([[field-schema#deferred-items]]). No-op while the
@@ -2925,7 +2931,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if key in USER_FIELD_NAMES:
             self.__document.set_active_user_field(key, value)
         else:
-            if value is None:
+            if value is None or (key in EMPTY_IS_ABSENT_NAMES and not value):
                 self.__document.remove_active_field(key)
             else:
                 self.__document.set_active_field(key, value)

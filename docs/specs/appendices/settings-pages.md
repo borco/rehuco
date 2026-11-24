@@ -135,7 +135,7 @@ offers: one list for every type, a row being the Locations grammar plus `/` betw
 per-type pages -- the list above, *Try it* below. A row that does not parse or names an unknown placeholder is **kept
 and flagged** with its reason, and not offered; so is a `*` row, which the editor always offers already and so never
 offers twice. It ships empty. *Try it* is
-a sample record (title, publisher, authors, year, count) and, for each valid row, the path it gives it through the
+a sample record (title, publisher, authors, year, count and site id; `{site}` is the publisher) and, for each valid row, the path it gives it through the
 Location Replacements and the name sanitizing as a root's destination does, or why it would offer no place (an empty
 placeholder with no fallback, a level that renders to nothing). Stored as a list under `root_layout_templates/templates`
 and the sample, a key per field, under `root_layout_try_it`. A root keeps the template text it was given: editing the

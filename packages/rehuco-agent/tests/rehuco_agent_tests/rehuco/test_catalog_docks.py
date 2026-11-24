@@ -1833,7 +1833,7 @@ def test_new_table_browser_offers_the_presets_and_one_starts_a_browser_as_it_say
 
     _, added = dock.browsers.browsers
     header = added.view.horizontalHeader()
-    preset = browser_presets()[-1]
+    preset = next(preset for preset in browser_presets() if preset.label == entry.text())
     assert dock.browsers.current_browser is added
     assert added.name == "Reference Images"
     assert added.filter_text == "type:reference_images"

@@ -345,7 +345,7 @@ def test_a_field_the_type_does_not_declare_is_skipped(qtbot: QtBot, image_downlo
     resolve(qtbot, doc_actions, drop())
 
     assert doc_model.title == "New Title"
-    assert doc_model.level == []
+    assert not doc_model.level
 
 
 def test_the_description_gets_the_stem_substituted(qtbot: QtBot, image_downloads: ImageDownloads) -> None:

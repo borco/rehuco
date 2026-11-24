@@ -63,7 +63,7 @@
   <customwidget>
    <class>StringMapEditor</class>
    <extends>QWidget</extends>
-   <header>rehuco_agent.rehuco.string_map_editor</header>
+   <header>rehuco_agent.fields.widgets.string_map_editor</header>
   </customwidget>
  </customwidgets>
  <resources/>

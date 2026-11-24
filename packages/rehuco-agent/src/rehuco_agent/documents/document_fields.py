@@ -13,7 +13,10 @@ from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
 from rehuco_core import (
+    ASSET_KINDS,
+    ASSET_LICENSES,
     CORE_FIELD_NAMES,
+    MAX_STORED_INTEGER,
     ContentUnreachableError,
     DurationProbeError,
     PluginRegistry,
@@ -165,13 +168,27 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("text", "title", {"viewer_only": True}),
     FieldSpec("authors", "authors"),
     FieldSpec("date", "released"),
+    FieldSpec("date", "source_updated"),
+    FieldSpec("date", "acquired", {"with_time": True}),
     FieldSpec("text", "publisher", {"viewer_only": True}),
     FieldSpec("collections", "collections"),
     FieldSpec("url", "url", {"viewer_only": True}),
+    FieldSpec("choice", "kind", {"choices": ASSET_KINDS}),
+    FieldSpec("text_choice", "license", {"choices": ASSET_LICENSES}),
+    FieldSpec("optional_url", "license_url", {"label": "License URL"}),
+    FieldSpec("text_list", "formats"),
+    FieldSpec("string_map", "compatibility", {"key_title": "Works with", "value_title": "Versions"}),
     FieldSpec("duration", "advertised_duration"),
     FieldSpec("duration_pair", "original_duration", partner_name="current_duration"),
     FieldSpec("count_claim", "advertised_count"),
     FieldSpec("content_count", "current_count"),
+    FieldSpec("optional_text", "advertised_version"),
+    FieldSpec("optional_text", "current_version"),
+    FieldSpec("size", "advertised_size"),
+    FieldSpec("optional_text", "advertised_triangles"),
+    FieldSpec("optional_text", "advertised_texture_size"),
+    FieldSpec("int", "triangles", {"minimum": 0, "maximum": MAX_STORED_INTEGER}),
+    FieldSpec("int", "texture_size", {"minimum": 0, "maximum": MAX_STORED_INTEGER}),
     FieldSpec("size_pair", "original_size", partner_name="current_size"),
     FieldSpec("bool", "complete"),
     FieldSpec("bool", "online"),
@@ -209,7 +226,9 @@ row) -- but where the *ordered* list is authored is still open
 here, in one list spanning every type, rather than being split across the declarations.
 
 Its members: the common-core title/authors/released/publisher/url, the Tutorial plugin-block duration
-fields, the ReferenceImages-only count pair, the common-core original/current size pair, the
+fields, the ReferenceImages-only count pair, the Asset-only fields (#678: its kind, license, formats and
+compatibility beside the url, its dates after ``released``, and its versions, advertised size and the counts the
+store states and the measured ones after the count pair), the common-core original/current size pair, the
 shared resource-type scalar flags, rating, the Tutorial-only ``level`` tags, the tag lists, and the two
 membership record lists
 ([[field-schema#resource-types]], [[field-schema#duration-size]], [[field-schema#sources]]) -- the

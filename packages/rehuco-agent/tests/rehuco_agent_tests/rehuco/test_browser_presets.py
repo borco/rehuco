@@ -2,7 +2,7 @@
 
 from rehuco_agent.rehuco.browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from rehuco_agent.rehuco.catalog_table_model import DEFAULT_HIDDEN, TYPE_COLUMNS, CatalogColumn
-from rehuco_core import TYPE_FIELD_COLUMNS, PluginRegistry, PluginSpec, catalog_type_fields
+from rehuco_core import TYPE_FIELD_NAMES, PluginRegistry, PluginSpec
 
 DURATIONS = frozenset(
     {
@@ -13,6 +13,7 @@ DURATIONS = frozenset(
     }
 )
 COUNTS = frozenset({CatalogColumn.ADVERTISED_COUNT, CatalogColumn.CURRENT_COUNT})
+ASSETS = frozenset(list(CatalogColumn)[-13:])
 
 
 def preset_labeled(label: str, presets: tuple[BrowserPreset, ...]) -> BrowserPreset:
@@ -21,21 +22,18 @@ def preset_labeled(label: str, presets: tuple[BrowserPreset, ...]) -> BrowserPre
 
 
 def test_every_type_column_is_a_field_the_cache_stores() -> None:
-    """The columns a preset turns a type's fields into are the cache's type-specific fields, in the cache's order --
-    all of them but an asset's, which the cache stores before the browser has columns for them (#676, #678).
+    """The columns a preset turns a type's fields into are every type-specific field the cache stores, in the cache's
+    order -- an asset's included, its formats last (#676, #678).
 
     **Test steps:**
 
-    * verify :data:`TYPE_COLUMNS` is keyed by the cache fields that are not an asset's, in the cache's order
+    * verify :data:`TYPE_COLUMNS` is keyed by the cache's type-specific fields, in the cache's order
     """
-    asset_fields = set(catalog_type_fields("asset"))
-
-    assert tuple(TYPE_COLUMNS) == tuple(field for field in TYPE_FIELD_COLUMNS if field not in asset_fields)
+    assert tuple(TYPE_COLUMNS) == TYPE_FIELD_NAMES
 
 
 def test_the_built_in_presets_are_the_default_then_one_per_type_with_columns() -> None:
-    """Default first, then Tutorial and Reference Images -- not Collection, which contributes no column, nor Asset,
-    whose cached fields have no column yet (#678).
+    """Default first, then Tutorial, Reference Images and Asset -- not Collection, which contributes no column.
 
     **Test steps:**
 
@@ -44,8 +42,13 @@ def test_the_built_in_presets_are_the_default_then_one_per_type_with_columns() -
     """
     presets = browser_presets()
 
-    assert [preset.label for preset in presets] == ["Default", "Tutorial Columns", "Reference Images Columns"]
-    assert [preset.name for preset in presets] == ["Browser", "Tutorial", "Reference Images"]
+    assert [preset.label for preset in presets] == [
+        "Default",
+        "Tutorial Columns",
+        "Reference Images Columns",
+        "Asset Columns",
+    ]
+    assert [preset.name for preset in presets] == ["Browser", "Tutorial", "Reference Images", "Asset"]
 
 
 def test_the_default_preset_is_a_plain_browser() -> None:
@@ -71,9 +74,9 @@ def test_a_typed_preset_shows_its_types_columns_hides_the_others_and_filters_by_
     tutorial = preset_labeled("Tutorial Columns", presets)
     reference = preset_labeled("Reference Images Columns", presets)
 
-    assert tutorial.hidden == COUNTS | {CatalogColumn.URL, CatalogColumn.ROOT}
+    assert tutorial.hidden == COUNTS | ASSETS | {CatalogColumn.URL, CatalogColumn.ROOT}
     assert tutorial.filter == "type:tutorial"
-    assert reference.hidden == DURATIONS | {CatalogColumn.URL, CatalogColumn.ROOT}
+    assert reference.hidden == DURATIONS | ASSETS | {CatalogColumn.URL, CatalogColumn.ROOT}
     assert reference.filter == "type:reference_images"
 
 
@@ -112,3 +115,41 @@ def test_with_no_type_contributing_columns_only_the_default_is_offered() -> None
     * verify only the default
     """
     assert browser_presets(PluginRegistry()) == (DEFAULT_PRESET,)
+
+
+def test_the_asset_preset_shows_only_the_column_a_library_is_sorted_by() -> None:
+    """An asset has thirteen columns and the preset shows one, Acquired: the others are left to the header menu, since a
+    table of them all would be too wide to read (#678). The other types' columns are hidden, and the line asks for the
+    type.
+
+    **Test steps:**
+
+    * build the presets and take Asset Columns
+    * verify every asset column but Acquired is hidden, and so are the tutorial's and the reference pack's
+    * verify the line is ``type:asset``
+    """
+    asset = preset_labeled("Asset Columns", browser_presets())
+
+    assert CatalogColumn.ACQUIRED not in asset.hidden
+    assert asset.hidden == (DEFAULT_HIDDEN | DURATIONS | COUNTS) - {CatalogColumn.ACQUIRED}
+    assert asset.filter == "type:asset"
+
+
+def test_a_typed_preset_leaves_out_a_column_that_asks_for_the_header_menu() -> None:
+    """A type whose every column leaves itself to the header menu shows none, so it is not offered; one with a column
+    that does not has that column shown.
+
+    **Test steps:**
+
+    * build the presets from a registry of two types, one declaring only an asset's kind and one also its acquisition
+    * verify only the second is offered, showing Acquired and not Kind
+    """
+    plugins = PluginRegistry(
+        (PluginSpec(("shelf",), field_names=("kind",)), PluginSpec(("ledger",), field_names=("kind", "acquired")))
+    )
+
+    presets = browser_presets(plugins)
+
+    assert [preset.label for preset in presets] == ["Default", "Ledger Columns"]
+    assert CatalogColumn.ACQUIRED not in presets[1].hidden
+    assert CatalogColumn.KIND in presets[1].hidden

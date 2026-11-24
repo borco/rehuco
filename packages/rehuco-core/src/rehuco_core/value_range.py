@@ -4,10 +4,10 @@ A store gives some figures as a band, not a number: Fab's triangle count of a fo
 longest side ``[1024, 2049)``. The record keeps them as the text a person reads at a glance and types by hand,
 **inclusive** at both ends: ``12``, ``1024-2048``, and several values or bands apart as a comma list, ``12,40-60``.
 Text is what a ``.rehu`` file holds; this module is the one place that writes it and reads it back, so a search can
-compare a field (``triangles < 15``) by the bounds of whatever the user typed or a scan wrote, and match when **any**
-value of the range does.
+compare a field (``advertised_triangles<15``) by the bounds of whatever the user typed or a scan wrote, and match
+when **any** value of the range does.
 
-A value is a non-negative whole number: a triangle count, a side in pixels.
+A value is a non-negative whole number of at most :data:`MAX_DIGITS` digits: a triangle count, a side in pixels.
 """
 
 import re
@@ -21,7 +21,11 @@ BAND_SEPARATOR: Final = "-"
 LIST_SEPARATOR: Final = ","
 """What sits between the values and bands of a list, ``12,40-60``."""
 
-SPAN_PATTERN: Final = re.compile(rf"(\d+)(?:{BAND_SEPARATOR}(\d+))?")
+MAX_DIGITS: Final = 18
+"""The most digits a value has: a count a store states is far below it, and a longer number would not fit the cache's
+integer columns (SQLite's reach nine quintillion), where one such text would stop a whole root's scan."""
+
+SPAN_PATTERN: Final = re.compile(rf"(\d{{1,{MAX_DIGITS}}})(?:{BAND_SEPARATOR}(\d{{1,{MAX_DIGITS}}}))?")
 """One value or one band, the digits of each end captured."""
 
 
@@ -101,6 +105,16 @@ class ValueRange:
         """
         ordered = tuple(sorted(set(spans)))
         return ValueRange(ordered) if ordered else None
+
+    @staticmethod
+    def bounds(text: str | None) -> tuple[int | None, int | None]:
+        """The smallest and the largest value of a stored text, as a search compares a field by them.
+
+        :param text: a range field's stored text, or ``None``.
+        :returns: its lower and upper bound; both ``None`` for no text or text that is no range.
+        """
+        found = None if text is None else ValueRange.parse(text)
+        return (None, None) if found is None else (found.lower, found.upper)
 
     @staticmethod
     def parse(text: str) -> ValueRange | None:

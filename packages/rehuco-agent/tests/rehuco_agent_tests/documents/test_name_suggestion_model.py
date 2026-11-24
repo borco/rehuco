@@ -146,6 +146,27 @@ def test_changed_fires_when_a_source_field_changes(
     assert fired == [True]
 
 
+def test_changed_fires_when_a_scrape_gives_the_source_its_site_id(
+    model: RehuDocumentModel, name_suggestions: NameSuggestionModel
+) -> None:
+    """A place built from ``{site_id}`` is offered as soon as a scrape names the id: the id is written into the
+    sources after every other field, so it is the sources' change that must announce it.
+
+    **Test steps:**
+
+    * connect to ``changed``, and remember what the suggestions' site id reads as
+    * add a scraped page with a site id, as a drop does
+    * verify the last announcement came with the id already on the document
+    """
+    seen: list[str | None] = []
+    name_suggestions.changed.connect(lambda: seen.append(model.document.site_id))
+
+    model.add_source("Fab", "https://www.fab.com/listings/abc", "abc")
+
+    assert seen
+    assert seen[-1] == "abc"
+
+
 def test_changed_does_not_fire_for_unrelated_fields(
     model: RehuDocumentModel, name_suggestions: NameSuggestionModel
 ) -> None:

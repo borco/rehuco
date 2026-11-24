@@ -4,7 +4,7 @@ from PySide6.QtCore import QModelIndex, Qt
 from PySide6.QtGui import QBrush
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.rehuco.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
+from rehuco_agent.fields.widgets.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
 
 
 @fixture(name="model")

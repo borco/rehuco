@@ -7,6 +7,7 @@ surfaces, and how its form is assembled live in the ``documents`` layer
 
 from .authors_field import AuthorsField
 from .boolean_field import BooleanField
+from .choice_field import ChoiceField
 from .collections_field import CollectionsField
 from .content_count_field import ContentCountField
 from .count_claim_field import CountClaimField
@@ -33,10 +34,15 @@ from .indexed_list_field import IndexedEntry, IndexedListField
 from .int_field import IntField
 from .learning_paths_field import LearningPathsField
 from .multiple_choice_field import MultipleChoiceField
+from .optional_text_field import OptionalTextField
+from .optional_url_field import OptionalUrlField
 from .path_field import PathField
 from .rating_field import RatingField
+from .size_field import SizeField
 from .size_pair_field import SizePairField
 from .sources_field import SourcesField
+from .string_map_field import StringMapField
+from .text_choice_field import TextChoiceField
 from .text_field import TextField
 from .text_list_field import TextListField
 from .type_field import TypeField
@@ -69,6 +75,12 @@ __all__ = [
     "IntField",
     "ContentCountField",
     "CountClaimField",
+    "OptionalTextField",
+    "OptionalUrlField",
+    "ChoiceField",
+    "TextChoiceField",
+    "StringMapField",
+    "SizeField",
     "TextListField",
     "IndexedListField",
     "IndexedEntry",

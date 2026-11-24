@@ -847,7 +847,7 @@ def test_the_try_it_preview_follows_a_saved_replacement_rule_change_live(page: L
     assert after == "Sample Publisher Sample Title"
 
 
-@mark.parametrize("resource_type", ["tutorial", "reference_images", "collection"])
+@mark.parametrize("resource_type", ["tutorial", "reference_images", "collection", "asset"])
 def test_each_type_reads_and_writes_only_its_own_entry(resource_type: str, qtbot: QtBot) -> None:
     """The same page class, parametrized by type, never leaks one type's patterns into another's
     (#322).
@@ -857,7 +857,7 @@ def test_each_type_reads_and_writes_only_its_own_entry(resource_type: str, qtbot
     * customize every other type's list on the shared settings
     * build a page for ``resource_type`` and verify it shows the shipped defaults, unaffected
     """
-    other_types = {"tutorial", "reference_images", "collection"} - {resource_type}
+    other_types = {"tutorial", "reference_images", "collection", "asset"} - {resource_type}
     settings = shared_location_templates_settings()
     settings.patterns = {other: ("{publisher} - {title}",) for other in other_types}
 

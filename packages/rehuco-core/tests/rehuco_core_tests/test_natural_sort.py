@@ -59,3 +59,17 @@ def test_paths_compare_component_by_component(first: str, second: str) -> None:
     * verify ``first`` sorts before ``second``
     """
     assert natural_path_sort_key(first) < natural_path_sort_key(second)
+
+
+def test_a_superscript_digit_is_text_not_a_number() -> None:
+    """``²`` is a digit to ``str.isdigit`` but no decimal, so ``int`` cannot read it: free text a person typed, a
+    version say, is text there and still sorts (#678).
+
+    **Test steps:**
+
+    * make the key of names holding a superscript, beside a name with a number
+    * verify none raises, and the number still sorts as a number
+    """
+    assert natural_sort_key("v1²")
+    assert natural_sort_key("²")
+    assert sorted(["v10", "v2²", "v2"], key=natural_sort_key) == ["v2", "v2²", "v10"]

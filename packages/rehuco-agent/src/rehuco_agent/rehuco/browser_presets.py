@@ -6,7 +6,7 @@ from typing import Final
 from rehuco_core import DEFAULT_PLUGIN_REGISTRY, CatalogField, PluginRegistry, catalog_type_fields
 
 from ..fields.type_field import type_label
-from .catalog_table_model import DEFAULT_HIDDEN, TYPE_COLUMNS, CatalogColumn
+from .catalog_table_model import COLUMNS, DEFAULT_HIDDEN, TYPE_COLUMNS, CatalogColumn
 from .filter_line import format_token
 
 DEFAULT_PRESET_LABEL: Final = "Default"
@@ -41,9 +41,10 @@ def browser_presets(plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> tuple[
     """Every preset New Table Browser offers: :data:`DEFAULT_PRESET`, then one per installed type that contributes
     columns (:func:`~rehuco_core.catalog_type_fields`), in the plugins' order.
 
-    A typed preset shows its type's columns, hides every other type's -- and whatever the plain browser hides -- and
-    puts a ``type:`` token on the line. Built from what each plugin declares, so a type that gains a column is offered
-    without a change here, and one that contributes none is not.
+    A typed preset shows its type's columns, but those that leave themselves to the header menu
+    (:attr:`~rehuco_agent.rehuco.catalog_table_model.ColumnSpec.preset_visible`), hides every other type's -- and
+    whatever the plain browser hides -- and puts a ``type:`` token on the line. Built from what each plugin declares,
+    so a type that gains a column is offered without a change here, and one that contributes none is not.
 
     :param plugins: the plugins installed here.
     :returns: the presets, in menu order.
@@ -51,8 +52,8 @@ def browser_presets(plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> tuple[
     every_type_column = frozenset(TYPE_COLUMNS.values())
     typed = []
     for key in plugins.main_keys:
-        # an asset's fields are cached before the browser has a column for them (#678)
-        shown = frozenset(TYPE_COLUMNS[field] for field in catalog_type_fields(key, plugins) if field in TYPE_COLUMNS)
+        columns = (TYPE_COLUMNS[field] for field in catalog_type_fields(key, plugins))
+        shown = frozenset(column for column in columns if COLUMNS[column].preset_visible)
         if shown:
             label = type_label(key)
             typed.append(

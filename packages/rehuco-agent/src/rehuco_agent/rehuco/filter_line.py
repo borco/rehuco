@@ -10,6 +10,11 @@ every token must match.
 A term is looked for in a title, a path, and part of any author, publisher or tag name, unless ``in:`` says where
 (#647): ``in:title`` keeps every term to titles, ``in:authors,publishers`` to those names, and several ``in:`` words add
 their places up. A field token still matches one value whole.
+
+**A comparison** (#678, [[assets#ranges]]) is a word of a range field, an operator and a whole number, with no space:
+``advertised_triangles<15``, ``advertised_texture_size>=2048``. A range matches when **any** value of it does, so
+``<15`` finds ``14``, ``10-20`` and ``12,40-60``. A word that names no range field is a free-text term as ever, and a
+``"quoted"`` one is a phrase.
 """
 
 import re
@@ -18,7 +23,15 @@ from dataclasses import dataclass
 from typing import Final
 
 from borco_core import read_value
-from rehuco_core import CatalogField, CatalogQuery, CatalogTextField
+from rehuco_core import (
+    CatalogComparison,
+    CatalogField,
+    CatalogOperator,
+    CatalogQuery,
+    CatalogRangeField,
+    CatalogTextField,
+    ValueRange,
+)
 
 SCOPE_TOKEN: Final = "in"
 """The token naming where free text is looked for, as a comma list of :class:`~rehuco_core.CatalogTextField` values."""
@@ -32,6 +45,23 @@ columns shown until #379 left that to the header menu. Dropped from a line on lo
 
 NAME_PATTERN: Final = re.compile(r"([A-Za-z_]+):")
 """A token's name and its colon, at the start of a word; matched case-insensitively against the known names."""
+
+COMPARISON_PATTERN: Final = re.compile(
+    "("
+    + "|".join(field.value for field in CatalogRangeField)
+    + ")("
+    + "|".join(re.escape(operator.value) for operator in sorted(CatalogOperator, key=lambda each: -len(each.value)))
+    + ")(.*)",
+    re.IGNORECASE,
+)
+"""A comparison as one word: a range field's name, an operator -- the two-character ones first, so ``<=`` is not ``<``
+followed by ``=`` -- and what is compared to, which may still be empty while it is typed."""
+
+NUMBER_PATTERN: Final = re.compile("[0-9]+")
+"""What a comparison is made to: ASCII digits only."""
+
+EMPTY_KIND_END: Final = '""'
+"""How a word ends that asks for an empty value, ``kind:""``: the one token whose empty value means something (#678)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,15 +107,18 @@ def parse_filter(text: str) -> ParsedFilter:
     terms: list[str] = []
     tokens: list[FilterToken] = []
     fields: list[tuple[CatalogField, str]] = []
+    comparisons: list[CatalogComparison] = []
     scope: set[CatalogTextField] = set()
     problems: list[str] = []
     for name, value, start, end in split_words(text):
         if name is None:
+            if text[start] != '"' and read_comparison(value, comparisons, problems):
+                continue
             if value:
                 terms.append(value)
             continue
         tokens.append(FilterToken(name, value, start, end))
-        if not value:
+        if not value and not (name == CatalogField.KIND.value and text[start:end].endswith(EMPTY_KIND_END)):
             continue
         if name == SCOPE_TOKEN:
             problems += read_scope(value, scope)
@@ -94,8 +127,30 @@ def parse_filter(text: str) -> ParsedFilter:
             fields.append((CatalogField(name), value))
         except ValueError:
             problems.append(f'Unknown field "{name}"')
-    query = CatalogQuery(tuple(terms), tuple(fields), frozenset(scope or CatalogTextField))
+    query = CatalogQuery(tuple(terms), tuple(fields), frozenset(scope or CatalogTextField), tuple(comparisons))
     return ParsedFilter(query, tuple(problems), tuple(tokens))
+
+
+def read_comparison(word: str, comparisons: list[CatalogComparison], problems: list[str]) -> bool:
+    """Read a word as a comparison of a range field, if it is one.
+
+    :param word: an unquoted word that is no ``name:value`` token.
+    :param comparisons: the comparisons read so far, added to.
+    :param problems: what could not be applied, added to for a number that is not one.
+    :returns: whether the word is a comparison, applied or not -- one whose number is not typed yet is ignored without a
+        word, as a token with no value is.
+    """
+    matched = COMPARISON_PATTERN.fullmatch(word)
+    if matched is None:
+        return False
+    field, operator, number = matched.groups()
+    if not number:
+        return True
+    if NUMBER_PATTERN.fullmatch(number) is None or ValueRange.parse(number) is None:
+        problems.append(f'"{number}" is not a whole number to compare {field.lower()} with')
+        return True
+    comparisons.append(CatalogComparison(CatalogRangeField(field.lower()), CatalogOperator(operator), int(number)))
+    return True
 
 
 def read_scope(value: str, scope: set[CatalogTextField]) -> list[str]:

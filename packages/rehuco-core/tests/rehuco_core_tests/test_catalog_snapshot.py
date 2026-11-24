@@ -15,9 +15,12 @@ from uuid import UUID, uuid4
 from pytest import TempPathFactory, fixture, mark
 from rehuco_core import (
     CatalogCache,
+    CatalogComparison,
     CatalogField,
     CatalogMatcher,
+    CatalogOperator,
     CatalogQuery,
+    CatalogRangeField,
     CatalogRecord,
     CatalogRow,
     CatalogSearchKey,
@@ -73,8 +76,23 @@ SCOPES: Final = (
 FOLDERS: Final = ("Art", "art/Sub", "Ärt", "Courses/Python", "courses/python 2", "x%y", "a_b", "Ünï", "ß/ss")
 """Folders a record sits under: case and accents apart, wildcards, segment edges (``python`` and ``python 2``)."""
 
-TYPES: Final = ("Tutorial", "tutorial", "REFERENCE_images", "Bóok")
-"""Types alike but for ASCII case, and one with an accent ``NOCASE`` does not fold."""
+TYPES: Final = ("Tutorial", "tutorial", "REFERENCE_images", "Bóok", "Asset", "asset")
+"""Types alike but for ASCII case, one with an accent ``NOCASE`` does not fold, and the asset's two spellings."""
+
+KINDS: Final = (None, "model", "Model", "unknown", "UNKNOWN", "pack", "Pack", "TEXTURE", "bóok")
+"""An asset's kinds, with the missing one, alike but for ASCII case, and one with an accent."""
+
+LICENSES: Final = (None, "fab-standard", "FAB-STANDARD", "cc-by-4.0", "fab-ue-only")
+"""An asset's licenses, with the missing one."""
+
+FORMATS: Final = ("fbx", "FBX", "glb", "blend", "Blénd", "ﬁsh")
+"""File formats, alike but for case, and one an accent or a ligature changes."""
+
+RANGES: Final = (None, "12", "1-14", "12-13", "14", "15", "10-20", "12,40-60", "1024,2048", "5000", "many", "")
+"""The advertised ranges a record states: a value, bands, a list, what no range reads as, and none."""
+
+NUMBERS: Final = (0, 1, 11, 12, 13, 14, 15, 16, 20, 40, 60, 1024, 2048, 4999, 5000)
+"""What a range is compared to: below, on and above the ends of the ranges above."""
 
 LABELS: Final = ("R1", "Two/Lab")
 """The roots' labels; the second holds a ``/``, so a ``folder`` token splits more than one way."""
@@ -112,14 +130,22 @@ def record(index: int, rng: random.Random) -> CatalogRecord:
     :param rng: where its choices come from.
     :returns: the record.
     """
+    type_name = rng.choice(TYPES)
+    scraped = type_name.lower() == "asset"
+    # an asset's own fields are drawn after every older one, so the records a seed makes keep their old fields
     return CatalogRecord(
         path=f"{rng.choice(FOLDERS)}/{rng.choice(WORDS)} {index}/r.rehu",
         kind=RecordKind.REHU,
-        type=rng.choice(TYPES),
+        type=type_name,
         title=" ".join(rng.sample(WORDS, 2)),
         authors=tuple(rng.sample(WORDS, rng.randint(0, 2))),
         tags=tuple(rng.sample(WORDS, rng.randint(0, 3))),
         publishers=tuple(rng.sample(WORDS, rng.randint(0, 1))),
+        asset_kind=rng.choice(KINDS) if scraped else None,
+        license=rng.choice(LICENSES) if scraped else None,
+        formats=tuple(rng.sample(FORMATS, rng.randint(0, 3))) if scraped else (),
+        advertised_triangles=rng.choice(RANGES) if scraped else None,
+        advertised_texture_size=rng.choice(RANGES) if scraped else None,
     )
 
 
@@ -196,8 +222,39 @@ def battery() -> list[CatalogQuery]:
     )
     queries += [CatalogQuery(tokens=((CatalogField.FOLDER, value),)) for value in folders]
     queries.append(CatalogQuery(terms=("cafe", "1"), tokens=((CatalogField.TYPE, "tutorial"),)))
+    queries += asset_battery()
     combined = ((CatalogField.FOLDER, "R1/Art"), (CatalogField.AUTHORS, "plain"), (CatalogField.TAGS, "abc"))
     queries.append(CatalogQuery(tokens=combined))
+    return queries
+
+
+def asset_battery() -> list[CatalogQuery]:
+    """The queries an asset's own fields add (#678): the kind, license and format tokens, and a comparison of every
+    operator on both ranges.
+
+    :returns: the queries.
+    """
+    queries: list[CatalogQuery] = []
+    for kind in ("unknown", "UNKNOWN", "model", "MODEL", "pack", "texture", "bóok", "BÓOK", "", "none"):
+        queries.append(CatalogQuery(tokens=((CatalogField.KIND, kind),)))
+    queries.append(CatalogQuery(tokens=((CatalogField.KIND, "unknown"), (CatalogField.TYPE, "tutorial"))))
+    for license_id in ("fab-standard", "FAB-STANDARD", "cc-by-4.0", "fab-ue-only", "nothing"):
+        queries.append(CatalogQuery(tokens=((CatalogField.LICENSE, license_id),)))
+    for name in ("fbx", "FBX", "glb", "blend", "blénd", "BLEND", "fish", "ﬁsh", "none"):
+        queries.append(CatalogQuery(tokens=((CatalogField.FORMATS, name),)))
+    queries.append(CatalogQuery(terms=("fbx",)))
+    for field in CatalogRangeField:
+        for operator in CatalogOperator:
+            queries += [CatalogQuery(comparisons=(CatalogComparison(field, operator, number),)) for number in NUMBERS]
+    queries.append(
+        CatalogQuery(
+            tokens=((CatalogField.KIND, "model"), (CatalogField.FORMATS, "fbx")),
+            comparisons=(
+                CatalogComparison(CatalogRangeField.ADVERTISED_TRIANGLES, CatalogOperator.GREATER, 11),
+                CatalogComparison(CatalogRangeField.ADVERTISED_TRIANGLES, CatalogOperator.LESS, 41),
+            ),
+        )
+    )
     return queries
 
 
@@ -208,7 +265,7 @@ def query_id(query: CatalogQuery) -> str:
     :param query: the query.
     :returns: its terms, tokens and places, the places sorted.
     """
-    return f"{query.terms}-{query.tokens}-{sorted(query.scope)}"
+    return f"{query.terms}-{query.tokens}-{sorted(query.scope)}-{query.comparisons}"
 
 
 @mark.parametrize("query", battery(), ids=query_id)

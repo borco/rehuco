@@ -19,9 +19,9 @@ class SingleChoiceComboBox(QComboBox):
     :attr:`value` reports the selected item's data; :meth:`set_value` selects the item whose data
     matches, under a signal-blocking guard so a bound model change never bounces back out as an edit.
 
-    No consumer today, and kept on purpose: the type field it was built for moved to
-    `SingleChoiceRadioButtons` (#310), whose docstring says radios stop scaling past a handful of
-    entries -- this is the widget that row returns to if the plugin registry ever grows the type list.
+    The type field it was built for moved to `SingleChoiceRadioButtons` (#310), whose docstring says radios stop
+    scaling past a handful of entries; this is the widget a closed list that long is chosen from, as an asset's
+    ``kind`` is (#678).
 
     :param choices: the fixed, ordered ``(value, label)`` pairs; the value is stored, the label shown.
     :param parent: optional Qt parent.

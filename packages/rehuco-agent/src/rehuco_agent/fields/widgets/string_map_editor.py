@@ -12,7 +12,7 @@ from PySide6.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelInde
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QAbstractItemView, QComboBox, QHeaderView, QStyleOptionViewItem, QWidget
 
-from ..item_action_icons import apply_item_action_icons
+from ...item_action_icons import apply_item_action_icons
 from .string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
 
 type ModelIndex = QModelIndex | QPersistentModelIndex

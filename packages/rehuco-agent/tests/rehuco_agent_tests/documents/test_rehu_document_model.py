@@ -2652,7 +2652,7 @@ def test_model_coerces_malformed_level_to_the_default() -> None:
     * verify only the string items survive
     """
     non_list_document = RehuDocument({"type": "Tutorial", "tutorial": {"level": "beginner"}})
-    assert RehuDocumentModel(non_list_document).level == []
+    assert not RehuDocumentModel(non_list_document).level
 
     mixed_document = RehuDocument({"type": "Tutorial", "tutorial": {"level": ["beginner", 3]}})
     assert RehuDocumentModel(mixed_document).level == ["beginner"]
@@ -4379,6 +4379,29 @@ def test_clearing_an_optional_asset_field_removes_its_key() -> None:
     model.advertised_size = None
 
     assert not {"license", "advertised_size"} & set(document.active_block)
+
+
+def test_emptying_an_assets_formats_or_compatibility_removes_its_key() -> None:
+    """An emptied list or map leaves the block as a cleared scalar does: a missing field is *not known*, and ``[]`` or
+    ``{}`` in the file would say no more (#678). A tutorial's emptied levels stay an empty list.
+
+    **Test steps:**
+
+    * over an asset holding formats and a compatibility entry, empty both
+    * verify neither key is in the block, both read empty, and the model is dirty
+    * over a tutorial holding a level, empty it and verify the key stays, as an empty list
+    """
+    document = RehuDocument({"type": "asset", "asset": {"formats": ["fbx"], "compatibility": {"unreal": "5.5"}}})
+    model = RehuDocumentModel(document)
+
+    model.formats = []
+    model.compatibility = {}
+
+    assert not {"formats", "compatibility"} & set(document.active_block)
+    assert (model.formats, model.compatibility, model.dirty) == ([], {}, True)
+    tutorial = RehuDocument({"type": "tutorial", "tutorial": {"level": ["beginner"]}})
+    RehuDocumentModel(tutorial).level = []
+    assert tutorial.active_block["level"] == []
 
 
 # endregion

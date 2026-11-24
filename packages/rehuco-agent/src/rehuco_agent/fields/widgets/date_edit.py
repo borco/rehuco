@@ -36,7 +36,14 @@ class DateEdit(QWidget):
     unparsable, the canonical string otherwise) -- :meth:`__on_text_changed` is what maps a blank
     parse to the widget's ``None``, so "cleared" and "still typing" stay distinguishable.
 
+    **A UTC time can be kept** (``with_time``, #678): an asset's ``acquired`` is a time where the store gives one
+    (``2024-05-03T12:34:56.789123Z``), and its text is what a library scan resumes from, so a keystroke must never cut
+    it to its date. With it, text holding a ``T`` or a ``:`` is read as a whole UTC time or not at all -- written
+    nothing while it is still being typed -- and kept to six fractional digits; text without them reads as a date,
+    as it always does, which is how the time is dropped on purpose. The calendar still picks a date.
+
     :param parent: optional Qt parent.
+    :param with_time: whether a stored UTC time is read and kept as it is.
     """
 
     NUMERIC_PATTERN: Final = re.compile(r"^(\d{4})(?:([./-])(\d{1,2})(?:\2(\d{1,2}))?)?$")
@@ -44,12 +51,16 @@ class DateEdit(QWidget):
     ``-``) used consistently between parts. Handled directly, never handed to :mod:`dateutil`, which
     silently drops the month from a dot-separated ``YYYY.MM`` (confirmed empirically, #24)."""
 
+    TIME_PATTERN: Final = re.compile(r"^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?Z$")
+    """A UTC time as the store gives it: a date, a time, up to six fractional digits and a ``Z``."""
+
     value = SimpleProperty[str | None](None)
     """The current canonical ``YYYY``/``YYYY-MM``/``YYYY-MM-DD`` string, or ``None`` when unreleased/
     unknown; ``set_value`` is the slot-usable setter ([[plugins#field-toolkit]] bindings)."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, with_time: bool = False) -> None:
         super().__init__(parent)
+        self.__with_time: Final = with_time
         self.__line_edit: Final = QLineEdit(self)
         self.__calendar: QCalendarWidget | None = None
         """Lazily built on first use and reused after -- see :meth:`__ensure_calendar`."""
@@ -84,6 +95,24 @@ class DateEdit(QWidget):
         if numeric is not None:
             return numeric
         return cls.__parse_human(text)
+
+    @classmethod
+    def parse_time(cls, text: str) -> str | None:
+        """Read a UTC time as an asset's ``acquired`` is stored.
+
+        :param text: the text, spaces around it allowed.
+        :returns: the time with six fractional digits, ``2024-05-03T12:34:56.789000Z``; ``None`` for text that is not a
+            whole UTC time or not a real one.
+        """
+        match = cls.TIME_PATTERN.match(text.strip())
+        if not match:
+            return None
+        day, clock, fraction = match.groups()
+        try:
+            datetime.strptime(f"{day}T{clock}", "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+        return f"{day}T{clock}.{(fraction or '').ljust(6, '0')}Z"
 
     @classmethod
     def __parse_numeric(cls, text: str) -> str | None:
@@ -150,9 +179,19 @@ class DateEdit(QWidget):
 
         :param text: the line edit's current text.
         """
-        parsed = self.parse(text)
+        parsed = self.__read(text)
         if parsed is not None:
             self.value = parsed if parsed else None
+
+    def __read(self, text: str) -> str | None:
+        """What the line's text says: a date, or -- where a time is kept and the text has one -- a UTC time.
+
+        :param text: the line edit's text.
+        :returns: the stored form, ``""`` for blank text, and ``None`` for text that is not (yet) one.
+        """
+        if self.__with_time and ("T" in text or ":" in text):
+            return self.parse_time(text)
+        return self.parse(text)
 
     def __open_calendar(self) -> None:
         """Open the popup calendar under the line edit; picking a date writes the full date to
@@ -216,6 +255,6 @@ class DateEdit(QWidget):
         :param value: the new value, or ``None`` when unreleased/unknown.
         """
         canonical = value if value is not None else ""
-        if self.parse(self.__line_edit.text()) != canonical:
+        if self.__read(self.__line_edit.text()) != canonical:
             with QSignalBlocker(self.__line_edit):
                 self.__line_edit.setText(canonical)

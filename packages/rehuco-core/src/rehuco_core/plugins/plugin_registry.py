@@ -129,6 +129,27 @@ ASSET_KINDS: Final = (
 """The closed list an asset's ``kind`` is one of ([[assets#kind]]), in the order an editor offers them. ``unknown`` is a
 real value -- what a scan writes when it cannot classify an item -- not the absent one."""
 
+FAB_STANDARD_LICENSE: Final = "fab-standard"
+"""Fab's Standard License, Personal and Professional tiers alike ([[assets#licenses]])."""
+
+FAB_UE_ONLY_LICENSE: Final = "fab-ue-only"
+"""The old Unreal Engine Marketplace license, limited to Unreal Engine, with no terms page."""
+
+FAB_UEFN_REFERENCE_ONLY_LICENSE: Final = "fab-uefn-reference-only"
+"""The Standard License's *UEFN - Reference only* tier."""
+
+CC_BY_LICENSE: Final = "cc-by-4.0"
+"""Creative Commons Attribution 4.0."""
+
+ASSET_LICENSES: Final = (
+    FAB_STANDARD_LICENSE,
+    CC_BY_LICENSE,
+    FAB_UE_ONLY_LICENSE,
+    FAB_UEFN_REFERENCE_ONLY_LICENSE,
+)
+"""The short ids a scan writes as an asset's ``license``, which the editor offers; any other text can still be typed,
+since a license no list names has an id of its own ([[assets#licenses]])."""
+
 CORE_PLUGIN: Final = PluginSpec((CORE_BLOCK_KEY,), field_names=CORE_FIELD_NAMES)
 """The common core's own identity ([[data-model#rehu-format]]) -- descriptive only, **never registered**.
 
@@ -173,12 +194,13 @@ color: Teal 600. Which fields the type eventually gains is deferred until a real
 
 ASSET_PLUGIN: Final = PluginSpec(
     ("asset", "Asset"),
+    color="#D84315",
     field_names=("rating", "online", "favorite", "collections", *ASSET_FIELD_NAMES),
 )
 """The asset type ([[assets#block]]): something acquired from a store to be used in other work. Takes ``rating``,
 ``favorite``, ``online`` and ``collections`` (a store bundle is a collection) from the shared resource fields and
 leaves ``complete``, ``keep`` and ``learning_paths`` out -- they describe content being studied, and an asset is
-not. Declares no badge color yet, so its badge takes the theme's selection colors ([[plugins#badge-colors]])."""
+not. Badge color: Deep Orange 800 ([[plugins#badge-colors]])."""
 
 BUILTIN_PLUGINS: Final = (TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN, COLLECTION_PLUGIN, ASSET_PLUGIN)
 """The declarations this build ships. Deliberately **excludes** :data:`~rehuco_core.CORE_PLUGIN`: the core

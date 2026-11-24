@@ -1,12 +1,13 @@
 """How a table browser's numeric and date cells read (#379, #623): the model holds the value, a delegate words it."""
 
-from datetime import datetime, tzinfo
+from datetime import tzinfo
 from typing import Final, override
 
 import humanize
 from borco_pyside.widgets import RowBandDelegate
 from PySide6.QtCore import QLocale, QObject
 
+from ..fields.local_time import local_time_text
 from ..fields.widgets.duration_edit import DurationEdit
 from .catalog_table_model import CatalogColumn
 
@@ -31,10 +32,6 @@ class DurationDelegate(RowBandDelegate):
         return super().displayText(value, locale)
 
 
-LOCAL_TIME_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
-"""How :class:`LocalTimeDelegate` spells a moment, ``2026-11-08 17:32:54``."""
-
-
 class LocalTimeDelegate(RowBandDelegate):
     """A UTC timestamp, ``2026-11-08T15:32:54Z``, in local time, ``2026-11-08 17:32:54`` (#623).
 
@@ -51,22 +48,19 @@ class LocalTimeDelegate(RowBandDelegate):
 
     @override
     def displayText(self, value: object, locale: QLocale | QLocale.Language) -> str:  # noqa: N802  (Qt API name)
-        if isinstance(value, str):
-            try:
-                moment = datetime.fromisoformat(value)
-            except ValueError:
-                return super().displayText(value, locale)
-            if moment.tzinfo is not None:
-                return moment.astimezone(self.__tz).strftime(LOCAL_TIME_FORMAT)
-        return super().displayText(value, locale)
+        text = local_time_text(value, self.__tz) if isinstance(value, str) else None
+        return text if text is not None else super().displayText(value, locale)
 
 
 COLUMN_DELEGATES: Final = {
     CatalogColumn.SIZE: SizeDelegate,
+    CatalogColumn.ADVERTISED_SIZE: SizeDelegate,
     CatalogColumn.ADVERTISED_DURATION: DurationDelegate,
     CatalogColumn.ORIGINAL_DURATION: DurationDelegate,
     CatalogColumn.CURRENT_DURATION: DurationDelegate,
     CatalogColumn.RELEASED: LocalTimeDelegate,
     CatalogColumn.UPDATED: LocalTimeDelegate,
+    CatalogColumn.SOURCE_UPDATED: LocalTimeDelegate,
+    CatalogColumn.ACQUIRED: LocalTimeDelegate,
 }
 """The columns whose values a delegate words; every other column reads as its value."""

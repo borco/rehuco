@@ -36,7 +36,8 @@ from .rehu_document_model import RehuDocumentModel
 
 NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released", "advertised_count")
 """The fields a pattern from `LocationTemplatesSettings` interpolates; a change to any of them re-emits
-:attr:`NameSuggestionModel.changed` so a `PathField` re-pulls the suggestions live."""
+:attr:`NameSuggestionModel.changed` so a `PathField` re-pulls the suggestions live. The primary source's ``site_id``
+is one more, with no property of its own: the model follows it through the sources."""
 
 FALLBACK_RESOURCE_TYPE: Final = "tutorial"
 """What a foreign or typeless document's suggestions fall back to (#322): a type no installed plugin here
@@ -144,6 +145,10 @@ class NameSuggestionModel(QObject):
         """The roots that cannot be reached, as last asked; ``None`` until asked, and again once the catalog says its
         roots or their reach changed. Kept because asking reads the cache (~2 ms), and the place is asked for on every
         keystroke in a field it is built from."""
+        self.__site_id = model.document.site_id
+        """The primary source's site id as last announced: the sources change with every edit of a title or a
+        publisher too, which those fields announce themselves."""
+        model.sources_changed.connect(self.__on_sources_changed)  # type: ignore[attr-defined]
         for name in NAME_SUGGESTION_SOURCE_FIELDS:
             signal_name = SimpleProperty.notify_signal_name(type(model), name)
             getattr(model, signal_name).connect(self.__on_source_field_changed)
@@ -342,6 +347,16 @@ class NameSuggestionModel(QObject):
         """
         self.__unreachable = None
         self.changed.emit()
+
+    def __on_sources_changed(self) -> None:
+        """Announce a primary source's ``site_id`` that changed (#680): a scrape writes it into the sources after
+        every other field, so without this a place built from ``{site_id}`` was not offered until something else
+        changed. Any other change of the sources is announced by the field it shows in, or changes no name.
+        """
+        site_id = self.__model.document.site_id
+        if site_id != self.__site_id:
+            self.__site_id = site_id
+            self.changed.emit()
 
     def __on_source_field_changed(self) -> None:
         """Announce that a field the suggestions are built from changed.

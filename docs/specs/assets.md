@@ -15,9 +15,10 @@
 - [#679: feat(agent): Open in Web Browser on the browser's selection](https://github.com/borco/rehuco/issues/679)
 - [#688: feat(agent): the license subdock, Refresh License, and the sidecar's path in Copy as JSON](https://github.com/borco/rehuco/issues/688)
 
-**Only the block, the cache and the license sidecar are built** (#674, #676, #677): `asset` is a declared type whose
-fields are read and checked as §19.1 says and kept in the catalog cache, one column each and `formats` in a link table
-of its own; no editor, browser column, filter or scan uses them yet. The rest is the design for this fourth resource type: something
+**The block, the cache, the license sidecar, the editor and the browser are built** (#674, #676, #677, #678): `asset` is a
+declared type whose fields are read and checked as §19.1 says, kept in the catalog cache, one column each and `formats` in
+a link table of its own, shown and edited beside a record's other fields, and a column, a preset and a filter token of
+the browsers. The rest is the design for this fourth resource type: something
 acquired from a store to be used in other work, such as a 3D model, a texture set, an animation pack, an audio pack, a
 Blender add-on or an Unreal plugin. It answers the *3D objects as a resource category* question
 [[appendices.open-questions#still-open]] left open.
@@ -117,10 +118,15 @@ glance and types by hand**, inclusive at both ends: a value alone (`12`), a band
 bands apart as a comma list, ascending (`1024,2048`, `12,40-60`), written and read only by
 `rehuco_core.ValueRange`. A count the store states no range for, or one with nothing inside it, is left out.
 A text typed that is no range stays as it was typed: it never locks the document, and a search finds nothing in it.
+A value has at most 18 digits (`rehuco_core.value_range.MAX_DIGITS`); a longer one is no value, since the cache's integers could not
+hold it.
 
-**A search compares by the bounds** (#678's): `triangles < 15` finds a record when **any** value of its range is
-below 15, so `14`, `12-13`, `1-14` and `10-20` all match; `> 15` finds one whose largest value is above it. The
-cache keeps the two bounds of each field in columns of their own, so the comparison is an integer one.
+**A search compares by the bounds** (#678): `advertised_triangles<15` finds a record when **any** value of its range is
+below 15, so `14`, `12-13`, `1-14` and `10-20` all match; `>15` finds one whose largest value is above it, and `<=` and
+`>=` read the same two ends. The word is the field's full name, an operator and a whole number, with no space, since
+the line splits on them; `triangles<15` stays free text, the measured count not being a range. The cache keeps the two
+bounds of each field in columns of their own (schema v11), `NULL` where the text is no range, so the comparison is an
+integer one and a text that is no range is never found.
 
 ### §19.1.2 `kind`
 
@@ -133,7 +139,10 @@ One value from a closed list: `model`, `pack`, `character`, `animation`, `materi
 - A `decal` is a texture projected onto a surface: cracks, stains, road markings. A `brush` is a sculpting or painting
   brush, or an alpha. Fab lists both as categories of their own.
 - A missing `kind` reads as not known. The kind filter still finds such a record both as `unknown` and as an empty
-  kind, so the unsorted items are one filter away whichever way they came to be.
+  kind, so the unsorted items are one filter away whichever way they came to be: `kind:unknown` finds an asset with
+  that kind or none, `kind:""` an asset with none, and both only among assets, a tutorial's kind being missing for good.
+  The other tokens an asset adds are `license:` and `formats:`, each matching one value whole as the other field tokens do
+  (`license` as ASCII folds it, `formats` as a tag does).
 - A MetaHuman is a `character`. A Blender add-on or an Unreal code plugin is a `plugin`; a standalone program is a
   `tool`; a sample project is a `template`.
 - **`unknown` is a real value, not a missing one.** A scan that cannot classify an item writes `unknown`, so the items
@@ -206,6 +215,8 @@ it.
 
 - **It is the match key for a rescan.** A store renames items and serves one item under several URLs; the id is the
   one thing that stays.
+- **It is a row of the source's card in the editor**, under the publisher: read, corrected, typed in for a source a
+  scrape never filled, or emptied, which removes the key.
 - **The cache indexes `(site, site_id)`**, where the site is the source's `publisher`, which a scraper fills with
   its `site_name` ([[acquisition-tooling#scraper-registry]]), compared ignoring case, so finding the record for a
   listing is one lookup and never a walk. A source has no site key of its own: a publisher edited by hand stops the
@@ -262,7 +273,8 @@ adds the next.
   enumerates a record's files.
 - **`rehuco-agent`:** the field-to-widget map in `documents/document_fields.py`; `TYPE_DOCK_NAMES`; the browser's
   columns and presets; the root layouts editor; the per-type settings pages and location templates; `type_label`;
-  `SCRAPED_FIELD_NAMES` and the scrape result schema.
+  `SCRAPED_FIELD_NAMES` and the scrape result schema. A type that adds filterable fields adds them to the filter line's
+  `CatalogField` and to the in-memory matcher (`catalog_snapshot.py`), which the contract test holds to the cache's.
 - **Specs:** the badge table in [[plugins#badge-colors]] and the mapping table in [[field-schema#resource-types]].
 
 ## §19.5 Deferral
