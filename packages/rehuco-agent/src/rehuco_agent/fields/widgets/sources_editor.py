@@ -6,7 +6,7 @@ from typing import Any, Final
 from borco_pyside.widgets import Card, CardListEditor, CardListModel, CardStateStyle
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QWidget
-from rehuco_core import duplicate_source_rows
+from rehuco_core import SITE_ID_KEY, duplicate_source_rows
 
 from ...item_action_icons import apply_card_icons
 from ..colors import FLAGGED_COLOR
@@ -79,14 +79,19 @@ class SourcesEditor(CardListEditor):
 
     @staticmethod
     def is_blank(item: Mapping[str, Any]) -> bool:
-        """Whether a source holds none of a title, an address and a publisher.
+        """Whether a source holds none of a title, an address, a publisher and a site id.
 
         :param item: the source record.
-        :returns: whether all three are missing or empty.
+        :returns: whether all four are missing or empty.
         """
         return not any(
             isinstance(value := item.get(key), str) and value.strip()
-            for key in (SourceCardContent.TITLE_KEY, SourceCardContent.URL_KEY, SourceCardContent.PUBLISHER_KEY)
+            for key in (
+                SourceCardContent.TITLE_KEY,
+                SourceCardContent.URL_KEY,
+                SourceCardContent.PUBLISHER_KEY,
+                SITE_ID_KEY,
+            )
         )
 
     @staticmethod

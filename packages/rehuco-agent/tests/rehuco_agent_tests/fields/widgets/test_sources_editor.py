@@ -102,19 +102,65 @@ def two_sources() -> RehuDocumentModel:
 
 
 def test_one_card_per_source_with_plain_captions(qtbot: QtBot, two_sources: RehuDocumentModel) -> None:
-    """Each source is a card, captioned Title, URL and Publisher, none of them bold -- the primary is not
+    """Each source is a card, captioned Title, URL, Publisher and Site id, none of them bold -- the primary is not
     marked on the card, so dragging never makes a different card look changed.
 
     **Test steps:**
 
     * build the editor over two sources
-    * verify two cards, each with plain Title/URL/Publisher captions
+    * verify two cards, each with plain Title/URL/Publisher/Site id captions
     """
     editor = make_editor(qtbot, two_sources)
 
     assert len(editor.cards) == 2
     assert not any(caption.font().bold() for row in (0, 1) for caption in content(editor, row).captions)
-    assert [caption.text() for caption in content(editor, 0).captions] == ["Title", "URL", "Publisher"]
+    assert [caption.text() for caption in content(editor, 0).captions] == ["Title", "URL", "Publisher", "Site id"]
+
+
+def test_a_sources_site_id_is_shown_corrected_typed_in_and_cleared(qtbot: QtBot) -> None:
+    """The store's id for the item is a row of the card: what a scrape filled is shown and can be corrected, one can
+    be typed for a source that has none, and emptying it removes the key ([[assets#site-id]]).
+
+    **Test steps:**
+
+    * build the editor over a source with a site id and one without
+    * verify the first card shows its id and the second none
+    * correct the first, type one into the second, then empty the first
+    * verify the document's sources after each, the other keys untouched, and the primary's id as the document reads it
+    """
+    model = make_model(
+        {"title": "Rock", "url": "https://store.example/a", "publisher": "Fab", "site_id": "abc"},
+        {"title": "Mirror", "url": "https://other.example/a"},
+    )
+    editor = make_editor(qtbot, model)
+    first, second = content(editor, 0), content(editor, 1)
+    assert (first.site_id_edit.text(), second.site_id_edit.text()) == ("abc", "")
+
+    first.site_id_edit.setText("abd")
+    assert model.document.site_id == "abd"
+
+    second.site_id_edit.setText("m-1")
+    assert model.document.sources[1] == {"title": "Mirror", "url": "https://other.example/a", "site_id": "m-1"}
+
+    first.site_id_edit.setText("")
+    assert model.document.site_id is None
+    assert "site_id" not in model.document.sources[0]
+    assert model.document.sources[0]["publisher"] == "Fab"
+
+
+def test_a_card_holding_only_a_site_id_is_kept(qtbot: QtBot) -> None:
+    """A card started from its site id is a source being written, not a blank one to leave out.
+
+    **Test steps:**
+
+    * build the editor over no source and type a site id into the blank card
+    * verify the value holds that one source
+    """
+    editor = make_editor(qtbot, make_model())
+
+    content(editor, 0).site_id_edit.setText("abc")
+
+    assert editor.value == [{"site_id": "abc"}]
 
 
 def test_moving_a_card_to_the_top_makes_it_the_primary(qtbot: QtBot, two_sources: RehuDocumentModel) -> None:

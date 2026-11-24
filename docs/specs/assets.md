@@ -215,6 +215,8 @@ it.
 
 - **It is the match key for a rescan.** A store renames items and serves one item under several URLs; the id is the
   one thing that stays.
+- **It is a row of the source's card in the editor**, under the publisher: read, corrected, typed in for a source a
+  scrape never filled, or emptied, which removes the key.
 - **The cache indexes `(site, site_id)`**, where the site is the source's `publisher`, which a scraper fills with
   its `site_name` ([[acquisition-tooling#scraper-registry]]), compared ignoring case, so finding the record for a
   listing is one lookup and never a walk. A source has no site key of its own: a publisher edited by hand stops the
