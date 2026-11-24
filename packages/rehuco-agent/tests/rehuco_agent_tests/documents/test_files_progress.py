@@ -16,6 +16,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.file_row import FileRow
 from rehuco_agent.documents.files_progress import (
     MISSING_TOOLTIP,
+    PARTIAL_LENGTH_TOOLTIP,
     UNMEASURED_FILE_TOOLTIP,
     UNMEASURED_FOLDER_TOOLTIP,
     UNOPENED_TOOLTIP,
@@ -165,6 +166,72 @@ def test_a_folder_says_nothing_when_the_videos_on_disk_are_not_known_or_there_ar
     assert progress(video_keys=None).for_folder(ROOT / "01 Basics") is None
     assert progress().for_folder(ROOT / "empty") is None
     assert progress().for_folder(ROOT.parent) is None
+
+
+def test_a_folder_reads_the_total_length_of_every_video_beneath_it() -> None:
+    """The sum is core's ``length``, worded as a video's is, whatever has been watched.
+
+    **Test steps:**
+
+    * measure a folder's two videos at 1 h and 25 min, view the first, and measure one outside the folder
+    * verify the folder reads 1:25:00 with no tooltip, the outside video not counted
+    """
+    measured = {"01 Basics/b.mp4": VideoFacts(3600.0), "01 Basics/c.mp4": VideoFacts(1500.0), "a.mp4": VideoFacts(5.0)}
+    entries = {"01 Basics/b.mp4": ProgressEntry(0.0, None, True)}
+
+    assert progress(entries, measured).length_of_folder(ROOT / "01 Basics") == RowProgress("1:25:00")
+
+
+def test_a_folder_of_folders_reads_the_total_of_every_level_beneath_it() -> None:
+    """Each folder sums its own videos and those of all its subfolders, however deep.
+
+    **Test steps:**
+
+    * measure a video in a folder, one in its subfolder, and one two levels down
+    * verify each folder reads the sum of the videos at or below it, and an unmeasured one deep down marks every
+      folder above it partial and no folder beside it
+    """
+    keys = ("01/a.mp4", "01/02/b.mp4", "01/02/03/c.mp4", "01/02/03/d.mp4", "other/e.mp4")
+    measured = {
+        "01/a.mp4": VideoFacts(60.0),
+        "01/02/b.mp4": VideoFacts(120.0),
+        "01/02/03/c.mp4": VideoFacts(240.0),
+        "other/e.mp4": VideoFacts(30.0),
+    }
+    snapshot = progress({}, measured, keys)
+
+    assert snapshot.length_of_folder(ROOT / "01" / "02" / "03") == RowProgress("4:00+", PARTIAL_LENGTH_TOOLTIP)
+    assert snapshot.length_of_folder(ROOT / "01" / "02") == RowProgress("6:00+", PARTIAL_LENGTH_TOOLTIP)
+    assert snapshot.length_of_folder(ROOT / "01") == RowProgress("7:00+", PARTIAL_LENGTH_TOOLTIP)
+    assert snapshot.length_of_folder(ROOT / "other") == RowProgress("0:30")
+
+
+def test_a_folder_with_an_unmeasured_video_reads_the_sum_of_the_others_marked_partial() -> None:
+    """A lower bound is shown as one: a ``+`` after it and a tooltip saying why.
+
+    **Test steps:**
+
+    * measure only one of a folder's two videos
+    * verify its length reads with a ``+`` and the partial tooltip
+    """
+    measured = {"01 Basics/b.mp4": VideoFacts(60.0)}
+
+    assert progress({}, measured).length_of_folder(ROOT / "01 Basics") == RowProgress("1:00+", PARTIAL_LENGTH_TOOLTIP)
+
+
+def test_a_folder_with_no_known_length_says_nothing_of_its_length() -> None:
+    """No video measured, none beneath it, an unknown listing and a folder outside the resource draw nothing.
+
+    **Test steps:**
+
+    * ask for the length of a folder none of whose videos is measured, an empty one, one outside the resource, and
+      one of a resource whose videos on disk are not known
+    * verify nothing for each
+    """
+    assert progress().length_of_folder(ROOT / "01 Basics") is None
+    assert progress().length_of_folder(ROOT / "empty") is None
+    assert progress().length_of_folder(ROOT.parent) is None
+    assert progress(video_keys=None).length_of_folder(ROOT / "01 Basics") is None
 
 
 # endregion

@@ -13,6 +13,8 @@ from typing import Final
 
 from rehuco_core import ProgressEntry, VideoFacts, WatchTotals, watch_totals
 
+from .clock_text import clock_text
+
 UNOPENED_TOOLTIP: Final = "Not opened yet."
 """What a video never played says on hover: nothing is drawn after its name, and this says why."""
 
@@ -26,6 +28,10 @@ UNMEASURED_FOLDER_TOOLTIP: Final = "Some videos here have no known length, so th
 """What a folder holding a video of unknown length says on hover (#316): a share of a total that is not known would be
 a wrong number, so none is drawn."""
 
+PARTIAL_LENGTH_TOOLTIP: Final = "Some videos here have no known length: this is the total of the others."
+"""What a folder's length says on hover when some video beneath it is not measured (#704): the sum is a lower bound,
+marked with a ``+``."""
+
 MISSING_TOOLTIP: Final = "This file is gone; its progress is kept until you forget it."
 """What a missing video's row says on hover ([[field-schema#watch-progress]])."""
 
@@ -34,7 +40,7 @@ MISSING_TOOLTIP: Final = "This file is gone; its progress is kept until you forg
 class RowProgress:
     """What a row ends with.
 
-    :param text: the percentage, ``""`` when there is nothing to say.
+    :param text: the percentage, or a folder's total length (#704); ``""`` when there is nothing to say.
     :param tooltip: what hovering says about it, ``""`` for nothing more than the path.
     """
 
@@ -121,6 +127,23 @@ class FilesProgress:
         if total.unknown_length or total.length <= 0:
             return RowProgress(tooltip=UNMEASURED_FOLDER_TOOLTIP)
         return RowProgress(percent(total.watched, total.length))
+
+    def length_of_folder(self, folder: Path) -> RowProgress | None:
+        """What a folder's Length cell says in the video tree (#704): the total length of every video beneath it.
+
+        :param folder: the folder.
+        :returns: the sum worded as a video's length is; with a ``+`` and the reason when some video beneath it has
+            no known length; ``None`` when there is nothing to say -- no video of known length beneath it, or the
+            videos on disk are not known.
+        """
+        key = self.folder_key(folder)
+        total = self.totals.get(key) if key is not None else None
+        if total is None or total.length <= 0:
+            return None
+        text = clock_text(round(total.length * 1000))
+        if total.unknown_length:
+            return RowProgress(f"{text}+", PARTIAL_LENGTH_TOOLTIP)
+        return RowProgress(text)
 
 
 def percent(done: float, whole: float) -> str:

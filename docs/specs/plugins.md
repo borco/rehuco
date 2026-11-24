@@ -1471,6 +1471,12 @@ a rebuild, keeping the closed rows and the selected video, for a change in the r
 file's name without the extension. Missing videos are listed in their folder as the Files dock lists them, in italic,
 with their notes beneath them.
 
+**A folder's length** (#704): a folder's row reads in the Length column the total length of every video beneath it,
+subfolders at any depth included, worded as a video's is (`clock_text`). It is the `length` of the folder's
+`watch_totals` entry, so nothing is read from disk and it follows the progress's own refresh. A folder holding a video
+of unknown length reads the sum of the known ones with a `+` (`1:23:45+`), the tooltip saying some videos are not
+measured; one with no known length reads nothing. The Files sub-dock shows no length for a folder (owner).
+
 **A line under the tree** (#694) reads the whole tutorial's watched and remaining time as a player's clock does,
 `3:20:15 / -5:05:40` (owner), with the seconds every other time in the player shows (one formatter, `clock_text`),
 short enough for the narrow `T` panel. Its tooltip says the same in words. The sums are the folder rows' own (the `""` entry of `watch_totals`), redrawn with every
