@@ -509,7 +509,7 @@ def test_the_folder_line_scales_a_font_sized_in_pixels(qtbot: QtBot) -> None:
     font = QFont()
     font.setPixelSize(20)
 
-    folder_font = RootRowDelegate._RootRowDelegate__folder_font(font)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    folder_font = RootRowDelegate.folder_font(font)
 
     assert 0 < folder_font.pixelSize() < 20
 

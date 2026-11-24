@@ -8033,15 +8033,17 @@ def test_triggering_a_browsers_entry_focuses_it_and_shows_the_browsers_dock(qtbo
     assert dock.focused_browser() is faces
 
 
-def test_view_no_longer_lists_documents_and_tools_holds_the_three_maintenance_operations(qtbot: QtBot) -> None:
-    """``View`` ends on its last dock toggle, however many documents are open, and ``Tools`` holds the sweep, the
-    legacy import and the conversion backups (#402).
+def test_view_no_longer_lists_documents_and_tools_holds_the_library_scan_and_the_maintenance_operations(
+    qtbot: QtBot,
+) -> None:
+    """``View`` ends on its last dock toggle, however many documents are open, and ``Tools`` holds the library scan
+    (#685), the sweep, the legacy import and the conversion backups (#402).
 
     **Test steps:**
 
     * construct a real ``MainWindow`` and show ``View``
     * verify its last entry is the image previews toggle
-    * verify ``Tools``'s three actions in order
+    * verify ``Tools``'s four actions in order
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -8051,6 +8053,7 @@ def test_view_no_longer_lists_documents_and_tools_holds_the_three_maintenance_op
 
     assert ui.view_menu.actions()[-1] is ui.image_previews_action
     assert ui.tools_menu.actions() == [
+        ui.scan_library_action,
         ui.sweep_checksums_action,
         ui.import_legacy_catalog_action,
         ui.conversion_backups_action,

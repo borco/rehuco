@@ -40,6 +40,7 @@ from rehuco_core import (
     DEFAULT_RECORD_MOVE_HOST,
     CatalogCache,
     CatalogRecord,
+    CatalogRoot,
     CatalogRow,
     JobControl,
     JobOutcome,
@@ -67,6 +68,10 @@ NEW: Final = LibraryEntry("new", "2024-03-01T00:00:00.000000Z", "New", "https://
 
 NEWER: Final = LibraryEntry("newer", "2024-04-01T00:00:00.000000Z", "Newer", "https://fab.example/newer")
 """A second item the root has no record of."""
+
+
+LISTED_ROOT: Final = CatalogRoot(ROOT_ID, "Assets", Path("assets"), 0, False, True, None)
+"""The scanned root's row in the cache, while the catalog lists it."""
 
 
 def target(tmp_path: Path, *, full_rescan: bool = False) -> LibraryScanTarget:
@@ -155,6 +160,7 @@ def fixture_store(mocker: MockerFixture, tmp_path: Path) -> Store:
     cache.library_cursor.return_value = LibraryCursor(OLD.acquired, frozenset({OLD.site_id}))
     cache.find_by_site_id.side_effect = lambda _site, site_id, _root: [row(FILED)] if site_id == FILED.site_id else []
     cache.library_rows.return_value = []
+    cache.roots.return_value = (LISTED_ROOT,)
     mocker.patch.object(CatalogCache, "open", return_value=context(cache))
     writer = mocker.patch.object(job_module, "LibraryRecordWriter").return_value
     writer.root_folder.return_value = tmp_path / "root"
@@ -886,4 +892,52 @@ def test_an_item_written_before_its_buckets_made_the_scan_wait_is_counted_added(
     with raises(JobWaiting):
         job.run(Mock(spec=JobControl))
 
+    assert job.outcome == JobOutcome("1 added, 0 already there")
+
+
+def test_a_root_removed_before_the_run_pauses_it_before_anything_is_read(store: Store, tmp_path: Path) -> None:
+    """A scan of a root the catalog no longer lists does not start its walk (#685).
+
+    **Test steps:**
+
+    * make the cache list no root
+    * run the scan over one new item
+    * verify it pauses naming the root, having leased no browser and read nothing
+    """
+    store.cache.roots.return_value = ()
+    store.entries = [NEW]
+
+    with raises(JobPaused, match="The root Assets was removed from the catalog"):
+        job_of(store, target(tmp_path)).run(Mock(spec=JobControl))
+
+    store.browser.lease.assert_not_called()
+    store.session.read_item.assert_not_called()
+
+
+def test_a_root_removed_during_the_run_pauses_it_before_the_next_item(store: Store, tmp_path: Path) -> None:
+    """Remove Root leaves the root's file and its mapping, so the scan asks the cache before every item (#685).
+
+    **Test steps:**
+
+    * list two new items, and have the root leave the cache once the first is written
+    * run the scan
+    * verify it pauses naming the root
+    * verify the first item was written and counted, and the second neither read nor written
+    """
+    store.entries = [NEW, NEWER]
+    written: list[LibraryEntry] = []
+
+    def write(entry: LibraryEntry, _item: object, _site: object, _terms: object) -> WrittenRecord:
+        written.append(entry)
+        store.cache.roots.return_value = ()
+        return WrittenRecord(tmp_path / entry.site_id / "info.rehu")
+
+    store.writer.write.side_effect = write
+    job = job_of(store, target(tmp_path))
+
+    with raises(JobPaused, match="The root Assets was removed from the catalog"):
+        job.run(Mock(spec=JobControl))
+
+    assert written == [NEW]
+    store.session.read_item.assert_called_once_with(NEW)
     assert job.outcome == JobOutcome("1 added, 0 already there")

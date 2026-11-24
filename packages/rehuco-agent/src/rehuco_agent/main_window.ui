@@ -92,6 +92,7 @@
     <property name="title">
      <string>&amp;Tools</string>
     </property>
+    <addaction name="scan_library_action"/>
     <addaction name="sweep_checksums_action"/>
     <addaction name="import_legacy_catalog_action"/>
     <addaction name="conversion_backups_action"/>
@@ -168,6 +169,17 @@
   <action name="save_all_action">
    <property name="text">
     <string>&amp;Save all</string>
+   </property>
+  </action>
+  <action name="scan_library_action">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Scan &amp;Library...</string>
+   </property>
+   <property name="toolTip">
+    <string>Scan a store account's library into a root of the open catalog, one record per item.</string>
    </property>
   </action>
   <action name="sweep_checksums_action">

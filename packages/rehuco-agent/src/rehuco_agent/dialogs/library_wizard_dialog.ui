@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LibraryWizardDialog</class>
+ <widget class="QDialog" name="LibraryWizardDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>460</width>
+    <height>220</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Scan Library</string>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <item>
+    <layout class="QFormLayout" name="form">
+     <item row="0" column="0">
+      <widget class="QLabel" name="site_label">
+       <property name="text">
+        <string>Site:</string>
+       </property>
+       <property name="buddy">
+        <cstring>site_combo</cstring>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QComboBox" name="site_combo">
+       <property name="toolTip">
+        <string>The store whose library is scanned.</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="root_label">
+       <property name="text">
+        <string>Root:</string>
+       </property>
+       <property name="buddy">
+        <cstring>root_combo</cstring>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QComboBox" name="root_combo">
+       <property name="toolTip">
+        <string>The root that receives one record per item of the library.</string>
+       </property>
+       <property name="placeholderText">
+        <string>Choose a root</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="account_label">
+       <property name="text">
+        <string>Account:</string>
+       </property>
+       <property name="buddy">
+        <cstring>login_button</cstring>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <layout class="QVBoxLayout" name="account_layout">
+       <item>
+        <widget class="QPushButton" name="login_button">
+         <property name="toolTip">
+          <string>Open the persona browser, to sign in to the store by hand. Close it before the scan starts.</string>
+         </property>
+         <property name="text">
+          <string>Login...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="login_error_label">
+         <property name="visible">
+          <bool>false</bool>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item row="3" column="1">
+      <widget class="QCheckBox" name="full_rescan_check">
+       <property name="toolTip">
+        <string>Read the whole library again, from its oldest item, and mark the records that left the account offline.</string>
+       </property>
+       <property name="text">
+        <string>Full rescan</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="button_box">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>button_box</sender>
+   <signal>accepted()</signal>
+   <receiver>LibraryWizardDialog</receiver>
+   <slot>accept()</slot>
+  </connection>
+  <connection>
+   <sender>button_box</sender>
+   <signal>rejected()</signal>
+   <receiver>LibraryWizardDialog</receiver>
+   <slot>reject()</slot>
+  </connection>
+ </connections>
+</ui>

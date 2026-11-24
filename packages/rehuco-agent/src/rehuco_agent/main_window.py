@@ -80,6 +80,7 @@ from .commands import (
 )
 from .dialogs.conversion_backups_dialog import ConversionBackupsDialog
 from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
+from .dialogs.library_wizard_dialog import LibraryWizardDialog
 from .dock_maximize import attach_maximize_handler
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_command_router import DocumentCommandRouter
@@ -106,13 +107,16 @@ from .rehuco.selection_preview import SelectionPreview
 from .rehuco.table_browser import TableBrowser
 from .remembered_paths import RememberedPaths
 from .resource_events import ResourceEvents
-from .scraping.scraper_wizard_registry import register_library_scan_kind
+from .scraping.library_scan_job import LibraryScanTarget
+from .scraping.scraper_wizard import ScraperWizard
+from .scraping.scraper_wizard_registry import register_library_scan_kind, shared_scraper_wizard_registry
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.checksum_trust_store import checksum_trust_path
 from .settings.document_session_settings import DocumentSessionSettings
 from .settings.excluded_files_settings import shared_excluded_files_settings
 from .settings.identity_settings import shared_identity_settings
 from .settings.image_viewer_settings import shared_image_viewer_settings
+from .settings.library_wizard_settings import shared_library_wizard_settings
 from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.node_settings import shared_node_settings
@@ -555,6 +559,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock.storage_asked.connect(self.__remembered.ask_again)
         self.__remembered.rehuco_arrived.connect(self.__on_rehuco_arrived)
         self.__root_catalog.rehuco_path_changed.connect(self.__remembered.clear_deferred_rehuco)
+        self.__root_catalog.rehuco_path_changed.connect(self.__on_rehuco_path_changed)
         # a catalog reopened at start is asked about once the event loop runs, never from inside the start
         self.__mapping_timer: Final = QTimer(self)
         self.__mapping_timer.setSingleShot(True)
@@ -860,6 +865,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.close_missing_action.triggered.connect(self.__documents_dock.close_missing)
         self.__ui.close_all_action.triggered.connect(self.__documents_dock.close_all)
         self.__ui.save_all_action.triggered.connect(self.__on_save_all)
+        self.__ui.scan_library_action.triggered.connect(self.__on_scan_library)
         self.__ui.sweep_checksums_action.triggered.connect(self.__on_sweep_checksums)
         self.__ui.import_legacy_catalog_action.triggered.connect(self.__on_import_legacy_catalog)
         self.__ui.conversion_backups_action.triggered.connect(self.__on_conversion_backups)
@@ -1195,6 +1201,50 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             LOG.info("%s is already in the task queue; it was not queued again.", job.label)
             return
         with LogScope.open(root):
+            self.__task_queue.enqueue(job)
+
+    def __on_rehuco_path_changed(self, path: Path | None) -> None:
+        """Offer ``Scan Library...`` only while a catalog is open: its roots are the catalog's (#685).
+
+        :param path: the open ``.rehuco``, or ``None`` once none is open.
+        """
+        self.__ui.scan_library_action.setEnabled(path is not None)
+
+    def ask_library_scan(self) -> tuple[ScraperWizard, LibraryScanTarget] | None:
+        """Ask which store to scan into which root of the open catalog (#685).
+
+        A public method rather than an inline dialog, so a test replaces the question on the instance.
+
+        :returns: the wizard and what it scans; ``None`` when the dialog was canceled or no catalog is open.
+        """
+        cache_path = self.__root_catalog.cache_path
+        if cache_path is None:
+            return None
+        dialog = LibraryWizardDialog(
+            shared_scraper_wizard_registry().wizards,
+            self.__root_catalog.mapped_roots(),
+            cache_path,
+            shared_library_wizard_settings(),
+            self,
+        )
+        if dialog.exec() != LibraryWizardDialog.DialogCode.Accepted:
+            return None
+        wizard, target = dialog.wizard, dialog.target
+        return None if wizard is None or target is None else (wizard, target)
+
+    def __on_scan_library(self) -> None:
+        """Ask which library to scan and enqueue its scan, inside the root's own log scope so the scan's item lines
+        read there (``Tools`` > ``Scan Library...``, #685).
+        """
+        answer = self.ask_library_scan()
+        if answer is None:
+            return
+        wizard, target = answer
+        job = wizard.create_job(target)
+        if job_already_queued(self.__task_queue, label=job.label, source=job.source):
+            LOG.info("%s is already in the task queue; it was not queued again.", job.label)
+            return
+        with LogScope.open(self.__root_catalog.root_paths()[target.root_id]):
             self.__task_queue.enqueue(job)
 
     def __on_import_legacy_catalog(self) -> None:

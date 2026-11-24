@@ -717,8 +717,8 @@ local-viewer or tablet-watching milestones.
 - [#686: spike: what Fab's library and listings return to a logged-in session](https://github.com/borco/rehuco/issues/686)
 - [#687: feat: a tool that adds a Fab results page's free listings to the library](https://github.com/borco/rehuco/issues/687)
 
-**Partly built**: the scan job is (#682), the protocol and registry a store plugs in through (#683) and Fab's library
-(#684); there is no dialog to start a scan yet. A scrape
+**Partly built**: the scan job is (#682), the protocol and registry a store plugs in through (#683), Fab's library
+(#684) and the dialog that starts a scan (#685, `Tools` > `Scan Library...`); Fab is the one store. A scrape
 ([[acquisition-tooling#url-extract]]) fills the one document that is open and never creates a record. This is the other
 direction: **read what a store account owns and write one record per item**, the new ones added and the ones already
 filed left as they are. It is what the *account-side import of what the user owns* in
@@ -759,15 +759,26 @@ no *ask the user* member either: a scan that needs someone stops and says why
 The dialog is one page:
 
 - **Site**: a drop-down of the registered scraper wizards.
-- **Root**: a drop-down of the catalog's roots; the one chosen receives the records. Each entry is drawn on two lines,
-  the root's label and, grayed beneath it, its location. A root whose layouts admit no `asset`
-  ([[mounts-and-storage#rehuroot]]) is listed disabled, with the reason as its tooltip.
+- **Root**: a drop-down of the roots of the open catalog this machine reaches; the one chosen receives the records.
+  Each entry is drawn on two lines, the root's label and, grayed beneath it, its location. A root whose layouts admit
+  no `asset` ([[mounts-and-storage#rehuroot]]), or that has no `.rehuroot` to place records by, is listed disabled,
+  with the reason as its tooltip.
+- **Full rescan** is a checkbox, unticked every time the dialog opens: a rescan is a one-off, and a remembered tick
+  would read the whole library again by accident.
 - **Login** opens the persona browser, unautomated, so the user can sign in ([[acquisition-tooling#browser-persona]]).
-- **Start** enqueues the job and closes the dialog. It is disabled while the persona browser is open, since a profile
-  serves one browser at a time, and until a site and a root are chosen.
+  It stays available while the browser is open, where it brings the window forward; a browser that cannot be launched
+  is said so on a line under the button, not in a box over the dialog.
+- **Start** enqueues the job and closes the dialog. It is disabled until a site and a root are chosen, and **does not
+  watch the persona browser**: a scan or a drop takes the profile through the persona's own lock and they take turns,
+  and only the login window is outside it. A scan started while the login window is open cannot start its own
+  session, so it pauses saying so ([[acquisition-tooling#library-scan-stops]]); the user closes the window and
+  resumes it.
 
-**The root last used is remembered per scraper wizard**, in the settings, and preselected when that site is next
-chosen.
+The dialog is opened from `Tools` > `Scan Library...`, enabled while a catalog is open, and the job is queued inside
+the root's own log scope, so the scan's item lines read there. **The root last used is remembered per scraper
+wizard**, in the settings, and preselected when that site is next chosen; it is saved when Start is pressed, and a
+Cancel saves nothing. A site with no remembered root keeps the root already chosen, since one root takes the items of
+several stores (`{site}/{buckets}/{site_id}`).
 
 ### §15.5.2 The scan job
 
@@ -856,8 +867,11 @@ its text rather than its time.
     and the queue tries again by itself ([[appendices.task-queue#waiting]]).
   - **The user can, in the browser**: a challenge page, a login that has expired. The run ends paused with the reason
     as the row's message, and the persona browser is shown at the page that stopped it.
-  - **The user can, elsewhere**: the disk is full, the root's layout no longer admits the record. The run ends paused
-    with the reason and no browser.
+  - **The user can, elsewhere**: the disk is full, the root's layout no longer admits the record, the root was
+    removed from the catalog. The run ends paused with the reason and no browser. **The removed root is asked of the
+    cache before every item** (#685): Remove Root leaves the root's `.rehuroot` and this machine's mapping of it
+    ([[mounts-and-storage#rehuroot]]), so a scan that did not ask would go on writing records no catalog lists, and
+    its cursor, read from the root's rows, would be gone.
 
 **Resume re-enters `run()`**, as it does for every job ([[appendices.task-queue#cursor]]), and the first thing a
 re-entered scan does is **look again at what stopped it**. Gone, it carries on from where the records end. Still
