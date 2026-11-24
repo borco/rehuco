@@ -1,5 +1,5 @@
 """Tests for `PersonaLease`: a library scan's long hold on the persona, which gives the profile up to a drop's
-one-shot fetch between two of its pages (#682). No real browser: `start_driver` is mocked."""
+scrape between two of its pages (#682). No real browser: `start_driver` is mocked."""
 
 import threading
 from collections.abc import Callable
@@ -13,7 +13,7 @@ from rehuco_agent.scraping.protocols import FetchError
 from rehuco_agent.settings.scrapers_settings import Browser
 from selenium.common.exceptions import WebDriverException
 
-from .test_browser_fetcher import URL, fake_driver
+from .test_browser_fetcher import URL, fake_driver, fetch_once
 
 TIMEOUT: Final = 5.0
 """How long a test waits for the other thread, in seconds."""
@@ -66,7 +66,7 @@ def test_a_lease_yields_only_to_a_waiting_fetch_which_then_runs(mocker: MockerFi
 
     * lease the persona and start its session
     * verify it does not yield while nobody waits
-    * start a one-shot fetch on another thread and wait until it is waiting
+    * start a drop's fetch on another thread and wait until it is waiting
     * verify the lease yields, the fetch then runs, and the lease's next session is a fresh one
     """
     leased, fetched, restarted = fake_driver(mocker), fake_driver(mocker), fake_driver(mocker)
@@ -76,7 +76,7 @@ def test_a_lease_yields_only_to_a_waiting_fetch_which_then_runs(mocker: MockerFi
     lease.driver()
     assert lease.yield_if_wanted() is False
 
-    fetch = threading.Thread(target=browser.fetch, args=(URL, Browser.FIREFOX), kwargs={"headless": True})
+    fetch = threading.Thread(target=fetch_once, args=(browser,))
     fetch.start()
     assert wait_until(lambda: browser.wanted)
 
@@ -121,7 +121,7 @@ def test_a_session_that_fails_to_start_leaves_the_profile_free(mocker: MockerFix
     with raises(FetchError):
         browser.lease(Browser.FIREFOX, headless=True, checkpoint=nothing).driver()
 
-    browser.fetch(URL, Browser.FIREFOX, headless=True)
+    fetch_once(browser)
     driver.get.assert_called_once_with(URL)
 
 
@@ -141,7 +141,7 @@ def test_leaving_a_lease_gives_the_profile_back(mocker: MockerFixture) -> None:
         lease.driver()
 
     leased.quit.assert_called_once_with()
-    browser.fetch(URL, Browser.FIREFOX, headless=True)
+    fetch_once(browser)
     fetched.get.assert_called_once_with(URL)
 
 

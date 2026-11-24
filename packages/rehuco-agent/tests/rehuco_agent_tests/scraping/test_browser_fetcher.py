@@ -36,6 +36,17 @@ def fake_driver(
     return driver
 
 
+def fetch_once(browser: PersonaBrowser, *, headless: bool = True) -> Page:
+    """Fetch :data:`URL` on a lease of its own, closed after it -- a scrape of one page.
+
+    :param browser: the persona browser.
+    :param headless: whether the session runs with no visible window.
+    :returns: the page.
+    """
+    with browser.lease(Browser.FIREFOX, headless=headless, checkpoint=None) as lease:
+        return lease.fetch(URL)
+
+
 def fake_process(mocker: MockerFixture, *, alive: bool = True) -> MagicMock:
     """A `subprocess.Popen` stand-in.
 
@@ -188,22 +199,22 @@ def test_open_for_login_reports_a_process_that_could_not_start(mocker: MockerFix
 # region fetch
 
 
-def test_fetch_starts_navigates_and_quits_a_fresh_session_every_time(mocker: MockerFixture) -> None:
-    """Every fetch starts its own short-lived Selenium session and quits it -- there is no live session
-    to reuse any more, login and scraping being different processes entirely (#278).
+def test_every_scrape_starts_and_quits_a_session_of_its_own(mocker: MockerFixture) -> None:
+    """Every scrape starts its own short-lived Selenium session and quits it -- nothing is left live for the next,
+    login and scraping being different processes entirely (#278).
 
     **Test steps:**
 
     * stand in for `start_driver`
-    * fetch twice
+    * fetch twice, on a lease each
     * verify a fresh driver was started, navigated and quit, both times
     """
     drivers = [fake_driver(mocker), fake_driver(mocker)]
     start_driver = mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", side_effect=drivers)
     browser = PersonaBrowser()
 
-    browser.fetch(URL, Browser.FIREFOX, headless=True)
-    browser.fetch(URL, Browser.FIREFOX, headless=True)
+    fetch_once(browser)
+    fetch_once(browser)
 
     assert start_driver.call_count == 2
     for driver in drivers:
@@ -219,7 +230,7 @@ def test_fetch_quits_the_driver_even_when_not_headless(mocker: MockerFixture) ->
     mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", return_value=driver)
     browser = PersonaBrowser()
 
-    browser.fetch(URL, Browser.FIREFOX, headless=False)
+    fetch_once(browser, headless=False)
 
     driver.quit.assert_called_once_with()
 
@@ -230,7 +241,7 @@ def test_fetch_returns_the_fetched_page(mocker: MockerFixture) -> None:
     mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", return_value=driver)
     browser = PersonaBrowser()
 
-    page = browser.fetch(URL, Browser.FIREFOX, headless=True)
+    page = fetch_once(browser)
 
     assert page == Page(url=URL, final_url="https://example.com/final", html="<p>hi</p>")
 
@@ -241,7 +252,7 @@ def test_fetch_carries_the_status_the_browser_reports(mocker: MockerFixture, sta
     through the browser the same way it does over plain HTTP (#369)."""
     mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", return_value=fake_driver(mocker, status=status))
 
-    page = PersonaBrowser().fetch(URL, Browser.FIREFOX, headless=True)
+    page = fetch_once(PersonaBrowser())
 
     assert page.status == status
 
@@ -257,7 +268,7 @@ def test_a_status_the_browser_cannot_give_is_unknown(mocker: MockerFixture, repo
         "rehuco_agent.scraping.browser_drivers.start_driver", return_value=fake_driver(mocker, status=reported)
     )
 
-    page = PersonaBrowser().fetch(URL, Browser.FIREFOX, headless=True)
+    page = fetch_once(PersonaBrowser())
 
     assert page.status is None
 
@@ -275,7 +286,7 @@ def test_a_status_script_that_raises_does_not_fail_the_fetch(mocker: MockerFixtu
     driver.execute_script.side_effect = run
     mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", return_value=driver)
 
-    page = PersonaBrowser().fetch(URL, Browser.FIREFOX, headless=True)
+    page = fetch_once(PersonaBrowser())
 
     assert page.status is None
     assert page.html == "<html></html>"
@@ -289,7 +300,7 @@ def test_a_driver_that_fails_to_quit_is_tolerated(mocker: MockerFixture) -> None
     mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", return_value=driver)
     browser = PersonaBrowser()
 
-    page = browser.fetch(URL, Browser.FIREFOX, headless=True)  # must not raise
+    page = fetch_once(browser)  # must not raise
 
     assert page.url == URL
 
@@ -310,7 +321,7 @@ def test_a_webdriverexception_during_navigation_becomes_a_fetcherror(mocker: Moc
     browser = PersonaBrowser()
 
     with raises(FetchError, match=URL):
-        browser.fetch(URL, Browser.FIREFOX, headless=True)
+        fetch_once(browser)
 
     driver.quit.assert_called_once_with()
 
@@ -323,7 +334,7 @@ def test_a_failed_start_names_the_persona_being_possibly_open_for_login(mocker: 
     browser = PersonaBrowser()
 
     with raises(FetchError, match="persona browser is open for login"):
-        browser.fetch(URL, Browser.FIREFOX, headless=True)
+        fetch_once(browser)
 
 
 # endregion
@@ -434,24 +445,61 @@ def test_shared_persona_browser_is_a_singleton() -> None:
     assert shared_persona_browser() is shared_persona_browser()
 
 
-def test_browser_page_fetcher_delegates_to_the_shared_persona_browser(mocker: MockerFixture) -> None:
-    """`BrowserPageFetcher.fetch` delegates to `shared_persona_browser`, with the browser and headless
-    flag settings ask for (#278).
+def test_browser_page_fetcher_loads_every_page_in_one_session(mocker: MockerFixture) -> None:
+    """A scraper that asks for several pages gets them all from one browser window, with the browser and headless
+    flag settings ask for; closing the fetcher quits it and frees the profile (#278, #701).
 
     **Test steps:**
 
-    * stand in for the shared persona browser
-    * fetch through a `BrowserPageFetcher` built with ``show_browser=True``
-    * verify the delegate was called with the configured browser and ``headless=False``
+    * stand in for `start_driver`, and for the shared persona browser by one of this test's own
+    * build a `BrowserPageFetcher` with ``show_browser=True`` and verify no browser was started yet
+    * fetch seven pages and verify one Chrome was started, with a window, and navigated to each
+    * close the fetcher twice and verify it was quit once, and that a later scrape starts a session of its own
     """
-    page = Page(url=URL, final_url=URL, html="<html></html>")
-    persona_browser = mocker.Mock(fetch=mocker.Mock(return_value=page))
-    mocker.patch("rehuco_agent.scraping.browser_fetcher.shared_persona_browser", return_value=persona_browser)
+    driver, later = fake_driver(mocker), fake_driver(mocker)
+    start_driver = mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", side_effect=[driver, later])
+    browser = PersonaBrowser()
+    mocker.patch("rehuco_agent.scraping.browser_fetcher.shared_persona_browser", return_value=browser)
+    fetcher = BrowserPageFetcher(ScrapersSettings(browser=Browser.CHROME, show_browser=True))
+    start_driver.assert_not_called()
+    urls = [f"{URL}/{number}" for number in range(7)]
 
-    settings = ScrapersSettings(browser=Browser.CHROME, show_browser=True)
-    fetcher = BrowserPageFetcher(settings)
+    pages = [fetcher.fetch(url) for url in urls]
 
-    result = fetcher.fetch(URL)
+    start_driver.assert_called_once_with(Browser.CHROME, headless=False, profile_folder=persona_folder(Browser.CHROME))
+    assert [page.url for page in pages] == urls
+    assert [call.args for call in driver.get.call_args_list] == [(url,) for url in urls]
+    driver.quit.assert_not_called()
 
-    persona_browser.fetch.assert_called_once_with(URL, Browser.CHROME, headless=False)
-    assert result is page
+    fetcher.close()
+    fetcher.close()
+
+    driver.quit.assert_called_once_with()
+    fetch_once(browser)
+    later.get.assert_called_once_with(URL)
+
+
+def test_a_page_that_fails_to_load_leaves_the_next_one_a_fresh_session(mocker: MockerFixture) -> None:
+    """A session that failed may be gone -- its window closed by hand -- so the rest of the scrape's pages are not
+    failed by it.
+
+    **Test steps:**
+
+    * stand in for a driver whose navigation raises, then one that loads
+    * fetch twice through one fetcher
+    * verify the first fails as a fetch error with its driver quit, and the second is loaded by a new one
+    """
+    dead, fresh = fake_driver(mocker), fake_driver(mocker)
+    dead.get.side_effect = WebDriverException("no such window")
+    mocker.patch("rehuco_agent.scraping.browser_drivers.start_driver", side_effect=[dead, fresh])
+    mocker.patch("rehuco_agent.scraping.browser_fetcher.shared_persona_browser", return_value=PersonaBrowser())
+    fetcher = BrowserPageFetcher(ScrapersSettings(browser=Browser.FIREFOX))
+
+    with raises(FetchError, match="no such window"):
+        fetcher.fetch(URL)
+    page = fetcher.fetch(URL)
+
+    dead.quit.assert_called_once_with()
+    assert page.url == URL
+    fetcher.close()
+    fresh.quit.assert_called_once_with()

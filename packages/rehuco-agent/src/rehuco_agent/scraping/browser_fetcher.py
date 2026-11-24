@@ -1,4 +1,4 @@
-"""The browser-driven `PageFetcher`: a short-lived Selenium session per scrape, and a wholly separate,
+"""The browser-driven `PageFetcher`: one short-lived Selenium session per scrape, and a wholly separate,
 un-automated login browser, both on the app's own persona profile ([[acquisition-tooling#browser-persona]]).
 
 **Login and scraping are two different processes, on purpose.** A Selenium/WebDriver session is flagged
@@ -72,18 +72,18 @@ produces reads as an opaque driver error otherwise, and this is overwhelmingly t
 
 class PersonaBrowser:
     """Owns the persona's two, mutually exclusive uses of its profile: `open_for_login` opens a plain
-    browser window for the user to log in through, and `fetch` runs one Selenium-driven scrape at a
-    time ([[acquisition-tooling#browser-persona]]). See the module docstring for why they are not the
-    same session.
+    browser window for the user to log in through, and a :class:`PersonaLease` runs one Selenium-driven
+    scrape or scan at a time ([[acquisition-tooling#browser-persona]]). See the module docstring for why
+    they are not the same session.
 
     One `threading.Lock` serializes every scrape, since `~.scraper_executor.ScraperExecutor` runs
     several at once and a persona profile is not safe to open twice at once. The login window is not
     covered by that lock -- it is a separate process the user drives, not this class's own work -- so a
     scrape attempted while it is open simply fails to start its own session, with a message naming why.
 
-    **A library scan holds the profile for hours, and a drop must still get in** (#682): it takes a
-    :class:`PersonaLease` instead, which keeps its session between pages and gives the profile up between two of
-    them whenever a :meth:`fetch` is waiting for it (:attr:`wanted`).
+    **A library scan holds the profile for hours, and a drop must still get in** (#682): its lease gives the profile
+    up between two of its pages whenever another one is waiting for it (:attr:`wanted`). A drop's lease is its
+    scrape's, closed with it (:class:`BrowserPageFetcher`).
     """
 
     def __init__(self) -> None:
@@ -94,32 +94,34 @@ class PersonaBrowser:
 
     @property
     def wanted(self) -> bool:
-        """Whether a :meth:`fetch` is waiting for the profile, so a lease holding it should give it up.
+        """Whether a lease is waiting for the profile, so a scan holding it should give it up.
 
         :returns: whether one waits.
         """
         with self.__waiting_lock:
             return self.__waiting > 0
 
-    def lease(self, browser: Browser, *, headless: bool, checkpoint: Callable[[], None]) -> PersonaLease:
-        """Hold the persona for a long run of fetches, giving it up to any one-shot :meth:`fetch` between them.
+    def lease(self, browser: Browser, *, headless: bool, checkpoint: Callable[[], None] | None) -> PersonaLease:
+        """Hold the persona for a run of fetches: a scrape's few pages, or a library scan's.
 
         :param browser: which browser's persona to use.
         :param headless: whether its sessions run with no visible window.
-        :param checkpoint: the holder's own, called while it waits for the profile -- what it raises gives up waiting.
+        :param checkpoint: the holder's own, called while it waits for the profile -- what it raises gives up waiting;
+            ``None`` for a holder that is never stopped, a scrape.
         :returns: the lease, holding nothing until it is first asked for a session.
         """
         return PersonaLease(self, browser, headless=headless, checkpoint=checkpoint)
 
-    def hold(self, browser: Browser, *, headless: bool, checkpoint: Callable[[], None]) -> WebDriver:
+    def hold(self, browser: Browser, *, headless: bool, checkpoint: Callable[[], None] | None) -> WebDriver:
         """Take the profile and start a session on it, for :class:`PersonaLease`; :meth:`let_go` gives both back.
 
-        Waiting for the profile counts as :attr:`wanted`, as a fetch's does, so another lease gives it up at its next
-        page: two scans of different stores take turns rather than one waiting out the other.
+        Waiting for the profile counts as :attr:`wanted`, so a scan gives it up at its next page: a drop gets in, and
+        two scans of different stores take turns rather than one waiting out the other.
 
         :param browser: which browser's persona to use.
         :param headless: whether the session runs with no visible window.
-        :param checkpoint: called while waiting for the profile; what it raises leaves the profile untaken.
+        :param checkpoint: called while waiting for the profile; what it raises leaves the profile untaken. ``None``
+            waits plainly.
         :returns: the session.
         :raises FetchError: the browser could not be started; the profile is not held.
         """
@@ -134,7 +136,7 @@ class PersonaBrowser:
         """Take the profile's lock, counted as waiting for it until it is held.
 
         :param checkpoint: called every :data:`LEASE_WAIT_SLICE_SECONDS` while waiting, for a holder that must stay
-            stoppable; ``None`` waits plainly, as a one-shot fetch does.
+            stoppable; ``None`` waits plainly, as a scrape does.
         """
         with self.__waiting_lock:
             self.__waiting += 1
@@ -178,26 +180,6 @@ class PersonaBrowser:
         if not already_open:
             self.__login_processes[browser] = process  # pylint: disable=unsupported-assignment-operation
 
-    def fetch(self, url: str, browser: Browser, *, headless: bool) -> Page:
-        """Fetch ``url`` on a short-lived Selenium session on the persona, quit once done.
-
-        :param url: the address to fetch.
-        :param browser: which browser's persona to use.
-        :param headless: whether the session runs with no visible window.
-        :returns: the fetched page.
-        :raises FetchError: the browser could not be started (including because a login window is
-            currently holding the profile open), or navigation failed.
-        """
-        self.__take(None)
-        try:
-            driver = self.__start_scrape_driver(browser, headless=headless)
-            try:
-                return self.__navigate(driver, url)
-            finally:
-                self.__quit(driver)
-        finally:
-            self.__lock.release()
-
     def reset(self, browser: Browser) -> None:
         """Close any open login window and delete ``browser``'s persona folder, so the next use starts
         from a clean, logged-out profile.
@@ -237,44 +219,6 @@ class PersonaBrowser:
         except subprocess.TimeoutExpired:
             LOG.warning("The persona browser did not exit after being killed; the reset may fail to delete it.")
 
-    def __navigate(self, driver: WebDriver, url: str) -> Page:
-        """Load ``url`` in ``driver``'s current tab and return it as a `Page`, with its HTTP status when
-        the browser reports one -- so a scraper can read a transient refusal the same way it does from
-        `~.http_fetcher.HttpPageFetcher` (#369)."""
-        try:
-            driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
-            driver.get(url)
-            WebDriverWait(driver, READY_STATE_POLL_SECONDS).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
-            return Page(
-                url=url,
-                final_url=driver.current_url,
-                html=driver.page_source,
-                status=self.__response_status(driver),
-            )
-        except WebDriverException as error:
-            raise FetchError(f"Could not fetch {url} with the persona browser: {error}") from error
-
-    @staticmethod
-    def __response_status(driver: WebDriver) -> int | None:
-        """The loaded document's HTTP status (:data:`RESPONSE_STATUS_SCRIPT`), or `None` when the browser
-        cannot say -- never a reason to fail a fetch that loaded.
-
-        :param driver: the session that just loaded the page.
-        :returns: the status, or `None`.
-        """
-        try:
-            status = driver.execute_script(RESPONSE_STATUS_SCRIPT)
-        except WebDriverException:
-            LOG.debug("The persona browser could not report the page's HTTP status.", exc_info=True)
-            return None
-        # bool is an int subclass, and 0 is what a browser without the field (or a cross-origin entry)
-        # reports -- neither is a status
-        if isinstance(status, bool) or not isinstance(status, int) or status <= 0:
-            return None
-        return status
-
     @staticmethod
     def __start_scrape_driver(browser: Browser, *, headless: bool) -> WebDriver:
         """Start a fresh Selenium session on ``browser``'s persona folder, for one scrape.
@@ -298,21 +242,21 @@ class PersonaBrowser:
 
 
 class PersonaLease:
-    """A long run of fetches on the persona -- a library scan's (#682) -- that gives the profile up whenever a one-shot
-    :meth:`PersonaBrowser.fetch` waits for it, so a drop never queues behind hours of scanning.
+    """A run of fetches on the persona, over one session: a scrape's few pages, or a library scan's thousands (#682).
 
-    Its session is started on first use and kept between pages; :meth:`yield_if_wanted`, called between two of them,
-    quits it when a fetch is waiting, and the next :meth:`driver` starts a fresh one once that fetch is done. Used on
-    one thread, the scan's; :meth:`close` gives everything back.
+    Its session is started on first use and kept between pages. A scan calls :meth:`yield_if_wanted` between two of
+    them, which quits it when another lease is waiting, so a drop never queues behind hours of scanning; the next
+    :meth:`driver` starts a fresh one once that one is done. Used on one thread, its holder's; :meth:`close` gives
+    everything back.
 
     :param browser: the persona browser it leases from.
     :param persona: which browser's persona to use.
     :param headless: whether its sessions run with no visible window.
-    :param checkpoint: the holder's own, called while it waits for the profile.
+    :param checkpoint: the holder's own, called while it waits for the profile; ``None`` for one never stopped.
     """
 
     def __init__(
-        self, browser: PersonaBrowser, persona: Browser, *, headless: bool, checkpoint: Callable[[], None]
+        self, browser: PersonaBrowser, persona: Browser, *, headless: bool, checkpoint: Callable[[], None] | None
     ) -> None:
         self.__browser: Final = browser
         self.__persona: Final = persona
@@ -342,8 +286,26 @@ class PersonaLease:
             self.__driver = self.__browser.hold(self.__persona, headless=self.__headless, checkpoint=self.__checkpoint)
         return self.__driver
 
+    def fetch(self, url: str) -> Page:
+        """Load ``url`` in the session, started now if the lease holds none.
+
+        A failed load quits the session, which may be gone (a window closed by hand, a crash): the next fetch starts a
+        fresh one rather than failing on the dead one.
+
+        :param url: the address to fetch.
+        :returns: the fetched page.
+        :raises FetchError: the browser could not be started (including because a login window is currently holding
+            the profile open), or navigation failed.
+        """
+        driver = self.driver()
+        try:
+            return self.__navigate(driver, url)
+        except FetchError:
+            self.close()
+            raise
+
     def yield_if_wanted(self) -> bool:
-        """Give the profile up if a one-shot fetch is waiting for it.
+        """Give the profile up if another lease is waiting for it.
 
         :returns: whether it was given up.
         """
@@ -357,6 +319,45 @@ class PersonaLease:
         driver, self.__driver = self.__driver, None
         if driver is not None:
             self.__browser.let_go(driver)
+
+    @staticmethod
+    def __navigate(driver: WebDriver, url: str) -> Page:
+        """Load ``url`` in ``driver``'s current tab and return it as a `Page`, with its HTTP status when
+        the browser reports one -- so a scraper can read a transient refusal the same way it does from
+        `~.http_fetcher.HttpPageFetcher` (#369)."""
+        try:
+            driver.set_page_load_timeout(PAGE_LOAD_TIMEOUT_SECONDS)
+            driver.get(url)
+            WebDriverWait(driver, READY_STATE_POLL_SECONDS).until(
+                lambda d: d.execute_script("return document.readyState") == "complete"
+            )
+            return Page(
+                url=url,
+                final_url=driver.current_url,
+                html=driver.page_source,
+                status=PersonaLease.__response_status(driver),
+            )
+        except WebDriverException as error:
+            raise FetchError(f"Could not fetch {url} with the persona browser: {error}") from error
+
+    @staticmethod
+    def __response_status(driver: WebDriver) -> int | None:
+        """The loaded document's HTTP status (:data:`RESPONSE_STATUS_SCRIPT`), or `None` when the browser
+        cannot say -- never a reason to fail a fetch that loaded.
+
+        :param driver: the session that just loaded the page.
+        :returns: the status, or `None`.
+        """
+        try:
+            status = driver.execute_script(RESPONSE_STATUS_SCRIPT)
+        except WebDriverException:
+            LOG.debug("The persona browser could not report the page's HTTP status.", exc_info=True)
+            return None
+        # bool is an int subclass, and 0 is what a browser without the field (or a cross-origin entry)
+        # reports -- neither is a status
+        if isinstance(status, bool) or not isinstance(status, int) or status <= 0:
+            return None
+        return status
 
 
 @lru_cache(maxsize=1)
@@ -415,23 +416,29 @@ class PersonaAction(QObject):
         self.finished.emit(message)
 
 
-# one method is the design, not an omission -- see the docstring below
-# pylint: disable-next=too-few-public-methods
 class BrowserPageFetcher:
-    """Satisfies `~.protocols.PageFetcher` by delegating to `shared_persona_browser`, configured from
-    `ScrapersSettings`.
+    """Satisfies `~.protocols.PageFetcher` by a lease of `shared_persona_browser`, configured from
+    `ScrapersSettings`: one browser session for every page of a scrape, however many the scraper asks for, started
+    with the first of them. :meth:`close` quits it, and is its owner's to call -- until then no other scrape gets the
+    profile.
 
     :param settings: where the browser choice and the show-browser flag come from.
     """
 
     def __init__(self, settings: ScrapersSettings) -> None:
-        self.__settings: Final = settings
+        self.__lease: Final = shared_persona_browser().lease(
+            settings.browser, headless=not settings.show_browser, checkpoint=None
+        )
 
     def fetch(self, url: str) -> Page:
-        """Fetch ``url`` through the persona browser :attr:`__settings` configures.
+        """Fetch ``url`` through this scrape's browser session.
 
         :param url: the address to fetch.
         :returns: the fetched page.
         :raises FetchError: the fetch failed.
         """
-        return shared_persona_browser().fetch(url, self.__settings.browser, headless=not self.__settings.show_browser)
+        return self.__lease.fetch(url)
+
+    def close(self) -> None:
+        """Quit the session and give the profile back, if one was started."""
+        self.__lease.close()

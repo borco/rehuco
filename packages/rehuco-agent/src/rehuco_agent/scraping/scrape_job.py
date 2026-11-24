@@ -146,6 +146,7 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         self.__relay: Final = relay
         self.__publisher: str | None = None
         self.__page_url: str | None = None
+        self.__browser_fetcher: BrowserPageFetcher | None = None
 
     class Relay(QObject):
         """Carries finished scrapes' outcomes across the thread boundary, for every job one caller runs (#529).
@@ -303,6 +304,22 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
             (this job's own URL for a plain retry) and ``delay`` (:data:`DEFAULT_REFETCH_DELAY`) are both
             set.
         """
+        try:
+            return self.__scrape()
+        finally:
+            self.__close_browser()
+
+    def __close_browser(self) -> None:
+        """Quit the browser session this scrape fetched with, if it started one, however the scrape ended."""
+        fetcher, self.__browser_fetcher = self.__browser_fetcher, None
+        if fetcher is not None:
+            fetcher.close()
+
+    def __scrape(self) -> ScrapeResult:
+        """What :meth:`scrape` does while its browser session, if any, is open; raises what it raises.
+
+        :returns: the validated result.
+        """
         scraper = self.__registry.find(self.__url)
         if scraper is None:
             raise NoScraperError(self.__url)
@@ -413,7 +430,9 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
 
     def __fetcher_for(self, scraper: object) -> PageFetcher:
         """The fetcher this scrape uses for ``scraper``: the injected override, or dispatch on
-        `~rehuco_agent.settings.scrapers_settings.ScrapersSettings.uses_browser`.
+        `~rehuco_agent.settings.scrapers_settings.ScrapersSettings.uses_browser`. A scrape asks for a browser fetcher
+        once at most -- for its scraper, or for the one a redirect landed on when the first fetch was plain HTTP -- so
+        every page it loads through the browser is loaded in one session, closed when the scrape ends.
 
         :param scraper: the scraper the fetch is for.
         :returns: the fetcher to use.
@@ -421,5 +440,6 @@ class ScrapeJob:  # pylint: disable=too-many-instance-attributes
         if self.__forced_fetcher is not None:
             return self.__forced_fetcher
         if self.__settings.uses_browser(scraper):
-            return BrowserPageFetcher(self.__settings)
+            self.__browser_fetcher = BrowserPageFetcher(self.__settings)
+            return self.__browser_fetcher
         return HttpPageFetcher()
