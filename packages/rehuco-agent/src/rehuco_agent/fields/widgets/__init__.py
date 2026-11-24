@@ -9,6 +9,7 @@ from .curating_image_lightbox import CuratingImageLightbox
 from .date_edit import DateEdit
 from .duration_edit import DurationEdit
 from .duration_measurement_edit import DurationMeasurementEdit
+from .editable_choice_combo_box import EditableChoiceComboBox
 from .expand_toggle_button import ExpandToggleButton
 from .image_export import ImageExporter, image_mime
 from .image_lightbox import ImageLightbox
@@ -42,9 +43,13 @@ from .place_marker import PlaceMarker
 from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
 from .single_choice_radio_buttons import SingleChoiceRadioButtons
+from .size_edit import SizeEdit
 from .size_measurement_edit import SizeMeasurementEdit
 from .source_card_content import LinkDropPassFilter, SourceCardContent, UrlEditDropFilter
 from .sources_editor import SourcesEditor
+from .string_map_editor import StringMapEditor
+from .string_map_model import StringMapModel
+from .string_map_value_editor import StringMapValueEditor
 from .thumbnail_loader import ThumbnailLoader
 from .thumbnail_row import ThumbnailRow
 from .type_badge import TypeBadge
@@ -67,8 +72,13 @@ __all__ = [
     "DateEdit",
     "DurationEdit",
     "DurationMeasurementEdit",
+    "EditableChoiceComboBox",
     "ExpandToggleButton",
+    "SizeEdit",
     "SizeMeasurementEdit",
+    "StringMapEditor",
+    "StringMapModel",
+    "StringMapValueEditor",
     "SourceCardContent",
     "SourcesEditor",
     "UrlEditDropFilter",

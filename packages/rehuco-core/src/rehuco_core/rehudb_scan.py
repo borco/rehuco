@@ -322,18 +322,18 @@ class CatalogRecordReader:  # pylint: disable=too-few-public-methods
             "asset_kind": document.kind,
             "license": document.license,
             "compatibility": tuple(document.compatibility.items()),
+            "formats": tuple(document.formats),
             "source_updated": document.source_updated,
             "advertised_version": document.advertised_version,
             "current_version": document.current_version,
             "advertised_size": document.advertised_size,
+            "advertised_triangles": document.advertised_triangles,
+            "advertised_texture_size": document.advertised_texture_size,
             "triangles": document.triangles,
             "texture_size": document.texture_size,
             "acquired": document.acquired,
         }
-        fields = {name: values[name] for name in catalog_type_fields(document.type, document.plugins)}
-        if "formats" in document.plugins.field_names(document.type):
-            fields["formats"] = tuple(document.formats)
-        return fields
+        return {name: values[name] for name in catalog_type_fields(document.type, document.plugins)}
 
     @staticmethod
     def __publishers(document: RehuDocument) -> tuple[str, ...]:

@@ -7,7 +7,7 @@ The cache is :mod:`test_rehudb`'s, over a shared-cache in-memory database; its f
 from collections.abc import Callable
 
 from pytest_mock import MockerFixture
-from rehuco_core import TYPE_FIELD_COLUMNS, CatalogCache, MappedRoot
+from rehuco_core import MAX_STORED_INTEGER, TYPE_FIELD_COLUMNS, CatalogCache, MappedRoot
 
 from rehuco_core_tests.mapped_roots import mapped
 from rehuco_core_tests.test_rehudb import (  # noqa: F401  # pylint: disable=unused-import
@@ -139,3 +139,27 @@ def test_a_version_9_cache_upgrades_with_no_asset_fields_and_stale(
     assert all(getattr(row.record, name) in {None, ()} for name in TYPE_FIELD_COLUMNS)
     assert row.record.formats == ()
     assert (row.record.mtime_ns, row.record.content_hash) == (0, "")
+
+
+def test_a_size_beyond_what_the_cache_holds_is_kept_unknown_and_stops_nothing(cache: CatalogCache) -> None:
+    """A whole number a ``.rehu`` names that SQLite's signed 64-bit integers cannot hold is stored as ``NULL``, so the
+    scan that reads it lands every record of its root; the largest number they hold is kept (#678).
+
+    **Test steps:**
+
+    * scan assets whose size, triangles and texture side are a number beyond the limit, its negative, and the limit
+    * verify every row is written, the first two read unknown and the last reads the limit
+    """
+    root = first_root(cache)
+
+    cache.apply_root_scan(
+        root.root_id,
+        [
+            record("a/info.rehu", type="asset", advertised_size=10**20, triangles=2**63, texture_size=-(10**20)),
+            record("b/info.rehu", type="asset", advertised_size=MAX_STORED_INTEGER, triangles=-MAX_STORED_INTEGER),
+        ],
+    )
+
+    first, second = (row.record for row in cache.rows())
+    assert (first.advertised_size, first.triangles, first.texture_size) == (None, None, None)
+    assert (second.advertised_size, second.triangles) == (MAX_STORED_INTEGER, -MAX_STORED_INTEGER)

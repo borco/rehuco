@@ -40,6 +40,7 @@ import json
 import logging
 import os
 import sqlite3
+import string
 import time
 from collections.abc import Callable, Collection, Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -56,8 +57,9 @@ from .constants import REHUDB_SUFFIX
 from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, FORMATS_VERSION, SchemaChain
 from .migrations.runner import chain_head
 from .path_keys import path_key
-from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
+from .plugins import ASSET_FIELD_NAMES, ASSET_PLUGIN, DEFAULT_PLUGIN_REGISTRY, PluginRegistry
 from .root_mappings import MappedRoot
+from .value_range import ValueRange
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -87,6 +89,55 @@ class CatalogField(StrEnum):
     TAGS = "tags"
     PUBLISHERS = "publishers"
     TYPE = "type"
+    KIND = "kind"
+    LICENSE = "license"
+    FORMATS = "formats"
+
+
+class CatalogRangeField(StrEnum):
+    """What a comparison on the filter line can address (#678, [[assets#ranges]]): the asset fields stored as range
+    text, whose lower and upper bounds the cache keeps in columns of their own; its value is the field's name."""
+
+    ADVERTISED_TRIANGLES = "advertised_triangles"
+    ADVERTISED_TEXTURE_SIZE = "advertised_texture_size"
+
+
+class CatalogOperator(StrEnum):
+    """A comparison on a range field; its value is the filter line's spelling."""
+
+    LESS = "<"
+    LESS_OR_EQUAL = "<="
+    GREATER = ">"
+    GREATER_OR_EQUAL = ">="
+
+
+OPERATOR_BOUNDS: Final = {
+    CatalogOperator.LESS: "lower",
+    CatalogOperator.LESS_OR_EQUAL: "lower",
+    CatalogOperator.GREATER: "upper",
+    CatalogOperator.GREATER_OR_EQUAL: "upper",
+}
+"""The end of a range each operator reads, since a comparison matches when **any** value of the range does: something
+below ``n`` is there when the smallest value is, something above ``n`` when the largest is."""
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogComparison:
+    """One ``<name><operator><number>`` word of the filter line (#678).
+
+    :param field: the range field compared.
+    :param operator: how it is compared.
+    :param number: what to, a non-negative whole number.
+    """
+
+    field: CatalogRangeField
+    operator: CatalogOperator
+    number: int
+
+    @property
+    def column(self) -> str:
+        """The bound the comparison reads: a ``resources`` column, and the name of the same bound on a search key."""
+        return f"{self.field.value}_{OPERATOR_BOUNDS[self.operator]}"
 
 
 class CatalogTextField(StrEnum):
@@ -127,13 +178,16 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     :param advertised_count: the pack's own claim of how many images it holds, as text (``500+``), or ``None``.
     :param current_count: the measured content-image count, or ``None``.
     :param asset_kind: an asset's ``kind`` ([[assets#kind]]), or ``None`` when its block names none; type-specific,
-        like the nine below and ``formats`` ([[assets#block]], #676).
+        like the eleven below and ``formats`` ([[assets#block]], #676).
     :param license: the license's short id, or ``None``.
     :param compatibility: what the item works with and in which versions, in the block's order.
     :param source_updated: when the store last changed the item, as stored, or ``None``.
     :param advertised_version: the version the store offers, or ``None``.
     :param current_version: the version of the local files, or ``None``.
     :param advertised_size: the download size the store states in bytes, or ``None``.
+    :param advertised_triangles: the triangle count the store states, as the range text the record holds
+        (:class:`~rehuco_core.ValueRange`), or ``None``; the cache keeps its two bounds beside it (#678).
+    :param advertised_texture_size: the longest side of the largest texture the store states, the same way.
     :param triangles: the heaviest mesh's triangle count, or ``None``.
     :param texture_size: the largest texture's longest side in pixels, or ``None``.
     :param acquired: when the account got the item, as stored -- a UTC time where the store gives one, so that text
@@ -176,6 +230,8 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     advertised_version: str | None = None
     current_version: str | None = None
     advertised_size: int | None = None
+    advertised_triangles: str | None = None
+    advertised_texture_size: str | None = None
     triangles: int | None = None
     texture_size: int | None = None
     acquired: str | None = None
@@ -359,14 +415,18 @@ class CatalogQuery:
     :param terms: each matched anywhere in any place of ``scope`` -- part of a title, a root-relative path, or one
         author, publisher or tag name -- ignoring case and diacritics (:func:`borco_core.fold`, #475); none matches all.
     :param tokens: ``(field, value)`` pairs. ``folder`` is a ``<label>/<relative path>`` prefix; ``authors``,
-        ``tags`` and ``publishers`` match one value whole, ignoring case and diacritics; ``type`` matches the type.
+        ``tags``, ``publishers`` and ``formats`` match one value whole, ignoring case and diacritics; ``type`` and
+        ``license`` match the type or the license as ASCII folds it; ``kind`` matches an asset's kind the same way,
+        with ``unknown`` finding an asset with no kind too and an empty value finding only that (#678).
     :param scope: where a term is looked for (#647); every place by default, and none when empty, which matches no row
         once there is a term.
+    :param comparisons: what a range field is compared to; each must hold (#678).
     """
 
     terms: tuple[str, ...] = ()
     tokens: tuple[tuple[CatalogField, str], ...] = ()
     scope: frozenset[CatalogTextField] = frozenset(CatalogTextField)
+    comparisons: tuple[CatalogComparison, ...] = ()
 
 
 JOINS: Final = (
@@ -378,23 +438,32 @@ JOINS: Final = (
 into a statement."""
 
 FORMATS_JOIN: Final = ("formats", "resource_formats")
-"""An asset's file formats and their join table (schema v10, #676): kept as tags are, searched by nothing yet."""
+"""An asset's file formats and their join table (schema v10, #676): kept as tags are, and searched by the ``formats``
+token (#678), though never by a free-text term."""
 
 VALUE_JOINS: Final = (*JOINS, FORMATS_JOIN)
 """Every value table and its join table, in the order a row is written and read with them."""
 
 TOKEN_CLAUSES: Final = {
     CatalogField.TYPE: "r.type = ? COLLATE NOCASE",
+    CatalogField.LICENSE: "r.license = ? COLLATE NOCASE",
     **{
         # driven from the value's folded-name index and the join's value index, not probed once per resource (#454)
         CatalogField(table): (
             f"r.id IN (SELECT j.resource_id FROM {join} j JOIN {table} v ON v.id = j.value_id "  # nosec  # B608: fixed
             "WHERE v.folded = ?)"
         )
-        for table, join in JOINS
+        for table, join in VALUE_JOINS
     },
 }
-"""The clause each token field adds but ``folder``, each with exactly one parameter -- folded for a value table's."""
+"""The clause each token field adds but ``folder`` and ``kind``, each with exactly one parameter -- folded for a value
+table's, as it is for ``type`` and ``license``, whose ``NOCASE`` folds ASCII only."""
+
+UNFOLDED_FIELDS: Final = frozenset({CatalogField.TYPE, CatalogField.LICENSE})
+"""The token fields whose value is compared as the cache's ``NOCASE`` does, not folded as a name is."""
+
+UNKNOWN_KIND: Final = "unknown"
+"""The kind a scan writes for an item it cannot classify; ``kind:unknown`` finds an asset with no kind too (#678)."""
 
 FOLD_PROBE: Final = "\u0130 \u00df \ufb01 \u210c e\u0301 \u00c5 \u01c4 \u03a3\u03c2 \u1e9e \uff05 \u00e9 \u0141"
 """Text that exercises every step of :func:`borco_core.fold`: letters casefolding turns into two (``İ``, ``ß``), a
@@ -434,6 +503,13 @@ FOLDER_SUBTREE_CLAUSE: Final = f"({FOLDER_ROOT_CLAUSE} AND r.path_key >= ? AND r
 """A folder beneath a root, by key range -- three parameters: the root's label, then the bounds of the keys under the
 folder's ``/``-terminated prefix. The path part folds as the filesystem does (:func:`catalog_path_key`)."""
 
+ASSET_COLUMNS: Final = tuple(
+    "asset_kind" if name == "kind" else name for name in ASSET_FIELD_NAMES if name not in {"license_url", "formats"}
+)
+"""An asset's columns, its block's fields in their declared order (#676, #678): the block's ``kind`` is ``asset_kind``,
+since ``kind`` is the record's format; ``license_url`` has no column, nothing filtering or sorting by it; ``formats``
+is kept in a value table instead (:data:`FORMATS_JOIN`)."""
+
 TYPE_FIELD_COLUMNS: Final = (
     "advertised_duration",
     "original_duration",
@@ -441,21 +517,26 @@ TYPE_FIELD_COLUMNS: Final = (
     "level",
     "advertised_count",
     "current_count",
-    "asset_kind",
-    "license",
-    "compatibility",
-    "source_updated",
-    "advertised_version",
-    "current_version",
-    "advertised_size",
-    "triangles",
-    "texture_size",
-    "acquired",
+    *ASSET_COLUMNS,
 )
 """The type-specific fields the cache stores, one column each: a tutorial's durations and level, a reference pack's
-image counts (schema v3, #399), an asset's scalars and its ``compatibility`` (schema v10, #676). A scan fills one only
-where the record's type declares it. An asset's ``formats`` is a type field too, kept in a value table instead
-(:data:`FORMATS_JOIN`)."""
+image counts (schema v3, #399), an asset's scalars and its ``compatibility`` (schema v10, #676) and its two advertised
+ranges (schema v11, #678). A scan fills one only where the record's type declares it."""
+
+TYPE_FIELD_NAMES: Final = (*TYPE_FIELD_COLUMNS, "formats")
+"""Every type-specific field the cache stores: :data:`TYPE_FIELD_COLUMNS` and an asset's ``formats``, kept in a value
+table instead (:data:`FORMATS_JOIN`)."""
+
+BOUND_COLUMNS: Final = tuple(f"{field.value}_{end}" for field in CatalogRangeField for end in ("lower", "upper"))
+"""The columns holding each range field's two bounds (schema v11, #678): derived from the field's text when a row is
+written, as the folded title is, so they are no part of a record and never read back."""
+
+DERIVED_COLUMNS: Final = ("folded_title", "folded_path", *BOUND_COLUMNS)
+"""The ``resources`` columns a row is written with that are worked out from its record and read by nothing but a
+search."""
+
+ASCII_LOWER: Final = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
+"""Lowers ASCII letters and nothing else -- what SQLite's ``LIKE`` and ``NOCASE`` fold, without ICU."""
 
 COLUMN_FIELDS: Final = {"asset_kind": "kind"}
 """The block field a type-specific column holds, where the two are named apart: an asset's ``kind``, since the
@@ -489,6 +570,11 @@ stored as it is but for :data:`JSON_COLUMNS` (:meth:`CatalogCache.rows`)."""
 SELECTED_COLUMNS: Final = ", ".join(f"r.{column}" for column in RESOURCE_COLUMNS)
 """The ``resources r`` columns a row is read with, in :data:`RESOURCE_COLUMNS` order."""
 
+MAX_STORED_INTEGER: Final = 2**63 - 1
+"""The largest whole number the cache's integer columns hold (SQLite's are signed 64-bit). A record may name a
+larger one -- a size typed by hand into a ``.rehu`` -- and binding it would raise and stop the whole root's scan, so
+the cache keeps such a value as ``NULL``, unknown."""
+
 KEY_RANGE_END: Final = "\U0010ffff"
 """Appended to a key prefix to bound the range of keys that start with it: the highest code point, whose UTF-8
 sorts after every other character's, so ``prefix <= key < prefix + KEY_RANGE_END`` is an indexed prefix match --
@@ -507,7 +593,7 @@ under its ``/``-terminated prefix."""
 
 
 def catalog_type_fields(type_name: str, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> tuple[str, ...]:
-    """The type-specific columns a resource type contributes to a browser: those of :data:`TYPE_FIELD_COLUMNS`
+    """The type-specific fields a resource type contributes to a browser: those of :data:`TYPE_FIELD_NAMES`
     its plugin declares (:meth:`~rehuco_core.PluginRegistry.field_names`), in the cache's order.
 
     The cache says which fields it stores and the plugin which fields its type has; a column belongs to a type
@@ -518,7 +604,7 @@ def catalog_type_fields(type_name: str, plugins: PluginRegistry = DEFAULT_PLUGIN
     :returns: the column names; ``()`` for a type that declares none, or whose plugin is not installed.
     """
     declared = plugins.field_names(type_name)
-    return tuple(column for column in TYPE_FIELD_COLUMNS if COLUMN_FIELDS.get(column, column) in declared)
+    return tuple(column for column in TYPE_FIELD_NAMES if COLUMN_FIELDS.get(column, column) in declared)
 
 
 def catalog_path_key(path: str) -> str:
@@ -1344,18 +1430,23 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
 
         :returns: the row's id.
         """
-        names = ", ".join(RESOURCE_COLUMNS)
-        updates = ", ".join(f"{column} = excluded.{column}" for column in RESOURCE_COLUMNS)
+        names = ", ".join((*DERIVED_COLUMNS, *RESOURCE_COLUMNS))
+        updates = ", ".join(f"{column} = excluded.{column}" for column in (*DERIVED_COLUMNS, *RESOURCE_COLUMNS))
+        derived = (
+            fold(record.title),
+            fold(record.path),
+            *(bound for field in CatalogRangeField for bound in ValueRange.bounds(getattr(record, field.value))),
+        )
         fields = tuple(CatalogCache.__stored(record, column) for column in RESOURCE_COLUMNS)
         key = catalog_path_key(record.path)
         CatalogCache.__adopt_legacy_row(connection, root_id, record, key)
         (resource_id,) = connection.execute(
-            "INSERT INTO resources (root_id, path_key, scanned_at, folded_title, folded_path, "
+            "INSERT INTO resources (root_id, path_key, scanned_at, "
             f"{names}) "  # nosec  # B608: fixed names
-            f"VALUES (?, ?, ?, ?, ?, {', '.join('?' * len(RESOURCE_COLUMNS))}) "
+            f"VALUES (?, ?, ?, {', '.join('?' * (len(DERIVED_COLUMNS) + len(RESOURCE_COLUMNS)))}) "
             "ON CONFLICT (root_id, path_key) DO UPDATE SET scanned_at = excluded.scanned_at, "
-            f"folded_title = excluded.folded_title, folded_path = excluded.folded_path, {updates} RETURNING id",
-            (root_id, key, stamp, fold(record.title), fold(record.path), *fields),
+            f"{updates} RETURNING id",
+            (root_id, key, stamp, *derived, *fields),
         ).fetchone()
         value_names = (record.authors, record.tags, record.publishers, record.formats)
         for (table, join), names_of in zip(VALUE_JOINS, value_names, strict=True):
@@ -1483,10 +1574,10 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
     def __stored(record: CatalogRecord, column: str) -> object:
         """What one of a record's columns holds: its field as it is, but a :data:`JSON_COLUMNS` field as JSON --
         ``level`` an array, ``compatibility`` an object -- or ``NULL`` when it is empty; the inverse of
-        :meth:`__json_read`."""
+        :meth:`__json_read`. An integer beyond :data:`MAX_STORED_INTEGER` is ``NULL``."""
         value = getattr(record, column)
         if column not in JSON_COLUMNS:
-            return value
+            return None if isinstance(value, int) and abs(value) > MAX_STORED_INTEGER else value
         if not value:
             return None
         return json.dumps(dict(value) if column == "compatibility" else list(value), ensure_ascii=False)
@@ -1556,10 +1647,36 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 clause, folder_parameters = CatalogCache.__folder_clause(value)
                 clauses.append(clause)
                 parameters += folder_parameters
+            elif field is CatalogField.KIND:
+                clause, kind_parameters = CatalogCache.__kind_clause(value)
+                clauses.append(clause)
+                parameters += kind_parameters
             else:
                 clauses.append(TOKEN_CLAUSES[field])
-                parameters.append(value if field is CatalogField.TYPE else fold(value))
+                parameters.append(value if field in UNFOLDED_FIELDS else fold(value))
+        for comparison in query.comparisons:
+            # a bound is NULL for text that is no range, and NULL compares to nothing
+            clauses.append(f"r.{comparison.column} {comparison.operator.value} ?")  # nosec  # B608: fixed names
+            parameters.append(comparison.number)
         return " AND ".join(clauses), tuple(parameters)
+
+    @staticmethod
+    def __kind_clause(value: str) -> tuple[str, tuple[str, ...]]:
+        """The condition a ``kind`` token reads as (#678): an asset of that kind, ASCII case ignored.
+
+        ``unknown`` finds an asset whose block names no kind too, and an empty value finds only that one; both are
+        limited to assets, since a record of any other type has no kind to be missing.
+
+        :param value: the token's value.
+        :returns: the condition and its parameters.
+        """
+        lowered = value.translate(ASCII_LOWER)
+        asset = "r.type = ? COLLATE NOCASE"
+        if lowered == UNKNOWN_KIND:
+            return f"({asset} AND (r.asset_kind IS NULL OR r.asset_kind = ? COLLATE NOCASE))", (ASSET_PLUGIN.key, value)
+        if not lowered:
+            return f"({asset} AND r.asset_kind IS NULL)", (ASSET_PLUGIN.key,)
+        return "r.asset_kind = ? COLLATE NOCASE", (value,)
 
     @staticmethod
     def __folder_clause(value: str) -> tuple[str, tuple[str, ...]]:

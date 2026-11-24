@@ -6,9 +6,9 @@ from PySide6.QtGui import QBrush
 from PySide6.QtWidgets import QLabel
 from pytest import fixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.fields.widgets.string_map_editor import StringMapEditor
+from rehuco_agent.fields.widgets.string_map_model import VALUE_COLUMN
 from rehuco_agent.rehuco.root_layouts_editor import RootLayoutsEditor
-from rehuco_agent.rehuco.string_map_editor import StringMapEditor
-from rehuco_agent.rehuco.string_map_model import VALUE_COLUMN
 from rehuco_agent.settings.root_catalog_settings import DEFAULT_ROOT_LAYOUTS, RootLayout
 from rehuco_agent.settings.ui.default_root_layouts_editor import (
     NO_PRESET_SELECTED,

@@ -10,7 +10,7 @@ from typing import Any, Final, override
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 
-from ..fields.colors import WARNING_COLOR
+from ..colors import WARNING_COLOR
 
 KEY_COLUMN: Final = 0
 """The key -- the cell an insert opens."""

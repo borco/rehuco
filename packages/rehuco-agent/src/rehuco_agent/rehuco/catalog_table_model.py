@@ -57,6 +57,19 @@ class CatalogColumn(IntEnum):
     CURRENT_COUNT = 16
     SERVER = 17
     ROOT = 18
+    KIND = 19
+    LICENSE = 20
+    FORMATS = 21
+    COMPATIBILITY = 22
+    SOURCE_UPDATED = 23
+    ADVERTISED_VERSION = 24
+    CURRENT_VERSION = 25
+    ADVERTISED_SIZE = 26
+    ADVERTISED_TRIANGLES = 27
+    ADVERTISED_TEXTURE_SIZE = 28
+    TRIANGLES = 29
+    TEXTURE_SIZE = 30
+    ACQUIRED = 31
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +85,8 @@ class ColumnSpec:
     :param is_missing: whether a cell's value is no value -- the record states none. A missing one sorts as the
         smallest value: first ascending, last descending, so one click on a header brings the rows lacking it to the
         top and the other to the bottom.
+    :param preset_visible: whether a preset for the column's type shows it; one that does not leaves it to the header
+        menu (#678), which an asset's many columns need.
     """
 
     title: str
@@ -80,6 +95,7 @@ class ColumnSpec:
     numeric: bool = False
     sort_key: Callable[[Any], Any] | None = None
     is_missing: Callable[[object], bool] = lambda value: value is None or value == ""
+    preset_visible: bool = True
 
 
 def title_of(entry: CatalogRow) -> str:
@@ -158,6 +174,79 @@ COLUMNS: Final[Mapping[CatalogColumn, ColumnSpec]] = {
     # a row alone does not know where its root is mapped from: the model fills the cell in
     CatalogColumn.SERVER: ColumnSpec("Server", lambda _entry: "", sort_key=folded),
     CatalogColumn.ROOT: ColumnSpec("Root", lambda entry: entry.root_label, default_visible=False, sort_key=folded),
+    # an asset's columns (#678): all appended and hidden, and only the one a library is sorted by is shown by its preset
+    CatalogColumn.KIND: ColumnSpec(
+        "Kind", lambda entry: entry.record.asset_kind, default_visible=False, sort_key=folded, preset_visible=False
+    ),
+    CatalogColumn.LICENSE: ColumnSpec(
+        "License", lambda entry: entry.record.license, default_visible=False, sort_key=folded, preset_visible=False
+    ),
+    CatalogColumn.FORMATS: ColumnSpec(
+        "Formats",
+        lambda entry: joined(entry.record.formats),
+        default_visible=False,
+        sort_key=folded,
+        preset_visible=False,
+    ),
+    CatalogColumn.COMPATIBILITY: ColumnSpec(
+        "Compatibility",
+        lambda entry: joined(f"{name}: {versions}" for name, versions in entry.record.compatibility),
+        default_visible=False,
+        sort_key=folded,
+        preset_visible=False,
+    ),
+    CatalogColumn.SOURCE_UPDATED: ColumnSpec(
+        "Source updated", lambda entry: entry.record.source_updated, default_visible=False, preset_visible=False
+    ),
+    CatalogColumn.ADVERTISED_VERSION: ColumnSpec(
+        "Advertised version",
+        lambda entry: entry.record.advertised_version,
+        default_visible=False,
+        sort_key=natural_sort_key,
+        preset_visible=False,
+    ),
+    CatalogColumn.CURRENT_VERSION: ColumnSpec(
+        "Current version",
+        lambda entry: entry.record.current_version,
+        default_visible=False,
+        sort_key=natural_sort_key,
+        preset_visible=False,
+    ),
+    CatalogColumn.ADVERTISED_SIZE: ColumnSpec(
+        "Advertised size",
+        lambda entry: entry.record.advertised_size,
+        default_visible=False,
+        numeric=True,
+        preset_visible=False,
+    ),
+    CatalogColumn.ADVERTISED_TRIANGLES: ColumnSpec(
+        "Advertised triangles",
+        lambda entry: entry.record.advertised_triangles,
+        default_visible=False,
+        numeric=True,
+        # a range such as "12,40-60" sorts by its numbers, not as text
+        sort_key=natural_sort_key,
+        preset_visible=False,
+    ),
+    CatalogColumn.ADVERTISED_TEXTURE_SIZE: ColumnSpec(
+        "Advertised texture size",
+        lambda entry: entry.record.advertised_texture_size,
+        default_visible=False,
+        numeric=True,
+        sort_key=natural_sort_key,
+        preset_visible=False,
+    ),
+    CatalogColumn.TRIANGLES: ColumnSpec(
+        "Triangles", lambda entry: entry.record.triangles, default_visible=False, numeric=True, preset_visible=False
+    ),
+    CatalogColumn.TEXTURE_SIZE: ColumnSpec(
+        "Texture size",
+        lambda entry: entry.record.texture_size,
+        default_visible=False,
+        numeric=True,
+        preset_visible=False,
+    ),
+    CatalogColumn.ACQUIRED: ColumnSpec("Acquired", lambda entry: entry.record.acquired, default_visible=False),
 }
 """Every column, in :class:`CatalogColumn` order."""
 
@@ -176,9 +265,22 @@ TYPE_COLUMNS: Final[Mapping[str, CatalogColumn]] = {
     "level": CatalogColumn.LEVEL,
     "advertised_count": CatalogColumn.ADVERTISED_COUNT,
     "current_count": CatalogColumn.CURRENT_COUNT,
+    "asset_kind": CatalogColumn.KIND,
+    "license": CatalogColumn.LICENSE,
+    "compatibility": CatalogColumn.COMPATIBILITY,
+    "source_updated": CatalogColumn.SOURCE_UPDATED,
+    "advertised_version": CatalogColumn.ADVERTISED_VERSION,
+    "current_version": CatalogColumn.CURRENT_VERSION,
+    "advertised_size": CatalogColumn.ADVERTISED_SIZE,
+    "advertised_triangles": CatalogColumn.ADVERTISED_TRIANGLES,
+    "advertised_texture_size": CatalogColumn.ADVERTISED_TEXTURE_SIZE,
+    "triangles": CatalogColumn.TRIANGLES,
+    "texture_size": CatalogColumn.TEXTURE_SIZE,
+    "acquired": CatalogColumn.ACQUIRED,
+    "formats": CatalogColumn.FORMATS,
 }
-"""The column each of the cache's type-specific fields (:data:`~rehuco_core.TYPE_FIELD_COLUMNS`) shows in, by the
-field's name -- what turns a type's :func:`~rehuco_core.catalog_type_fields` into columns (#400)."""
+"""The column each of the cache's type-specific fields (:data:`~rehuco_core.TYPE_FIELD_NAMES`) shows in, by the
+field's name -- what turns a type's :func:`~rehuco_core.catalog_type_fields` into columns (#400, #678)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -632,6 +734,8 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
             return record.error
         if column is CatalogColumn.SIZE and record.current_size is not None:
             return f"{record.current_size:,} bytes"
+        if column is CatalogColumn.ADVERTISED_SIZE and record.advertised_size is not None:
+            return f"{record.advertised_size:,} bytes"
         if column is CatalogColumn.FORMAT and format_of(entry) == UNKNOWN_FORMAT:
             return "Not read since the cache began recording format versions; a scan reads it."
         return None

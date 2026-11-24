@@ -93,13 +93,14 @@ the theme own the text color. A type whose plugin **isn't installed here** has n
 takes exactly that theme fallback — the not-installed path ([[plugins#plugin-blocks]]) reuses the same `None`-resolution
 rather than inventing a placeholder color.
 
-The built-in declarations (background only; all three take the theme's selection text):
+The built-in declarations (background only; every one takes the theme's selection text):
 
 | plugin | badge background |
 | --- | --- |
 | `tutorial` | `#1E88E5` (Blue 600) |
 | `reference_images` | `#8E24AA` (Purple 600) |
 | `collection` | `#00897B` (Teal 600) |
+| `asset` | `#D84315` (Deep Orange 800) |
 
 `daz3d` ([[plugins#daz3d-plugin]]) has no declaration at all — it is future work — so a `daz3d:` block exercises the
 not-installed fallback for real rather than hypothetically. These per-type category colors are independent of the app's
@@ -721,7 +722,9 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     shows authors, title, type, path, publisher, tags, released, size, updated and **format**; the URL and the
     type-specific columns — a tutorial's durations and level, a reference pack's image counts, the fields the cache
     stores that the type's plugin declares ([[data-model#cache-schema]], #399) — start hidden, for a preset to show.
-    An asset's fields are cached (#676) but have no column yet, so no preset is offered for it until #678.
+    An asset's thirteen (#678) are appended after the others, so a header state saved before them is unchanged: kind,
+    license, formats, compatibility, the two dates, the two versions, the advertised size and ranges, and the measured
+    counts. A preset shows only the one the library is sorted by, *Acquired*; the rest are ticked in the header menu.
     A header state saved before a column existed shows that column at its default. **A cell holds its value** (a size
     in bytes, a duration in seconds) and a delegate says how it reads, so two sizes that read alike still sort apart;
     the exact size is the cell's tooltip. A missing value sorts as the smallest — first ascending, last descending
@@ -742,13 +745,16 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     holds `\n`). *Copy paths as JSON* is for scripts — a list of strings, one per line, that reads back exactly. Both
     copy plain text only, never a file list, so a paste into Explorer copies no folders.
   - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
-    (`folder`, `authors`, `tags`, `publishers`, `type`), all ANDed. Free text is **one term per word**, each found in a
+    (`folder`, `authors`, `tags`, `publishers`, `type`, and an asset's `kind`, `license` and `formats`), all ANDed. Free text is **one term per word**, each found in a
     title, a path, or part of any author, publisher or tag name (any one of them), so `foo bar` finds "bar then foo"; a
     `"quoted run"` is one term, the phrase (#475). **`in:` says where free text looks** (#647), as GitHub's search
     does: a comma list of `title`, `path`, `authors`, `publishers`, `tags` (`ann in:authors,publishers`), several
     `in:` words adding up, an unknown place reported like an unknown field. There is no `title:` token: `in:title` is
     how a search is kept to titles. Field tokens stay exact — `authors:ann` finds an author named Ann, never Annette.
-    A repeated field must match both values. It picks the rows **by query, not by proxy**: as the text
+    A repeated field must match both values. **An asset's two advertised ranges are compared** (#678) with `<`, `<=`, `>`
+    and `>=`, written with no space: `advertised_triangles<15`, `advertised_texture_size>=2048`. A range matches when
+    any value of it does ([[assets#ranges]]). `kind:unknown` finds an asset with that kind or none, `kind:""` one with none
+    ([[assets#kind]]). It picks the rows **by query, not by proxy**: as the text
     settles (or on Enter) it is compiled to a `CatalogQuery` and the browser is handed the rows that match, so the
     table and its status line only ever hold what matches. **The rows are read off the GUI thread and filtered in
     memory** (#455): a read costs about 21 µs per row it returns (#407), so every row is read once per change — an
@@ -789,8 +795,9 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     those matching both ([[plugins#saved-searches]]). The Tag Browser sets the line as a link does
     ([[plugins#tag-browser]]).
   - **New Table Browser** offers presets on its menu (#400) — a click on it is *Default* (the common columns); then
-    one *\<Type\> Columns* entry per type that contributes columns (`catalog_type_fields`), today *Tutorial Columns* and
-    *Reference Images Columns*: that type's columns shown, every other type's hidden, a `type:` token on the line, and
+    one *\<Type\> Columns* entry per type that contributes columns (`catalog_type_fields`), today *Tutorial Columns*,
+    *Reference Images Columns* and *Asset Columns*: that type's columns shown, except those that leave themselves to the
+    header menu, every other type's hidden, a `type:` token on the line, and
     the browser named after the type. A type with no column of its own is not offered. A preset only picks the
     starting header state, filter and name; the browser is then an ordinary one and remembers no preset.
 - **A covered file shows its checksum state in the Roots view** (#457). A file's state comes from **its own**

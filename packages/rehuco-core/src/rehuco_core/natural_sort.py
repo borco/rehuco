@@ -22,11 +22,14 @@ def natural_sort_key(filename: str) -> tuple[NaturalRun, ...]:
     ``image8 < image9 < image009 < image10``, the order Explorer and Finder show. Deliberately not the
     raw string, which would put ``009`` before ``9`` (``"0" < "9"``) and contradict that example.
 
+    A character that is a digit to Python's ``isdigit`` but no decimal (``²``) is text, as ``int`` cannot read it: a
+    free-text cell a person typed, such as a version, is sorted by this key too (#678).
+
     :param filename: the candidate filename.
     :returns: one entry per digit/non-digit run.
     """
     return tuple(
-        (0, int(part), len(part), "") if part.isdigit() else (1, 0, 0, part.lower())
+        (0, int(part), len(part), "") if part.isdecimal() else (1, 0, 0, part.lower())
         for part in DIGIT_RUNS.split(filename)
         if part
     )

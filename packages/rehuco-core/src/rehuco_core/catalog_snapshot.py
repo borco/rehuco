@@ -17,19 +17,36 @@ pass once it is back on (:meth:`~rehuco_agent.rehuco.catalog_rows_loader.Catalog
 the GIL, so every tracked object a row makes is a stall on the GUI thread.
 """
 
-import string
 from collections.abc import Callable, Collection, Iterable, KeysView
 from dataclasses import dataclass
-from operator import attrgetter
+from operator import attrgetter, ge, gt, le, lt
 from typing import Final
 from uuid import UUID
 
 from borco_core import fold
 
-from .rehudb import KEY_RANGE_END, CatalogField, CatalogQuery, CatalogRow, CatalogTextField, catalog_path_key
+from .plugins import ASSET_PLUGIN
+from .rehudb import (
+    ASCII_LOWER,
+    KEY_RANGE_END,
+    UNKNOWN_KIND,
+    CatalogComparison,
+    CatalogField,
+    CatalogOperator,
+    CatalogQuery,
+    CatalogRow,
+    CatalogTextField,
+    catalog_path_key,
+)
+from .value_range import ValueRange
 
-ASCII_LOWER: Final = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
-"""Lowers ASCII letters and nothing else -- what SQLite's ``LIKE`` and ``NOCASE`` fold, without ICU."""
+COMPARISONS: Final = {
+    CatalogOperator.LESS: lt,
+    CatalogOperator.LESS_OR_EQUAL: le,
+    CatalogOperator.GREATER: gt,
+    CatalogOperator.GREATER_OR_EQUAL: ge,
+}
+"""What each operator does to a bound and a number."""
 
 TEXT_SEPARATOR: Final = "\n"
 """What a key's joined text puts between its parts. A term holding none is found in the joined text exactly where it is
@@ -54,6 +71,9 @@ PLACE_PARTS: Final[dict[CatalogTextField, Callable[[CatalogSearchKey], tuple[str
 """Each place, and the key's texts for it apart -- for a term holding :data:`TEXT_SEPARATOR`. A name is folded but not
 yet ASCII-lowered, which the slow path does as it looks."""
 
+ASSET_TYPE: Final = ASSET_PLUGIN.key.translate(ASCII_LOWER)
+"""The asset type as a key spells it."""
+
 WHOLE_TEXT: Final = attrgetter("text")
 """The key's text for a query looking in every place at once."""
 
@@ -77,6 +97,14 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
         joined by :data:`TEXT_SEPARATOR` so a term is looked for in all of them at once (#647).
     :param tag_text: every tag, the same way.
     :param publisher_text: every publisher, the same way.
+    :param kind: an asset's kind, ASCII-lowered, or ``None`` when its block names none (#678).
+    :param license: the license, the same way.
+    :param formats: every file format, folded, as a token compares it whole.
+    :param advertised_triangles_lower: the smallest value of the advertised triangle count, or ``None`` for text that
+        is no range; the next three are the largest, and the two ends of the advertised texture size.
+    :param advertised_triangles_upper: see above.
+    :param advertised_texture_size_lower: see above.
+    :param advertised_texture_size_upper: see above.
     :param text: the title, the path and every name, the same way -- what a term is looked for in by default: one test
         per row, where one per name measured 4-6x slower at 100k rows.
     """
@@ -93,6 +121,13 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
     author_text: str
     tag_text: str
     publisher_text: str
+    kind: str | None
+    license: str | None
+    formats: tuple[str, ...]
+    advertised_triangles_lower: int | None
+    advertised_triangles_upper: int | None
+    advertised_texture_size_lower: int | None
+    advertised_texture_size_upper: int | None
     text: str
 
     @classmethod
@@ -111,6 +146,8 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
         author_text = TEXT_SEPARATOR.join(authors).translate(ASCII_LOWER)
         tag_text = TEXT_SEPARATOR.join(tags).translate(ASCII_LOWER)
         publisher_text = TEXT_SEPARATOR.join(publishers).translate(ASCII_LOWER)
+        triangles = ValueRange.bounds(record.advertised_triangles)
+        textures = ValueRange.bounds(record.advertised_texture_size)
         return cls(
             row,
             title,
@@ -124,8 +161,81 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
             author_text,
             tag_text,
             publisher_text,
+            None if record.asset_kind is None else record.asset_kind.translate(ASCII_LOWER),
+            None if record.license is None else record.license.translate(ASCII_LOWER),
+            tuple(fold(name) for name in record.formats),
+            *triangles,
+            *textures,
             TEXT_SEPARATOR.join((title, path, author_text, publisher_text, tag_text)),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class AssetMatcher:
+    """The part of a :class:`~rehuco_core.CatalogQuery` that reads an asset's own fields (#678): its ``license`` and
+    ``kind`` tokens and its comparisons of a range, as the cache's ``WHERE`` reads them.
+
+    :param licenses: the ``license`` tokens' values, ASCII-lowered.
+    :param kinds: the ``kind`` tokens' values, the same way.
+    :param comparisons: the comparisons of a range field.
+    """
+
+    licenses: tuple[str, ...]
+    kinds: tuple[str, ...]
+    comparisons: tuple[CatalogComparison, ...]
+
+    @classmethod
+    def of(cls, query: CatalogQuery) -> AssetMatcher:
+        """What a query asks of an asset's own fields.
+
+        :param query: what to match.
+        :returns: the matcher.
+        """
+        return cls(
+            tuple(value.translate(ASCII_LOWER) for field, value in query.tokens if field is CatalogField.LICENSE),
+            tuple(value.translate(ASCII_LOWER) for field, value in query.tokens if field is CatalogField.KIND),
+            query.comparisons,
+        )
+
+    def pick(self, keys: list[CatalogSearchKey]) -> list[CatalogSearchKey]:
+        """The keys that satisfy every one of them, in their order.
+
+        :param keys: the keys still picked.
+        :returns: those that do.
+        """
+        for value in self.licenses:
+            keys = [key for key in keys if key.license == value]
+        for value in self.kinds:
+            keys = [key for key in keys if self.__has_kind(key, value)]
+        for comparison in self.comparisons:
+            keys = [key for key in keys if self.__compared(key, comparison)]
+        return keys
+
+    @staticmethod
+    def __has_kind(key: CatalogSearchKey, value: str) -> bool:
+        """Whether an asset is of the kind a ``kind`` token names -- the cache's ``kind`` clause.
+
+        :param key: the row's key.
+        :param value: the token's value, ASCII-lowered.
+        :returns: whether it is. ``unknown`` finds an asset with no kind too, and an empty value finds only that one;
+            both are limited to assets.
+        """
+        if value == UNKNOWN_KIND:
+            return key.type == ASSET_TYPE and key.kind in {None, UNKNOWN_KIND}
+        if not value:
+            return key.type == ASSET_TYPE and key.kind is None
+        return key.kind == value
+
+    @staticmethod
+    def __compared(key: CatalogSearchKey, comparison: CatalogComparison) -> bool:
+        """Whether a range field's bound satisfies a comparison.
+
+        :param key: the row's key.
+        :param comparison: what to compare.
+        :returns: whether the bound is there and does.
+        """
+        bound = getattr(key, comparison.column)
+        return bound is not None and COMPARISONS[comparison.operator](bound, comparison.number)
 
 
 class CatalogMatcher:
@@ -157,8 +267,9 @@ class CatalogMatcher:
         self.__values: Final = tuple(
             (attrgetter(field.value), fold(value))
             for field, value in query.tokens
-            if field in (CatalogField.AUTHORS, CatalogField.TAGS, CatalogField.PUBLISHERS)
+            if field in (CatalogField.AUTHORS, CatalogField.TAGS, CatalogField.PUBLISHERS, CatalogField.FORMATS)
         )
+        self.__assets: Final = AssetMatcher.of(query)
         self.__folders: Final = tuple(
             self.__folder_ranges(value) for field, value in query.tokens if field is CatalogField.FOLDER
         )
@@ -182,6 +293,7 @@ class CatalogMatcher:
             picked = self.__with_term(term, picked)
         for value in self.__types:
             picked = [key for key in picked if key.type == value]
+        picked = self.__assets.pick(picked)
         for names, value in self.__values:
             picked = [key for key in picked if value in names(key)]
         for ranges in self.__folders:

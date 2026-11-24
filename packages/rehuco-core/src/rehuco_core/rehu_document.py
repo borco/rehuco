@@ -2191,23 +2191,24 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     @property
     def formats(self) -> list[str]:
         """The file formats an asset is delivered in, such as ``fbx`` or ``blend`` ([[assets#block]]); a shared field
-        on the active plugin block. Empty when absent, with :attr:`advertised_tags`' skip-and-lock reading."""
+        on the active plugin block. Empty when absent, with :attr:`advertised_tags`' skip-and-lock reading. Setting
+        it empty removes the key: a missing field is *not known*, and an empty list says no more."""
         return coerced_str_list(self.active_field("formats"))
 
     @formats.setter
     def formats(self, value: list[str]) -> None:
-        self.set_active_field("formats", list(value))
+        self.__set_active_or_remove("formats", list(value) or None)
 
     @property
     def compatibility(self) -> dict[str, str]:
         """What an asset works with, and in which versions, such as ``{"blender": ">=4,<5"}`` ([[assets#block]]); a
         shared field on the active plugin block. Empty when absent; a value that is not a string is skipped and
-        locks."""
+        locks. Setting it empty removes the key, as :attr:`formats` does."""
         return coerced_str_map(self.active_field("compatibility"))
 
     @compatibility.setter
     def compatibility(self, value: Mapping[str, str]) -> None:
-        self.set_active_field("compatibility", dict(value))
+        self.__set_active_or_remove("compatibility", dict(value) or None)
 
     @property
     def source_updated(self) -> str | None:
@@ -2294,8 +2295,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def acquired(self) -> str | None:
-        """The partial-precision date the account got an asset, where the store says ([[assets#block]]); ``None``
-        when absent or JSON ``null``; a present non-string reads ``None`` and locks."""
+        """When the account got an asset, where the store says ([[assets#block]]): a UTC time
+        (``2024-05-03T12:34:56.789123Z``) or a partial-precision date; ``None`` when absent or JSON ``null``; a present
+        non-string reads ``None`` and locks."""
         return optional_str(self.active_field("acquired"))
 
     @acquired.setter

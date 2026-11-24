@@ -759,13 +759,16 @@ The distinct value types the viewer must handle:
 | url | rendered as an external hyperlink |
 | date | **partial precision** — year, year+month, or full date; sorts/compares across mixed precision |
 | duration | integer seconds; rendered per [[field-schema#duration-format]] |
-| size | integer bytes; rendered base-1000 |
+| size | integer bytes; rendered base-1000. A record states one only where a store does: an asset's `advertised_size` (#678) |
 | rating | integer, may be negative; star-style widget |
 | bool | yes/no; `complete` shows a warning color when false |
 | multi-choice | fixed value set; `level` ∈ {beginner, intermediate, advanced, any} |
 | Markdown | rich text; resolves embedded image paths relative to the file's folder |
 | int | plain integer; `collection_index`, `current_count` (which adds a measure/apply row, [[data-model#resource-scoping]]) |
 | count claim | a whole number, optionally suffixed `+` (`500`, `500+`); stored as **text**, never coerced to an integer — `advertised_count` |
+| optional text | one line a record may leave out; empty is **absent**, never `""`. An asset's versions and its two advertised ranges (text in the notation of [[assets#ranges]], never refused); `license_url` is the same shown as a link (#678) |
+| choice | one of a closed list, or none; an asset's `kind`. `license` is the same with the known ids offered and any other text allowed (#678) |
+| string map | a table of keys and the values they map to; an asset's `compatibility` (#678) |
 | record list | list of small records; `sources`, `collections`, `learning_paths` ([[field-schema#sources]]) |
 
 **Line endings in `description` are normalized on read, stored verbatim on write.** The `description` getter returns

@@ -13,9 +13,9 @@ from PySide6.QtWidgets import QAbstractItemView, QToolButton, QWidget
 from pytest import mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.fields.widgets.string_map_editor import StringMapEditor
+from rehuco_agent.fields.widgets.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
 from rehuco_agent.rehuco.roots_preview import RootsPreview
-from rehuco_agent.rehuco.string_map_editor import StringMapEditor
-from rehuco_agent.rehuco.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
 from rehuco_core import RehucoFile, read_layouts
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import

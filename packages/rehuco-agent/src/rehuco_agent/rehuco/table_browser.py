@@ -12,7 +12,7 @@ from borco_pyside.widgets import HeaderSectionsMenu, RowBandDelegate
 from PySide6.QtCore import QByteArray, QItemSelection, QItemSelectionModel, QModelIndex, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QStandardItemModel
 from PySide6.QtWidgets import QLineEdit, QMenu, QTableView, QWidget
-from rehuco_core import CatalogField, CatalogQuery, CatalogRow, CatalogTextField
+from rehuco_core import CatalogField, CatalogQuery, CatalogRangeField, CatalogRow, CatalogTextField
 
 from ..glyphs import FILTER_PROBLEM_GLYPH
 from ..settings.catalog_state_store import TABLE_BROWSER_KIND, BrowserState
@@ -43,7 +43,9 @@ FILTER_HELP: Final = (
     f"ignored. {SCOPE_TOKEN}: keeps the words to some of those places: "
     f"{SCOPE_TOKEN}:{SCOPE_SEPARATOR.join(place.value for place in CatalogTextField)}. "
     'Then field:value or field:"quoted value" tokens, each matching a whole value: '
-    f"{', '.join(field.value for field in CatalogField)}."
+    f'{", ".join(field.value for field in CatalogField)}; kind:"" finds an asset with no kind. A range compares '
+    f"with <, <=, > or >=, as {CatalogRangeField.ADVERTISED_TRIANGLES.value}<15, and matches when any value of it "
+    f"does: {', '.join(field.value for field in CatalogRangeField)}."
 )
 """The filter line's tooltip: its grammar, under whatever it could not apply."""
 

@@ -129,6 +129,8 @@ def test_a_range_is_decided_by_its_smallest_and_largest_value(text: str, lower: 
         param("12;14", id="another separator"),
         param("1.5", id="a decimal"),
         param("12 14", id="two numbers with no separator"),
+        param("9" * 19, id="a number the cache's integers could not hold"),
+        param("1-" + "9" * 19, id="a band ending in one"),
     ],
 )
 def test_text_that_is_not_a_range_reads_as_none(text: str) -> None:
@@ -141,3 +143,18 @@ def test_text_that_is_not_a_range_reads_as_none(text: str) -> None:
     * verify none gives a range
     """
     assert ValueRange.parse(text) is None
+
+
+def test_the_bounds_of_a_text_are_those_of_its_range_and_none_for_anything_else() -> None:
+    """A search compares a field by the bounds of its stored text, which are both ``None`` where there is no text or
+    it is no range (#678).
+
+    **Test steps:**
+
+    * ask for the bounds of a list, of text that is no range, of an empty text and of no text
+    * verify the first two ends, and ``None`` for both ends of the others
+    """
+    assert ValueRange.bounds("12,40-60") == (12, 60)
+    assert ValueRange.bounds("many") == (None, None)
+    assert ValueRange.bounds("") == (None, None)
+    assert ValueRange.bounds(None) == (None, None)

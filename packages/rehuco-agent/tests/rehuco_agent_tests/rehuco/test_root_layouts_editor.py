@@ -4,9 +4,9 @@ from PySide6.QtCore import QPersistentModelIndex, Qt
 from PySide6.QtWidgets import QComboBox, QLineEdit, QStyleOptionViewItem, QTableView
 from pytest import fixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.fields.widgets.string_map_editor import MapChoicesDelegate, StringMapEditor
+from rehuco_agent.fields.widgets.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
 from rehuco_agent.rehuco.root_layouts_editor import RootLayoutsEditor
-from rehuco_agent.rehuco.string_map_editor import MapChoicesDelegate, StringMapEditor
-from rehuco_agent.rehuco.string_map_model import KEY_COLUMN, VALUE_COLUMN, StringMapModel
 from rehuco_agent.settings.root_layout_templates_settings import shared_root_layout_templates_settings
 from rehuco_core import BUCKETS_LAST_PROBLEM, DEFAULT_PLUGIN_REGISTRY, PLACEHOLDERS
 

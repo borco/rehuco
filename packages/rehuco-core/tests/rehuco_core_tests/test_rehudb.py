@@ -24,6 +24,7 @@ from rehuco_core import (
     BUILTIN_PLUGINS,
     REHUDB_SUFFIX,
     TYPE_FIELD_COLUMNS,
+    TYPE_FIELD_NAMES,
     CatalogCache,
     CatalogField,
     CatalogQuery,
@@ -1695,22 +1696,22 @@ def test_rows_read_while_a_scan_commits_show_the_catalog_as_it_was_before_the_sc
 
 def test_a_type_contributes_the_stored_fields_its_plugin_declares() -> None:
     """A tutorial contributes its durations and level, a reference pack -- by any of its spellings -- its image
-    counts, and an asset every field of its block but the license URL and the formats, which have a table of their
-    own, its ``kind`` as ``asset_kind`` (#676), in the cache's order (#399).
+    counts, and an asset every field of its block but the license URL, its ``kind`` as ``asset_kind`` (#676) and its
+    formats last, kept in a table of their own, in the cache's order (#399, #678).
 
     **Test steps:**
 
-    * ask for a tutorial's, a reference pack's (by its tc4 spelling) and an asset's columns
+    * ask for a tutorial's, a reference pack's (by its tc4 spelling) and an asset's fields
     * verify the first two are their types' stored fields, in the cache's order
-    * verify the asset's, read as the fields they hold, are its block's in its declared order, the two left out
+    * verify the asset's, read as the block fields they hold, are its block's in its declared order, the URL left out
+      and the formats last
     """
     assert catalog_type_fields("tutorial") == ("advertised_duration", "original_duration", "current_duration", "level")
     assert catalog_type_fields("ReferenceImages") == ("advertised_count", "current_count")
     assert catalog_type_fields("asset")[0] == "asset_kind"
-    assert tuple(COLUMN_FIELDS.get(column, column) for column in catalog_type_fields("asset")) == tuple(
-        name
-        for name in ASSET_FIELD_NAMES
-        if name not in {"license_url", "formats", "advertised_triangles", "advertised_texture_size"}
+    assert tuple(COLUMN_FIELDS.get(column, column) for column in catalog_type_fields("asset")) == (
+        *(name for name in ASSET_FIELD_NAMES if name not in {"license_url", "formats"}),
+        "formats",
     )
 
 
@@ -1739,7 +1740,7 @@ def test_every_stored_type_field_is_some_plugins() -> None:
     """
     declared = {name for plugin in BUILTIN_PLUGINS for name in plugin.field_names}
 
-    assert {COLUMN_FIELDS.get(column, column) for column in TYPE_FIELD_COLUMNS} <= declared
+    assert {COLUMN_FIELDS.get(column, column) for column in TYPE_FIELD_NAMES} <= declared
 
 
 # endregion

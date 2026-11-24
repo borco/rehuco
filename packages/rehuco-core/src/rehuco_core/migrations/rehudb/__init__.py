@@ -316,6 +316,36 @@ def add_asset_fields_v10(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
+V11_COLUMNS: Final = (
+    ("advertised_triangles", "TEXT"),
+    ("advertised_triangles_lower", "INTEGER"),
+    ("advertised_triangles_upper", "INTEGER"),
+    ("advertised_texture_size", "TEXT"),
+    ("advertised_texture_size_lower", "INTEGER"),
+    ("advertised_texture_size_upper", "INTEGER"),
+)
+"""The columns version 11 adds to ``resources``: an asset's two advertised ranges as the text a record holds, and the
+two bounds of each that a search compares -- frozen, like :data:`V1_STATEMENTS`."""
+
+V11_STATEMENTS: Final = ("UPDATE resources SET mtime_ns = 0, content_hash = ''",)
+"""Version 11's statements after its columns -- frozen, like :data:`V1_STATEMENTS`."""
+
+
+def add_advertised_ranges_v11(connection: sqlite3.Connection) -> None:
+    """10 -> 11: an asset's advertised triangle count and texture size as range text, with a lower and an upper bound
+    column of each, so a comparison on them is an integer one (#678, [[assets#ranges]]).
+
+    As in version 3, nothing on disk says a row written before this step lacks them, so its stat signature is cleared
+    and the next scan reads it again; the bounds are filled by that scan, never derived here.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    for column, sql_type in V11_COLUMNS:
+        connection.execute(f"ALTER TABLE resources ADD COLUMN {column} {sql_type}")
+    for statement in V11_STATEMENTS:
+        connection.execute(statement)
+
+
 CHAIN: Final[SchemaChain] = (
     (1, create_schema_v1),
     (2, add_join_spellings_v2),
@@ -327,6 +357,7 @@ CHAIN: Final[SchemaChain] = (
     (8, add_root_file_v8),
     (9, add_source_ids_v9),
     (10, add_asset_fields_v10),
+    (11, add_advertised_ranges_v11),
 )
 """This target's ordered ``(target, step)`` chain."""
 

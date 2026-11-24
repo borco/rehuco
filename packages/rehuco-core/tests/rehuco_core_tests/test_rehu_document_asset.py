@@ -292,6 +292,24 @@ def test_a_list_or_map_reads_back_and_its_setter_writes_a_copy(attr: str, value:
     assert not doc.lock_reasons
 
 
+@mark.parametrize(("attr", "value", "empty"), [param(*row, id=row[0]) for row in COLLECTIONS])
+def test_setting_a_list_or_map_empty_removes_its_key(attr: str, value: Any, empty: Any) -> None:
+    """An emptied list or map leaves the block: a missing field is *not known*, and an empty one says no more (#678).
+
+    **Test steps:**
+
+    * over an asset holding the value, set it empty through the setter
+    * verify the key is gone, the accessor reads empty and nothing locks
+    """
+    doc = asset_doc({attr: value})
+
+    setattr(doc, attr, empty)
+
+    assert attr not in doc.active_block
+    assert getattr(doc, attr) == empty
+    assert not doc.lock_reasons
+
+
 @mark.parametrize(
     ("attr", "value", "reads", "expected"),
     [param(*spec, id=f"{spec[0]}-{spec[1]!r}") for spec in MALFORMED_COLLECTIONS],

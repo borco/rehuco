@@ -72,9 +72,9 @@ these files existed still carries its users' state inside; its next save moves i
 
 **Resource types are plugins.** A plugin declares an ordered list of keys: the first is its real name,
 the rest are old spellings accepted on read and rewritten on save. Four are built in — `tutorial`,
-`reference_images`, `collection` and `asset`. The first three declare a badge color for their type chip; `asset`
-declares none yet, and the editor and the browser don't yet show its own fields, though a file's are read, checked
-and cached like any other type's. A `type` naming a
+`reference_images`, `collection` and `asset`, each declaring a badge color for its type chip. An asset's own fields
+are read, checked, cached, edited beside a record's other fields and shown in the browser's columns like any other
+type's. A `type` naming a
 plugin that isn't installed still opens: the common fields render normally and the unknown block is
 shown as-is, because a missing plugin must never cost you access to a file.
 
@@ -170,10 +170,10 @@ covers, in a **`.rehudb`** cache. The cache sits in the machine's local cache fo
 `.rehuco`'s own id, so moving the `.rehuco` keeps its cache; it is only ever a copy, rebuilt by scanning again.
 A table in the Browsers panel lists what the cache holds — authors, title, type, path, publisher, tags, release date, size, last update
 and the file's format version, with the URL and a tutorial's or a reference pack's own fields a right-click on the
-header away — and double-clicking a row opens that resource in Documents. Each table has a **filter line**: free
+header away, an asset's among them — and double-clicking a row opens that resource in Documents. Each table has a **filter line**: free
 text, every word of which must be found in a title, a path, or part of an author, publisher or tag (`"quoted words"`
 as one phrase, case and accents ignored; `in:title`, `in:authors,tags` and the like keep the words to those places),
-and `field:value` tokens (`folder`, `authors`, `tags`, `publishers`, `type`), each matching a whole value, narrow the
+and `field:value` tokens (`folder`, `authors`, `tags`, `publishers`, `type`, `kind`, `license`, `formats`), each matching a whole value, narrow the
 rows as the text settles. The rows are read from
 the cache in the background, every row when it opens and then only the rows a scan or a change touched, and a filter
 picks from the rows already read. Clicking an

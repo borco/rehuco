@@ -18,3 +18,9 @@ def model() -> RehuDocumentModel:
             }
         )
     )
+
+
+@fixture
+def asset_model() -> RehuDocumentModel:
+    """A view-model of an asset, whose block declares the fields an asset adds, for widgets to bind to."""
+    return RehuDocumentModel(RehuDocument({"type": "asset"}))
