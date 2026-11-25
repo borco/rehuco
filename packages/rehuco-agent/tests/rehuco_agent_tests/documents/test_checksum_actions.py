@@ -36,6 +36,7 @@ from rehuco_core import (
     RehuDocument,
     TaskJobBase,
     TaskQueue,
+    VerifyChecksumsJob,
 )
 from rehuco_core.access import LoadedRecord
 
@@ -626,6 +627,41 @@ def test_a_second_run_replaces_the_first_s_finding(
 
     assert actions.finding == "Checksums verified: 1 matched."
     assert actions.finding_clean
+
+
+def test_a_run_is_not_reported_before_it_has_ended(
+    qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions
+) -> None:
+    """A run has its report a moment before its row has ended; told then, a second verify would be refused as a run
+    still in the queue, and nothing would ever answer it.
+
+    **Test steps:**
+
+    * hold a run between its report and its end, and have the queue read back
+    * verify nothing is reported, then let the run end and verify it is
+    * verify again at once and check the second run is answered too
+    """
+    reached, proceed = Event(), Event()
+
+    def hold(*_args: object) -> None:
+        reached.set()
+        proceed.wait(GATE_TIMEOUT)
+
+    mocker.patch.object(VerifyChecksumsJob, "_ChecksumJob__log_moved", side_effect=hold)
+    mocker.patch(
+        "rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport(statuses={VIDEO: "mismatched"})
+    )
+    actions.verify_action.trigger()
+    assert reached.wait(GATE_TIMEOUT)
+
+    marshaler_of(actions).queue_changed.emit()
+    qtbot.wait(50)
+    assert not actions.finding
+
+    with qtbot.waitSignal(actions.finding_changed, timeout=TIMEOUT):
+        proceed.set()
+    with qtbot.waitSignal(actions.finding_changed, timeout=TIMEOUT):
+        actions.verify_action.trigger()
 
 
 OTHER_INFO_PATH: Final = Path.cwd() / "fake" / "library" / "modeling" / "info.rehu"
