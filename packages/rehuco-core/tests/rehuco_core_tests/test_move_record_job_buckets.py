@@ -6,16 +6,19 @@ runs the real one, end to end.
 """
 
 from pathlib import Path, PurePosixPath
-from typing import Final
+from typing import Any, Final
 from unittest.mock import MagicMock
 from uuid import UUID
 
-from pytest import fixture, raises
+from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
+    BUCKETS_GUARD,
     BUCKETS_MARKER,
     MIN_SPLIT_LIMIT,
     BucketChain,
+    BucketedPlace,
+    JobPaused,
     JobWaiting,
     MoveMode,
     MovePhase,
@@ -23,6 +26,7 @@ from rehuco_core import (
     RecordLockedError,
     RenameYieldTimeout,
     move_record_job,
+    resolve_buckets,
 )
 
 from rehuco_core_tests.test_move_record_job import (  # noqa: F401  # pylint: disable=unused-import
@@ -320,3 +324,115 @@ def test_a_move_into_a_crowded_layout_folder_splits_it(
     assert job.source == layout / "i" / NAME / "info.rehu"
     assert all(path.parent.name == path.name[0] for path in layout.rglob("*.rehu") if path.name != "info.rehu")
     assert not list(layout.glob("*.rehu"))
+
+
+def test_a_retried_rename_reads_its_buckets_again(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock, splitter: MagicMock, split_layout: Path
+) -> None:
+    """A rename that failed after reading its buckets reads them again: a rebalance may have joined them since, and the
+    bucket it read is then no bucket (#681).
+
+    **Test steps:**
+
+    * fail a rename once its buckets are read; join the layout's folder; retry it
+    * verify it landed in the layout's own folder, and settled the chain it then had
+    """
+    job = bucketed_mover(make_record(roots[SOURCE_ROOT]), host)
+    host.run_step.side_effect = PermissionError("in use")
+    with raises(PermissionError):
+        job.run(control)
+    assert job.into == LAYOUT / "i"
+    (split_layout / BUCKETS_MARKER).unlink()
+    (split_layout / "i").rmdir()
+    host.run_step.side_effect = lambda step, checkpoint: step()
+
+    job.reset()
+    job.run(control)
+
+    assert job.source == split_layout / NAME / "info.rehu"
+    splitter.return_value.settle.assert_called_once_with(split_layout, ())
+
+
+def test_a_copy_with_files_there_goes_on_into_the_bucket_it_read(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock, split_layout: Path, mocker: MockerFixture
+) -> None:
+    """A copy stopped part-way keeps the folder its files are in; one that wrote nothing reads its buckets again (#681).
+
+    **Test steps:**
+
+    * have a copy stopped after it wrote a file, then resumed
+    * verify the buckets were read once; with nothing written, twice
+    """
+    resolve = mocker.spy(move_record_job, "resolve_buckets")
+    copy = mocker.patch(f"{MODULE}.VerifiedCopy")
+    copy.return_value.copy.side_effect = OSError("stopped")
+    job = bucketed_mover(make_record(roots[SOURCE_ROOT]), host, mode=MoveMode.COPY, check_source=False)
+    mocker.patch(f"{MODULE}.check_move_source", return_value=False)
+
+    with raises(OSError, match="stopped"):
+        job.run(control)
+    with raises(OSError, match="stopped"):
+        job.run(control)
+    assert resolve.call_count == 2
+
+    job.journal.made.append(str(split_layout / "i" / NAME))
+    with raises(OSError, match="stopped"):
+        job.run(control)
+    assert resolve.call_count == 2
+
+
+def test_a_move_reads_its_buckets_with_the_guard_held(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock, splitter: MagicMock, mocker: MockerFixture
+) -> None:
+    """No rebalance takes a step between a move reading its buckets and saying which it read (#681).
+
+    **Test steps:**
+
+    * rename a record into a bucketed place, recording whether the guard was held as the buckets were read
+    * verify it was, and is free again
+    """
+    del splitter
+    (roots[DESTINATION_ROOT] / LAYOUT).mkdir(parents=True)
+    guarded: list[bool] = []
+
+    def resolve(*arguments: Any) -> BucketedPlace:
+        """Read the buckets, recording the guard."""
+        guarded.append(BUCKETS_GUARD.locked())
+        return resolve_buckets(*arguments)
+
+    mocker.patch(f"{MODULE}.resolve_buckets", side_effect=resolve)
+
+    bucketed_mover(make_record(roots[SOURCE_ROOT]), host).run(control)
+
+    assert guarded == [True]
+    assert not BUCKETS_GUARD.locked()
+
+
+@mark.parametrize("mode", [MoveMode.RENAME, MoveMode.COPY])
+def test_a_place_in_a_folder_no_rule_buckets_pauses_the_move(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock, split_layout: Path, mode: MoveMode
+) -> None:
+    """A move into a folder split where its layout has no buckets stops before it touches anything, and goes on once the
+    folder is joined (#681).
+
+    **Test steps:**
+
+    * move a record into the plain place ``fab/Intro``, ``fab`` being split
+    * verify the pause and its reason, nothing moved, and no chain that would hold a balance back
+    * join the folder, resume, and verify it landed
+    """
+    record = make_record(roots[SOURCE_ROOT])
+    job = bucketed_mover(record, host, bucketed=(), mode=mode)
+
+    with raises(JobPaused) as paused:
+        job.run(control)
+
+    assert paused.value.reason is not None and paused.value.reason.startswith("fab is split into buckets")
+    assert record.is_file()
+    assert not (split_layout / NAME).exists()
+    assert not job.chains
+    (split_layout / BUCKETS_MARKER).unlink()
+    (split_layout / "i").rmdir()
+    job.resume()
+    job.run(control)
+    assert (split_layout / NAME / "info.rehu").is_file()

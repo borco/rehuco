@@ -1,16 +1,23 @@
 """What the app lends a record's move (#339): where this machine finds a root, whether a save of the record is still
-on its way, and the thread a rename runs on.
+on its way, and the thread a rename runs on -- and what it lends a rebalance of a root's buckets besides (#681).
 
 The app installs its host at startup (:data:`DEFAULT_RECORD_MOVE_HOST`); without one a step runs where the job does.
 Split from :mod:`~rehuco_core.move_record_job`, whose jobs ask it.
 """
 
-from collections.abc import Callable
+import threading
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Final, Protocol
 from uuid import UUID
 
 from .prefix_buckets import DEFAULT_SPLIT_LIMIT
+from .replacement_rule import ReplacementRule
+
+BUCKETS_GUARD: Final = threading.Lock()
+"""Held by a move while it reads its buckets and says which it read, and by a rebalance while it asks for such a move
+and takes one step (#681): neither can come between the other's two halves, so no record lands in a bucket a join is
+removing. Never taken on the host's thread, which a step waits for with it held."""
 
 
 class RecordMoveHost(Protocol):
@@ -44,6 +51,22 @@ class RecordMoveHost(Protocol):
         asked when a move settles its buckets, never captured, since it may change while the move waits.
 
         :returns: the limit.
+        """
+
+    def location_rules(self) -> Sequence[ReplacementRule]:  # pyright: ignore[reportReturnType]
+        """The Location Replacements, as the settings say now: what a layout's place is rendered with (#681).
+
+        :returns: the rules, in table order.
+        """
+
+    def blocking_move(self, root_id: UUID) -> str | None:
+        """The move whose files a rebalance of a root would take from under it (#681): one into a bucketed place of the
+        root that has read its buckets and not ended, running, waiting or paused, or that stopped with part of its copy
+        there; and one out of the root about to remove what is left of the original. Asked with :data:`BUCKETS_GUARD`
+        held.
+
+        :param root_id: the root.
+        :returns: how its row names it; ``None`` when there is none.
         """
 
 
@@ -98,6 +121,21 @@ class RecordMoveHosting:
         :returns: the limit.
         """
         return DEFAULT_SPLIT_LIMIT if self.__host is None else self.__host.split_limit()
+
+    def location_rules(self) -> Sequence[ReplacementRule]:
+        """See :meth:`RecordMoveHost.location_rules`; with no host installed, none.
+
+        :returns: the rules.
+        """
+        return () if self.__host is None else self.__host.location_rules()
+
+    def blocking_move(self, root_id: UUID) -> str | None:
+        """See :meth:`RecordMoveHost.blocking_move`; with no host installed, none.
+
+        :param root_id: the root.
+        :returns: how its row names it; ``None`` when there is none.
+        """
+        return None if self.__host is None else self.__host.blocking_move(root_id)
 
 
 DEFAULT_RECORD_MOVE_HOST: Final = RecordMoveHosting()

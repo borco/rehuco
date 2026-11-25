@@ -909,41 +909,6 @@ def test_a_bucketed_place_under_another_root_is_never_where_the_record_sits(
     assert elsewhere.root_id == other.root_id and not elsewhere.here
 
 
-@mark.parametrize(
-    "layouts, where",
-    [
-        param(BUCKETED_TITLES, (("Jane", "f", "foo.rehu"), True), id="its-name-bucketed-and-there"),
-        param(BUCKETED_TITLES, (("Jane", "x", "foo.rehu"), False), id="not-there"),
-        param(
-            {"*": ("{buckets}/{authors}/{title}",)}, (("j", "Jane", "foo.rehu"), False), id="an-outer-level-bucketed"
-        ),
-        param(BY_AUTHOR, (("Jane", "foo.rehu"), False), id="no-buckets"),
-    ],
-)
-def test_a_bucket_home_is_the_place_that_buckets_the_records_own_name(
-    tmp_path: Path,
-    authored: RehuDocumentModel,
-    signals: RootsSignals,
-    layouts: Layouts,
-    where: tuple[tuple[str, ...], bool],
-) -> None:
-    """A rename moves the record to its new name's bucket only where the place it sits at buckets its own name.
-
-    **Test steps:**
-
-    * open a record under each layout, at a place or not, and whether that place is its bucket home
-    * check whether it has a bucket home, and that it is the place it sits at
-    """
-    record, home = where
-    root = root_at(tmp_path, layouts)
-    place(authored, tmp_path.joinpath(*record))
-
-    found = NameSuggestionModel(authored, catalog_of(signals, root)).bucket_home()
-
-    assert (found is not None) is home
-    assert found is None or (found.here and found.same_root)
-
-
 def test_a_suggestion_starting_with_a_dot_is_not_offered(model: RehuDocumentModel) -> None:
     """No location starts with a dot: a pattern rendering one is not offered (#680).
 

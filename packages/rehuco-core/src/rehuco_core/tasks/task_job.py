@@ -14,7 +14,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
-from .chain_registry import DISK_FAMILY
+from .chain_registry import DISK_FAMILY, LIBRARY_FAMILY
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,10 @@ DISK_CHAIN: Final = DISK_FAMILY.chain()
 One name for *this machine's disks*, so the jobs that hash, scan and convert keep taking turns as they always have.
 A job that knows the one resource it would hammer -- a save knows its server -- declares a chain of its own, built by
 a family it registered (:class:`~rehuco_core.tasks.ChainRegistry`)."""
+
+LIBRARY_CHAIN: Final = LIBRARY_FAMILY.chain()
+"""The one chain every library scan and every rebalance of a root's buckets takes turns in (#681): a rebalance asked
+for while a scan runs waits for it to end or be paused, and two never move one tree at once."""
 
 
 class JobCanceled(Exception):

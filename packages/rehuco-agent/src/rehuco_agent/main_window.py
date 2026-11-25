@@ -78,6 +78,7 @@ from .commands import (
     SAVE_ALL,
     shared_command_registry,
 )
+from .dialogs.balance_buckets_dialog import BalanceBucketsDialog
 from .dialogs.conversion_backups_dialog import ConversionBackupsDialog
 from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .dialogs.library_wizard_dialog import LibraryWizardDialog
@@ -119,6 +120,7 @@ from .settings.image_viewer_settings import shared_image_viewer_settings
 from .settings.library_wizard_settings import shared_library_wizard_settings
 from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
+from .settings.move_settings import shared_move_settings
 from .settings.node_settings import shared_node_settings
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
@@ -409,6 +411,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # (#339), installed before the queue is restored for the same reason: a move rebuilt from the saved queue has no
         # window to be handed one
         self.__move_host: Final = MainThreadMoveHost(parent=self)
+        self.__move_host.follow_queue(self.__task_queue)
         DEFAULT_RECORD_MOVE_HOST.install(self.__move_host)
         self.__restore_task_queue()
         self.__task_queue_widget: Final = TaskQueueWidget(self.__task_queue, stylesheet_host=self.__dock_manager)
@@ -866,6 +869,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.close_all_action.triggered.connect(self.__documents_dock.close_all)
         self.__ui.save_all_action.triggered.connect(self.__on_save_all)
         self.__ui.scan_library_action.triggered.connect(self.__on_scan_library)
+        self.__ui.balance_buckets_action.triggered.connect(self.__on_balance_buckets)
+        self.__roots_panel.rebalance_requested.connect(self.__on_balance_root)
         self.__ui.sweep_checksums_action.triggered.connect(self.__on_sweep_checksums)
         self.__ui.import_legacy_catalog_action.triggered.connect(self.__on_import_legacy_catalog)
         self.__ui.conversion_backups_action.triggered.connect(self.__on_conversion_backups)
@@ -898,6 +903,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         menu.addAction(roots.add_roots_action)
         menu.addAction(roots.remove_root_action)
         menu.addAction(roots.map_root_action)
+        menu.addAction(roots.rebalance_root_action)
         menu.addSeparator()
         menu.addAction(self.__make_auto_preview_action())
         browsers_menu = self.__ui.browsers_menu
@@ -1204,11 +1210,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__task_queue.enqueue(job)
 
     def __on_rehuco_path_changed(self, path: Path | None) -> None:
-        """Offer ``Scan Library...`` only while a catalog is open: its roots are the catalog's (#685).
+        """Offer ``Scan Library...`` and ``Balance Buckets...`` only while a catalog is open: their roots are the
+        catalog's (#685, #681).
 
         :param path: the open ``.rehuco``, or ``None`` once none is open.
         """
         self.__ui.scan_library_action.setEnabled(path is not None)
+        self.__ui.balance_buckets_action.setEnabled(path is not None)
 
     def ask_library_scan(self) -> tuple[ScraperWizard, LibraryScanTarget] | None:
         """Ask which store to scan into which root of the open catalog (#685).
@@ -1246,6 +1254,39 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
         with LogScope.open(self.__root_catalog.root_paths()[target.root_id]):
             self.__task_queue.enqueue(job)
+
+    def ask_balance_buckets(self, only: UUID | None = None) -> tuple[tuple[UUID, ...], int, int] | None:
+        """Ask which roots of the open catalog to balance, and with which limits (#681).
+
+        A public method rather than an inline dialog, so a test replaces the question on the instance.
+
+        :param only: the root it is asked for; ``None`` from the menu.
+        :returns: the roots, the split limit and the join limit; ``None`` when the dialog was canceled.
+        """
+        dialog = BalanceBucketsDialog(self.__root_catalog.mapped_roots(), shared_move_settings(), only, self)
+        if dialog.exec() != BalanceBucketsDialog.DialogCode.Accepted:
+            return None
+        return (dialog.root_ids, *dialog.limits)
+
+    def __on_balance_buckets(self) -> None:
+        """Ask which roots to balance and enqueue one job for each (``Tools`` > ``Balance Buckets...``, #681)."""
+        self.__balance_buckets(None)
+
+    def __on_balance_root(self, root_id: UUID) -> None:
+        """Ask the same for one root (the Roots view's own entry, #681).
+
+        :param root_id: the root.
+        """
+        self.__balance_buckets(root_id)
+
+    def __balance_buckets(self, only: UUID | None) -> None:
+        """Ask which roots to balance and enqueue one job for each.
+
+        :param only: the root it is asked for; ``None`` for the open catalog's.
+        """
+        answer = self.ask_balance_buckets(only)
+        if answer is not None:
+            self.__root_catalog.rebalance(*answer)
 
     def __on_import_legacy_catalog(self) -> None:
         """Open the bulk `.tc` import wizard (``Tools`` > ``Import Legacy Catalog...``, #192).

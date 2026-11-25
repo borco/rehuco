@@ -228,10 +228,14 @@ with now.
 to the root, only while each is empty*, off by default. It is read when a record lands at the place a root's layout
 gives it ([[plugins#tutorial-plugin]]'s path row): with it on, the folder the record left and each folder above it are
 removed while empty, stopping at the first that holds anything else and never reaching the root. Under it, *Split a
-folder of buckets above* (200 entries by default, never under 50) and *Join its buckets back at or below* (100, never
-above half the split limit) are the prefix buckets' limits ([[mounts-and-storage#buckets]], #680): a move asks the
-first as it settles the folders it went into, and only the rebalance (#681, not built) reads the second. **Verify
-checksums when moving a record**, the third frame, is `MoveSettings`' too
+folder of buckets above* (200 entries by default, never under 50) and *Join its buckets back at or below* (100) are the
+prefix buckets' limits ([[mounts-and-storage#buckets]], #680): a move asks the first as it settles the folders it went
+into. They are one widget, `BucketLimitsEditor`, which the balance dialog shows too (#681,
+[[mounts-and-storage#bucket-rebalance]]); every bound is core's (`MIN_SPLIT_LIMIT`, `MAX_SPLIT_LIMIT`,
+`max_join_limit`). Neither box changes the other: a join limit above half the split limit stays, and is saved, as entered,
+with a warning under the boxes naming the one used instead, so typing 500 by way of 50 loses nothing. Saving a limit
+moves nothing. The page follows `MoveSettings.changed`, so limits the dialog saved are shown here rather than written back
+by *Apply changes as they're made*. **Verify checksums when moving a record**, the third frame, is `MoveSettings`' too
 ([[mounts-and-storage#safe-move-rename]]): *Renamed in place* — *on a local disk* (off
 by default) and *on a network share* (on), which make such a move a task verifying before and after; *Copied to another
 disk or share* — *check the original before copying* (on), and *check the copy before removing the original*, shown

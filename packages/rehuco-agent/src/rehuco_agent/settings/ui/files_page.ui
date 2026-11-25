@@ -131,90 +131,7 @@
        </widget>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="split_limit_layout">
-        <item>
-         <widget class="QLabel" name="split_limit_label">
-          <property name="text">
-           <string>Split a folder of buckets above:</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QSpinBox" name="split_limit_spin_box">
-          <property name="toolTip">
-           <string>A folder a layout's {buckets} level fills holds this many entries at most. One more splits it: each entry moves into a bucket named by one more character of its name, and a bucket that then holds more splits the same way.</string>
-          </property>
-          <property name="suffix">
-           <string> entries</string>
-          </property>
-          <property name="minimum">
-           <number>50</number>
-          </property>
-          <property name="maximum">
-           <number>100000</number>
-          </property>
-          <property name="value">
-           <number>200</number>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="split_limit_spacer">
-          <property name="orientation">
-           <enum>Qt::Orientation::Horizontal</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-       </layout>
-      </item>
-      <item>
-       <layout class="QHBoxLayout" name="join_limit_layout">
-        <item>
-         <widget class="QLabel" name="join_limit_label">
-          <property name="text">
-           <string>Join its buckets back at or below:</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QSpinBox" name="join_limit_spin_box">
-          <property name="toolTip">
-           <string>A split folder whose buckets hold this many entries or fewer in all is joined back into one. At most half the split limit, so a folder never splits and joins back over one record. Only a rebalance joins, and it is not built yet.</string>
-          </property>
-          <property name="suffix">
-           <string> entries</string>
-          </property>
-          <property name="minimum">
-           <number>0</number>
-          </property>
-          <property name="maximum">
-           <number>50000</number>
-          </property>
-          <property name="value">
-           <number>100</number>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="join_limit_spacer">
-          <property name="orientation">
-           <enum>Qt::Orientation::Horizontal</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-       </layout>
+       <widget class="BucketLimitsEditor" name="bucket_limits_editor" native="true"/>
       </item>
      </layout>
     </widget>
@@ -413,6 +330,12 @@
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>BucketLimitsEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.settings.ui.bucket_limits_editor</header>
+   <container>1</container>
+  </customwidget>
   <customwidget>
    <class>StringListEditor</class>
    <extends>QWidget</extends>

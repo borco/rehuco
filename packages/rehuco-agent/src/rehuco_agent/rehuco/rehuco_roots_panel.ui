@@ -58,6 +58,14 @@
     <string>Scan the selected root alone into the cache, on the task queue.</string>
    </property>
   </action>
+  <action name="rebalance_root_action">
+   <property name="text">
+    <string>Balance Buckets...</string>
+   </property>
+   <property name="toolTip">
+    <string>Split and join the folders of the selected root's {buckets} levels by the bucket limits, on the task queue.</string>
+   </property>
+  </action>
   <action name="add_roots_action">
    <property name="text">
     <string>Add Roots...</string>

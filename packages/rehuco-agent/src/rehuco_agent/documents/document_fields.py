@@ -7,7 +7,6 @@ nothing of *this* document's fields, tabs, or ``level`` choices; only this modul
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
@@ -314,16 +313,18 @@ def root_place_callbacks(
     shown: list[RootDestination] = []
 
     def row_of(place: RootDestination) -> DestinationRow:
-        # a bucketed place is not known until its move reads the buckets (#680): its move's own rename refuses a
-        # name taken there
-        occupied = not place.here and not place.bucketed and model.move_conflicts(place.into, place.name)
+        # drawn by its buckets as they are on the disk now (#681); one whose buckets could not be read is left to its
+        # move, whose own rename refuses a name taken there
+        drawn = name_suggestions.resolved(place)
+        readable = not place.here and not drawn.bucketed and not drawn.blocked
+        occupied = readable and model.move_conflicts(drawn.into, drawn.name)
         path = model.path
         # what a click involves, asked only of a place that can be clicked; with no queue a click renames at once,
         # unverified, so there are no move settings to plan by (#649)
         markers = NO_MARKERS
-        if path is not None and not place.here and not occupied:
+        if path is not None and not place.here and not occupied and not drawn.blocked:
             markers = plan_move(path, place.into, shared_move_settings() if record_moves is not None else None)
-        shown = place.shown
+        shown = drawn.shown
         return DestinationRow(
             # a place with no path is the root itself (#641): its label alone
             f"{place.label}: {Path(shown)}" if shown.parts else place.label,
@@ -333,10 +334,11 @@ def root_place_callbacks(
             full_path=str(place.root.joinpath(*shown.parts)),
             template=place.template,
             markers=markers,
+            blocked=drawn.blocked,
         )
 
     def destination_rows() -> list[DestinationRow]:
-        # the roots' places, drawn as the names are: one existence check each per render, uncached
+        # the roots' places, drawn as the names are: the disk asked for each per render, uncached
         shown[:] = root_places()
         return [row_of(place) for place in shown]
 
@@ -356,12 +358,59 @@ def root_place_callbacks(
         )
         if place is None or place.here:
             return
+        # the disk may have changed since the row was drawn (#681)
+        blocked = name_suggestions.resolved(place).blocked
+        if blocked:
+            model.move_failed(f"Cannot move to {place.label}: {blocked}")
+            return
         if record_moves is None:
             model.move_in_root(place.into, place.name, place.source_root)
         else:
             record_moves.move(place)
 
     return destination_rows, move_to_root_place
+
+
+def rename_callbacks(
+    model: RehuDocumentModel, name_suggestions: NameSuggestionModel, record_moves: RecordMoves | None
+) -> tuple[Callable[[str], None], Callable[[str], bool]]:
+    """What a click on one of the path row's names does, and whether a name is taken.
+
+    :param model: the record.
+    :param name_suggestions: where the names come from, and what they are in a bucketed place.
+    :param record_moves: what a rename into another bucket moves through; ``None`` renames where the record is.
+    :returns: the click by name, and the question by name.
+    """
+
+    def rename_to(name: str) -> None:
+        # a wrapper, not the bound method directly: it discards ``rename_location``'s bool result (the
+        # callback is a command, ``(str) -> None``) and defers the ``model.rename_location`` lookup to
+        # click time, so a test that swaps it after construction is still seen. A record that is its root's folder
+        # is never renamed (#641): that would rename the root's folder
+        if name_suggestions.is_root_folder():
+            return
+        blocked = name_suggestions.rename_blocked()
+        if blocked:
+            model.move_failed(f"Cannot rename to {name!r}: {blocked}")
+            return
+        # a record whose name is bucketed is renamed into its new name's bucket, by a move (#680); a name no
+        # location may have is refused by the rename, as ever
+        place = name_suggestions.bucket_place(name) if record_moves is not None else None
+        if record_moves is not None and place is not None and not location_name_problem(name):
+            if name != model.current_name:
+                record_moves.move(place)
+            return
+        model.rename_location(name)
+
+    def rename_taken(name: str) -> bool:
+        # asked of where the rename would land: a record whose name is bucketed goes to its new name's bucket (#681)
+        place = name_suggestions.bucket_place(name) if record_moves is not None else None
+        if place is None:
+            return model.rename_conflicts(name)
+        landing = name_suggestions.resolved(place)
+        return not landing.bucketed and model.move_conflicts(landing.into, landing.name)
+
+    return rename_to, rename_taken
 
 
 # the local count is what "the whole field composition lives here, in one place" costs: each model-aware
@@ -436,22 +485,7 @@ def build_document_form(
         editor_tab=EDITOR_MAIN_TAB,
     )
 
-    def rename_to(name: str) -> None:
-        # a wrapper, not the bound method directly: it discards ``rename_location``'s bool result (the
-        # callback is a command, ``(str) -> None``) and defers the ``model.rename_location`` lookup to
-        # click time, so a test that swaps it after construction is still seen. A record that is its root's folder
-        # is never renamed (#641): that would rename the root's folder
-        if name_suggestions.is_root_folder():
-            return
-        # a record whose name is bucketed is renamed into its new name's bucket, by a move (#680); a name no
-        # location may have is refused by the rename, as ever
-        home = name_suggestions.bucket_home() if record_moves is not None else None
-        if record_moves is not None and home is not None and not location_name_problem(name):
-            if name != model.current_name:
-                record_moves.move(replace(home, relative=home.relative.with_name(name), here=False))
-            return
-        model.rename_location(name)
-
+    rename_to, rename_taken = rename_callbacks(model, name_suggestions, record_moves)
     destination_rows, move_to_root_place = root_place_callbacks(model, name_suggestions, record_moves)
 
     location_field = PathField(
@@ -460,9 +494,8 @@ def build_document_form(
         on_suggestion_selected=rename_to,
         current_name=lambda: model.current_name,
         suggestions_changed=name_suggestions.changed,
-        # a lambda for the same reason ``rename_to`` is one: the lookup is deferred to render time, so
-        # a test that swaps the model's answer after construction is still seen
-        conflicts=lambda name: model.rename_conflicts(name),  # pylint: disable=unnecessary-lambda
+        conflicts=rename_taken,
+        blocked=name_suggestions.rename_blocked,
         viewer_tab=VIEWER_MAIN_TAB,
         editor_tab=EDITOR_MAIN_TAB,
         destinations=destination_rows,

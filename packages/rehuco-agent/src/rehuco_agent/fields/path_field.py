@@ -56,6 +56,8 @@ class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
     :param on_destination_selected: called with the index of the place clicked.
     :param renamable: called with no arguments for whether the resource may be renamed at all (#641); omit for
         one that always may. Pulled whenever the suggestions are.
+    :param blocked: called with no arguments for why no suggestion may be chosen, empty when they may (#681); omit for
+        one whose always may. Pulled whenever the suggestions are.
     """
 
     TYPE = "path"
@@ -76,11 +78,13 @@ class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
         destinations: Callable[[], Sequence[DestinationRow]] | None = None,
         on_destination_selected: Callable[[int], None] | None = None,
         renamable: Callable[[], bool] | None = None,
+        blocked: Callable[[], str] | None = None,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__destinations = destinations
         self.__on_destination_selected = on_destination_selected
         self.__renamable = renamable
+        self.__blocked = blocked
         self.__suggestions = suggestions
         self.__on_suggestion_selected = on_suggestion_selected
         self.__current_name = current_name
@@ -170,12 +174,13 @@ class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
         self.__refresh(editor)
 
     def __refresh(self, editor: PathEditor) -> None:
-        """Re-pull whether it may be renamed, the current name, the raw suggestions and the roots' places into the
-        editor.
+        """Re-pull whether it may be renamed, and why not, the current name, the raw suggestions and the roots' places
+        into the editor.
 
         :param editor: the editor to update.
         """
         editor.set_renamable(self.__renamable() if self.__renamable is not None else True)
+        editor.set_blocked(self.__blocked() if self.__blocked is not None else "")
         editor.set_current_name(self.__current_name() if self.__current_name is not None else "")
         editor.set_suggestions(self.__suggestions() if self.__suggestions is not None else [])
         editor.set_destinations(self.__destinations() if self.__destinations is not None else ())

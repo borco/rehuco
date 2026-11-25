@@ -93,6 +93,7 @@
      <string>&amp;Tools</string>
     </property>
     <addaction name="scan_library_action"/>
+    <addaction name="balance_buckets_action"/>
     <addaction name="sweep_checksums_action"/>
     <addaction name="import_legacy_catalog_action"/>
     <addaction name="conversion_backups_action"/>
@@ -180,6 +181,17 @@
    </property>
    <property name="toolTip">
     <string>Scan a store account's library into a root of the open catalog, one record per item.</string>
+   </property>
+  </action>
+  <action name="balance_buckets_action">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Balance Buckets...</string>
+   </property>
+   <property name="toolTip">
+    <string>Split and join the bucketed folders of the open catalog's roots by the bucket limits.</string>
    </property>
   </action>
   <action name="sweep_checksums_action">

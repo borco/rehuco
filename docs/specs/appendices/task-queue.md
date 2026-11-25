@@ -68,7 +68,9 @@ jobs sharing a chain run one after another, in the queue's order; jobs in differ
 `None` is unchained and runs as soon as it is accepted. Every job that has not thought about it inherits
 `DISK_CHAIN`, *this machine's disks*, so the hashes, scans and conversions take turns exactly as they did when the
 queue had one line. A save knows its server and declares it, so it lands beside a thousand-file sweep instead of
-behind it, and two saves to one share still take turns.
+behind it, and two saves to one share still take turns. `LIBRARY_CHAIN` is the store libraries': every library scan
+and every rebalance of a root's buckets takes turns on it, so the two never move one tree at once
+([[mounts-and-storage#bucket-rebalance]], #681).
 
 **A chain name is claimed, not spelled.** A string can be spelled alike by two authors who never met: a checksum job
 and a save both calling theirs `nas` would take turns nobody asked for, and a typo would put a job in a chain of its

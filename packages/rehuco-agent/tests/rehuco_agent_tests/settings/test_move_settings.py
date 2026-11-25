@@ -1,4 +1,4 @@
-"""Tests for MoveSettings announcing a save (#649), and its bucket limits (#680)."""
+"""Tests for MoveSettings announcing a save (#649), and its bucket limits (#680, #681)."""
 
 from unittest.mock import Mock
 
@@ -6,7 +6,7 @@ from PySide6.QtCore import QSettings
 from pytest import mark, param
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.move_settings import MoveSettings
-from rehuco_core import DEFAULT_JOIN_LIMIT, DEFAULT_SPLIT_LIMIT, MIN_SPLIT_LIMIT
+from rehuco_core import DEFAULT_JOIN_LIMIT, DEFAULT_SPLIT_LIMIT, MAX_SPLIT_LIMIT, MIN_SPLIT_LIMIT, max_join_limit
 
 
 def test_saving_announces_a_change(qtbot: QtBot) -> None:
@@ -73,16 +73,23 @@ def test_the_bucket_limits_round_trip_and_ship_at_200_and_100() -> None:
 @mark.parametrize(
     "values, expected",
     [
-        param({"split_limit": 10}, (MIN_SPLIT_LIMIT, MIN_SPLIT_LIMIT // 2), id="a-split-under-its-floor"),
-        param({"join_limit": 150}, (DEFAULT_SPLIT_LIMIT, DEFAULT_SPLIT_LIMIT // 2), id="a-join-over-half"),
+        param({"split_limit": 10}, (MIN_SPLIT_LIMIT, DEFAULT_JOIN_LIMIT), id="a-split-under-its-floor"),
+        param({"join_limit": 150}, (DEFAULT_SPLIT_LIMIT, 150), id="a-join-over-half-kept-as-entered"),
+        param({"join_limit": -5}, (DEFAULT_SPLIT_LIMIT, 0), id="a-join-under-zero"),
+        param(
+            {"join_limit": 2 * MAX_SPLIT_LIMIT},
+            (DEFAULT_SPLIT_LIMIT, max_join_limit(MAX_SPLIT_LIMIT)),
+            id="a-join-over-every-split",
+        ),
         param({"split_limit": "many", "join_limit": None}, (DEFAULT_SPLIT_LIMIT, DEFAULT_JOIN_LIMIT), id="no-numbers"),
     ],
 )
-def test_stored_bucket_limits_are_clamped_as_a_move_uses_them(
+def test_stored_bucket_limits_are_kept_within_what_their_boxes_take(
     values: dict[str, object], expected: tuple[int, int]
 ) -> None:
-    """A split limit under 50, a join limit over half the split, or a value that is no number loads as a move uses
-    it (#680).
+    """A split limit under 50, a join limit under 0 or over any split's half, or a value that is no number loads as one
+    the box takes (#680); a join limit over half the split limit is kept as entered, and ignored only where it is used
+    (#681).
 
     **Test steps:**
 

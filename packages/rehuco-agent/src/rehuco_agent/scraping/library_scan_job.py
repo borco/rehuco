@@ -18,6 +18,9 @@ mapping of it outlive the removal, so the records would otherwise go on being wr
 that challenges the persona or forgets its login ends the run paused with the reason, the persona browser opened at
 the page; a store, a root or a disk that does not answer waits, or pauses for what only the user can fix. Resume runs
 it again, and its first question is whether what stopped it is gone (`~.library_site.LibrarySession.check`).
+
+**Every scan takes turns on one chain** (`~rehuco_core.LIBRARY_CHAIN`, #681), which the rebalance of a root's buckets
+runs on too, so the two never move files at the same time; neither waits behind this machine's disks (#563).
 """
 
 import logging
@@ -30,8 +33,8 @@ from typing import Any, Final, override
 from uuid import UUID
 
 from rehuco_core import (
-    DEFAULT_CHAIN_REGISTRY,
     DEFAULT_RECORD_MOVE_HOST,
+    LIBRARY_CHAIN,
     PROGRESS_UNIT_RESOURCES,
     CatalogCache,
     CatalogRecordUpdater,
@@ -60,10 +63,6 @@ LOG: Final = logging.getLogger(__name__)
 
 LIBRARY_SCAN_KIND: Final = "library-scan"
 """The name a library scan is saved under in the queue file ([[appendices.task-queue#lifetime]])."""
-
-LIBRARY_SCAN_FAMILY: Final = DEFAULT_CHAIN_REGISTRY.register("library-scan")
-"""The chains library scans take turns in, one per site: a scan waits neither behind a checksum sweep of this machine's
-disks nor beside another scan of the same store (#563)."""
 
 PAGE_PAUSE: Final = (3.0, 8.0)
 """The ``(min, max)`` seconds a scan waits between two pages, drawn at random: a library is read once, and a store that
@@ -223,6 +222,7 @@ class LibraryScanJob(TaskJobBase):
     """
 
     kind = LIBRARY_SCAN_KIND
+    chain = LIBRARY_CHAIN
     resumes_where_it_stopped = True
     progress_unit = PROGRESS_UNIT_RESOURCES
 
@@ -525,14 +525,12 @@ class LibraryScanJob(TaskJobBase):
         return self.__target
 
     def __describe(self) -> None:
-        """Set the label and the chain from the target."""
+        """Set the label from the target."""
         target = self.__target
         if target is None:
             self.label = "Library scan"
-            self.chain = LIBRARY_SCAN_FAMILY.chain()
             return
         site = self.__sites(target.site_key)
         name = target.site_key if site is None else site.name
         verb = "Full rescan of" if target.full_rescan else "Scan"
         self.label = f"{verb} the {name} library into {target.root_label}"
-        self.chain = LIBRARY_SCAN_FAMILY.chain(target.site_key)

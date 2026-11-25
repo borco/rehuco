@@ -1181,6 +1181,14 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         """
         return self.__rows_where(f"r.root_id = ? AND {SITE_CLAUSE}", (str(root_id), site))
 
+    def root_rows(self, root_id: UUID) -> list[CatalogRow]:
+        """Every record of a root, readable or not: what the rebalance finds its bucketed folders by (#681).
+
+        :param root_id: the root.
+        :returns: the rows, in :meth:`rows`' order.
+        """
+        return self.__rows_where("r.root_id = ?", (str(root_id),))
+
     @classmethod
     def __record_read(
         cls,
