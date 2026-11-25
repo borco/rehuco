@@ -29,6 +29,7 @@ from .persistable_task_job import PersistableTaskJob, TaskQueueItem
 from .task_job import (
     DISK_CHAIN,
     FINISHED_JOB_STATES,
+    LIBRARY_CHAIN,
     PROGRESS_UNIT_BYTES,
     PROGRESS_UNIT_RESOURCES,
     AbandonableTaskJob,
@@ -72,6 +73,7 @@ __all__ = [
     "JobState",
     "JobStatus",
     "JobWaiting",
+    "LIBRARY_CHAIN",
     "MOVABLE_JOB_STATES",
     "PROGRESS_UNIT_BYTES",
     "PROGRESS_UNIT_RESOURCES",

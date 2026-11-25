@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>BucketLimitsEditor</class>
+ <widget class="QWidget" name="BucketLimitsEditor">
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <layout class="QHBoxLayout" name="split_limit_layout">
+     <item>
+      <widget class="QLabel" name="split_limit_label">
+       <property name="text">
+        <string>Split a folder of buckets above:</string>
+       </property>
+       <property name="buddy">
+        <cstring>split_limit_spin_box</cstring>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="split_limit_spin_box">
+       <property name="toolTip">
+        <string>A folder a layout's {buckets} level fills holds this many entries at most. One more splits it: each entry moves into a bucket named by one more character of its name, and a bucket that then holds more splits the same way. A changed limit moves nothing by itself: it counts for the next record that arrives, and for Tools &gt; Balance Buckets.</string>
+       </property>
+       <property name="suffix">
+        <string> entries</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="split_limit_spacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>0</width>
+         <height>0</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="join_limit_layout">
+     <item>
+      <widget class="QLabel" name="join_limit_label">
+       <property name="text">
+        <string>Join its buckets back at or below:</string>
+       </property>
+       <property name="buddy">
+        <cstring>join_limit_spin_box</cstring>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QSpinBox" name="join_limit_spin_box">
+       <property name="toolTip">
+        <string>A split folder whose buckets hold this many entries or fewer in all is joined back into one, by Tools &gt; Balance Buckets only. Never above half the split limit, so a folder never splits and joins back over one record.</string>
+       </property>
+       <property name="suffix">
+        <string> entries</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="join_limit_spacer">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>0</width>
+         <height>0</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="warning_label">
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

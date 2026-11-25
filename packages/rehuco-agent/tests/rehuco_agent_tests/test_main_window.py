@@ -7906,13 +7906,13 @@ def test_file_holds_the_verbs_the_open_list_and_settings_and_quit(qtbot: QtBot) 
 
 
 def test_root_catalog_holds_the_catalog_files_then_the_docks_own_actions(qtbot: QtBot) -> None:
-    """``Root Catalog`` is New, Open, Open Recent, a separator, then the dock's Scan, Add Root, Remove Root and Map
-    (#402, #514).
+    """``Root Catalog`` is New, Open, Open Recent, a separator, then the dock's Scan, Add Root, Remove Root, Map and
+    Balance Buckets (#402, #514, #681).
 
     **Test steps:**
 
     * construct a real ``MainWindow`` and read the menu's actions
-    * verify the window's three, the separator, and that each of the last four *is* the dock's action object
+    * verify the window's three, the separator, and that each of the last five *is* the dock's action object
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -7923,16 +7923,17 @@ def test_root_catalog_holds_the_catalog_files_then_the_docks_own_actions(qtbot: 
 
     assert actions[:3] == [ui.new_rehuco_action, ui.open_rehuco_action, ui.open_recent_rehucos_menu.menuAction()]
     assert actions[3].isSeparator()
-    assert actions[4:8] == [
+    assert actions[4:9] == [
         roots.scan_action,
         roots.add_roots_action,
         roots.remove_root_action,
         roots.map_root_action,
+        roots.rebalance_root_action,
     ]
     # then the Roots view's own toggle, set apart (#457)
-    assert actions[8].isSeparator()
-    assert actions[9].isCheckable()
-    assert len(actions) == 10
+    assert actions[9].isSeparator()
+    assert actions[10].isCheckable()
+    assert len(actions) == 11
 
 
 def test_root_catalog_entries_follow_the_dock_and_scan_wakes_once_a_catalog_is_open(qtbot: QtBot) -> None:
@@ -8037,13 +8038,13 @@ def test_view_no_longer_lists_documents_and_tools_holds_the_library_scan_and_the
     qtbot: QtBot,
 ) -> None:
     """``View`` ends on its last dock toggle, however many documents are open, and ``Tools`` holds the library scan
-    (#685), the sweep, the legacy import and the conversion backups (#402).
+    (#685), the balance of buckets (#681), the sweep, the legacy import and the conversion backups (#402).
 
     **Test steps:**
 
     * construct a real ``MainWindow`` and show ``View``
     * verify its last entry is the image previews toggle
-    * verify ``Tools``'s four actions in order
+    * verify ``Tools``'s five actions in order
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -8054,6 +8055,7 @@ def test_view_no_longer_lists_documents_and_tools_holds_the_library_scan_and_the
     assert ui.view_menu.actions()[-1] is ui.image_previews_action
     assert ui.tools_menu.actions() == [
         ui.scan_library_action,
+        ui.balance_buckets_action,
         ui.sweep_checksums_action,
         ui.import_legacy_catalog_action,
         ui.conversion_backups_action,

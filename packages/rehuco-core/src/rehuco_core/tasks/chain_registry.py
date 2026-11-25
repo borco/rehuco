@@ -80,3 +80,7 @@ a property of the build. Tests build their own instead of registering into this.
 
 DISK_FAMILY: Final = DEFAULT_CHAIN_REGISTRY.register("disk")
 """The family of this machine's disks, which every job that has not thought about its chain runs in."""
+
+LIBRARY_FAMILY: Final = DEFAULT_CHAIN_REGISTRY.register("library")
+"""The family of the store libraries: the scans that fill one and the rebalances that move its records between buckets
+(#681), which must never move files at the same time."""

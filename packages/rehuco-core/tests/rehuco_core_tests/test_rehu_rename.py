@@ -11,6 +11,7 @@ from rehuco_core import (
     ChecksumTrust,
     RehuRenamer,
     Relocation,
+    files_of_record,
     rehu_rename_conflict,
     rename_rehu_resource,
 )
@@ -856,3 +857,17 @@ def test_a_case_only_rename_is_performed_not_read_as_a_collision(mocker: MockerF
 
 
 # endregion
+
+
+def test_a_records_files_are_its_own_and_no_other_records() -> None:
+    """What travels with a file record is what is named after it, but a lock, and but what a longer stem claims -- a
+    legacy record's as a ``.rehu``'s, whole, its name covering a file or not (#681).
+
+    **Test steps:**
+
+    * ask for the files of ``foo.rehu`` among those of ``foo1.tc`` and others
+    * verify its own, its legacy record among them
+    """
+    names = ["foo.rehu", "foo.tc", "Foo00.jpg", "foo.zip", "foo.rehu.lock", "foobar.zip", "foo1.tc", "foo1_x.zip"]
+
+    assert files_of_record(names, "foo.rehu") == ["foo.rehu", "foo.tc", "Foo00.jpg", "foo.zip"]

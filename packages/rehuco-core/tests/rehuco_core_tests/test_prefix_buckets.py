@@ -12,6 +12,7 @@ from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     BUCKETS_MARKER,
+    MAX_SPLIT_LIMIT,
     MIN_SPLIT_LIMIT,
     TEMPORARY_BUCKET_PREFIX,
     BucketChain,
@@ -29,11 +30,14 @@ from rehuco_core import (
     is_bucket_chain,
     is_never_split,
     is_split,
+    max_join_limit,
+    place_chains,
     place_holds,
     records_beneath,
     resolve_buckets,
     temporary_bucket_of,
     temporary_prefix,
+    unresolve_buckets,
 )
 from rehuco_core import prefix_buckets as prefix_buckets_module
 
@@ -106,13 +110,15 @@ def test_the_limits_are_clamped_to_their_floor_and_half() -> None:
 
     **Test steps:**
 
-    * clamp a split limit under the floor, and join limits above half, below 0 and in range
+    * clamp a split limit under the floor and one over the top, and join limits above half, below 0 and in range
     * verify each
     """
     assert clamped_limits(10, 100) == (MIN_SPLIT_LIMIT, MIN_SPLIT_LIMIT // 2)
     assert clamped_limits(200, 150) == (200, 100)
     assert clamped_limits(200, -5) == (200, 0)
     assert clamped_limits(300, 60) == (300, 60)
+    assert clamped_limits(MAX_SPLIT_LIMIT + 1, MAX_SPLIT_LIMIT) == (MAX_SPLIT_LIMIT, max_join_limit(MAX_SPLIT_LIMIT))
+    assert max_join_limit(201) == 100
 
 
 @mark.parametrize(
@@ -362,7 +368,8 @@ def test_a_place_resolves_each_bucketed_level_the_innermost_chain_first(tmp_path
 
     * split ``fab``, then ``fab/j/Jane``
     * resolve ``fab/{buckets}/Jane/{buckets}/Intro``, and a place with no buckets
-    * verify the place with both buckets, the chains innermost first, and the plain place unchanged
+    * verify the place with both buckets, the chains innermost first, and the plain place unchanged, told to lead
+      into a folder its layout does not bucket (#681)
     """
     mark_split(tmp_path / "fab")
     mark_split(tmp_path / "fab" / "j" / "Jane")
@@ -374,7 +381,7 @@ def test_a_place_resolves_each_bucketed_level_the_innermost_chain_first(tmp_path
         (BucketChain(PurePosixPath("fab", "j", "Jane"), ("i",)), BucketChain(PurePosixPath("fab"), ("j",))),
     )
     assert resolve_buckets(tmp_path, PurePosixPath("fab", "Intro"), ()) == BucketedPlace(
-        PurePosixPath("fab", "Intro"), ()
+        PurePosixPath("fab", "Intro"), (), tmp_path / "fab"
     )
 
 
@@ -661,6 +668,206 @@ def test_a_folder_no_bucket_may_be_named_after_blocks_the_split(
     assert (tmp_path / "a").is_dir()
     assert not BucketListing.of(tmp_path, 0).temporaries
     warning.assert_called_once()
+
+
+def test_a_swept_folder_goes_to_the_deepest_bucket_of_its_name(splitter: BucketSplitter, tmp_path: Path) -> None:
+    """A folder left beside the buckets is moved past a bucket already split: named as long as that bucket's own
+    buckets, it would be taken for one there (#681).
+
+    **Test steps:**
+
+    * split a folder whose bucket ``a`` is split in turn, and leave folder records ``ab`` and ``ac`` beside it, ``ab``'s
+      bucket made and ``ac``'s not
+    * settle it
+    * verify ``a/ab/ab`` and ``a/ac/ac``
+    """
+    mark_split(tmp_path)
+    mark_split(tmp_path / "a")
+    file_record(tmp_path / "a" / "ab", "abc")
+    folder_record(tmp_path, "ab")
+    folder_record(tmp_path, "ac")
+
+    splitter.settle(tmp_path, ())
+
+    assert (tmp_path / "a" / "ab" / "ab" / "info.rehu").is_file()
+    assert (tmp_path / "a" / "ac" / "ac" / "info.rehu").is_file()
+
+
+def test_a_bucket_swept_into_past_another_splits_in_turn(splitter: BucketSplitter, tmp_path: Path) -> None:
+    """Every bucket on the way to where an entry went is settled, not only the first.
+
+    **Test steps:**
+
+    * split a folder and its bucket ``a``, crowd ``a/ab`` to the limit, and leave a record of it beside ``a``
+    * settle the folder
+    * verify ``a/ab`` is split
+    """
+    mark_split(tmp_path)
+    mark_split(tmp_path / "a")
+    for index in range(LIMIT):
+        file_record(tmp_path / "a" / "ab", f"ab{index:02}")
+    file_record(tmp_path, "abz")
+
+    splitter.settle(tmp_path, ())
+
+    assert is_split(tmp_path / "a" / "ab")
+    assert (tmp_path / "a" / "ab" / "abz" / "abz.rehu").is_file()
+
+
+def test_a_folder_swept_into_a_bucket_being_built_is_settled_there(splitter: BucketSplitter, tmp_path: Path) -> None:
+    """An entry swept past a bucket whose own split was stopped lands in the temporary bucket, which is then placed.
+
+    **Test steps:**
+
+    * split a folder and its bucket ``a``, which holds a temporary bucket for ``ab``, and leave record ``abc`` beside it
+    * settle the folder
+    * verify ``a/ab/abc``, and no temporary bucket
+    """
+    mark_split(tmp_path)
+    mark_split(tmp_path / "a")
+    folder_record(tmp_path / "a" / f"{TEMPORARY_BUCKET_PREFIX}ab-{TOKEN}", "ab")
+    file_record(tmp_path, "abc")
+
+    splitter.settle(tmp_path, ())
+
+    assert names_under(tmp_path / "a" / "ab") == {"ab/info.rehu", "abc.rehu", "abc00.jpg"}
+    assert not list(tmp_path.rglob(f"{TEMPORARY_BUCKET_PREFIX}*"))
+
+
+def test_a_place_gives_its_chain_at_each_bucketed_level() -> None:
+    """A path at a place says the buckets it is in, the folder each chain is under as the path spells it; a temporary
+    bucket is the bucket it is built for, and a path elsewhere has none.
+
+    **Test steps:**
+
+    * ask for the chains of a path under two bucketed levels, one of them in a temporary bucket
+    * ask for those of a path that is another place's
+    * verify both chains, the outermost first, and none
+    """
+    relative = PurePosixPath("fab", "Jane", "Intro")
+    temporary = f"{TEMPORARY_BUCKET_PREFIX}i-{TOKEN}"
+
+    assert place_chains(("Fab", "j", "Jane", temporary, "Intro"), relative, (1, 2)) == (
+        BucketChain(PurePosixPath("Fab"), ("j",)),
+        BucketChain(PurePosixPath("Fab", "j", "Jane"), (temporary,)),
+    )
+    assert place_chains(("Fab", "k", "Jane", "Intro"), relative, (1, 2)) is None
+    assert place_chains(("fab", "Jane", "Intro"), relative, ()) == ()
+
+
+def test_a_folder_record_is_never_a_bucket(splitter: BucketSplitter, tmp_path: Path) -> None:
+    """A folder record put by hand where a bucket of its name would be is an entry: it goes into the bucket of its name,
+    and its own folders stay its own (#681).
+
+    **Test steps:**
+
+    * split a folder holding folder record ``A`` with more folders in it than the limit, and file record ``ab`` beside
+      it; ask where a new entry lands
+    * settle the folder
+    * verify ``A`` whole in bucket ``a``, ``ab`` beside it, and that nothing was to land inside ``A``
+    """
+    mark_split(tmp_path)
+    folder_record(tmp_path, "A")
+    for index in range(LIMIT + 1):
+        (tmp_path / "A" / f"chapter {index:02}").mkdir()
+    file_record(tmp_path, "ab")
+
+    assert bucket_of(tmp_path, "abc") == PurePosixPath()
+    splitter.settle(tmp_path, ())
+
+    assert len(list((tmp_path / "a" / "A").iterdir())) == LIMIT + 2
+    assert (tmp_path / "a" / "ab.rehu").is_file()
+    assert BucketListing.of(tmp_path, 0).buckets == {"a": tmp_path / "a"}
+
+
+def test_an_entry_whose_name_is_taken_is_left_and_the_rest_moves(
+    splitter: BucketSplitter, tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """One duplicate put there by hand stops nothing else (#681).
+
+    **Test steps:**
+
+    * split a folder holding ``a/abc`` and, beside its buckets, ``abc`` and ``bcd``
+    * settle it
+    * verify ``abc`` is where it was, ``bcd`` moved, and the reason told and logged
+    """
+    warning = mocker.spy(prefix_buckets_module.LOG, "warning")
+    mark_split(tmp_path)
+    folder_record(tmp_path / "a", "abc")
+    folder_record(tmp_path, "abc")
+    folder_record(tmp_path, "bcd")
+
+    splitter.settle(tmp_path, ())
+
+    assert (tmp_path / "abc" / "info.rehu").is_file()
+    assert (tmp_path / "b" / "bcd" / "info.rehu").is_file()
+    assert splitter.left == (f"{tmp_path / 'abc'}: its name is taken in {tmp_path / 'a'}",)
+    warning.assert_called_once()
+
+
+def test_a_split_stops_before_its_marker_when_a_name_is_taken_aside(splitter: BucketSplitter, tmp_path: Path) -> None:
+    """A folder named like its bucket that cannot be set aside keeps its folder unmarked, or it would read as a bucket.
+
+    **Test steps:**
+
+    * leave an unmarked folder holding a temporary bucket for ``a`` with ``a`` in it, and another folder ``a`` beside it
+    * settle it
+    * verify no marker, and the reason
+    """
+    temporary = tmp_path / f"{TEMPORARY_BUCKET_PREFIX}a-{TOKEN}"
+    folder_record(temporary, "a")
+    folder_record(tmp_path, "a")
+
+    splitter.settle(tmp_path, ())
+
+    assert not is_split(tmp_path)
+    assert splitter.left == (f"{tmp_path / 'a'}: its name is taken in {temporary}",)
+
+
+@mark.parametrize("name", ["$RECYCLE.BIN", "$Recycle.Bin", "System Volume Information", "@Recycle"])
+def test_a_systems_folder_is_no_entry(tmp_path: Path, name: str) -> None:
+    """A layout that buckets a drive's own top folder leaves its Recycle Bin alone (#681).
+
+    **Test steps:**
+
+    * list a folder holding one such folder
+    * verify it holds no entry
+    """
+    (tmp_path / name).mkdir()
+
+    assert not BucketListing.of(tmp_path, 0).entries
+
+
+def test_a_legacy_record_beside_its_rehu_is_one_entry(tmp_path: Path) -> None:
+    """The ``.tc`` of a converted record moves with its ``.rehu``; one alone is an entry of its own (#681).
+
+    **Test steps:**
+
+    * list a folder holding ``a.rehu`` with ``A.tc``, and ``b.tc``
+    * verify two entries
+    """
+    for name in ("a.rehu", "A.tc", "b.tc"):
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+
+    assert [entry.path.name for entry in BucketListing.of(tmp_path, 0).entries] == ["a.rehu", "b.tc"]
+
+
+def test_a_resolved_place_goes_back_to_what_it_was(tmp_path: Path) -> None:
+    """A place's buckets are taken out of it again, for a move that reads them anew (#681).
+
+    **Test steps:**
+
+    * split ``fab`` and ``fab/j/Jane``, resolve a place with two bucketed levels, and undo it
+    * undo a place with no buckets
+    * verify each as it was before
+    """
+    mark_split(tmp_path / "fab")
+    mark_split(tmp_path / "fab" / "j" / "Jane")
+    relative = PurePosixPath("fab", "Jane", "Intro")
+    place = resolve_buckets(tmp_path, relative, (1, 2))
+
+    assert unresolve_buckets(place.relative, place.chains) == (relative, (1, 2))
+    assert unresolve_buckets(relative, ()) == (relative, ())
 
 
 def test_a_stop_between_moves_leaves_every_record_whole(tmp_path: Path) -> None:

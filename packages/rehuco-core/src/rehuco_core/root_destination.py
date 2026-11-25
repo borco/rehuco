@@ -31,13 +31,15 @@ from typing import Final, Protocol
 from .location_pattern import (
     BUCKETS_PLACEHOLDER,
     KNOWN_PLACEHOLDERS,
+    PLACEHOLDERS,
     LocationPattern,
     known_placeholders_for,
     location_values,
 )
 from .path_keys import path_key
-from .plugins.plugin_registry import PluginRegistry
+from .plugins import DEFAULT_PLUGIN_REGISTRY, PluginRegistry
 from .rehu_document import RehuDocument
+from .rehudb import CatalogRecord
 from .rehuroot_file import ANY_TYPE, KEEP_NAME, Layouts
 from .replacement_rule import ReplacementRule, apply_location_replacements
 from .sanitized_names import location_name_problem, sanitize_name
@@ -122,6 +124,29 @@ class RecordNaming:
         )
         placeholders = known_placeholders_for(plugins.field_names(document.type))
         return cls(plugins.main_key(document.type), folder_name, values, placeholders)
+
+    @classmethod
+    def of_record(
+        cls, record: CatalogRecord, folder_name: str, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY
+    ) -> RecordNaming:
+        """What a layout reads of a record as the cache has it, no file read (#681).
+
+        :param record: the record.
+        :param folder_name: its current file or folder name.
+        :param plugins: the plugins, which say what a type declares.
+        :returns: the naming.
+        """
+        values = location_values(
+            record.title,
+            record.publisher,
+            record.authors,
+            record.released,
+            record.advertised_count,
+            # the cache marks no pair as the primary source's, but that source's site is the record's publisher
+            site_id=next((site_id for site, site_id in record.site_ids if site == record.publisher), None),
+        )
+        placeholders = known_placeholders_for(plugins.field_names(record.type))
+        return cls(plugins.main_key(record.type), folder_name, values, placeholders)
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,6 +303,25 @@ def buckets_problem(pattern: LocationPattern) -> str:
         if levels[index + 1] == BUCKETS_STAND_IN:
             return BUCKETS_TWICE_PROBLEM
     return ""
+
+
+def is_bucketed_template(template: str) -> bool:
+    """Whether a path template buckets one of its levels (#681).
+
+    :param template: the template as written.
+    :returns: whether it parses and names ``{buckets}``.
+    """
+    pattern = LocationPattern(template, frozenset((*PLACEHOLDERS, BUCKETS_PLACEHOLDER)))
+    return BUCKETS_PLACEHOLDER in pattern.placeholders
+
+
+def has_bucketed_layout(layouts: Layouts) -> bool:
+    """Whether any of a root's layouts buckets a level, so that a rebalance has something to look at (#681).
+
+    :param layouts: the root's layouts.
+    :returns: whether one does.
+    """
+    return any(is_bucketed_template(template) for templates in layouts.values() for template in templates)
 
 
 def layout_placeholders(main_key: str, registry: PluginRegistry) -> frozenset[str]:

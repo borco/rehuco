@@ -330,10 +330,10 @@ def served_rehuco(document: dict[str, Any]) -> dict[str, Any]:
 def served_rehuroot(root: dict[str, Any]) -> dict[str, Any]:
     """The ``.rehuroot`` a served root reads as.
 
-    :param root: the root, as the served catalog holds it inline.
+    :param root: the root, as the served catalog holds it inline, its layouts too when a test gave it some.
     :returns: the file's content, in the layout a save writes.
     """
-    return {"format_version": 1, **root, "layouts": {"*": "*"}, "fallbacks": {}}
+    return {"format_version": 1, **root, "layouts": root.get("layouts", {"*": "*"}), "fallbacks": {}}
 
 
 def written_root_files(on_disk: dict[Path, str]) -> dict[str, dict[str, Any]]:
@@ -1903,17 +1903,18 @@ def test_a_root_row_menu_leads_with_the_folder_actions_then_the_moves_then_remov
 
     assert dock.roots.roots_view.contextMenuPolicy() == Qt.ContextMenuPolicy.CustomContextMenu
     assert [action.isSeparator() for action in actions] == [
-        *[False] * 4,
+        *[False] * 5,
         True,
         *[False] * 4,
         True,
         False,
     ]
-    assert actions[0] is dock.roots.filter_folder_action
-    assert actions[1] is dock.roots.open_explorer_action
-    assert actions[2:4] == [dock.roots.scan_root_action, dock.roots.refresh_roots_action]
-    assert actions[5:9] == list(dock.roots.move_root_actions)
-    assert actions[10] is dock.roots.remove_root_action
+    roots = dock.roots
+    assert actions[0] is roots.filter_folder_action
+    assert actions[1] is roots.open_explorer_action
+    assert actions[2:5] == [roots.scan_root_action, roots.rebalance_root_action, roots.refresh_roots_action]
+    assert actions[6:10] == list(roots.move_root_actions)
+    assert actions[11] is roots.remove_root_action
 
 
 @mark.usefixtures("served")

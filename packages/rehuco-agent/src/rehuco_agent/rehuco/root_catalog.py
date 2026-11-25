@@ -4,7 +4,7 @@
 
 import logging
 import threading
-from collections.abc import Hashable, Iterable, Sequence
+from collections.abc import Collection, Hashable, Iterable, Sequence
 from pathlib import Path
 from typing import Final, cast
 from uuid import UUID
@@ -19,6 +19,7 @@ from rehuco_core import (
     CatalogRow,
     JobStatus,
     MappedRoot,
+    RebalanceBucketsJob,
     RehucoChangedError,
     RehucoFile,
     RehucoFileError,
@@ -46,6 +47,7 @@ from rehuco_core.access import (
 from rehuco_core.notify import RootNotifiers
 
 from ..resource_events import ResourceEvents
+from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.persistent_settings import cache_folder, config_folder
 from .record_verify import RecordVerify
 from .root_overlaps import RootOverlaps
@@ -771,6 +773,35 @@ class RootCatalog(QObject):  # pylint: disable=too-many-instance-attributes,too-
             ),
             root.path,
         )
+
+    def rebalance(self, root_ids: Collection[UUID], split_limit: int, join_limit: int) -> None:
+        """Enqueue a balance of each root's buckets (#681), unless one with the same limits asked for in this session is
+        unfinished; none while no file is open, since a root's bucketed folders are found by the records its cache
+        holds.
+
+        :param root_ids: the roots; one the open file does not list, or this machine does not reach, is ignored.
+        :param split_limit: how many entries a folder holds before it is split.
+        :param join_limit: how few entries a split folder's whole subtree holds to be joined.
+        """
+        cache_path = self.__catalog.cache_path
+        if cache_path is None:
+            return
+        for root in self.mapped_roots():
+            if root.root_id not in root_ids:
+                continue
+            self.__enqueue(
+                RebalanceBucketsJob(
+                    cache_path,
+                    root.root_id,
+                    root.path,
+                    root_label=root.label or str(root.path),
+                    split_limit=split_limit,
+                    join_limit=join_limit,
+                    excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+                    coordinator=self.__rename_coordinator,
+                ),
+                root.path,
+            )
 
     def __enqueue(self, job: TaskJob, scope: Path) -> None:
         """Put ``job`` on the queue inside ``scope``'s log scope, and remember its serial so its end can be

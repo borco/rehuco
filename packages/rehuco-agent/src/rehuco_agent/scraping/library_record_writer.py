@@ -46,6 +46,7 @@ from rehuco_core import (
     locked_record,
     resolve_buckets,
     save_screenshot,
+    ungoverned_reason,
     write_license_terms,
 )
 from requests import RequestException
@@ -198,7 +199,8 @@ class LibraryRecordWriter:
         :param document: the record, its fields written.
         :param folder_name: what a ``*`` template keeps: the store's id.
         :returns: the place.
-        :raises JobPaused: the root's file cannot be read, or its layout admits no such record.
+        :raises JobPaused: the root's file cannot be read, its layout admits no such record, or the place leads into a
+            folder split where the layout has no buckets (#681).
         :raises JobWaiting: the root's file does not answer.
         """
         try:
@@ -214,7 +216,10 @@ class LibraryRecordWriter:
         if isinstance(offered, Refusal):
             raise JobPaused(f"The root's layout does not admit the record: {offered.reason}")
         placement = offered[0]
-        return resolve_buckets(root, placement.relative, placement.bucketed)
+        place = resolve_buckets(root, placement.relative, placement.bucketed)
+        if place.ungoverned is not None:
+            raise JobPaused(ungoverned_reason(place.ungoverned))
+        return place
 
     def __stage(
         self,

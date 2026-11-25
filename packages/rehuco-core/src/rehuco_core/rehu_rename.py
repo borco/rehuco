@@ -25,17 +25,16 @@ import errno
 import logging
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Final
 
 from .checksum_record import checksum_record_path, rename_checksum_entries, update_checksum_record
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
-from .constants import REHU_SUFFIX
 from .path_keys import path_key
 from .record_file_lock import RecordFileLock, is_lock_name
 from .relocation import Relocation
-from .resource_scoping import is_directory_scoped
+from .resource_scoping import is_directory_scoped, is_record_name
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -144,6 +143,52 @@ def rehu_move_conflict(path: Path, into: Path, new_name: str) -> Path | None:
     :returns: the entry in the way, or ``None``; see :func:`rehu_rename_conflict`.
     """
     return RehuRenamer(path, new_name, into=into).conflict()
+
+
+def is_named_after(name: str, stem: str) -> bool:
+    """Whether the file ``name`` is named after the file record ``stem``, and so belongs to it.
+
+    A **separator** decides it, not a bare prefix: what follows the stem must be nothing at all (the file simply *is*
+    the resource's name), an extension separator (``foo.zip``, ``foo.sfv``, ``foo.001``), or a digit (``foo00.jpg``,
+    and any other numbered continuation). More *letters* make a different name that merely starts alike --
+    ``foobar.zip`` and ``foo_extras.txt`` are nobody's business but their own, and nothing need sit beside them to
+    establish that. This is what keeps a rename's sweep from turning a shared prefix into a claim of ownership; the
+    sibling-``.rehu`` exclusion in :class:`RehuRenamer` is then a backstop for the ambiguous digit case, not the only
+    thing standing between a rename and somebody else's files.
+
+    The stem is matched over **as many characters as the stem has**, folded (:func:`~rehuco_core.path_key`), which is
+    the slice a rename replaces: a file whose spelling folds to the stem but at another length (a dotted capital ``İ``
+    folds to two characters) is left alone rather than cut at the wrong place.
+
+    :param name: the file's name, as spelled.
+    :param stem: the record's stem, as spelled.
+    :returns: whether the file travels with the record.
+    """
+    length = len(stem)
+    if path_key(name[:length]) != path_key(stem):
+        return False
+    tail = name[length:]
+    return not tail or tail.startswith(os.extsep) or tail[0].isdigit()
+
+
+def files_of_record(names: Iterable[str], document_name: str) -> list[str]:
+    """Which of a folder's files a file record takes along (#681): the files named after it, but a lock, and but those
+    another record's longer stem claims.
+
+    With ``foo.rehu`` and ``foo2.rehu`` side by side, ``foo2``'s whole set is named after ``foo`` and would otherwise
+    travel with it, silently renaming a record nobody asked about. A record whose stem extends this one's owns
+    everything under that longer stem -- a **bare prefix**, deliberately wider than the membership rule it undoes: the
+    two asymmetries err the same way, toward leaving a file alone.
+
+    :param names: the folder's files, by name; no folder among them.
+    :param document_name: the record's own file.
+    :returns: the files, the record's own among them.
+    """
+    stem = Path(document_name).stem
+    named_after = [name for name in names if not is_lock_name(name) and is_named_after(name, stem)]
+    stems = (path_key(Path(name).stem) for name in named_after if is_record_name(name))
+    foreign = [other for other in stems if other != path_key(stem)]
+    return [name for name in named_after if not any(path_key(name).startswith(other) for other in foreign)]
 
 
 def remove_empty_parents(start: Path, stop_at: Path) -> list[Path]:
@@ -517,7 +562,7 @@ class RehuRenamer:
         ]
 
     def __sibling_set(self) -> list[Path]:
-        """Every file named after this file-scoped resource (:meth:`__named_after`).
+        """Every file named after this file-scoped resource (:func:`is_named_after`).
 
         A file-scoped resource carries no manifest of the files it describes
         ([[data-model#resource-scoping]] names that as the gap), so **being named after it is the
@@ -530,12 +575,7 @@ class RehuRenamer:
         either a resource of its own (with its own ``info.rehu``) or nothing to do with this one. So is a lock
         file (#512): a stale one left beside the record is no part of it, and a fresh one refused the rename.
 
-        **Another record's files are skipped too.** With ``foo.rehu`` and ``foo2.rehu`` side by side,
-        ``foo2``'s whole set is named after ``foo`` by the rule below and would otherwise travel with
-        it, silently renaming a record nobody asked about. A sibling ``.rehu`` whose stem extends this
-        one's owns everything under that longer stem, so those are excluded -- and that exclusion is a
-        **bare prefix**, deliberately wider than the membership rule it undoes: the two asymmetries err
-        the same way, toward leaving a file alone.
+        **Another record's files are skipped too**, a legacy ``.tc``'s as a ``.rehu``'s (:func:`files_of_record`).
 
         Every comparison folds case on every platform (:func:`~rehuco_core.path_key`): a resource's files
         share its spelling, and one that does not -- ``FOO.zip`` beside ``foo.rehu`` -- is still one unit.
@@ -544,62 +584,10 @@ class RehuRenamer:
         :raises OSError: the directory cannot be listed -- e.g. an offline mount
             ([[mounts-and-storage#offline-mounts]]); nothing is renamed.
         """
-        stem = path_key(self.__path.stem)
         document_name = path_key(self.__path.name)
-        named_after = [
-            entry
-            for entry in self.__path.parent.iterdir()
-            if not entry.is_dir() and not is_lock_name(entry.name) and self.__named_after(entry.name)
-        ]
-        foreign = self.__foreign_stems(named_after, stem)
-        owned = [
-            entry
-            for entry in named_after
-            if path_key(entry.name) != document_name
-            and not any(path_key(entry.name).startswith(other) for other in foreign)
-        ]
-        return [self.__path, *sorted(owned, key=lambda entry: entry.name)]
-
-    def __named_after(self, name: str) -> bool:
-        """Whether the sibling ``name`` is named after this resource.
-
-        A **separator** decides it, not a bare prefix: what follows the stem must be nothing at all (the
-        file simply *is* the resource's name), an extension separator (``foo.zip``, ``foo.sfv``,
-        ``foo.001``), or a digit (``foo00.jpg``, and any other numbered continuation). More *letters*
-        make a different name that merely starts alike -- ``foobar.zip`` and ``foo_extras.txt`` are
-        nobody's business but their own, and nothing need sit beside them to establish that. This is
-        what keeps the sweep from turning a shared prefix into a claim of ownership; the sibling-``.rehu``
-        exclusion in :meth:`__sibling_set` is then a backstop for the ambiguous digit case, not the only
-        thing standing between a rename and somebody else's files.
-
-        The stem is matched over **as many characters as this resource's stem has**, folded
-        (:func:`~rehuco_core.path_key`), which is the slice :meth:`__plan` replaces: a sibling whose spelling folds
-        to the stem but at another length (a dotted capital ``İ`` folds to two characters) is left alone rather than
-        cut at the wrong place.
-
-        :param name: the sibling's filename, as spelled.
-        :returns: whether the sibling travels with the resource.
-        """
-        length = len(self.__path.stem)
-        if path_key(name[:length]) != path_key(self.__path.stem):
-            return False
-        tail = name[length:]
-        return not tail or tail.startswith(os.extsep) or tail[0].isdigit()
-
-    @staticmethod
-    def __foreign_stems(named_after: Sequence[Path], stem: str) -> list[str]:
-        """The folded stems of any *other* ``.rehu`` among ``named_after`` -- each one a resource in
-        its own right, whose files must not travel with this rename.
-
-        :param named_after: the siblings named after this resource.
-        :param stem: this resource's own folded stem.
-        :returns: the extending stems whose files to leave alone.
-        """
-        return [
-            path_key(entry.stem)
-            for entry in named_after
-            if entry.suffix.lower() == REHU_SUFFIX and path_key(entry.stem) != stem
-        ]
+        files = [entry.name for entry in self.__path.parent.iterdir() if not entry.is_dir()]
+        owned = [name for name in files_of_record(files, self.__path.name) if path_key(name) != document_name]
+        return [self.__path, *(self.__path.with_name(name) for name in sorted(owned))]
 
     @staticmethod
     def __check_no_collisions(plan: Sequence[tuple[Path, Path]]) -> None:

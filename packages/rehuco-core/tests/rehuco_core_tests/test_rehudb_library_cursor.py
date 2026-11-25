@@ -89,6 +89,21 @@ def test_the_cursor_reads_one_root_and_the_site_ignoring_case(
     assert cursor == LibraryCursor("2026-01-01T00:00:00.000000Z", frozenset({"f-9"}))
 
 
+def test_a_roots_rows_are_every_record_of_it(library: tuple[CatalogCache, MappedRoot, MappedRoot]) -> None:
+    """A rebalance reads every record of one root, whatever its site (#681).
+
+    **Test steps:**
+
+    * read the rows of the first root of a cache with two
+    * verify its records alone, in path order
+    """
+    cache, first, _ = library
+
+    rows = cache.root_rows(first.root_id)
+
+    assert [row.record.path for row in rows] == [f"{letter}/info.rehu" for letter in "abcdef"]
+
+
 def test_a_site_with_no_dated_record_has_an_empty_cursor(library: tuple[CatalogCache, MappedRoot, MappedRoot]) -> None:
     """No record with an acquisition means the listing is read from the start.
 

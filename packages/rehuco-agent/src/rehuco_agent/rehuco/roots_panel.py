@@ -119,6 +119,9 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     """Emitted with a :class:`~rehuco_core.CatalogField` and a value when the current browser is to be filtered on
     them -- the folder filter (#398); the window hands it to the Browsers dock."""
 
+    rebalance_requested: Signal = Signal(object)
+    """Emitted with a root's id when its buckets are to be balanced (#681); the window asks with which limits."""
+
     def __init__(  # pylint: disable=too-many-arguments,useless-suppression
         self,
         catalog: RootCatalog,
@@ -277,6 +280,11 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
     def scan_root_action(self) -> QAction:
         """Scans the selected root alone into the cache, on the queue (#644)."""
         return self.__roots_ui.scan_root_action
+
+    @property
+    def rebalance_root_action(self) -> QAction:
+        """Asks for a balance of the selected root's buckets (#681)."""
+        return self.__roots_ui.rebalance_root_action
 
     @property
     def add_roots_action(self) -> QAction:
@@ -450,6 +458,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
             ActionIconThemeHandler(action, icon)
         ui.scan_action.triggered.connect(self.__catalog.scan)
         ui.scan_root_action.triggered.connect(self.__on_scan_root)
+        ui.rebalance_root_action.triggered.connect(self.__on_rebalance_root)
         ui.add_roots_action.triggered.connect(self.__adding.start)
         ui.edit_root_action.toggled.connect(self.__preview.set_editing)
         self.__preview.set_edit_action(ui.edit_root_action)
@@ -477,7 +486,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         needing a selected **root row** besides, the moves not at the end they move toward. Refresh and the folder
         filter need a catalog, the filter a root or folder to name. Map needs a root this machine does not map, and
         no save: it writes this machine's mappings, not the file. Scan root needs a root this machine does map
-        (#644)."""
+        (#644), and so does Balance Buckets (#681)."""
         is_open = self.__catalog.file is not None
         editable = self.__catalog.editable
         ui = self.__roots_ui
@@ -491,6 +500,7 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         ui.remove_root_action.setEnabled(editable and row >= 0)
         shown = self.__roots_model.root_at(current)
         ui.scan_root_action.setEnabled(isinstance(shown, MappedRoot))
+        ui.rebalance_root_action.setEnabled(isinstance(shown, MappedRoot))
         # checked or not, the mode stays as it is when it cannot be used: it is sticky (#578)
         readable = shown is not None and (not isinstance(shown, RehucoRoot) or shown.readable)
         ui.edit_root_action.setEnabled(editable and readable)
@@ -596,6 +606,13 @@ class RootsPanel(QWidget):  # pylint: disable=too-many-instance-attributes,too-m
         root = self.__roots_model.root_at(self.__acting_index())
         if isinstance(root, MappedRoot):
             self.__catalog.scan_root(root.root_id)
+
+    def __on_rebalance_root(self) -> None:
+        """Ask for a balance of the current root's buckets (#681); only a root this machine maps has the action
+        enabled."""
+        root = self.__roots_model.root_at(self.__acting_index())
+        if isinstance(root, MappedRoot):
+            self.rebalance_requested.emit(root.root_id)
 
     def __on_refresh_roots(self) -> None:
         """List the columns on screen again (F5): the current row's chain, or every root while none is current."""

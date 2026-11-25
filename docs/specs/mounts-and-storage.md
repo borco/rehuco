@@ -534,9 +534,9 @@ all layouts the owner uses:
   marked one at depth *n* -- its own prefix *n* characters, the layout's folder 0 -- holds buckets named by *n+1*
   characters, and only those entries too short to descend, which can never be named like a bucket. A **folder** named
   `.rehubuckets` keeps its parent a plain folder that is never split; a marker file's content is ignored.
-- **A folder holds entries until it passes the limit, then it splits.** Each entry long enough moves into the bucket of
-  one more character of its name, and every bucket that then holds more than the limit splits the same way. A small
-  library stays flat, and only the crowded prefixes grow deeper.
+- **A folder holds entries until it passes the limit, then it splits.** Each entry long enough moves into the deepest
+  bucket of its name, and every bucket that then holds more than the limit splits the same way. A small library stays
+  flat, and only the crowded prefixes grow deeper.
 - **A bucket is built aside, then renamed into place.** Only a folder whose name is a bucket's own length could be
   taken for one, so before the marker is written each such folder moves into a temporary bucket,
   `.rehubuckets-tmp-<prefix>-<token>`, which is renamed to its prefix once the marker is there: a tutorial folder `ab`
@@ -549,23 +549,40 @@ all layouts the owner uses:
 - **An entry's place follows from its name and the folders there are**: down every split folder to the bucket of one
   more of its characters, made when it is missing; a bucket being built is landed in under its temporary name. Nothing
   is looked up and nothing is stored about where an entry went.
+- **A folder record is never a bucket**, however it is named: one put by hand where a bucket of its name would be is an
+  entry, and the next split puts it into that bucket. Nor is a system's folder (a Recycle Bin) an entry.
 - **Names compare case-folded**, as root folders do. A prefix no folder may be named by -- one ending in a dot or a
   space, or one the sanitize step would change -- makes no bucket: its entries stay where they are.
 - **The limits are on the Files page**, under *Moving records*: a folder splits **above** 200 entries by default,
   **never under 50**, below which the tree deepens without any folder becoming easier to read; and a split folder is
   joined back **at or below** 100 by default, never above half the split limit, so a folder never splits and joins
-  back over one record. Each move asks the split limit as it settles, never captured.
+  back over one record. Each move asks the split limit as it settles, never captured; a rebalance works with the two
+  it was started with.
 - **No location starts with a dot**, buckets or not: a level rendering one refuses the layout for that record, a
   rename suggestion rendering one is not offered, and a typed rename to one is refused. That keeps every name clear of
   the marker and the temporary buckets; a name a record already has is never refused.
 
-**The split is a move's last step.** The path row ([[plugins#tutorial-plugin]]) draws a bucketed place without reading
-the disk, its buckets as `…` (`Fab: fab/…/01abc`), and counts the record as already there when its folders are the
-place's with any chain of its buckets. A click always queues a move ([[mounts-and-storage#safe-move-rename]]), even an
-unverified rename: the move reads the buckets as it starts moving and keeps them, so a stopped copy goes on into the
-same folder; once the record landed, a kept *split* phase settles each bucketed level the place went into, innermost
-first, since an outer split moves the inner levels' folders whole. **A rename where the record's own name is bucketed
-is such a move**: `ab/ab123` renamed to `ac123` lands in `ac/ac123`, never `ab/ac123`.
+**The split is a move's last step.** The path row ([[plugins#tutorial-plugin]]) draws a bucketed place with its buckets as
+the disk has them now (`Fab: fab/0/01/01abc`, #681), disabled with the lock when something is there already, as any place
+is; one whose buckets cannot be read is drawn with a `…` for them and left to its move. It counts the record as already
+there, with nothing read, when its folders are the place's with any chain of its buckets. A click always queues a move
+([[mounts-and-storage#safe-move-rename]]), even an unverified rename: the move reads the buckets itself as it starts
+moving and keeps them once it has files there, so a stopped copy goes on into the same folder; once the record landed, a
+kept *split* phase settles each bucketed level the place went into, innermost first, since an outer split moves the inner
+levels' folders whole -- so a record whose arrival splits its folder ends a level deeper than the row said. **A rename
+where the record's own name is bucketed is such a move**: `ab/ab123` renamed to `ac123` lands in `ac/ac123`, never
+`ab/ac123`, its title edited first or not, and is shown as taken when `ac` holds it. A record whose other path fields
+were edited too, so that no template's place fits where it lies, is told by the disk: lying in the buckets of its name
+under a split folder, it moves to the new name's bucket under that same folder.
+
+**A path that leads into a split folder its layout does not bucket is locked** (#681) -- its `{buckets}` rule was removed,
+or another template or type's rule buckets it. A folder record put there would lie beside the buckets, and a name of a
+bucket's length would be taken for one. So the path row shows such a place disabled, with the reason; every rename of a
+record lying there is locked too, but for one its own type's templates still bucket somewhere while its edited fields
+render no place it sits at; a click on a row drawn before is refused the same way; and a queued move and a library scan
+ask again as they start moving or place a record, and pause with the reason. Moving a record **out** is free, and a
+copy with files there goes on. A `.rehubuckets` **folder** locks nothing: it splits nothing. A balance joins a folder no
+rule governs ([[mounts-and-storage#bucket-rebalance]]), and the rule put back makes it a working split folder again.
 
 **Naming a record by its store id is what makes buckets cheap.** An id never collides, where two items of one
 publisher can share a title; it never changes, so correcting a title moves nothing; and an id made of hex digits
@@ -577,8 +594,13 @@ record is found.
 
 [[[mounts-and-storage#bucket-rebalance]]]
 
-**Not built** (#681). Changing the limits leaves the tree wrong for the new values, so the change enqueues a
-**rebalance job** for each root with a bucketed layout; it can also be started by hand from the Roots view.
+A changed limit moves nothing by itself: it counts for the next record that arrives, which splits the folder it crowds.
+The trees as they are are brought in line by hand (#681), by `Tools` > **Balance Buckets...** or the same entry on a root
+in the Roots view ([[plugins#rehuco-dock]]). Both open one dialog: the two limits, and the open catalog's roots this
+machine maps, each with a checkbox. **Start** saves the limits as the Files page would and enqueues a **rebalance job**
+per root checked; Cancel does neither. From the menu the roots checked are those of the last run accepted from there, and
+for a catalog with none of those every root with a `{buckets}` rule; from a root, that root alone, which the menu does not
+remember. The dialog keeps its geometry on either exit.
 
 - **Split limit lowered** (1000 to 50): every folder over the limit is split, and its buckets again, until none is.
 - **Join limit raised**: a split folder whose whole subtree holds the join limit or fewer is joined back -- its
@@ -586,11 +608,55 @@ record is found.
 - **The cache's paths are updated with each move**, as a record's move updates them.
 - **Splitting happens as records arrive; joining happens only here**, and only at or below the join limit, half the
   split limit at most: a folder near the limit would otherwise split and join with every record added and removed.
+- **A folder is rebalanced when a record of the cache sits at its own layout's place in it**, the path row's *already
+  there*: a template's placeholders would fit another layout's folders, and a record's own. Inner folders come first,
+  since an outer one's step moves them whole.
+- **The limits are the job's own**, the two the dialog showed, clamped as they are used and kept across a restart; its
+  row names them (*Balance buckets (200/100) - Library*). Asked again with the same two while one is unfinished, no second
+  is queued; with others one is, behind it, and the last one started decides.
+
+**A split folder no rule governs any more is joined whole**, whatever it holds, before the bucketed folders are
+balanced. The job walks the root for the folders that are split (the disk knows one emptied by hand, the cache does not),
+leaving out folder records and a system's folders, and asks of each:
+
+- some record has its bucketed place there, sitting at it or not: it is governed, and balanced as above;
+- the root has no `{buckets}` rule at all, or a scan has read it, the cache knows records beneath the folder, and none of
+  the root's has its bucketed place there: **joined, with no limit**;
+- nothing says -- a template of the root cannot be used (it may be a `{buckets}` mistyped), no scan has read the root, or
+  the cache knows nothing beneath the folder: joined at or below the join limit only, so one emptied by hand loses its
+  marker and a library is never flattened by a mistake.
+
+One still split after that is always named in the outcome, with why, since nothing may be put there meanwhile.
+
+**A join is stopped anywhere, as a split is.** Every entry beneath moves straight up into the folder, each one rename
+through the rename barrier; the emptied buckets are removed, each nested marker just before its folder, and the folder's
+own marker after them. Until then it is a split folder, and whoever settles it moves the entries down again, each to the
+deepest bucket its name lands in. A folder named as long as a bucket (`a/ab/ab`) would be taken for one by a folder still
+marked, so it waits in a temporary bucket until the marker is gone: a stop between the two leaves what a split stopped
+before its marker leaves, which a split finishes as a split and a rebalance as a join.
+
+**What keeps a folder split** is asked of every bucket beneath before the first move, so nothing is half joined:
+
+- **a file that belongs to no record**, in the folder's buckets: the folder is left whole, and the job's outcome and the
+  log name the file. **Junk** -- what the Files page's excluded patterns name -- is deleted instead, as the app deletes
+  anything (its Recycle Bin choice included); one that cannot be deleted keeps the folder split too;
+- **two entries of one name**, one of them put there by hand: told as a stray file is. A split leaves such an entry where
+  it is, told too, and moves the rest;
+- **a bucket beneath marked never split**, by a folder named `.rehubuckets`: the owner's choice, said nowhere.
+
+A bucket that gains something while it is joined stays, and its folder with it, not split again in the same run.
 
 **A rebalance and a library scan never move files at the same time.** Both run on one chain of the task queue
 ([[appendices.task-queue#serial]]), so a rebalance enqueued during a scan runs when the scan ends. To have it sooner
 the user pauses the scan: a paused job has returned ([[appendices.task-queue#cursor]]), so the rebalance runs, and the
 scan carries on after it.
+
+**A record's move runs on another chain, so a rebalance waits for it**, naming it: before every step it asks for a move
+into a bucketed place of its root that has read its buckets and not ended -- running, waiting or paused -- or that stopped
+with part of its copy there, and for one out of its root about to remove what is left of the original. It would otherwise
+move a half-copied record, the bucket a waiting rename is to land in, or the leftovers away from their removal. The asking
+and the step are one, as a move's reading of its buckets and its saying so are (`BUCKETS_GUARD`). **A move that failed
+before it wrote anything reads its buckets again** when it is retried, since a rebalance may have joined them.
 
 **The scan therefore reads the limit, and the folders, before every record it creates**, never once at its start: the
 limit may have changed while it ran or sat paused, and the tree may have been rebuilt under it. It keeps neither in

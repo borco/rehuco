@@ -8,18 +8,32 @@ import json
 import logging
 import threading
 from collections.abc import Callable
-from pathlib import Path
-from typing import Final
-from unittest.mock import MagicMock
+from pathlib import Path, PurePosixPath
+from typing import Any, Final
+from unittest.mock import MagicMock, Mock
 from uuid import UUID
 
 from PySide6.QtCore import QCoreApplication, QThread
-from pytest import LogCaptureFixture, raises
+from pytest import LogCaptureFixture, mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.main_thread_move_host import MainThreadMoveHost
+from rehuco_agent.settings.location_replacements_settings import LocationReplacementsSettings
 from rehuco_agent.settings.move_settings import MoveSettings
-from rehuco_core import JobPaused, ResourceKey
+from rehuco_core import (
+    RECORD_MOVE_KIND,
+    SAVE_RECORD_KIND,
+    BucketChain,
+    JobPaused,
+    JobState,
+    JobStatus,
+    MovePhase,
+    MoveRecordJob,
+    ReplacementRule,
+    ResourceKey,
+    TaskJob,
+    TaskQueue,
+)
 from rehuco_core.root_mappings import FORMAT_VERSION, FORMAT_VERSION_KEY, PATH_KEY, ROOTS_KEY, STORAGE_KEY
 
 ROOT_ID: Final = UUID("00000000-0000-0000-0000-000000000001")
@@ -116,6 +130,93 @@ def test_the_split_limit_is_the_move_settings_as_they_are_now(tmp_path: Path, mo
     moves.split_limit = 300
 
     assert host.split_limit() == 300
+
+
+def test_the_location_rules_are_the_replacements_as_they_are_now(tmp_path: Path, mocker: MockerFixture) -> None:
+    """A rebalance renders a layout's places as the path row does, with the table its page holds now (#681).
+
+    **Test steps:**
+
+    * build a host over a replacement table, then change the table
+    * verify the host answers the new one
+    """
+    replacements = LocationReplacementsSettings()
+    mocker.patch(
+        "rehuco_agent.documents.main_thread_move_host.shared_location_replacements_settings",
+        return_value=replacements,
+    )
+    host = MainThreadMoveHost(tmp_path / "root-mappings.json")
+
+    replacements.rules = (ReplacementRule("|", "-"),)
+
+    assert host.location_rules() == (ReplacementRule("|", "-"),)
+
+
+def bucketed_mover(phase: MovePhase = MovePhase.MOVE, **options: Any) -> Mock:
+    """A move into a bucketed place of :data:`ROOT_ID`, its buckets read and no part of a copy there.
+
+    :param phase: where it is.
+    :param options: overrides of the attributes set.
+    :returns: the move's stand-in.
+    """
+    attributes: dict[str, Any] = {
+        "source_root": None,
+        "destination_root": ROOT_ID,
+        "chains": (BucketChain(PurePosixPath("fab"), ("0",)),),
+        "partial": None,
+    }
+    return Mock(spec=MoveRecordJob, phase=phase, **(attributes | options))
+
+
+def mover_out(phase: MovePhase) -> Mock:
+    """A move out of :data:`ROOT_ID` to another root's plain place.
+
+    :param phase: where it is.
+    :returns: the move's stand-in.
+    """
+    return bucketed_mover(phase, source_root=ROOT_ID, destination_root=UUID(int=2), chains=())
+
+
+@mark.parametrize(
+    "job, state, kind, waits",
+    [
+        param(bucketed_mover(), JobState.RUNNING, RECORD_MOVE_KIND, True, id="running"),
+        param(bucketed_mover(), JobState.PAUSED, RECORD_MOVE_KIND, True, id="paused"),
+        param(bucketed_mover(MovePhase.SPLIT), JobState.WAITING, RECORD_MOVE_KIND, True, id="waiting-to-split"),
+        param(bucketed_mover(), JobState.FAILED, RECORD_MOVE_KIND, False, id="failed"),
+        param(bucketed_mover(partial=Path("/r")), JobState.FAILED, RECORD_MOVE_KIND, True, id="failed-half-copied"),
+        param(bucketed_mover(partial=Path("/r")), JobState.CANCELED, RECORD_MOVE_KIND, True, id="canceled-copy-kept"),
+        param(mover_out(MovePhase.MOVE), JobState.RUNNING, RECORD_MOVE_KIND, False, id="out-still-copying"),
+        param(mover_out(MovePhase.FINISH), JobState.RUNNING, RECORD_MOVE_KIND, True, id="out-finishing"),
+        param(mover_out(MovePhase.CLEANUP), JobState.PAUSED, RECORD_MOVE_KIND, True, id="out-paused-in-cleanup"),
+        param(mover_out(MovePhase.CLEANUP), JobState.FAILED, RECORD_MOVE_KIND, False, id="out-cleanup-failed"),
+        param(bucketed_mover(MovePhase.DONE), JobState.RUNNING, RECORD_MOVE_KIND, False, id="done"),
+        param(bucketed_mover(chains=()), JobState.RUNNING, RECORD_MOVE_KIND, False, id="buckets-not-read"),
+        param(bucketed_mover(destination_root=UUID(int=2)), JobState.RUNNING, RECORD_MOVE_KIND, False, id="elsewhere"),
+        param(None, JobState.RUNNING, RECORD_MOVE_KIND, False, id="gone-meanwhile"),
+        param(Mock(spec=TaskJob), JobState.RUNNING, SAVE_RECORD_KIND, False, id="no-move"),
+    ],
+)
+def test_a_move_whose_files_a_rebalance_would_take_is_told(
+    tmp_path: Path, job: TaskJob | None, state: JobState, kind: str, waits: bool
+) -> None:
+    """A rebalance waits for a move that read its buckets under the root until it ends, or while part of its copy is
+    there, and for one out of the root about to remove its original (#681).
+
+    **Test steps:**
+
+    * follow a queue holding one job, in each state a move can be in
+    * ask which move blocks a rebalance of the root
+    * verify its label, or none
+    """
+    queue = Mock(spec=TaskQueue)
+    queue.jobs.return_value = (Mock(spec=JobStatus, serial=1, kind=kind, state=state, label="Move to Library"),)
+    queue.job.return_value = job
+    host = MainThreadMoveHost(tmp_path / "root-mappings.json")
+    assert host.blocking_move(ROOT_ID) is None
+    host.follow_queue(queue)
+
+    assert host.blocking_move(ROOT_ID) == ("Move to Library" if waits else None)
 
 
 # endregion

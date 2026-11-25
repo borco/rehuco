@@ -609,7 +609,8 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
   membership**: what the catalog holds is still decided by records, never by the tree ([[plugins#grouping-entities]]).
   The `Root Catalog` menu holds **Scan all roots**, **Add Roots** and **Remove Root**; a root's context menu holds, in
   four groups, the folder filter, Open in file explorer, **Scan root** (that root alone; disabled on a root this
-  machine does not map) and Refresh (#644); the four moves — top, up, down, bottom, with the ordering
+  machine does not map), **Balance Buckets...** on one it does (#681, in `Root Catalog` too:
+  [[mounts-and-storage#bucket-rebalance]]) and Refresh (#644); the four moves — top, up, down, bottom, with the ordering
   icons the settings lists use but not their list editor, whose inline insert, rename, duplicate and reset have no
   meaning for a root; Remove Root, apart; and, last, the catalog's own **Scan all roots** and **Add Roots**, which
   the empty part of the roots column offers too, with Refresh, enabled alike — the roots can fill the column and leave
@@ -1145,10 +1146,12 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   Files page asks for it to be verified, when it is a task that verifies before and after. A place on another volume
   is the checksum-gated **verified move**, always a task ([[mounts-and-storage#safe-move-rename]]: verify, copy,
   verify at the target, delete); its failure reaches the document's banner as a rename's does. **A bucketed place**
-  ([[mounts-and-storage#buckets]], #680) is drawn with its buckets as `…`, read off no disk; the record is there when
-  its folders are the place's with any chain of its buckets; it is never shown occupied, since only its move knows the
-  folder; and choosing it is always a task, which reads the buckets and splits what it crowds. A name chosen for a
-  record whose own name is bucketed is such a move too, into the new name's bucket. A name starting with a dot is
+  ([[mounts-and-storage#buckets]], #680) is drawn with its buckets as the disk has them now, and shown occupied by what
+  is there (#681); the record is there when its folders are the place's with any chain of its buckets; and choosing it is
+  always a task, which reads the buckets and splits what it crowds. A name chosen for a record whose own name is bucketed
+  is such a move too, into the new name's bucket, where it is asked whether it is taken. A place whose path leads into a
+  split folder its layout does not bucket is shown as an occupied one is, with the reason, and so is every name offered a
+  record lying in one. A name starting with a dot is
   never offered, and a typed one is refused (#680). **Only a place that can
   be built is shown**: none for a root this machine does not map or cannot reach now, a layout naming neither the
   record's type nor `*`, or one needing a placeholder the record leaves empty with no fallback on the root — and none at

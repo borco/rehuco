@@ -621,3 +621,73 @@ def test_the_tooltip_gray_names_the_placeholder_role(qtbot: QtBot) -> None:
 
     (label,) = destination_labels(editor)
     assert '<span style="color:palette(placeholder-text);' in label.toolTip()
+
+
+def test_a_conflict_check_is_asked_once_per_set_of_suggestions(qtbot: QtBot) -> None:
+    """A refresh renders several times, and the answer is read off the disk, so each name is asked once; setting the
+    suggestions again asks again (#681).
+
+    **Test steps:**
+
+    * set a check and the suggestions, then render again by what a refresh sets besides
+    * check each name was asked once; set the same suggestions, and check it was asked again
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    asked: list[str] = []
+    editor.set_conflict_check(lambda name: bool(asked.append(name)))
+
+    editor.set_suggestions(["Foo", "Bar"])
+    editor.set_renamable(True)
+    editor.set_blocked("")
+    editor.set_destinations([])
+    assert asked == ["Foo", "Bar"]
+
+    editor.set_suggestions(["Foo", "Bar"])
+    assert asked == ["Foo", "Bar"] * 2
+
+
+def test_blocked_suggestions_are_disabled_with_the_reason(qtbot: QtBot) -> None:
+    """With a reason why none may be chosen, each is shown as a taken one, the current name left plain (#681).
+
+    **Test steps:**
+
+    * set suggestions, one the current name, and a reason
+    * check the other is disabled, marked and has the reason for its tooltip, and the current one neither
+    * clear the reason, and check it is offered again
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.set_current_name("Foo")
+    editor.set_suggestions(["Foo", "Bar"])
+
+    editor.set_blocked("Fab & co is split")
+
+    current, other = suggestion_labels(editor)["Foo"], suggestion_labels(editor)["Bar"]
+    assert not other.isEnabled()
+    assert other.icon_count() == 1
+    assert other.toolTip() == "Fab &amp; co is split"
+    assert current.icon_count() == 0 and not current.toolTip()
+
+    editor.set_blocked("")
+    assert other.isEnabled() and not other.toolTip()
+
+
+def test_a_blocked_place_says_why_in_place_of_the_taken_marker(qtbot: QtBot) -> None:
+    """A place nothing may be put into is drawn as a taken one, its tooltip naming its own reason (#681).
+
+    **Test steps:**
+
+    * set a blocked place
+    * check it is disabled, with the blocked marker alone and the reason
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_destinations([DestinationRow("Tutorials: Foo", markers=PlaceMarker.COPY, blocked="Fab is split")])
+
+    (label,) = editor._PathEditor__destination_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert not label.isEnabled()
+    assert label.icon_count() == 1
+    assert "Fab is split" in label.toolTip()
+    assert "already there" not in label.toolTip()

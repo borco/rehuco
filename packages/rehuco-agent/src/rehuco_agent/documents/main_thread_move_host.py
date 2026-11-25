@@ -1,4 +1,5 @@
-"""What the app lends a record's move (#339): this machine's roots, its saves, and the GUI thread for its renames.
+"""What the app lends a record's move (#339): this machine's roots, its saves, and the GUI thread for its renames; and a
+rebalance of a root's buckets (#681): the replacements, and the moves it must wait for.
 
 A move job (:class:`~rehuco_core.MoveRecordJob`) runs on a worker, but a rename may not: the rename barrier calls its
 before-listeners -- a video player letting go of a file -- on the thread that renames, and they are widgets. So the step
@@ -10,15 +11,29 @@ started -- and never one that has.
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from enum import Enum, auto
 from pathlib import Path
 from typing import Final
 from uuid import UUID
 
 from PySide6.QtCore import QObject, QThread, Signal
-from rehuco_core import ROOT_MAPPINGS_FILE_NAME, ResourceKey, RootMappings, RootMappingsError, SavePayload
+from rehuco_core import (
+    FINISHED_JOB_STATES,
+    RECORD_MOVE_KIND,
+    ROOT_MAPPINGS_FILE_NAME,
+    JobState,
+    MovePhase,
+    MoveRecordJob,
+    ReplacementRule,
+    ResourceKey,
+    RootMappings,
+    RootMappingsError,
+    SavePayload,
+    TaskQueue,
+)
 
+from ..settings.location_replacements_settings import shared_location_replacements_settings
 from ..settings.move_settings import shared_move_settings
 from ..settings.persistent_settings import config_folder
 
@@ -81,7 +96,8 @@ class MainThreadMoveHost(QObject):
     """The app's :class:`~rehuco_core.RecordMoveHost`, installed process-wide before the task queue restores its jobs.
 
     Roots are read from this machine's mappings file each time a move asks, so a root mapped after the move was queued
-    is found. Saves are asked of the window's save owner once it exists (:meth:`follow_pending_saves`).
+    is found. Saves are asked of the window's save owner once it exists (:meth:`follow_pending_saves`), and moves of
+    the queue (:meth:`follow_queue`).
 
     :param mappings_path: this machine's root mappings file; the app's own in its config folder when ``None``.
     :param parent: the Qt parent, which lives on the GUI thread.
@@ -96,8 +112,11 @@ class MainThreadMoveHost(QObject):
             mappings_path if mappings_path is not None else config_folder() / ROOT_MAPPINGS_FILE_NAME
         )
         self.__pending_save_of: Callable[[ResourceKey], SavePayload | None] | None = None
+        self.__queue: TaskQueue | None = None
         self.__moves: Final = shared_move_settings()
         """Taken here, on the GUI thread, so a worker asking :meth:`split_limit` never builds the shared object."""
+        self.__replacements: Final = shared_location_replacements_settings()
+        """Taken here for the same reason, for :meth:`location_rules`."""
         self.step_requested.connect(self.__run)
 
     def follow_pending_saves(self, pending_save_of: Callable[[ResourceKey], SavePayload | None]) -> None:
@@ -106,6 +125,13 @@ class MainThreadMoveHost(QObject):
         :param pending_save_of: its answer to *what is this record's save not landed yet*.
         """
         self.__pending_save_of = pending_save_of
+
+    def follow_queue(self, queue: TaskQueue) -> None:
+        """Ask the app's queue which moves are under way.
+
+        :param queue: the queue moves run on.
+        """
+        self.__queue = queue
 
     def root_folder(self, root_id: UUID) -> Path | None:
         """Where this machine finds a root, read from its mappings file now.
@@ -157,6 +183,44 @@ class MainThreadMoveHost(QObject):
         :returns: the limit.
         """
         return self.__moves.split_limit
+
+    def location_rules(self) -> Sequence[ReplacementRule]:
+        """The Location Replacements, as their page says now (#681): a plain attribute read, safe from a worker.
+
+        :returns: the rules, in table order.
+        """
+        return self.__replacements.rules
+
+    def blocking_move(self, root_id: UUID) -> str | None:
+        """The move whose files a rebalance of a root would take from under it (#681): one into its buckets not ended,
+        or stopped with part of its copy there, and one out of it about to remove what is left of the original. Safe
+        from a worker: the queue is, and a move's own state is read, not kept.
+
+        :param root_id: the root.
+        :returns: how its row names it; ``None`` when there is none, or no queue yet.
+        """
+        if self.__queue is None:
+            return None
+        for status in self.__queue.jobs():
+            job = self.__queue.job(status.serial) if status.kind == RECORD_MOVE_KIND else None
+            if isinstance(job, MoveRecordJob) and self.__blocks(job, status.state, root_id):
+                return status.label
+        return None
+
+    @staticmethod
+    def __blocks(job: MoveRecordJob, state: JobState, root_id: UUID) -> bool:
+        """Whether a move keeps a root from being rebalanced.
+
+        :param job: the move.
+        :param state: its state on the queue.
+        :param root_id: the root.
+        :returns: whether a rebalance waits for it.
+        """
+        ended = state in FINISHED_JOB_STATES
+        into = job.destination_root == root_id and bool(job.chains) and job.phase is not MovePhase.DONE
+        out = job.source_root == root_id and job.phase in (MovePhase.FINISH, MovePhase.CLEANUP)
+        # a move that failed, or was canceled with its copy kept, has a half record there until its row is cleared
+        return (out and not ended) or (into and (not ended or job.partial is not None))
 
     def __run(self, handed: HandedStep) -> None:
         """Run a step a worker handed over, on this object's thread.

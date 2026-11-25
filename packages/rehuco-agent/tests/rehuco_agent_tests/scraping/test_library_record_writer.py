@@ -20,6 +20,7 @@ from rehuco_agent.scraping.library_record_writer import STAGING_PREFIX, LibraryR
 from rehuco_agent.scraping.library_site import LibraryEntry, ScannedItem
 from rehuco_agent.scraping.results import ScrapedImage, ScrapeResult
 from rehuco_core import (
+    BUCKETS_MARKER,
     DEFAULT_RECORD_MOVE_HOST,
     BucketChain,
     JobPaused,
@@ -491,6 +492,24 @@ def test_a_bucketed_layout_places_the_record_and_names_its_level_to_settle(root:
 
     assert written.path == root / "Fab" / "1234" / "info.rehu"
     assert written.chains == (BucketChain(PurePosixPath("Fab"), ()),)
+
+
+def test_a_folder_the_layout_does_not_bucket_pauses_the_scan(root: Path) -> None:
+    """A folder split by a rule that is gone takes no new record until a balance joins it (#681).
+
+    **Test steps:**
+
+    * mark the site's folder as split, the layout having no buckets
+    * write the item
+    * verify the scan pauses saying so, and wrote nothing
+    """
+    (root / "Fab").mkdir()
+    (root / "Fab" / BUCKETS_MARKER).touch()
+
+    with raises(JobPaused, match="Fab is split into buckets"):
+        writer(root).write(ENTRY, item(), "Fab", None)
+
+    assert [path.name for path in (root / "Fab").iterdir()] == [BUCKETS_MARKER]
 
 
 def test_a_screenshot_whose_slot_the_set_cannot_hold_is_left_out(

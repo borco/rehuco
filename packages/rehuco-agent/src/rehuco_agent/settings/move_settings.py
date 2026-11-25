@@ -2,14 +2,15 @@
 entries a folder of buckets holds (#680), and which of its moves verify its checksums.
 
 A ``QObject`` with plain attributes: a move reads it when it lands, and the path row's *verified* marker reads it
-too (#649), so :attr:`MoveSettings.changed` fires on every :meth:`MoveSettings.save` for an open row to redraw.
+too (#649), so :attr:`MoveSettings.changed` fires on every :meth:`MoveSettings.save` for an open row to redraw. The
+bucket limits are two surfaces' to save: the Files page's and the balance dialog's (#681).
 """
 
 from functools import lru_cache
 from typing import Final, cast
 
 from PySide6.QtCore import QObject, QSettings, Signal
-from rehuco_core import DEFAULT_JOIN_LIMIT, DEFAULT_SPLIT_LIMIT, clamped_limits
+from rehuco_core import DEFAULT_JOIN_LIMIT, DEFAULT_SPLIT_LIMIT, MAX_SPLIT_LIMIT, clamped_limits, max_join_limit
 
 from .persistent_settings import persistent_settings
 
@@ -46,7 +47,8 @@ class MoveSettings(QObject):
     """
 
     changed = Signal()
-    """Fires when :meth:`save` has stored the values: what a path row marks a move with may have changed (#649)."""
+    """Fires when :meth:`save` has stored the values: what a path row marks a move with may have changed (#649), and the
+    limits the Files page shows (#681)."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -61,7 +63,8 @@ class MoveSettings(QObject):
         self.split_limit = DEFAULT_SPLIT_LIMIT
         """How many entries a folder a ``{buckets}`` level fills holds before it splits (#680)."""
         self.join_limit = DEFAULT_JOIN_LIMIT
-        """How few entries a split folder's buckets hold in all before a rebalance joins them back (#680, #681)."""
+        """How few entries a split folder's buckets hold in all before a balance joins them back (#680), as entered: one
+        above half the split limit is ignored only where it is used (:func:`~rehuco_core.clamped_limits`, #681)."""
 
     def load(self, settings: QSettings) -> None:
         """Replace the current values with what's in persistent storage.
@@ -81,10 +84,9 @@ class MoveSettings(QObject):
         self.verify_original_before_copy = cast(
             bool, settings.value(VERIFY_ORIGINAL_BEFORE_COPY_KEY, DEFAULT_VERIFY_ORIGINAL_BEFORE_COPY, type=bool)
         )
-        self.split_limit, self.join_limit = clamped_limits(
-            self.__read_count(settings, SPLIT_LIMIT_KEY, DEFAULT_SPLIT_LIMIT),
-            self.__read_count(settings, JOIN_LIMIT_KEY, DEFAULT_JOIN_LIMIT),
-        )
+        self.split_limit = clamped_limits(self.__read_count(settings, SPLIT_LIMIT_KEY, DEFAULT_SPLIT_LIMIT), 0)[0]
+        join_limit = self.__read_count(settings, JOIN_LIMIT_KEY, DEFAULT_JOIN_LIMIT)
+        self.join_limit = min(max(0, join_limit), max_join_limit(MAX_SPLIT_LIMIT))
         settings.endGroup()
 
     @staticmethod

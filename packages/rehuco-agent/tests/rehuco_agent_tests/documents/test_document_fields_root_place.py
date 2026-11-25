@@ -7,7 +7,7 @@ from typing import Final
 from unittest.mock import Mock
 from uuid import UUID
 
-from pytest import fixture
+from pytest import fixture, mark, param
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, build_document_form
@@ -419,19 +419,75 @@ BUCKETED: Final = replace(PLACE, bucketed=(1,))
 """The place, its name in prefix buckets."""
 
 
-def test_a_bucketed_place_shows_its_buckets_unresolved_and_is_never_occupied(
+READ: Final = replace(PLACE, relative=PurePosixPath("Jane/f/Foo"))
+"""The bucketed place with its buckets read off the disk (#681)."""
+
+BLOCKED: Final = replace(PLACE, blocked="Jane is split")
+"""The place, its folder split where its template has no buckets (#681)."""
+
+
+def test_a_taken_bucketed_place_is_marked_by_its_buckets_on_the_disk(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
-    """A bucketed place reads with an ellipsis where its buckets go, and is not asked whether something sits there:
-    that is unknown until its move reads the buckets.
+    """A bucketed place is asked about, and drawn, where the record would land now (#681).
 
     **Test steps:**
 
-    * give the suggestions a bucketed place, the model saying every place is occupied
+    * give the suggestions a bucketed place read off the disk, the model saying it is taken
+    * check the row's text has its buckets, it is disabled and marked, and what the model was asked
+    """
+    suggestions = NameSuggestionModel(model)
+    mocker.patch.object(suggestions, "root_destinations", return_value=(BUCKETED,))
+    resolved = mocker.patch.object(suggestions, "resolved", return_value=READ)
+    conflicts = mocker.patch.object(model, "move_conflicts", return_value=True)
+
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    (label,) = labels_of(editor)
+    assert full_text(label) == f"Tutorials: {Path('Jane', 'f', 'Foo')}"
+    assert not label.isEnabled()
+    assert label.icon_count() == 1
+    resolved.assert_called_with(BUCKETED)
+    conflicts.assert_called_with(ROOT / "Jane" / "f", "Foo")
+
+
+def test_a_free_bucketed_place_is_moved_to_with_its_buckets_unread(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The row is drawn by the buckets on the disk; the move is handed the place itself, and reads them as it starts.
+
+    **Test steps:**
+
+    * give the suggestions a bucketed place read off the disk, nothing there
+    * click the row and check the moves were handed the place as offered
+    """
+    suggestions = NameSuggestionModel(model)
+    mocker.patch.object(suggestions, "root_destinations", return_value=(BUCKETED,))
+    mocker.patch.object(suggestions, "resolved", return_value=READ)
+    mocker.patch.object(model, "move_conflicts", return_value=False)
+    record_moves = Mock(spec=RecordMoves)
+    editor, _kept = path_editor(qtbot, model, suggestions, record_moves)
+
+    (label,) = labels_of(editor)
+    assert label.isEnabled()
+    label.linkActivated.emit("#")
+
+    record_moves.move.assert_called_once_with(BUCKETED)
+
+
+def test_a_bucketed_place_that_cannot_be_read_is_left_to_its_move(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """With its buckets unread, a place reads with an ellipsis and is not asked about.
+
+    **Test steps:**
+
+    * give the suggestions a bucketed place whose buckets cannot be read
     * check the row's text, that it is enabled, and that the model was not asked
     """
     suggestions = NameSuggestionModel(model)
     mocker.patch.object(suggestions, "root_destinations", return_value=(BUCKETED,))
+    mocker.patch.object(suggestions, "resolved", return_value=BUCKETED)
     conflicts = mocker.patch.object(model, "move_conflicts", return_value=True)
 
     editor, _kept = path_editor(qtbot, model, suggestions)
@@ -442,6 +498,41 @@ def test_a_bucketed_place_shows_its_buckets_unresolved_and_is_never_occupied(
     conflicts.assert_not_called()
 
 
+def test_a_place_in_a_folder_no_rule_buckets_is_marked_and_refused(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """Such a place is disabled, marked and says why; a click on a row drawn before the folder was split is refused the
+    same way (#681).
+
+    **Test steps:**
+
+    * give the suggestions a blocked place: check the row is disabled, marked with the reason, and the model not asked
+    * draw it as free, then click it once it is blocked
+    * check nothing was moved and the model was told why
+    """
+    suggestions = NameSuggestionModel(model)
+    mocker.patch.object(suggestions, "root_destinations", return_value=(PLACE,))
+    resolved = mocker.patch.object(suggestions, "resolved", return_value=BLOCKED)
+    conflicts = mocker.patch.object(model, "move_conflicts", return_value=False)
+    failed = mocker.patch.object(model, "move_failed")
+    record_moves = Mock(spec=RecordMoves)
+
+    editor, _kept = path_editor(qtbot, model, suggestions, record_moves)
+    (label,) = labels_of(editor)
+    assert not label.isEnabled()
+    assert label.icon_count() == 1
+    assert "Jane is split" in label.toolTip()
+    conflicts.assert_not_called()
+
+    resolved.return_value = PLACE
+    free, _kept_too = path_editor(qtbot, model, suggestions, record_moves)
+    resolved.return_value = BLOCKED
+    labels_of(free)[0].linkActivated.emit("#")
+
+    record_moves.move.assert_not_called()
+    failed.assert_called_once_with("Cannot move to Tutorials: Jane is split")
+
+
 def test_a_rename_where_the_records_name_is_bucketed_moves_it_to_its_new_buckets(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
@@ -450,12 +541,13 @@ def test_a_rename_where_the_records_name_is_bucketed_moves_it_to_its_new_buckets
 
     **Test steps:**
 
-    * build the editor with moves, over suggestions whose bucket home is the bucketed place, there
+    * build the editor with moves, over suggestions that put a new name in its bucket
     * emit a new name, then the current one, then one starting with a dot
-    * check the moves were handed the place under the new name, not there, and the rename only the dot name
+    * check the moves were handed the place under the new name, and the rename only the dot name
     """
     suggestions = NameSuggestionModel(model)
-    mocker.patch.object(suggestions, "bucket_home", return_value=replace(BUCKETED, here=True))
+    place = replace(BUCKETED, relative=PurePosixPath("Jane/Bar"))
+    mocker.patch.object(suggestions, "bucket_place", return_value=place)
     rename = mocker.patch.object(model, "rename_location")
     record_moves = Mock(spec=RecordMoves)
     editor, _kept = path_editor(qtbot, model, suggestions, record_moves)
@@ -464,7 +556,7 @@ def test_a_rename_where_the_records_name_is_bucketed_moves_it_to_its_new_buckets
     editor.suggestion_selected.emit(model.current_name)
     editor.suggestion_selected.emit(".Bar")
 
-    record_moves.move.assert_called_once_with(replace(BUCKETED, relative=PurePosixPath("Jane/Bar")))
+    record_moves.move.assert_called_once_with(place)
     rename.assert_called_once_with(".Bar")
 
 
@@ -475,18 +567,87 @@ def test_with_no_queue_a_bucketed_record_is_renamed_where_it_is(
 
     **Test steps:**
 
-    * build the editor without moves, over suggestions with a bucket home
-    * emit a name and check the model renamed to it, the bucket home never asked
+    * build the editor without moves, over suggestions that put a new name in its bucket
+    * emit a name and check the model renamed to it, the bucket never asked
     """
     suggestions = NameSuggestionModel(model)
-    home = mocker.patch.object(suggestions, "bucket_home", return_value=BUCKETED)
+    place = mocker.patch.object(suggestions, "bucket_place", return_value=BUCKETED)
     rename = mocker.patch.object(model, "rename_location")
     editor, _kept = path_editor(qtbot, model, suggestions)
 
     editor.suggestion_selected.emit("Bar")
 
     rename.assert_called_once_with("Bar")
-    home.assert_not_called()
+    place.assert_not_called()
+
+
+def names_of(editor: PathEditor) -> dict[str, MarkedLabel]:
+    """Return a path row's rename-suggestion labels.
+
+    :param editor: the path row.
+    :returns: the labels, by name.
+    """
+    return editor._PathEditor__suggestion_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+@mark.parametrize(
+    "landing, taken",
+    [
+        param(replace(PLACE, relative=PurePosixPath("Jane/b/Bar")), True, id="taken-in-the-new-bucket"),
+        param(replace(PLACE, relative=PurePosixPath("Jane/b/Bar")), False, id="free-in-the-new-bucket"),
+        param(replace(BUCKETED, relative=PurePosixPath("Jane/Bar")), False, id="buckets-unread"),
+    ],
+)
+def test_a_rename_is_taken_where_its_new_bucket_says(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, landing: RootDestination, taken: bool
+) -> None:
+    """A name is asked about in the bucket the rename would move the record to, not beside it in its old one (#681).
+
+    **Test steps:**
+
+    * offer a name whose bucket is read, or cannot be, the old bucket holding that name
+    * check the suggestion is disabled only when the new bucket holds it
+    """
+    suggestions = NameSuggestionModel(model)
+    mocker.patch.object(suggestions, "suggestions", return_value=["Bar"])
+    mocker.patch.object(suggestions, "bucket_place", return_value=replace(BUCKETED, relative=PurePosixPath("Jane/Bar")))
+    mocker.patch.object(suggestions, "resolved", return_value=landing)
+    beside = mocker.patch.object(model, "rename_conflicts", return_value=True)
+    mocker.patch.object(model, "move_conflicts", side_effect=lambda into, _name: taken and into == ROOT / "Jane" / "b")
+
+    editor, _kept = path_editor(qtbot, model, suggestions, Mock(spec=RecordMoves))
+
+    assert names_of(editor)["Bar"].isEnabled() is not taken
+    beside.assert_not_called()
+
+
+def test_a_rename_in_a_folder_no_rule_buckets_is_marked_and_refused(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """Every suggestion is disabled with the reason, and one emitted all the same is refused (#681).
+
+    **Test steps:**
+
+    * build the editor over suggestions that say a rename is blocked
+    * check the suggestion is disabled, marked and says why; emit it
+    * check nothing was renamed and the model was told why
+    """
+    suggestions = NameSuggestionModel(model)
+    mocker.patch.object(suggestions, "suggestions", return_value=["Bar"])
+    mocker.patch.object(suggestions, "rename_blocked", return_value="Jane is split")
+    rename = mocker.patch.object(model, "rename_location")
+    failed = mocker.patch.object(model, "move_failed")
+    editor, _kept = path_editor(qtbot, model, suggestions)
+
+    label = names_of(editor)["Bar"]
+    assert not label.isEnabled()
+    assert label.icon_count() == 1
+    assert label.toolTip() == "Jane is split"
+
+    editor.suggestion_selected.emit("Bar")
+
+    rename.assert_not_called()
+    failed.assert_called_once_with("Cannot rename to 'Bar': Jane is split")
 
 
 # endregion

@@ -21,7 +21,7 @@ from .place_marker import NO_MARKERS, PLACE_MARKER_ICONS, PLACE_MARKER_TOOLTIPS,
 
 
 @dataclass(frozen=True, slots=True)
-class DestinationRow:
+class DestinationRow:  # pylint: disable=too-many-instance-attributes
     """A place a root's layout gives the record, as the path row shows it under the names (#579, #339).
 
     :param text: what the row reads -- the root's name and the place under it.
@@ -31,8 +31,10 @@ class DestinationRow:
     :param rendered: the path the layout renders, relative to the root; empty for the root itself (#639).
     :param full_path: the place on disk: the root's folder on this machine joined with ``rendered``.
     :param template: the path template that rendered it; empty when none did. With the two above, the row's tooltip.
-    :param markers: what moving the record there involves (#649), drawn as icons after the text; a row that is here or
-        occupied shows none of them.
+    :param markers: what moving the record there involves (#649), drawn as icons after the text; a row that is here,
+        occupied or blocked shows none of them.
+    :param blocked: why nothing may be put there, shown as an occupied row is, with this for its reason (#681); empty
+        when something may.
     """
 
     text: str
@@ -42,6 +44,7 @@ class DestinationRow:
     full_path: str = ""
     template: str = ""
     markers: PlaceMarker = NO_MARKERS
+    blocked: str = ""
 
 
 class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -97,6 +100,9 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__conflicts: Callable[[str], bool] | None = None
         """Answers whether a candidate name is already taken, supplied by the owner
         (:meth:`set_conflict_check`); ``None`` until one is, so every name reads as available."""
+        self.__taken: Final[dict[str, bool]] = {}
+        """Whether each candidate is taken, as asked since the suggestions were last set."""
+        self.__blocked = ""
 
         self.__name_line: Final = LocationLine(hint=open_hint)
         self.__name_line.open_requested.connect(self.open_requested)
@@ -152,6 +158,14 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__renamable = renamable
         self.__render()
 
+    def set_blocked(self, reason: str) -> None:
+        """Say why no suggestion may be chosen (#681): each is shown as a taken one is, with this for its tooltip.
+
+        :param reason: the reason; empty when they may be.
+        """
+        self.__blocked = reason
+        self.__render()
+
     def set_openable(self, openable: bool) -> None:
         """Draw the current name as a link only while there is a path to reveal.
 
@@ -162,14 +176,15 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     def set_conflict_check(self, conflicts: Callable[[str], bool] | None) -> None:
         """Supply the predicate deciding whether a candidate name is already taken (#162).
 
-        Asked for every suggestion on every render, so it must be cheap: the owner is expected to hand
-        over something that answers with a single existence check rather than a directory sweep (see
+        Asked once for every suggestion each time the suggestions are set, so it must be cheap: the owner is
+        expected to hand over something that answers with a few existence checks rather than a directory sweep (see
         :meth:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.rename_conflicts`).
 
         :param conflicts: called with a sanitized candidate name, returning whether something already
             occupies it; ``None`` to treat every name as available.
         """
         self.__conflicts = conflicts
+        self.__taken.clear()
         self.__render()
 
     def set_suggestions(self, raw_suggestions: Sequence[str]) -> None:
@@ -177,6 +192,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :param raw_suggestions: the caller-formatted candidate strings (unsanitized).
         """
+        self.__taken.clear()
         sanitized = self.__sanitize_all(raw_suggestions)
         if sanitized != self.__suggestions:
             self.__suggestions = sanitized
@@ -248,14 +264,27 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         for name, label in self.__suggestion_labels.items():
             label.setVisible(self.__renamable)
             is_current = name == self.__current_name
-            unavailable = not is_current and self.__conflicts is not None and self.__conflicts(name)
+            unavailable = not is_current and (bool(self.__blocked) or self.__is_taken(name))
             label.setEnabled(not is_current and not unavailable)
             label.set_text(
                 name,
                 href="" if is_current or unavailable else "#",
+                tooltip="" if is_current else html.escape(self.__blocked),
                 icons=self.__icons_of(PlaceMarker.BLOCKED if unavailable else NO_MARKERS),
             )
         self.__render_destinations()
+
+    def __is_taken(self, name: str) -> bool:
+        """Whether a candidate name is already taken, asked once per :meth:`set_suggestions`: a refresh renders several
+        times, and the answer is read off the disk.
+
+        :param name: the name.
+        :returns: whether something already occupies it.
+        """
+        if name not in self.__taken:
+            # pylint: disable-next=unsupported-assignment-operation
+            self.__taken[name] = self.__conflicts is not None and self.__conflicts(name)
+        return self.__taken[name]
 
     def __rebuild_destinations(self, count: int) -> None:
         """Recreate one clickable label per place, replacing the old set.
@@ -276,7 +305,7 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         """Show each place by the same three states as a name: already there, occupied, or a live link."""
         self.__separator.setVisible(bool(self.__destinations))
         for row, label in zip(self.__destinations, self.__destination_labels, strict=True):
-            unavailable = not row.here and row.occupied
+            unavailable = not row.here and (row.occupied or bool(row.blocked))
             label.setEnabled(not row.here and not unavailable)
             markers = NO_MARKERS if row.here else PlaceMarker.BLOCKED if unavailable else row.markers
             label.set_text(
@@ -312,7 +341,10 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
             for text in (row.full_path, row.template)
             if text
         ]
-        lines += [html.escape(PLACE_MARKER_TOOLTIPS[marker]) for marker in markers]
+        lines += [
+            html.escape(row.blocked if row.blocked and marker is PlaceMarker.BLOCKED else PLACE_MARKER_TOOLTIPS[marker])
+            for marker in markers
+        ]
         # no wrapping: a path is read whole, and the tooltip grows to the widest line. A block's white-space does it;
         # <nobr> only keeps spaces whole, so Qt still breaks after a drive's colon (QTBUG-1135)
         return "".join(f'<div style="white-space:pre">{line}</div>' for line in lines)

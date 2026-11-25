@@ -21,11 +21,12 @@ is lost by guessing wrong.
 A rename runs *source* (when its setting asks), the rename itself, then *target* (the same setting).
 
 **A move to a bucketed place** ([[mounts-and-storage#buckets]], #680) reads its buckets off the disk as it first
-enters *move*, and keeps them, so a stopped copy goes on into the same folder. Once the record is there, a *split*
-phase settles each bucketed level the place went into: a folder it crowded past the limit splits
-(:class:`~rehuco_core.BucketSplitter`), every record and folder that moves going through the rename barrier. The limit
-is the host's, asked then. A split stopped anywhere is finished by settling again, from the disk alone; a cancel then
-takes nothing back, since every record is whole wherever it is.
+enters *move*, and keeps them once it has files there, so a stopped copy goes on into the same folder. A place that
+leads into a folder split where its layout has no buckets pauses the move until a balance joins it (#681). Once the
+record is there, a *split* phase settles each bucketed level the place went into: a folder it crowded past the limit
+splits (:class:`~rehuco_core.BucketSplitter`), every record and folder that moves going through the rename barrier.
+The limit is the host's, asked then. A split stopped anywhere is finished by settling again, from the disk alone; a
+cancel then takes nothing back, since every record is whole wherever it is.
 
 **An end that goes away makes the move wait, not fail** (#634): whatever a phase fails with -- an I/O error, or a
 check that could not read what it checked -- the source and the destination are asked whether they answer
@@ -69,10 +70,10 @@ from .checksum_reporting import checksum_report_is_clean, checksum_report_summar
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
 from .move_cleanup import MoveCleanup
-from .prefix_buckets import BucketChain, BucketSplitter, resolve_buckets
+from .prefix_buckets import BucketChain, BucketSplitter, resolve_buckets, ungoverned_reason, unresolve_buckets
 from .record_bucket_mover import RecordBucketMover
 from .record_file_lock import RecordFileLock, RecordLockedError
-from .record_move_host import DEFAULT_RECORD_MOVE_HOST, RecordMoveHost
+from .record_move_host import BUCKETS_GUARD, DEFAULT_RECORD_MOVE_HOST, RecordMoveHost
 from .rehu_checksums import verify_checksums
 from .rehu_rename import is_cross_device, remove_empty_parents
 from .relocation import Relocation
@@ -89,6 +90,7 @@ from .tasks import (
     PROGRESS_UNIT_BYTES,
     JobControl,
     JobOutcome,
+    JobPaused,
     JobWaiting,
     TaskJobBase,
 )
@@ -400,6 +402,7 @@ class MoveRecordJob(TaskJobBase):
         """Move the record, phase by phase, from the phase it was left in.
 
         :param control: the engine's face to this job.
+        :raises JobPaused: asked to, or the place leads into a folder split where its layout has no buckets.
         :raises JobWaiting: an end of the move does not answer, a save of the record has not landed, another process
             holds its lock, or a reader did not let go of it in time.
         :raises VerifiedCopyError: with both ends answering, the record cannot be checked or holds a link, the original
@@ -518,20 +521,29 @@ class MoveRecordJob(TaskJobBase):
         self.phase = MovePhase.TARGET if self.check_renamed else self.__landed()
 
     def __resolve_buckets(self) -> None:
-        """Read a bucketed place's buckets off the disk, once: :attr:`into` holds them from then on, and the chains
-        are kept for the split phase.
+        """Read a bucketed place's buckets off the disk: :attr:`into` holds them from then on, and the chains are kept
+        for the split phase. **A move with nothing there yet reads them again**, since a rebalance may have joined the
+        ones read before it failed (#681); a copy with files there goes on into the folder they are in.
 
+        :raises JobPaused: the place leads into a folder split where its layout has no buckets.
         :raises ValueError: the destination root is not mapped here.
         :raises OSError: a folder of the place could not be read.
         """
-        if not self.bucketed:
+        if self.mode is MoveMode.COPY and (self.journal.written or self.journal.made):
             return
+        if self.chains:
+            place, bucketed = unresolve_buckets(self.into / self.new_name, self.chains)
+            self.into, self.bucketed, self.chains = place.parent, bucketed, ()
         root = self.__root_folder()
-        place = resolve_buckets(root, self.into / self.new_name, self.bucketed)
-        self.into = place.relative.parent
-        self.chains = place.chains
+        with BUCKETS_GUARD:
+            resolved = resolve_buckets(root, self.into / self.new_name, self.bucketed)
+            if resolved.ungoverned is not None:
+                raise JobPaused(ungoverned_reason(resolved.ungoverned))
+            self.into = resolved.relative.parent
+            self.chains = resolved.chains
+        if self.bucketed:
+            LOG.info("%s: the buckets put it in %s.", self.label, root.joinpath(*self.into.parts))
         self.bucketed = ()
-        LOG.info("%s: the buckets put it in %s.", self.label, root.joinpath(*self.into.parts))
 
     def __landed(self) -> MovePhase:
         """The phase after the record is at its place: its buckets settled, when it went into any.
@@ -799,10 +811,7 @@ class MoveRecordJob(TaskJobBase):
         :returns: the folder.
         :raises ValueError: its root is not mapped here.
         """
-        destination = self.destination
-        if destination is None:
-            raise ValueError("The root this record moves to is not mapped on this machine.")
-        return destination
+        return self.__root_folder().joinpath(*self.into.parts)
 
     def __root_folder(self) -> Path:
         """The destination root's folder.

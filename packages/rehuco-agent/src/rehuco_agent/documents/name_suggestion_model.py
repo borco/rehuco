@@ -4,9 +4,9 @@
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
-from typing import Final
+from typing import Final, cast
 from uuid import UUID
 
 from borco_pyside.core import SimpleProperty
@@ -18,14 +18,21 @@ from rehuco_core import (
     Refusal,
     apply_location_replacements,
     destinations,
+    is_bucket_chain,
+    is_bucketed_template,
     is_directory_scoped,
+    is_split,
     known_placeholders_for,
+    layout_templates,
     location_name_problem,
     location_values,
     path_key,
     place_holds,
     render_location_pattern,
+    resolve_buckets,
     shown_place,
+    temporary_prefix,
+    ungoverned_reason,
 )
 
 from ..settings.location_replacements_settings import shared_location_replacements_settings
@@ -56,8 +63,10 @@ class RootDestination:  # pylint: disable=too-many-instance-attributes
     :param source_root: the folder of the root the record is under now, or ``None`` for a record under no root.
     :param source_root_id: that root, or ``None``.
     :param template: the path template that rendered the place, ``*`` included; empty for the root itself (#639).
-    :param bucketed: the indices of the levels of ``relative`` put in prefix buckets, which only a move reads off the
-        disk (#680); none for a place with no buckets.
+    :param bucketed: the indices of the levels of ``relative`` put in prefix buckets, not read off the disk (#680); none
+        for a place with no buckets, or one with its buckets read (:meth:`NameSuggestionModel.resolved`).
+    :param blocked: why nothing may be put there, once its buckets are read: its path leads into a folder split where
+        its template has no ``{buckets}`` (#681); empty when something may.
     """
 
     label: str
@@ -69,6 +78,7 @@ class RootDestination:  # pylint: disable=too-many-instance-attributes
     source_root_id: UUID | None
     template: str = ""
     bucketed: tuple[int, ...] = ()
+    blocked: str = ""
 
     @property
     def same_root(self) -> bool:
@@ -83,8 +93,10 @@ class RootDestination:  # pylint: disable=too-many-instance-attributes
 
     @property
     def shown(self) -> PurePosixPath:
-        """The place as the path row draws it: its buckets, not yet read, as an ellipsis (#680)."""
-        return shown_place(self.relative, self.bucketed)
+        """The place as the path row draws it: its buckets as an ellipsis while not read (#680), and a temporary bucket
+        as the one it is being built for."""
+        shown = shown_place(self.relative, self.bucketed)
+        return PurePosixPath(*(temporary_prefix(level) or level for level in shown.parts))
 
     @property
     def name(self) -> str:
@@ -115,9 +127,10 @@ class NameSuggestionModel(QObject):
     sits at** is a row of its own, first and ``here``, whenever its own root's layout puts it somewhere else or
     refuses it.
 
-    **A bucketed place** (#680) is offered without its buckets, which only the move reads off the disk, and the record
-    sits there when its folders are the place's with any chain of its buckets at each bucketed level; nothing is read
-    to tell. Where the record's own name is bucketed (:meth:`bucket_home`), a rename moves it to its new name's bucket.
+    **A bucketed place** (#680) is offered without its buckets, and the record sits there when its folders are the
+    place's with any chain of its buckets at each bucketed level; nothing is read to tell. A move reads the buckets
+    itself as it starts; :meth:`resolved` reads them for the row to be drawn by (#681). Where the record's own name is
+    bucketed (:meth:`bucket_place`), a rename moves it to its new name's bucket.
 
     **A record that is its root's folder** (``<root>/info.rehu``, #641) is not moved or renamed from here: its own
     root is the one place offered, by the root's label alone and already there, no other root offers one, and no name
@@ -209,20 +222,137 @@ class NameSuggestionModel(QObject):
         # a name starting with a dot is never made (#680): not offered, rather than refused once clicked
         return list(dict.fromkeys(name for name in rendered if name and not location_name_problem(name.strip())))
 
-    def bucket_home(self) -> RootDestination | None:
-        """The place the record sits at under its own root when the place buckets its name (#680): a rename there is a
-        move to the bucket of its new name, not a rename beside the buckets of its old one.
+    def bucket_place(self, name: str) -> RootDestination | None:
+        """Where a rename moves the record whose name is bucketed where it sits under its own root (#680): the bucket of
+        its new name, not beside the buckets of its old one -- whether its fields still render the name it has or were
+        edited first, which is what a rename is mostly for (#681). A record no template's place fits any more, another
+        field of its path edited too, is told by the disk: it lies in the buckets of its name under a split folder, and
+        stays under that folder.
 
-        :returns: the place, ``here``; ``None`` when the record's name is not bucketed where it sits.
+        :param name: the new name.
+        :returns: the place; ``None`` when the record's name is not bucketed where it sits.
         """
-        return next(
-            (
-                place
-                for place in self.root_destinations()
-                if place.here and place.same_root and len(place.relative.parts) - 1 in place.bucketed
-            ),
+        home = next(
+            (place for place in self.__home_places() if len(place.relative.parts) - 1 in place.bucketed),
             None,
         )
+        if home is None:
+            home = self.__bucket_on_disk()
+        return None if home is None else replace(home, relative=home.relative.with_name(name), here=False)
+
+    def __bucket_on_disk(self) -> RootDestination | None:
+        """The place the record sits at when the folders above it are the buckets of its name under a split folder,
+        whatever its fields render now.
+
+        :returns: the place, its name bucketed under that folder; ``None`` when it lies in no bucket, or its root
+            cannot be reached.
+        """
+        path, roots = self.__model.path, self.__catalog_roots
+        own = None if path is None or roots is None else self.__root_holding(path, roots.mapped_roots())
+        if own is None or not self.root_destinations():
+            return None
+        levels = self.__levels(own.path)
+        for count in range(1, len(levels)):
+            layout = levels[: len(levels) - 1 - count]
+            chain = [temporary_prefix(level) or level for level in levels[len(layout) : -1]]
+            if is_bucket_chain(chain, levels[-1]) and is_split(own.path.joinpath(*layout)):
+                relative = PurePosixPath(*layout, levels[-1])
+                return RootDestination(
+                    own.label or own.location,
+                    relative,
+                    own.path,
+                    own.root_id,
+                    True,
+                    own.path,
+                    own.root_id,
+                    "",
+                    (len(layout),),
+                )
+        return None
+
+    def rename_blocked(self) -> str:
+        """Why the record may not be renamed (#681): it lies in a folder that is split where no template that puts it
+        there has ``{buckets}``. One at no template's place is asked about only when its type's templates have none at
+        all: its fields were edited past recognition, or no template takes it, and its own layout may well bucket the
+        folder.
+
+        :returns: the reason; empty when it may.
+        """
+        places = self.__home_places()
+        if not any(place.template for place in places) and self.__buckets_its_type():
+            return ""
+        reasons = [self.__read(place).blocked for place in places]
+        return reasons[0] if reasons and all(reasons) else ""
+
+    def resolved(self, place: RootDestination) -> RootDestination:
+        """A place with its buckets as they are on the disk now, and whether anything may be put there, for a row to be
+        drawn by (#681): where the record already sits, its own folders, nothing read. A click still moves by the place
+        itself, whose buckets the move reads as it starts.
+
+        :param place: the place, as :meth:`root_destinations` offered it.
+        :returns: the place, its buckets in its path; as it is when the disk could not be read.
+        """
+        if not place.here:
+            return self.__read(place)
+        if not place.relative.parts:
+            return place
+        return replace(place, relative=PurePosixPath(*self.__levels(place.root)), bucketed=())
+
+    @staticmethod
+    def __read(place: RootDestination) -> RootDestination:
+        """A place with its buckets read off the disk.
+
+        :param place: the place.
+        :returns: the place; as it is when the disk could not be read.
+        """
+        if not place.root.is_dir():
+            # asked once: a share that just went away would otherwise be waited for at each level
+            return place
+        try:
+            resolved = resolve_buckets(place.root, place.relative, place.bucketed)
+        except OSError:
+            return place
+        blocked = "" if resolved.ungoverned is None else ungoverned_reason(resolved.ungoverned)
+        return replace(place, relative=resolved.relative, bucketed=(), blocked=blocked)
+
+    def __home_places(self) -> list[RootDestination]:
+        """The places under its own root the record sits at, by the name it has: one, or one per template that renders
+        its folders; the one no template renders only when it is the only one.
+
+        :returns: the places.
+        """
+        found = [
+            place
+            for place in self.root_destinations()
+            if place.same_root
+            and place.relative.parts
+            and place_holds(
+                self.__levels(place.root), place.relative.with_name(self.__model.current_name), place.bucketed
+            )
+        ]
+        return [place for place in found if place.template] or found
+
+    def __levels(self, root: Path) -> tuple[str, ...]:
+        """The record's own entry, as levels under its root.
+
+        :param root: the root's folder.
+        :returns: the levels.
+        """
+        path = cast(Path, self.__model.path)  # a record with no path has no places
+        folder = path.parent.parent if is_directory_scoped(path) else path.parent
+        return (*folder.parts, self.__model.current_name)[len(root.parts) :]
+
+    def __buckets_its_type(self) -> bool:
+        """Whether a template the record's own root has for its type has ``{buckets}``.
+
+        :returns: whether one has.
+        """
+        path, roots = self.__model.path, self.__catalog_roots
+        own = None if path is None or roots is None else self.__root_holding(path, roots.mapped_roots())
+        if own is None:
+            return False
+        main_key = RecordNaming.of(self.__model.document, self.__model.current_name).main_key
+        return any(map(is_bucketed_template, layout_templates(own, main_key)))
 
     def is_root_folder(self) -> bool:
         """Whether the record describes a root's own folder (``<root>/info.rehu``, #641), which no rename or move

@@ -1,7 +1,7 @@
 """Tests for chain families: a name claimed once, and the only way to build the chain keys it owns (#563)."""
 
 import pytest
-from rehuco_core import DEFAULT_CHAIN_REGISTRY, DISK_CHAIN, ChainFamily, ChainRegistry
+from rehuco_core import DEFAULT_CHAIN_REGISTRY, DISK_CHAIN, LIBRARY_CHAIN, ChainFamily, ChainRegistry
 
 
 def test_a_family_builds_its_single_chain_and_one_per_resource() -> None:
@@ -63,10 +63,11 @@ def test_a_key_belongs_to_the_family_whose_name_it_starts_with() -> None:
 
 
 def test_the_app_registry_owns_the_disk_chain() -> None:
-    """Every job that names no chain runs in one the app's registry owns.
+    """Every job that names no chain runs in one the app's registry owns, and so do the library's (#681).
 
     **Test steps:**
 
-    * verify the default registry's family of the disk chain is the disk family
+    * verify the default registry's family of the disk chain is the disk family, and the library chain's its own
     """
     assert DEFAULT_CHAIN_REGISTRY.family_of(DISK_CHAIN) == ChainFamily(DISK_CHAIN)
+    assert DEFAULT_CHAIN_REGISTRY.family_of(LIBRARY_CHAIN) == ChainFamily(LIBRARY_CHAIN)

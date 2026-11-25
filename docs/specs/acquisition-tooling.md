@@ -790,6 +790,9 @@ several stores (`{site}/{buckets}/{site_id}`).
 serialized work a user wants to see, pause and find again after a restart, which is exactly what that section says the
 queue is right for.
 
+Every scan takes turns on the queue's one library chain, whatever its store, and so does the rebalance of a root's buckets
+([[mounts-and-storage#bucket-rebalance]], #681); neither waits behind this machine's disks.
+
 - **Oldest acquisition first.** The job asks the store for the library sorted by acquisition time, ascending, as
   TutCatalog's Udemy import did. The order is then stable for good: whatever is acquired later lands after everything
   already read. **Fab does it** (#686): `/i/library/search?sort_by=createdAt&source=acquired`, a page of 24 whatever
