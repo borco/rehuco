@@ -16,6 +16,9 @@ jobs:
   tests:
     name: tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Well over what a run takes (4 to 8 minutes). GitHub's own limit is six hours, and a job's log is not served
+    # until it ends.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +40,11 @@ jobs:
         with:
           qt: "true"
 
+      # Every thread's stack when a test passes 200 seconds, from faulthandler's own C thread: pytest-timeout's signal is
+      # handled by the main thread, so one stuck in native code is never ended, nor named by the dots of a canceled run.
       - name: Run tests with coverage
+        env:
+          PYTEST_ADDOPTS: "-o faulthandler_timeout=200"
         run: make cov-parallel
 
       # fail_ci_if_error: false -- this is new plumbing (#19); don't let upload flakiness
