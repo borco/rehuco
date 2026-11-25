@@ -345,7 +345,7 @@ from .rehu_file_kinds import (
     FileType,
     classify_directory,
 )
-from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, LICENSE_TERMS_KEY, RESERVED_KEYS
 from .rehu_parse_limits import (
     MAX_COLLECTION_LENGTH,
     MAX_FILE_BYTES,
@@ -885,6 +885,7 @@ __all__ = [
     "LIBRARY_PATH_VARIABLE",
     "LIBVLC_PROBE_FLAG",
     "LICENSE_SIDECAR_SUFFIX",
+    "LICENSE_TERMS_KEY",
     "LOCAL_SERVER",
     "LOCK_SUFFIX",
     "LayoutProblem",

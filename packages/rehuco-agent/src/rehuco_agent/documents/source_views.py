@@ -25,7 +25,7 @@ from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFontDatabase, QMouseEvent, QPalette, QShowEvent
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
-from rehuco_core import user_sidecar_path
+from rehuco_core import license_terms_path, user_sidecar_path
 
 from .content_images.content_images_view import BANNER_INSET, BANNER_MARK_WIDTH, COLLAPSED_MARK, EXPANDED_MARK
 from .rehu_document_model import RehuDocumentModel
@@ -240,8 +240,9 @@ class SourceFilesView(QScrollArea):
 class SavePreviewView(SourceFilesView):
     """The live "what a Save would write" preview: the model's current serialization (#111).
 
-    Renders :meth:`~rehuco_core.RehuDocument.serialize` and each sidecar
-    :meth:`~rehuco_core.RehuDocument.serialize_user_sidecars` renders -- byte-for-byte what a save would write -- and
+    Renders :meth:`~rehuco_core.RehuDocument.serialize`, each sidecar
+    :meth:`~rehuco_core.RehuDocument.serialize_user_sidecars` renders and the license text's
+    (:meth:`~rehuco_core.RehuDocument.serialize_license_terms`, #688) -- byte-for-byte what a save would write -- and
     always reflects the current in-memory state once shown, unsaved edits included. While hidden (e.g. a
     QtAds tab in the background) a change only flags the preview stale rather than re-serializing on the
     spot, so a large document doesn't re-render on every keystroke it can't be seen for; the deferred
@@ -291,9 +292,11 @@ class SavePreviewView(SourceFilesView):
         document = self.__model.document
         record = document.path or UNSAVED_RECORD
         sidecars = document.serialize_user_sidecars()
+        terms = document.serialize_license_terms()
         self.set_files(
             [(record.name, document.serialize())]
             + [(user_sidecar_path(record, slug).name, text) for slug, text in sidecars.items()]
+            + ([] if terms is None else [(license_terms_path(record).name, terms)])
         )
         self.__stale = False
 

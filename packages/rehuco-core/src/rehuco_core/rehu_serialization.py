@@ -17,7 +17,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any, Final
 
 from .plugins import USERS_KEY
-from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, LICENSE_TERMS_KEY, RESERVED_KEYS
 
 CORE_LEADING_KEYS: Final = ("type", "id", "created", "updated", "sources")
 """The core block's keys that lead the file, in this order; everything else follows alphabetically
@@ -86,6 +86,9 @@ def ordered_for_file(data: dict[str, Any], active_key: str, dropped_keys: Iterab
             # is no longer this type -- dropped on save ([[plugins#plugin-blocks]]).
             continue
         ordered[key] = data[key]
+    if LICENSE_TERMS_KEY in data:
+        # the license text a document holds in memory, last: a save writes it to its sidecar, never to the record
+        ordered[LICENSE_TERMS_KEY] = data[LICENSE_TERMS_KEY]
     return ordered
 
 

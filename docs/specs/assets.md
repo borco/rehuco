@@ -15,13 +15,14 @@
 - [#679: feat(agent): Open in Web Browser on the browser's selection](https://github.com/borco/rehuco/issues/679)
 - [#688: feat(agent): the license subdock, Refresh License, and the sidecar's path in Copy as JSON](https://github.com/borco/rehuco/issues/688)
 
-**The block, the cache, the license sidecar, the editor and the browser are built** (#674, #676, #677, #678, #679): `asset` is a
-declared type whose fields are read and checked as §19.1 says, kept in the catalog cache, one column each and `formats` in
-a link table of its own, shown and edited beside a record's other fields, and a column, a preset and a filter token of
-the browsers, with *Open in Web Browser* on their selection. The rest is the design for this fourth resource type: something
-acquired from a store to be used in other work, such as a 3D model, a texture set, an animation pack, an audio pack, a
-Blender add-on or an Unreal plugin. It answers the *3D objects as a resource category* question
-[[appendices.open-questions#still-open]] left open.
+**The block, the cache, the license sidecar, the editor, the browser and the license's dock are built**
+(#674, #676, #677, #678, #679, #688): `asset` is a declared type whose fields are read and checked as §19.1 says, kept
+in the catalog cache, one column each and `formats` in a link table of its own, shown and edited beside a record's
+other fields, and a column, a preset and a filter token of the browsers, with *Open in Web Browser* and *Refresh
+License* on their selection, and the license's text shown and edited in a dock of its own. The rest is the design for
+this fourth resource type: something acquired from a store to be used in other work, such as a 3D model, a texture
+set, an animation pack, an audio pack, a Blender add-on or an Unreal plugin. It answers the *3D objects as a resource
+category* question [[appendices.open-questions#still-open]] left open.
 
 - **What it is for.** A store library of a few thousand items, most of them never downloaded, that has to answer three
   questions fast: *what do I own*, *can I use it in this project* (format, engine version, license) and *where is it*.
@@ -186,18 +187,52 @@ the terms.
   read logged out; *UE Marketplace* has no URL, so its record has a `license` and no text. An item may hold several
   licenses (a Personal and a UEFN *reference only* tier; 241 of 4,250), and three delisted items hold none.
 - **A file with no `url` is terms written for that item alone.** It is typed in, and nothing ever refreshes it.
-- **It is read and edited in a subdock of its own**, as the description is, since the text can be long.
+- **It is read and edited in a License subdock of its own** (#688), as the description is, since the text can be long.
+  An asset's document has it, hidden by default, and the one dock has two modes: the terms **rendered as Markdown**
+  under their title, a line saying the day and the address they were read from, and **an editor** for the title and
+  the text, which **F2** or the dock's *Edit* action toggles. The `url` and the day are shown and never edited, since
+  only a refresh makes them. Typing into a record with none makes terms written for that item alone, titled as typed,
+  else by the record's `license` id, else *License*, with no `url` and today for the day; terms typed and emptied again
+  before a save are gone, and a saved text is never removed, only emptied. **A double-click on the record's
+  `.rehuterms` row in the Files list shows the dock** in its reading mode; for a type with no such dock, as in the
+  Roots view, the system's app opens the file. A file that cannot be read is named in the dock and left alone until it
+  is fixed, and a document that cannot be written shows the terms and cannot edit them.
+- **The text is saved with the record, by its Save** (#688). In memory the terms ride the document's payload as a
+  per-user state does, under a reserved top-level key that no `.rehu` ever holds, so an edit makes the document dirty, a
+  Revert drops it, and the save's check, a save kept across a quit and the conflict dialog treat it as one of the
+  record's details. It is judged apart from the rest in one way: a save that finds its own text already in the file,
+  as after one cut short between the text and the record, is no conflict, and a document that holds none takes the
+  file's. The save writes the `.rehuterms` before the record, and only where its text differs. **A writer
+  that read the record without the text -- progress, a Measure, a rename of a value -- leaves the file as it is**, and a
+  file that cannot be read is never written over. A text changed on disk meanwhile is the record changed there: an open
+  document without edits reads it again, and one with edits is told, and the save shows the difference.
 - **Nothing reads a license from the net when a record is opened.** A saved text changes only through *Refresh
-  License*, on the browser dock's selection: each distinct URL among the selected records is read once and compared
-  with what each record holds.
+  License*, on the browser dock's selection: each distinct `license_url` among the selected records is read once and
+  compared with what each record holds.
 - **A refresh never replaces a text unasked.** A record with none gets one. Where the terms differ, the user is shown
   the license, both dates and how many records hold the older text, and it is replaced only on a yes. The text an item
   was got under may be the one that still applies to it, so it is not the tool's to overwrite.
+- **How a refresh runs** (#688). It is a job on the task queue, off the GUI thread, unchained and not kept across a
+  quit.
+  Each record is read for its type, its `license_url` and its saved text; **a text is compared as its Markdown without
+  the blanks around it**, never by its title or its day. A file with no `url` is never touched, whatever its record's
+  `license_url` says, and a record that is not an asset, states no address or states one no reader knows is left as
+  it is. The texts Fab's listings point at are read over plain HTTP, with no login: the Standard License from its
+  public JSON and Creative Commons BY from its plain legal code (an address is matched to its reader whatever its case
+  or closing slash, since the record's is the license's page and not where its text is read from); a text is kept with
+  its lines ended in LF whatever the server sent. A store that does not answer costs the records of that license,
+  counted as such, and no other; a record that is unreadable, locked, on a share that does not answer or gone is
+  counted, logged and left as it was, and the rest go on. **The question is a dialog that does not block the window**: one row per license, each unchecked,
+  with how many records hold another text, the days those were read and the day the store's was; *Replace Checked*
+  enqueues a second job that replaces the checked licenses' texts **only in a record that still holds the text that
+  was compared**, and *Keep All* changes nothing. The row of the Tasks dock says what the run counted.
 - **A restriction is a different license, never a note.** Content a store limits to one engine gets an id of its own
   (`fab-ue-only`; Fab's UEFN *reference only* tier, `fab-uefn-reference-only`) so the limit is a filter, not a
   sentence in a description.
-- ***Copy paths as JSON* names the file.** Each asset that has one carries its sidecar's path, so whatever reads the
-  selection can read the terms.
+- ***Copy paths as JSON* names the file** (#688). The list holds an object for every selected resource, its `path` and,
+  for an asset that has a `.rehuterms`, its `license`: the path of that file, so whatever reads the selection can read
+  the terms. Whether a record has one is a question for its disk, so it is asked off the GUI thread and the clipboard
+  is set once it answers; *Copy paths* stays immediate and plain.
 
 Why the text is kept, and when a license binds the buyer, is [[appendices.assets#acquisition]].
 
@@ -248,7 +283,7 @@ the project has. Unlike Daz3D ([[plugins#daz3d-plugin]]), where installing is re
 of that is rehuco's to drive.
 
 - **What the browser offers instead is *Open in Web Browser*** (#679) on the selected records, in the table's context
-  menu above *Copy paths* and *Copy paths as JSON*: each record's primary source URL, opened in the user's everyday
+  menu above *Refresh License* and the two copies: each record's primary source URL, opened in the user's everyday
   browser, in the table's order and once however many records share it. From there the store's own page does the rest.
   Only an `http` or `https` address naming a host counts, since a `.rehu` is outside input; a record with none adds nothing, and with
   none selected that has one the entry is disabled. More than ten pages asks first, with Cancel the default.

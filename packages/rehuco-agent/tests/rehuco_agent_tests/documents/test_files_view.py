@@ -809,6 +809,36 @@ def test_another_resources_record_is_reported_rather_than_opened(qtbot: QtBot, v
     assert reported.args == [DIRECTORY / "other.rehu"]
 
 
+def test_the_license_text_is_reported_by_its_path_for_the_document_to_show(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The record's own ``.rehuterms`` can be acted on, and what a double-click does with it is the document's to say
+    (#688): the License sub-dock where its type has one, the system's app where not -- never opened from here.
+
+    **Test steps:**
+
+    * list the record's license sidecar and verify its row is enabled
+    * activate it, watching the desktop services
+    * verify its path was reported and nothing was handed to the system
+    """
+    mocker.patch.dict(
+        TREE,
+        {DIRECTORY: (*ROOT_ENTRIES, DirectoryEntry("info.rehuterms", FileKind.OWN_LICENSE, FileType.GENERIC))},
+    )
+    opened = mocker.patch.object(QDesktopServices, "openUrl")
+    view = FilesView(model)
+    qtbot.addWidget(view)
+    view.show()
+    settle(qtbot, view)
+
+    assert enabled(view, "info.rehuterms")
+    with qtbot.waitSignal(view.license_activated, timeout=TIMEOUT) as reported:
+        view.activate(row_of(view, "info.rehuterms"))
+
+    assert reported.args == [DIRECTORY / "info.rehuterms"]
+    opened.assert_not_called()
+
+
 def test_an_image_opens_against_every_image_in_the_folder(qtbot: QtBot, view: FilesView) -> None:
     """**Curation is ignored on purpose**: this is a view of the folder, so a screenshot someone curated
     out -- and a neighbor's -- are both here and both worth looking at from here

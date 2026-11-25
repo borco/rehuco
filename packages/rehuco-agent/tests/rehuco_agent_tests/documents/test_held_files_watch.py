@@ -540,6 +540,25 @@ def test_a_sweep_expects_each_held_documents_sidecars_as_they_are_now(tmp_path: 
     )
 
 
+def test_a_sweep_expects_a_held_documents_license_text_once_it_has_one(tmp_path: Path) -> None:
+    """A document is read with its license text too (#688), so a sweep compares it as it does a sidecar of the user's.
+
+    **Test steps:**
+
+    * ask what a sweep expects of a document with none, then write its ``.rehuterms`` and another record's
+    * verify the record alone is expected first, then it and its own text, never the other's
+    """
+    record = tmp_path / "lesson.rehu"
+    known = HeldFilesWatch.known(WatchedFolder(tmp_path, None, False), [key(record)], RenameCoordinator())
+    first = known()
+
+    (tmp_path / "lesson.rehuterms").write_text("---", encoding="utf-8")
+    (tmp_path / "other.rehuterms").write_text("---", encoding="utf-8")
+
+    assert first == dict.fromkeys([record])
+    assert known() == dict.fromkeys([record, tmp_path / "lesson.rehuterms"])
+
+
 def test_a_sweep_still_expects_a_document_whose_folder_cannot_be_listed(mocker: MockerFixture) -> None:
     """A folder the share will not list has no sidecars to name; the held document is still expected.
 

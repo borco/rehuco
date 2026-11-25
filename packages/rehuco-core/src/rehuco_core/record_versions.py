@@ -26,7 +26,7 @@ from typing import Any, Final
 import xxhash
 
 from .plugins import PUBLIC_USERNAME, TUTORIAL_PLUGIN, USERS_KEY, VIDEOS_KEY
-from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, LICENSE_TERMS_KEY
 
 type FieldPath = tuple[str | int, ...]
 """Where a metadata value sits: the keys and list indexes leading to it from the top of the payload."""
@@ -60,11 +60,15 @@ class RecordVersion:
     :param file_hash: the hash of the file's text; while it is unchanged nothing needs merging.
     :param user_fields: every per-user field as read, sorted; what tells a field this holder changed from one it
         merely still holds.
+    :param license_hash: the hash of the record's license text as read (:func:`license_hash`), empty for none. Apart
+        from ``metadata_hash``, since the text is a file of its own that a save writes before the record: a save cut
+        short between the two must find its own text there on the retry, not someone else's edit (#688).
     """
 
     metadata_hash: str
     file_hash: str
     user_fields: tuple[UserFieldHash, ...]
+    license_hash: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,7 +104,12 @@ def record_version(data: dict[str, Any], text: str) -> RecordVersion:
     :param text: the file's text.
     :returns: its version.
     """
-    return RecordVersion(metadata_hash(data), xxhash.xxh3_128_hexdigest(text.encode("utf-8")), user_field_hashes(data))
+    return RecordVersion(
+        metadata_hash(data),
+        xxhash.xxh3_128_hexdigest(text.encode("utf-8")),
+        user_field_hashes(data),
+        license_hash(data),
+    )
 
 
 def metadata_of(data: dict[str, Any]) -> dict[str, Any]:
@@ -155,12 +164,25 @@ def metadata_text(data: dict[str, Any]) -> str:
 
 
 def metadata_hash(data: dict[str, Any]) -> str:
-    """The hash of a payload's details (:func:`details_of`): what a save is refused on when it has moved on.
+    """The hash of a payload's details (:func:`details_of`) without its license text, which is judged on its own
+    (:func:`license_hash`): what a save is refused on when it has moved on.
 
     :param data: the record's payload.
     :returns: the hash, as hex.
     """
-    return xxhash.xxh3_128_hexdigest(canonical_json(details_of(data)).encode("utf-8"))
+    details = details_of(data)
+    details.pop(LICENSE_TERMS_KEY, None)
+    return xxhash.xxh3_128_hexdigest(canonical_json(details).encode("utf-8"))
+
+
+def license_hash(data: dict[str, Any]) -> str:
+    """The hash of the license text a payload holds ([[assets#licenses]], #688).
+
+    :param data: the record's payload.
+    :returns: the hash, as hex; empty for a payload with none.
+    """
+    terms = data.get(LICENSE_TERMS_KEY)
+    return "" if terms is None else value_hash(terms)
 
 
 def canonical_json(value: Any) -> str:

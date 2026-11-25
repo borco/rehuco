@@ -132,6 +132,25 @@ def test_a_first_atomic_save_is_the_file_changed_and_its_folder_relisted() -> No
     assert events_of(*batch) == [Changed((key("a", "new.rehu"),)), FolderChanged(key("a"))]
 
 
+def test_a_license_text_written_is_its_record_changed_as_well() -> None:
+    """The record is read with its license text (#688), so whoever holds the record holds the sidecar: a change to the
+    sidecar reaches them as the record's, a directory-scoped record's included, and a file that only looks like one
+    reaches no record.
+
+    **Test steps:**
+
+    * coalesce a ``.rehuterms`` modified beside a named record, one beside an ``info.rehu``, and a stem-less one
+    * verify each is the sidecar and its record changed, and the stem-less one only itself
+    """
+    named = events_of(change(MODIFIED, "a", "foo.rehuterms"))
+    scoped = events_of(change(MODIFIED, "b", "info.REHUTERMS"))
+    nameless = events_of(change(MODIFIED, "c", ".rehuterms"))
+
+    assert named == [Changed((key("a", "foo.rehuterms"), key("a", "foo.rehu")))]
+    assert scoped == [Changed((key("b", "info.REHUTERMS"), key("b", "info.rehu")))]
+    assert nameless == [Changed((key("c", ".rehuterms"),))]
+
+
 def test_temporary_siblings_on_their_own_are_no_ones_business() -> None:
     """An atomic write's temporary sibling created, written, deleted, or renamed to another temporary name says
     nothing about any file.

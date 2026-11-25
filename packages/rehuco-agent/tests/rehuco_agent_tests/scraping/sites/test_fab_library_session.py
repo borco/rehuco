@@ -21,12 +21,9 @@ from rehuco_agent.scraping.library_site import (
 )
 from rehuco_agent.scraping.protocols import FetchError, LoginRequiredError
 from rehuco_agent.scraping.results import InvalidScrapeResultError, Page
-from rehuco_agent.scraping.sites import fab_library_session
-from rehuco_agent.scraping.sites.fab_library_session import (
-    CC_TEXTS,
-    EULA_JSON_URL,
-    FabLibrarySession,
-)
+from rehuco_agent.scraping.sites import fab_library_session, fab_license_texts
+from rehuco_agent.scraping.sites.fab_library_session import FabLibrarySession
+from rehuco_agent.scraping.sites.fab_license_texts import CC_TEXTS, EULA_JSON_URL
 from rehuco_core import LibraryCursor
 
 SITE: Final = "https://www.fab.com"
@@ -673,7 +670,7 @@ def test_the_creative_commons_text_is_read_from_its_page(monkeypatch: MonkeyPatc
     session, _ = session_with(monkeypatch, Mock())
     title, url = CC_TEXTS["license/cc/cc-by"]
     fetch = Mock(return_value=Page(url, url, "\nAttribution 4.0 International\n", 200))
-    monkeypatch.setattr(fab_library_session, "HttpPageFetcher", Mock(return_value=Mock(fetch=fetch)))
+    monkeypatch.setattr(fab_license_texts, "HttpPageFetcher", Mock(return_value=Mock(fetch=fetch)))
 
     terms = session.read_license("license/cc/cc-by")
 
@@ -702,7 +699,7 @@ def test_a_creative_commons_page_that_does_not_answer_is_waited_for(monkeypatch:
     """
     session, _ = session_with(monkeypatch, Mock())
     fetch = Mock(side_effect=answer) if isinstance(answer, Exception) else Mock(return_value=answer)
-    monkeypatch.setattr(fab_library_session, "HttpPageFetcher", Mock(return_value=Mock(fetch=fetch)))
+    monkeypatch.setattr(fab_license_texts, "HttpPageFetcher", Mock(return_value=Mock(fetch=fetch)))
 
     with raises(StoreOfflineError, match="legalcode"):
         session.read_license("license/cc/cc-by")

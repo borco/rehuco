@@ -19,6 +19,7 @@ from uuid import UUID
 
 from ..access import Changed, ChangeEvent, ChangeFeed, FolderChanged, KeyRelocation, Moved, ResourceKey, RootStale
 from ..constants import REHU_SUFFIX
+from ..license_terms import license_terms_owner
 from ..record_file_lock import is_lock_name
 from ..resource_scoping import is_record_name
 from ..user_sidecars import user_sidecar_owner
@@ -157,7 +158,7 @@ class ChangeCoalescer:
         - **A record's lock file** (#512) is no one's business either: taken and removed by every save, it changes
           nothing anyone holds.
         - **A per-user sidecar written, created or deleted** is its record changed as well (#513): the record is read
-          with its sidecars, so whoever holds the one holds the other.
+          with its sidecars, so whoever holds the one holds the other. So is its license text's (#688).
         - **A file created, written or deleted** is changed; a deleted folder is itself changed: whoever holds records
           beneath it looks them up.
         - **A folder's listing changed** when an entry in it is there at the end of the batch and was not at the start,
@@ -188,7 +189,7 @@ class ChangeCoalescer:
                     tally.changed[key] = None
                 case _:
                     pass
-            record = cls.record_of_user_sidecar(change.destination or change.path)
+            record = cls.record_of_sidecar(change.destination or change.path)
             if record is not None and change.kind is not RawChangeKind.OVERFLOW:
                 tally.changed[record] = None
         events = tally.events()
@@ -218,6 +219,20 @@ class ChangeCoalescer:
                 pairs.insert(index, (earlier_source.joinpath(*tail), destination))
                 return
         pairs.append((source, destination))
+
+    @staticmethod
+    def record_of_sidecar(path: Path) -> ResourceKey | None:
+        """The record a sidecar belongs to: a per-user one's ([[data-model#single-file]]), or its license text's
+        ([[assets#licenses]]).
+
+        :param path: any path.
+        :returns: the ``.rehu`` named by its stem, or ``None`` when ``path`` is no sidecar.
+        """
+        user = ChangeCoalescer.record_of_user_sidecar(path)
+        if user is not None:
+            return user
+        stem = license_terms_owner(path.name)
+        return None if stem is None else ResourceKey(path.with_name(f"{stem}{REHU_SUFFIX}"))
 
     @staticmethod
     def record_of_user_sidecar(path: Path) -> ResourceKey | None:

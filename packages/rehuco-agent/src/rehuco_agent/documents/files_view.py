@@ -13,7 +13,7 @@ resource, which is what the foreign-record rows are for.
 **What a row lets you do is decided by what the file is to this resource** -- the kinds
 :mod:`rehuco_core.rehu_file_kinds` names, turned into an enabled state by
 :data:`~rehuco_agent.documents.files_rows.INTERACTIVE_KINDS`. A disabled row cannot be activated at all,
-because it answers :data:`~PySide6.QtCore.Qt.ItemFlag.NoItemFlags`; the four things a double-click *can*
+because it answers :data:`~PySide6.QtCore.Qt.ItemFlag.NoItemFlags`; the things a double-click *can*
 do are each routed out of here rather than done here:
 
 - **a folder** -- walked into, unless a foreign ``info.rehu`` in this listing says the folders beside it
@@ -26,7 +26,9 @@ do are each routed out of here rather than done here:
   folder**, curated or not: this is a view of the folder, not of the lightbox's set, and a screenshot
   someone curated out is exactly the one they may want to look at here;
 - **a video of a tutorial** -- played by the document's player through :attr:`video_activated` (#317); which engine
-  decodes it is the player's business ([[plugins#in-app-player]]).
+  decodes it is the player's business ([[plugins#in-app-player]]);
+- **this resource's license text** -- shown in the document's License sub-dock through :attr:`license_activated`
+  (#688).
 
 Anything else is handed to the system's default handler, which is the only sensible thing to do with a
 video or a PDF and the one route that does not involve this app pretending to open it.
@@ -180,6 +182,11 @@ class FilesView(QWidget):
     video_clicked: Signal = Signal(str)
     """Emitted with the content key of a tutorial's video row that is clicked, present or missing (#573): the notes
     dock shows that video's notes, without the player loading it."""
+
+    license_activated: Signal = Signal(object)
+    """Emitted with the path of the record's ``.rehuterms`` when its row is double-clicked (#688): the document shows
+    its License sub-dock where its type has one, and hands the file to the system's app where not. The same owner-routed
+    activation as :attr:`images_activated`."""
 
     status_message: Signal = Signal(str)
     """Emitted with a line for the status bar, routed up by the owner as every other ``status_message`` is."""
@@ -612,6 +619,8 @@ class FilesView(QWidget):
         elif row.kind is FileKind.OWN_MANIFEST:
             if self.__verify is not None:
                 self.__verify()
+        elif row.kind is FileKind.OWN_LICENSE:
+            self.license_activated.emit(row.path)
         elif row.key is not None:
             self.video_activated.emit(row.key)
         elif row.path.suffix.lower() in IMAGE_EXTENSIONS:

@@ -3,6 +3,10 @@
 """
 
 import logging
+import os
+from dataclasses import replace
+from functools import partial
+from pathlib import Path
 from typing import Final, cast
 from uuid import UUID
 
@@ -20,16 +24,25 @@ from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction, QGuiApplication
 from PySide6.QtWidgets import QInputDialog, QMainWindow, QMenu, QWidget
-from rehuco_core import CatalogField, CatalogQuery, CatalogRow, RehucoFile, resource_path, server_of
+from rehuco_core import (
+    CatalogField,
+    CatalogQuery,
+    CatalogRow,
+    RehucoFile,
+    license_terms_path,
+    resource_path,
+    server_of,
+)
 
 from ..dock_maximize import attach_maximize_handler
+from ..documents.latest_runner import LatestRunner
 from ..filter_urls import filter_url_token
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.catalog_state_store import BrowserState, CatalogStateStore
 from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from .catalog_rows_loader import CatalogRowsLoad, CatalogRowsLoader
 from .catalog_table_model import RowKey
-from .copied_paths import PathsWriter
+from .copied_paths import CopiedPath, CopyFormat, PathsWriter
 from .root_catalog import RootCatalog
 from .root_storage import ROOT_STORAGE_OFFLINE_TOOLTIPS
 from .table_browser import TableBrowser
@@ -90,6 +103,10 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     that browser is the current one. A browser behind another is not being read, so what happens to its rows (a
     rename, a rescan) says nothing about what the reader is looking at. Typed as plain ``object``, as above."""
 
+    refresh_license_requested: Signal = Signal(object)
+    """Emitted when *Refresh License* is chosen on a browser's selection (#688), with the ``.rehu`` of each selected row
+    the catalog resolves, in the table's order. Typed as plain ``object``, as above."""
+
     def __init__(
         self,
         catalog: RootCatalog,
@@ -106,6 +123,9 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Every browser's dock, in the order the browsers were added."""
         self.__loader: Final = CatalogRowsLoader(catalog.rows, self)
         self.__loader.loaded.connect(self.__on_loaded)
+        self.__copies: Final = LatestRunner(self)
+        """What looks for the license texts a *Copy paths as JSON* names, off the GUI thread (#688)."""
+        self.__copies.read.connect(self.__on_copied)
         self.__offline: dict[UUID, str] = {}
         self.__servers: dict[UUID, str] = {}
         """Why each root that cannot be reached cannot, by its id."""
@@ -454,6 +474,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__place(dock, beside)
         browser.row_activated.connect(self.__on_row_activated)
         browser.copy_paths_requested.connect(self.__copy_paths)
+        browser.refresh_license_requested.connect(self.__refresh_license)
 
         browser.query_changed.connect(lambda: self.__fill(browser))
         browser.current_changed.connect(lambda key: self.__on_current_changed(browser, key))
@@ -483,23 +504,84 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if key is not None:
             self.open_requested.emit(key)
 
-    def __copy_paths(self, rows: object, write: object) -> None:
+    def __copy_paths(self, rows: object, copy_format: object, assets: object) -> None:
         """Put the paths of a browser's selected resources on the clipboard as plain text (#646), never as a file list:
         a directory-scoped record's folder, a standalone record's file. A row the catalog no longer resolves -- its
-        root gone from the file -- is left out; an offline root's is not, since nothing is read.
+        root gone from the file -- is left out; an offline root's is not, since its path needs no read.
+
+        **A format that names licenses waits for a worker** (#688): whether an asset has a ``.rehuterms`` is a question
+        for its disk, which may be a share, so the clipboard is set once it answers; a later copy of either format
+        outdates one still out. An asset under a root that cannot be reached is not asked about -- every question would
+        wait for the share to time out -- and is listed by its path alone. Any other format is put down at once.
 
         :param rows: the rows' ``(root_id, relative)`` keys, in the table's order, as the object-typed relay carried
             them.
-        :param write: the :data:`~.copied_paths.PathsWriter` turning the paths into the text.
+        :param copy_format: the :class:`~.copied_paths.CopyFormat` turning the paths into the text.
+        :param assets: which of the rows are assets, for a format that names licenses.
         """
-        keys = (self.__catalog.resource_key(root_id, relative) for root_id, relative in cast(tuple[RowKey, ...], rows))
-        paths = [resource_path(key.path) for key in keys if key is not None]
-        if not paths:
+        chosen = cast(CopyFormat, copy_format)
+        found = cast(frozenset[RowKey], assets)
+        copied: list[CopiedPath] = []
+        for row in cast(tuple[RowKey, ...], rows):
+            key = self.__catalog.resource_key(*row)
+            if key is not None:
+                asked = row in found and row[0] not in self.__offline
+                copied.append(CopiedPath(resource_path(key.path), license_terms_path(key.path) if asked else None))
+        if not copied:
             return
+        if chosen.names_licenses:
+            self.__copies.start("copy", partial(BrowsersDock.__written, copied, chosen.write))
+        else:
+            self.__copies.discard()
+            BrowsersDock.__put_on_clipboard(chosen.write(copied))
+
+    @staticmethod
+    def __written(copied: list[CopiedPath], write: PathsWriter) -> str:
+        """Write the selection with the license texts that are there (a worker's).
+
+        :param copied: the resources, an asset's ``license`` the place its text would be.
+        :param write: the format.
+        :returns: the text.
+        """
+        return write(
+            replace(item, license=item.license if item.license is not None and os.path.isfile(item.license) else None)
+            for item in copied
+        )
+
+    def __on_copied(self, tag: str, result: object) -> None:
+        """Put what a worker wrote on the clipboard, or say it failed (GUI thread).
+
+        :param tag: what the work was.
+        :param result: the text, or the exception that ended it.
+        """
+        del tag
+        if isinstance(result, str):
+            BrowsersDock.__put_on_clipboard(result)
+        else:
+            LOG.error("The paths could not be copied: %s", result)
+
+    @staticmethod
+    def __put_on_clipboard(text: str) -> None:
+        """Put plain text on the clipboard.
+
+        :param text: the text.
+        """
         clipboard = QGuiApplication.clipboard()
         # optional in the binding, never absent in a running GUI application
         if clipboard is not None:  # pragma: no branch
-            clipboard.setText(cast(PathsWriter, write)(paths))
+            clipboard.setText(text)
+
+    def __refresh_license(self, rows: object) -> None:
+        """Hand the ``.rehu`` of a browser's selected rows to *Refresh License* (#688): a row the catalog no longer
+        resolves -- its root gone from the file -- is left out.
+
+        :param rows: the rows' ``(root_id, relative)`` keys, in the table's order, as the object-typed relay carried
+            them.
+        """
+        keys = (self.__catalog.resource_key(*row) for row in cast(tuple[RowKey, ...], rows))
+        records: tuple[Path, ...] = tuple(key.path for key in keys if key is not None)
+        if records:
+            self.refresh_license_requested.emit(records)
 
     def __place(self, dock: QtAds.CDockWidget, beside: QtAds.CDockWidget | None = None) -> None:
         """Add a browser's sub-dock to the manager: into the tab strip of ``beside``, else of the first browser that

@@ -106,6 +106,16 @@ COPY_IMAGE: Final = Command(
     # armed on the Content Images grid and on a lightbox, never both, and on no text field
     "images",
 )
+LICENSE_EDIT: Final = Command(
+    "document.license.edit",
+    "Edit license",
+    "Edit the record's license text, or go back to reading it",
+    ("F2",),
+    # focused-only on purpose, as the player's keys are: app-wide, it would take F2 from every field
+    (CommandScope.DOCUMENT_FOCUSED,),
+    # armed on the License dock's subtree (#688), a group of its own so its F2 and the player's notes' share the key
+    "license",
+)
 COMPLETE_IMAGES: Final = Command(
     "document.description.complete_images",
     "Complete image names",
@@ -318,6 +328,7 @@ COMMANDS: Final = (
     PLAYER_SUBTITLE_NEXT,
     PLAYER_SUBTITLE_PREVIOUS,
     PLAYER_SUBTITLE_TOGGLE,
+    LICENSE_EDIT,
     COMPLETE_IMAGES,
     CONVERT_SCREENSHOT,
     TOGGLE_SCREENSHOT_VISIBILITY,

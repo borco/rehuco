@@ -23,7 +23,14 @@ from rehuco_agent.documents.source_views import (
     SavePreviewView,
 )
 from rehuco_agent.documents.storage_wait import StorageWait
-from rehuco_core import CURRENT_FORMAT_VERSION, RecordVersion, RehuDocument, SaveOutcome, user_sidecar_path
+from rehuco_core import (
+    CURRENT_FORMAT_VERSION,
+    RecordVersion,
+    RehuDocument,
+    SaveOutcome,
+    license_terms_path,
+    user_sidecar_path,
+)
 
 REHU_PATH: Final = Path.cwd() / "fake" / "info.rehu"
 TC_PATH: Final = Path.cwd() / "fake" / "info.tc"
@@ -103,6 +110,28 @@ def test_save_preview_renders_the_documents_serialized_json(
     assert save_preview.files() == [(UNSAVED_RECORD.name, model.document.serialize())] + [
         (user_sidecar_path(UNSAVED_RECORD, slug).name, text) for slug, text in sidecars.items()
     ]
+
+
+def test_save_preview_lists_the_license_text_a_save_would_write_beside_the_record(
+    save_preview: SavePreviewView, model: RehuDocumentModel
+) -> None:
+    """The license text is a file of its own a save writes (#688), so the preview shows it as such -- and only once the
+    document holds some, and never inside the record's own text.
+
+    **Test steps:**
+
+    * verify a document with no license text lists no ``.rehuterms``
+    * type license text into the document
+    * verify the preview lists it last, as ``serialize_license_terms`` renders it, and the record's text has none of it
+    """
+    assert all(not name.endswith(".rehuterms") for name, _ in save_preview.files())
+
+    model.edit_license(text="Use freely.\n")
+
+    terms = model.document.serialize_license_terms()
+    assert terms is not None
+    assert save_preview.files()[-1] == (license_terms_path(UNSAVED_RECORD).name, terms)
+    assert "Use freely" not in label(save_preview).text()
 
 
 def test_save_preview_rerenders_after_a_model_edit(save_preview: SavePreviewView, model: RehuDocumentModel) -> None:
