@@ -761,21 +761,21 @@ def test_a_folder_record_is_never_a_bucket(splitter: BucketSplitter, tmp_path: P
 
     **Test steps:**
 
-    * split a folder holding folder record ``A`` with more folders in it than the limit, and file record ``ab`` beside
+    * split a folder holding folder record ``a`` with more folders in it than the limit, and file record ``ab`` beside
       it; ask where a new entry lands
     * settle the folder
-    * verify ``A`` whole in bucket ``a``, ``ab`` beside it, and that nothing was to land inside ``A``
+    * verify ``a`` whole in bucket ``a``, ``ab`` beside it, and that nothing was to land inside it
     """
     mark_split(tmp_path)
-    folder_record(tmp_path, "A")
+    folder_record(tmp_path, "a")
     for index in range(LIMIT + 1):
-        (tmp_path / "A" / f"chapter {index:02}").mkdir()
+        (tmp_path / "a" / f"chapter {index:02}").mkdir()
     file_record(tmp_path, "ab")
 
     assert bucket_of(tmp_path, "abc") == PurePosixPath()
     splitter.settle(tmp_path, ())
 
-    assert len(list((tmp_path / "a" / "A").iterdir())) == LIMIT + 2
+    assert len(list((tmp_path / "a" / "a").iterdir())) == LIMIT + 2
     assert (tmp_path / "a" / "ab.rehu").is_file()
     assert BucketListing.of(tmp_path, 0).buckets == {"a": tmp_path / "a"}
 
