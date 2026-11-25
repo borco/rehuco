@@ -3,6 +3,7 @@ the per-user maps out and write each file only when it changes, reads join them 
 the notifier know the sidecar as the record's own."""
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Final
 
@@ -396,9 +397,16 @@ def test_a_sidecar_that_cannot_be_statted_is_left_out_of_the_signature(tmp_path:
     """
     record = tmp_path / "info.rehu"
     bare_record(record)
-    refused = mocker.Mock(spec=Path)
-    refused.stat.side_effect = PermissionError("refused")
+    refused = tmp_path / "info.user-ioan.rehuser"
+    real_stat = os.stat
+
+    def stat(path: Path, *args: Any, **kwargs: Any) -> os.stat_result:
+        if Path(path) == refused:
+            raise PermissionError("refused")
+        return real_stat(path, *args, **kwargs)
+
     mocker.patch("rehuco_core.access.records.user_sidecar_paths", return_value={"ioan": refused})
+    mocker.patch("rehuco_core.access.records.os.stat", side_effect=stat)
 
     status = record.stat()
     assert Records().signature(ResourceKey(record)) == (status.st_mtime_ns, status.st_size)

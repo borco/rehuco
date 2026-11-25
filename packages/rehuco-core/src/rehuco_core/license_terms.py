@@ -36,6 +36,9 @@ URL_KEY: Final = "url"
 READ_KEY: Final = "read"
 """The header key holding the date the text was read."""
 
+TEXT_KEY: Final = "text"
+"""The key the terms' Markdown has in :meth:`LicenseTerms.to_data`; the file holds it below its header."""
+
 
 class LicenseTermsError(ValueError):
     """A license sidecar that cannot be read."""
@@ -98,6 +101,40 @@ class LicenseTerms:
         header[READ_KEY] = self.read
         dumped = yaml.safe_dump(header, sort_keys=False, allow_unicode=True)
         return f"{HEADER_FENCE}\n{dumped}{HEADER_FENCE}\n\n{self.text}"
+
+    def to_data(self) -> dict[str, Any]:
+        """These terms as the JSON primitives a document holds them as in memory
+        (:data:`~rehuco_core.LICENSE_TERMS_KEY`).
+
+        :returns: ``title``, ``url`` where there is one, ``read`` as an ISO date and ``text``.
+        """
+        data: dict[str, Any] = {TITLE_KEY: self.title}
+        if self.url is not None:
+            data[URL_KEY] = self.url
+        data[READ_KEY] = self.read.isoformat()
+        data[TEXT_KEY] = self.text
+        return data
+
+    @classmethod
+    def from_data(cls, data: object) -> LicenseTerms:
+        """Read the terms :meth:`to_data` wrote.
+
+        :param data: what a document holds under :data:`~rehuco_core.LICENSE_TERMS_KEY`.
+        :returns: the terms.
+        :raises LicenseTermsError: it is not an object of those four keys, or its date is not a day.
+        """
+        if not isinstance(data, dict):
+            raise LicenseTermsError("The license terms are not an object.")
+        title, url, read, text = data.get(TITLE_KEY), data.get(URL_KEY), data.get(READ_KEY), data.get(TEXT_KEY)
+        if not isinstance(title, str) or not isinstance(text, str) or not (url is None or isinstance(url, str)):
+            raise LicenseTermsError("The license terms need a title and a text, and a url that is a string.")
+        try:
+            day = datetime.date.fromisoformat(read) if isinstance(read, str) else None
+        except ValueError:
+            day = None
+        if day is None:
+            raise LicenseTermsError("The license terms' date is not a day.")
+        return cls(title, url, day, text)
 
     @staticmethod
     def __title(header: dict[Any, Any], name: str) -> str:

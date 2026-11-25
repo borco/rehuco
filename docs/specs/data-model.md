@@ -113,7 +113,11 @@ but that user's other device.
 - **Read-only media** take no sidecar beside the record; that user's state goes on the retained copy
   ([[mounts-and-storage#durable-retention]]).
 - **`<stem>.rehuterms` is a record's license text** ([[assets#licenses]]): a YAML header and Markdown, one per record,
-  carried by a rename and a move as the sidecars are, and bookkeeping like them, never checksummed.
+  carried by a rename and a move as the sidecars are, and bookkeeping like them, never checksummed. **It is read and
+  saved with the record** (#688): a record read for a document joins it into its payload under a reserved key
+  (`license_terms`, never in a `.rehu`), a save writes it, and a change to it on disk is a change to the record, so the
+  signature a held document is compared by covers it. A reader that does not show or save the text -- a scan -- never
+  opens it.
 
 ## §4.4 Resource scoping: directory-scoped vs. file-scoped
 

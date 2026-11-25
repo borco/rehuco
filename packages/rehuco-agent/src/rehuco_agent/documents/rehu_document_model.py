@@ -11,6 +11,7 @@ import logging
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import date
 from functools import partial
 from pathlib import Path
 from typing import Any, Final, cast
@@ -22,12 +23,14 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_CURRENT_USERNAME,
     FORMAT_VERSION_KEY,
+    LICENSE_TERMS_KEY,
     TUTORIAL_PLUGIN,
     USERS_KEY,
     AuthorEntry,
     Deleter,
     FieldPath,
     JobWaiting,
+    LicenseTerms,
     LockReason,
     ProgressEntry,
     RecordConflict,
@@ -196,6 +199,10 @@ PRIMARY_SOURCE_FIELD_NAMES: Final = ("title", "publisher", "url")
 """The members of :data:`COMMON_FIELD_NAMES` that are the **top source's own** values
 ([[field-schema#sources]]): writing one changes an entry of :attr:`RehuDocumentModel.sources`, which is
 re-read after it so the list never lags its own top row."""
+
+DEFAULT_LICENSE_TITLE: Final = "License"
+"""What license text typed into a record is titled while the record names no license and no title is typed
+([[assets#licenses]], #688)."""
 
 UNTITLED_LABEL: Final = "Untitled"
 """Stand-in display label for a document with no location -- :attr:`RehuDocumentModel.label` is empty
@@ -439,6 +446,16 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     license_url = SimpleProperty[str | None](None)
     """Where the store states an asset's terms ([[assets#licenses]]), or ``None`` when absent."""
+
+    license_terms = SimpleProperty[LicenseTerms | None](None)
+    """The record's license text, kept in its ``.rehuterms`` ([[assets#licenses]], #688), or ``None`` when it has none.
+    Held in the document's payload as per-user state is, so an edit of it is an edit of the record: it makes the
+    document dirty, a save writes the sidecar, a revert reads it again. Changed through :meth:`edit_license`."""
+
+    license_unreadable = SimpleProperty("")
+    """Why the ``.rehuterms`` beside the record could not be read, mirrored from :attr:`document`'s
+    :attr:`~RehuDocument.license_unreadable`, or empty (#688). Not a lock: the record stays editable, its text left out,
+    and a save never writes over that file. Set where :attr:`unreadable_sidecars` is."""
 
     formats = SimpleProperty[list[str]](default_factory=list)
     """The file formats an asset is delivered in, such as ``fbx`` or ``blend`` ([[assets#block]])."""
@@ -747,6 +764,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         for name in RECORD_LIST_FIELD_NAMES:
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_record_list_changed(key, value))
+        self.license_terms_changed.connect(self.__on_license_terms_changed)  # type: ignore[attr-defined]
 
     # the constructor's own seams, forwarded whole
     @classmethod
@@ -1171,6 +1189,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             )
             self.__clear_rename_failure()
             self.__mirror_locks()
+            if current is not None:
+                # the payload says nothing of the file: a license text that cannot be read is still one not to edit
+                self.license_unreadable = current.document.license_unreadable
         finally:
             self.__loading = False
         self.image_scanner = self.__make_image_scanner()
@@ -2573,8 +2594,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     def __mirror_locks(self) -> None:
         """Mirror what keeps the document from being edited, whole or in part, from :attr:`document`: its lock reasons
-        and, as notices of a part (#568), the sidecars that could not be read."""
+        and, as notices of a part (#568, #688), the sidecars that could not be read."""
         self.unreadable_sidecars = [sidecar.reason for sidecar in self.__document.unreadable_sidecars]
+        self.license_unreadable = self.__document.license_unreadable
         self.user_state_locked = self.__document.own_sidecar_unreadable
         self.lock_reasons = list(self.__document.lock_reasons)
 
@@ -2598,6 +2620,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.released = self.__document.released
             if description:
                 self.description = self.__document.description
+            self.license_terms = self.__document.license_terms
             self.hidden_images = self.__document.hidden_images
             self.original_size = self.__document.original_size
             self.current_size = self.__document.current_size
@@ -2963,3 +2986,49 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         else:
             self.__document.set_learning_path_records(value)
         self.dirty = True
+
+    # region The license text
+
+    def edit_license(self, *, title: str | None = None, text: str | None = None) -> None:
+        """Change the record's license text, as the License dock's editors do (#688, [[assets#licenses]]): typed into a
+        record that has none, it makes terms written for this item alone -- no ``url``, read today, titled as typed,
+        else as its license id, else :data:`DEFAULT_LICENSE_TITLE`.
+
+        **A saved text is never removed, only emptied**: terms still unsaved that are emptied again are gone, as if
+        never typed, while ones the file holds stay as empty terms, and the next save writes them so.
+
+        :param title: the license's new title, or ``None`` to leave it.
+        :param text: the terms' new Markdown, or ``None`` to leave it.
+        """
+        held = self.license_terms
+        default_title = self.license or DEFAULT_LICENSE_TITLE
+        if held is None and not (title or text):
+            return
+        current = held if held is not None else LicenseTerms(default_title, None, date.today(), "")
+        edited = replace(
+            current,
+            title=current.title if title is None else title,
+            text=current.text if text is None else text,
+        )
+        unsaved_and_empty = LICENSE_TERMS_KEY not in self.__base_data and not edited.text
+        # a title being typed may pass through the default one: only the text emptied under the title it was given,
+        # or a title emptied, takes the terms away
+        if unsaved_and_empty and (not edited.title or (title is None and edited.title == default_title)):
+            self.license_terms = None
+        elif held is None or edited != held:
+            self.license_terms = edited
+
+    def __on_license_terms_changed(self, terms: LicenseTerms | None) -> None:
+        """Write the edited license text through to the document and mark dirty (#688).
+
+        No-op while the model is seeding (construction, :meth:`revert`, :meth:`convert`), as every write-through
+        handler here is.
+
+        :param terms: the new terms, or ``None`` for terms never saved that were emptied again.
+        """
+        if self.__seeding:
+            return
+        self.__document.license_terms = terms
+        self.dirty = True
+
+    # endregion

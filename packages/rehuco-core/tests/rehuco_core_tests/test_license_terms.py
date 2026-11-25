@@ -154,6 +154,52 @@ def test_a_sidecar_that_cannot_be_read_is_refused_with_its_name(text: str, reaso
         LicenseTerms.parse(text, NAME)
 
 
+def test_terms_round_trip_through_the_data_a_document_holds_them_as() -> None:
+    """A document holds its terms as JSON primitives (#688), a date as its day, and reads the same terms back; no url is
+    no key.
+
+    **Test steps:**
+
+    * turn terms with and without a url into data
+    * verify the keys, the day as text, and that ``from_data`` reads each back equal
+    """
+    custom = LicenseTerms("Custom", None, READ, "Mine.\n")
+
+    assert TERMS.to_data() == {
+        "title": "Standard License",
+        "url": "https://example.com/eula",
+        "read": "2026-11-18",
+        "text": "# Terms\n\nUse freely.\n",
+    }
+    assert "url" not in custom.to_data()
+    assert LicenseTerms.from_data(TERMS.to_data()) == TERMS
+    assert LicenseTerms.from_data(custom.to_data()) == custom
+
+
+@mark.parametrize(
+    "data",
+    [
+        "terms",
+        {"url": "u", "read": "2026-11-18", "text": ""},
+        {"title": "T", "read": "2026-11-18"},
+        {"title": "T", "text": "", "read": "2026-11-18", "url": 3},
+        {"title": "T", "text": ""},
+        {"title": "T", "text": "", "read": "yesterday"},
+        {"title": "T", "text": "", "read": 20261118},
+    ],
+)
+def test_data_that_is_not_terms_is_refused(data: object) -> None:
+    """What a kept payload might hold under the key, once someone edited it, is refused rather than guessed at.
+
+    **Test steps:**
+
+    * read data with no title, no text, a url that is no string, or a date that is no day
+    * verify each raises ``LicenseTermsError``
+    """
+    with raises(LicenseTermsError):
+        LicenseTerms.from_data(data)
+
+
 # endregion
 
 # region Reading and writing

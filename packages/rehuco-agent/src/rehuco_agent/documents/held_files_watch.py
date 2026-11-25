@@ -1,6 +1,7 @@
 """What the open documents' files look like on disk now, and the watches of the ones under no root (#511,
 [[mounts-and-storage#out-of-band]])."""
 
+import os
 import threading
 from collections.abc import Callable, Collection, Iterable
 from pathlib import Path
@@ -8,7 +9,13 @@ from typing import Final
 
 from borco_core import Presence, presence_of
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import DEFAULT_RENAME_COORDINATOR, RenameCoordinator, is_directory_scoped, user_sidecar_paths
+from rehuco_core import (
+    DEFAULT_RENAME_COORDINATOR,
+    RenameCoordinator,
+    is_directory_scoped,
+    license_terms_path,
+    user_sidecar_paths,
+)
 from rehuco_core.access import ChangeFeed, Records, ResourceKey
 from rehuco_core.notify import FileNotifier, WatchedFolder
 
@@ -126,7 +133,10 @@ class HeldFilesWatch(QObject):
             for record in inside:
                 try:
                     with coordinator.holding():
-                        sidecars = user_sidecar_paths(record).values()
+                        sidecars = list(user_sidecar_paths(record).values())
+                        terms = license_terms_path(record)
+                        if os.path.isfile(terms):
+                            sidecars.append(terms)
                 except OSError:
                     continue
                 known.update(dict.fromkeys(sidecars))

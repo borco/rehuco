@@ -807,6 +807,8 @@ Every scan takes turns on the queue's one library chain, whatever its store, and
 - **Its license text is saved with it**, as the record's `.rehuterms` ([[assets#licenses]]): each distinct license is
   read once per run, keyed by the store's license **path** (Fab: `license/cc/cc-by`), not by `license_url`, since one
   license arrives under different URLs and the URL may be empty. A known item's saved text is never touched by a scan.
+  The text of a Fab license is read by one class (`FabLicenseTexts`) that the scan calls by path, through the persona,
+  and *Refresh License* ([[assets#licenses]], #688) by the address a record states, over plain HTTP.
 - **An item whose public page is gone** (Fab: `isActiveInLive` false, its listing a 404; 102 of 4,250) is still in the
   account, so it is written from the library entry alone, its unknown fields left empty and `online` left true, and
   **its source URL is the library link** (`/library/assets/<entitlement id>`) instead of the dead public one.

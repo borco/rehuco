@@ -103,6 +103,7 @@ from .node_status_indicator import NodeStatusIndicator
 from .recycle_bin_deleter import configured_deleter
 from .rehuco import BrowsersDock, RootCatalog, RootsPanel
 from .rehuco.catalog_table_model import RowKey
+from .rehuco.license_refresh import LicenseRefresh
 from .rehuco.map_roots_dialog import MapRootsDialog
 from .rehuco.selection_preview import SelectionPreview
 from .rehuco.table_browser import TableBrowser
@@ -111,6 +112,7 @@ from .resource_events import ResourceEvents
 from .scraping.library_scan_job import LibraryScanTarget
 from .scraping.scraper_wizard import ScraperWizard
 from .scraping.scraper_wizard_registry import register_library_scan_kind, shared_scraper_wizard_registry
+from .scraping.sites.fab_license_texts import FabLicenseTexts, fetch_public_json
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.checksum_trust_store import checksum_trust_path
 from .settings.document_session_settings import DocumentSessionSettings
@@ -510,6 +512,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         # a resource double-clicked in a browser or opened from the Roots view opens through the ordinary route (#377)
         self.__browsers_dock.open_requested.connect(self.__open_key)
+        # Refresh License on a browser's selection (#688): the jobs, and the question between them
+        self.__license_refresh: Final = LicenseRefresh(
+            self.__task_queue,
+            self.__task_queue_widget.model,
+            FabLicenseTexts(fetch_public_json).read_url,
+            self,
+            self.__rename_coordinator,
+        )
+        self.__browsers_dock.refresh_license_requested.connect(self.__license_refresh.refresh)
         self.__roots_panel.open_requested.connect(self.open_path)
         self.__roots_panel.open_folder_requested.connect(self.open_folder)
         # open_archive derives the companion from any file's name, an archive's or not

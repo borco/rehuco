@@ -22,7 +22,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 from uuid import uuid4
 
 from borco_core import atomic_write_text
@@ -35,6 +35,7 @@ from .learning_path_entries import (
     learning_path_ref,
     visible_learning_paths,
 )
+from .license_terms import LicenseTerms, LicenseTermsError, license_terms_path, read_license_terms, write_license_terms
 from .lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
 from .migrations import (
     CURRENT_FORMAT_VERSION,
@@ -50,7 +51,7 @@ from .plugins import (
     PluginRegistry,
 )
 from .record_versions import metadata_text
-from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, LICENSE_TERMS_KEY, RESERVED_KEYS
 from .rehu_locks import (
     OPTIONAL_ASSET_SCALAR_KEYS,
     OPTIONAL_INT_BLOCK_KEYS,
@@ -99,6 +100,17 @@ library rescan finds the record by."""
 # record carrying an author-page URL. The record form is canonical only when it has a URL to carry --
 # a bare name is stored as a plain string (:attr:`RehuDocument.authors` setter).
 type AuthorEntry = str | dict[str, Any]
+
+
+class JoinedLicense(NamedTuple):
+    """What reading a record's license text gave besides the text in its payload ([[assets#licenses]]).
+
+    :param text: what it adds to the text a record's version is hashed from; empty for none.
+    :param unreadable: why the ``.rehuterms`` could not be read; empty when it could, or is not there.
+    """
+
+    text: str
+    unreadable: str
 
 
 @dataclass(frozen=True)
@@ -177,6 +189,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :meth:`locked_stub_for_error`. Defaults to ``None``: a genuinely-parsed document.
     :param unreadable_sidecars: the per-user sidecars beside the file that could not be read, left out of the payload;
         see :attr:`unreadable_sidecars`. Set only by :meth:`load_with_text`. Defaults to none.
+    :param license_unreadable: why the ``.rehuterms`` beside the file could not be read, left out of the payload; see
+        :attr:`license_unreadable`. Set only by :meth:`load_with_text`. Defaults to empty: it was read, or is not there.
     """
 
     def __init__(  # pylint: disable=too-many-arguments
@@ -191,6 +205,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         on_disk_active_block_format_version: int | None = None,
         load_failure: LockReason | None = None,
         unreadable_sidecars: tuple[UnreadableSidecar, ...] = (),
+        license_unreadable: str = "",
     ) -> None:
         # Final forbids rebinding __data to a different dict, not mutating this one -- every
         # setter edits __data (or a dict nested inside it) in place, so it is always current
@@ -205,6 +220,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__on_disk_active_block_format_version = on_disk_active_block_format_version
         self.__unreadable_sidecars = unreadable_sidecars
         """See :attr:`unreadable_sidecars`. Not ``Final``: :meth:`reload` rebinds it."""
+        self.__license_unreadable = license_unreadable
+        """See :attr:`license_unreadable`. Not ``Final``: :meth:`reload` rebinds it."""
         self.__load_failure = load_failure
         """The load-failure reason (:attr:`load_failed`), or ``None`` for a genuinely-parsed document.
         Not ``Final``: :meth:`reload` rebinds it, which is what makes revert the fix-retry loop
@@ -283,6 +300,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         *,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
         username: str = DEFAULT_CURRENT_USERNAME,
+        license_terms: bool = False,
     ) -> RehuDocument:
         """Read and parse a ``.rehu`` file from disk.
 
@@ -305,11 +323,13 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :param plugins: the plugins installed here, for alias normalization; see :class:`RehuDocument`.
         :param username: the active identity; see :class:`RehuDocument`. Threaded so a file opened at an
             older block layout is migrated under the caller's identity, not a bare default.
+        :param license_terms: read the ``.rehuterms`` beside the file into the document too (:meth:`load_with_text`);
+            only a reader that shows or saves the text asks, so a scan opens nothing more than the record.
         :returns: a document backed by the parsed JSON object.
         :raises RehuFormatError: if the file cannot be parsed, its top-level JSON value is not an object,
             or it trips a sanity cap.
         """
-        return cls.load_with_text(path, plugins=plugins, username=username)[0]
+        return cls.load_with_text(path, plugins=plugins, username=username, license_terms=license_terms)[0]
 
     @classmethod
     def load_with_text(
@@ -318,6 +338,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         *,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
         username: str = DEFAULT_CURRENT_USERNAME,
+        license_terms: bool = False,
     ) -> tuple[RehuDocument, str]:
         """:meth:`load`, also handing back the text the document was parsed from -- so what is derived from the
         file's content (a :class:`~rehuco_core.RecordVersion`, #416) describes this very read.
@@ -326,11 +347,16 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         (:mod:`~rehuco_core.user_sidecars`, [[data-model#single-file]]), so the text is theirs too. One that cannot be
         read costs its own scope only: it is left out and named in :attr:`unreadable_sidecars`.
 
+        **The license text** (:attr:`license_terms`, [[assets#licenses]]) is joined in too when asked for, from the
+        ``.rehuterms``, and one that cannot be read is named in :attr:`license_unreadable`. A ``.rehu`` that holds the
+        key itself has it left out: only the sidecar may say it.
+
         :param path: path to the ``.rehu`` file.
         :param plugins: the plugins installed here; see :class:`RehuDocument`.
         :param username: the active identity; see :class:`RehuDocument`.
+        :param license_terms: read the license text too.
         :returns: the document, and the file's text followed by the sidecars' that were read
-            (:func:`~rehuco_core.user_sidecars.joined_text`).
+            (:func:`~rehuco_core.user_sidecars.joined_text`) and the license text's.
         :raises RehuFormatError: as :meth:`load`.
         """
         path = Path(path)
@@ -356,8 +382,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # and read as best it can be ([[data-model#schema-version]]) -- but it is not a v2 file
             # either, and silence would let a broken one pass for one.
             LOG.warning("%s: has a 'core' block but no usable format_version -- reading it as unversioned", path)
+        if data.pop(LICENSE_TERMS_KEY, None) is not None:
+            LOG.warning("%s: holds a %r key, which only its .rehuterms may; left out", path, LICENSE_TERMS_KEY)
         sidecars, unreadable = read_user_sidecars(path)
         join_user_sidecars(data, sidecars, username, unreadable)
+        joined = cls.__join_license_terms(data, path, license_terms)
         # read the file's own stamp before constructing: the migrator restamps the payload to the current
         # version on the way in, so this is the last moment the *file*'s version is visible
         document = cls(
@@ -368,8 +397,35 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             on_disk_format_version=cls.__coerced_version(data),
             on_disk_active_block_format_version=cls.__raw_active_block_version(data, plugins),
             unreadable_sidecars=tuple(unreadable),
+            license_unreadable=joined.unreadable,
         )
-        return document, joined_text(text, sidecars)
+        return document, joined_text(text, sidecars) + joined.text
+
+    @staticmethod
+    def __join_license_terms(data: dict[str, Any], record: Path, wanted: bool) -> JoinedLicense:
+        """Put the record's license text into its payload, if it was asked for and has a sidecar that can be read.
+
+        :param data: the record's payload, joined into.
+        :param record: the ``.rehu``.
+        :param wanted: whether the reader wants the text at all.
+        :returns: what the text adds to the text a version is hashed from, and why the sidecar could not be read --
+            empty when it could, or is not there, or was not asked for.
+        """
+        if not wanted:
+            return JoinedLicense("", "")
+        name = license_terms_path(record).name
+        try:
+            terms = read_license_terms(record)
+        except LicenseTermsError as error:
+            LOG.warning("%s", error)
+            return JoinedLicense("", str(error))
+        except OSError as error:
+            LOG.warning("%s could not be read: %s", name, error)
+            return JoinedLicense("", f"{name}: could not be read — {error}.")
+        if terms is None:
+            return JoinedLicense("", "")
+        data[LICENSE_TERMS_KEY] = terms.to_data()
+        return JoinedLicense(f"\0{name}\0{terms.to_text()}", "")
 
     @classmethod
     def open_or_locked(
@@ -378,6 +434,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         *,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
         username: str = DEFAULT_CURRENT_USERNAME,
+        license_terms: bool = False,
     ) -> RehuDocument:
         """Load ``path``, or return an **empty document bound to it, locked**, when it cannot be read.
 
@@ -397,11 +454,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :param path: path to the ``.rehu`` file.
         :param plugins: the plugins installed here, for alias normalization; see :class:`RehuDocument`.
         :param username: the active identity; see :class:`RehuDocument`.
+        :param license_terms: read the license text too (:meth:`load_with_text`).
         :returns: the loaded document, or an empty locked stub bound to ``path``.
         """
         path = Path(path)
         try:
-            return cls.load(path, plugins=plugins, username=username)
+            return cls.load(path, plugins=plugins, username=username, license_terms=license_terms)
         except (OSError, RehuFormatError) as error:
             return cls.locked_stub_for_error(path, error, plugins=plugins, username=username)
 
@@ -581,13 +639,26 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         short between the two leaves the per-user half landed, which the retried save merges onto; then the record,
         only where its text changes -- so a per-user write leaves the file everyone edits untouched.
 
+        **The license text goes between them** ([[assets#licenses]], #688), to its ``.rehuterms`` and only where it
+        differs from what is there. A payload that holds none leaves the file as it is: a writer that read the record
+        without the text -- progress, a Measure, a value rename -- never removes it, and neither does a document, whose
+        text is only ever emptied.
+
         :param target: the record's path.
         :raises UserSidecarError: the payload holds fields for a sidecar that cannot be read, which is never written
             over.
+        :raises LicenseTermsError: the payload holds license text and the ``.rehuterms`` cannot be read, which is
+            never written over either.
         :raises OSError: a file could not be read or written.
         """
-        record, sidecars = split_user_sidecars(self.payload_to_write())
+        payload = self.payload_to_write()
+        terms = payload.pop(LICENSE_TERMS_KEY, None)
+        record, sidecars = split_user_sidecars(payload)
         write_user_sidecars(target, sidecars)
+        if terms is not None:
+            wanted = LicenseTerms.from_data(terms)
+            if read_license_terms(target) != wanted:
+                write_license_terms(target, wanted)
         text = self.__record_text(record)
         try:
             current = target.read_text(encoding="utf-8")
@@ -616,7 +687,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         :returns: the document's canonical on-disk text, trailing newline included.
         """
-        return self.__record_text(split_user_sidecars(self.payload_to_write())[0])
+        return self.__record_text(split_user_sidecars(self.__without_terms())[0])
 
     def serialize_user_sidecars(self) -> dict[str, str]:
         """Render each per-user sidecar a save writes beside this document, the way :meth:`serialize` renders the
@@ -625,8 +696,25 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :returns: each sidecar's text, by the slug its file name carries (:func:`~rehuco_core.user_slug`), in slug
             order.
         """
-        sidecars = split_user_sidecars(self.payload_to_write())[1]
+        sidecars = split_user_sidecars(self.__without_terms())[1]
         return {slug: sidecar_text(sidecars[slug]) for slug in sorted(sidecars)}
+
+    def serialize_license_terms(self) -> str | None:
+        """Render the ``.rehuterms`` a save writes beside this document, the way :meth:`serialize` renders the record
+        ([[assets#licenses]]).
+
+        :returns: its text; ``None`` when the document holds no license text, which a save leaves as it is.
+        """
+        terms = self.license_terms
+        return None if terms is None else terms.to_text()
+
+    def __without_terms(self) -> dict[str, Any]:
+        """What a save writes to the record and its per-user sidecars: the payload without the license text, which has a
+        file of its own.
+
+        :returns: the payload, sharing its values with :attr:`data`.
+        """
+        return {key: value for key, value in self.payload_to_write().items() if key != LICENSE_TERMS_KEY}
 
     @staticmethod
     def __record_text(record: dict[str, Any]) -> str:
@@ -768,7 +856,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """
         if self.__path is None:
             raise ValueError("no path to reload from -- document was not loaded from a file")
-        fresh = RehuDocument.open_or_locked(self.__path, plugins=self.__plugins, username=self.__username)
+        fresh = RehuDocument.open_or_locked(
+            self.__path, plugins=self.__plugins, username=self.__username, license_terms=True
+        )
         self.__data.clear()
         self.__data.update(fresh.data)
         self.__claimed_keys.clear()
@@ -783,6 +873,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         # public surface -- a stub's lock_reasons is exactly its single load-failure reason (lock_reasons)
         self.__load_failure = fresh.lock_reasons[0] if fresh.load_failed else None
         self.__unreadable_sidecars = fresh.unreadable_sidecars
+        self.__license_unreadable = fresh.license_unreadable
         # the freshly-read file is, by definition, unchanged: rebase the `updated` bump's baseline on it
         # (#142), so a save right after a revert reads as the no-op it is
         self.__saved_metadata = self.__metadata_text()
@@ -866,6 +957,36 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         Tracks :meth:`reload`, so a hand-fix is picked up by it.
         """
         return self.__unreadable_sidecars
+
+    @property
+    def license_terms(self) -> LicenseTerms | None:
+        """The record's license text ([[assets#licenses]], #688), held in the payload as the per-user sidecars' fields
+        are and written to its ``.rehuterms`` by a save, never to the record.
+
+        :returns: the terms; ``None`` when there are none -- no sidecar, one that could not be read
+            (:attr:`license_unreadable`), or a payload kept from elsewhere that holds something else.
+        """
+        try:
+            data = self.__data.get(LICENSE_TERMS_KEY)
+            return None if data is None else LicenseTerms.from_data(data)
+        except LicenseTermsError as error:
+            LOG.warning("%s: the license text is left out: %s", self.__path, error)
+            return None
+
+    @license_terms.setter
+    def license_terms(self, terms: LicenseTerms | None) -> None:
+        if terms is None:
+            self.__data.pop(LICENSE_TERMS_KEY, None)
+        else:
+            self.__data[LICENSE_TERMS_KEY] = terms.to_data()
+
+    @property
+    def license_unreadable(self) -> str:
+        """Why the ``.rehuterms`` beside the record could not be read, starting with its file name; empty when it could,
+        or is not there. Not a lock: the record stays editable, and a save never writes the text over that file.
+        Tracks :meth:`reload`, so a hand-fix is picked up by it.
+        """
+        return self.__license_unreadable
 
     @property
     def own_sidecar_unreadable(self) -> bool:

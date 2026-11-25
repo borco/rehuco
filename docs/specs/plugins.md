@@ -273,7 +273,8 @@ and description view; the main editor, the description and the images editors; p
 inspection set — save preview, on disk, log, checksums, files ([[plugins#files-subdock]]) — and then **the type's
 own**: a reference pack adds content images (the browse over its archived and loose images,
 [[reference-images#modes]]), a tutorial adds its player, its video tree and its notes ([[plugins#in-app-player]],
-[[plugins#video-tree]], [[plugins#video-notes-dock]]), a collection adds nothing. The
+[[plugins#video-tree]], [[plugins#video-notes-dock]]), an asset adds its license text ([[assets#licenses]]), a
+collection adds nothing. The
 images sub-dock doubles as the drop target of [[acquisition-tooling#drag-drop-aids]]. The surfaces are the
 viewer/editor pair ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and is the same
 shell the catalog browser later opens viewers into ([[plugins#browsers]]). See [[sequence-open-document]] and
@@ -743,8 +744,14 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     `resource_key`, so a row whose root is gone from the file is left out. *Copy paths* is for people — one path per
     line, every path in double quotes as Explorer's *Copy as path* writes them, with a newline, a carriage return and
     a quote written `\n`, `\r` and `\"` and nothing else escaped, so it reads, not reverses (`C:\Users\new` already
-    holds `\n`). *Copy paths as JSON* is for scripts — a list of strings, one per line, that reads back exactly. Both
-    copy plain text only, never a file list, so a paste into Explorer copies no folders.
+    holds `\n`). *Copy paths as JSON* is for scripts — a list with an object for each resource, one key per line, that
+    reads back exactly: its `path` and, for an asset that has a `.rehuterms`, its `license` (#688,
+    [[assets#licenses]]); that one waits for a worker that asks the disk which assets have one. Both copy plain text
+    only, never a file list, so a paste into Explorer copies no folders.
+  - **Refresh License** (#688, [[assets#licenses]]). With rows selected, the entry between *Open in Web Browser* and the
+    copies reads the selected assets' licenses again and compares them with the texts saved in their records; it is
+    disabled while no selected row is an asset. A record with no text gets one, and the user is asked, in a dialog that
+    does not block the window, which licenses' differing texts to replace.
   - **Open in Web Browser** (#679, [[assets#install]]). With rows selected, the entry above the copies opens each
     selected record's primary source URL in the system's browser, from the cache alone, so an offline root does not
     matter: the table's order, an address shared by several records once, and only `http` and `https` addresses naming a host

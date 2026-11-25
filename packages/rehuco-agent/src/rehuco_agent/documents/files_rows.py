@@ -174,15 +174,17 @@ INTERACTIVE_KINDS: Final = frozenset(
         FileKind.EXCLUDED,
         FileKind.CONTENT,
         FileKind.FOREIGN_RECORD,
+        FileKind.OWN_LICENSE,
     }
 )
 """Which kinds a reader can act on, and therefore which rows are drawn enabled (#266).
 
+:data:`~FileKind.OWN_LICENSE` is here for the License subdock a double-click shows (#688), or the system's app for a
+record whose type has none.
+
 The ones that are **not** here are each a deliberate refusal. :data:`~FileKind.OWN_RECORD` is the
 document already on screen -- opening a second view of it is the one thing a double-click must not do.
 :data:`~FileKind.OWN_USER_STATE` is that document's per-user half, which it already shows (#513).
-:data:`~FileKind.OWN_LICENSE` waits for the license subdock a double-click will show (#688); until then the
-system has no handler for the file.
 A foreign record's sidecar and a foreign record's content belong to a resource this document cannot
 speak for: its screenshots are curated in *its* images dock and its content is covered by *its*
 checksums, so there is nothing here to do with either but see that it is there. A

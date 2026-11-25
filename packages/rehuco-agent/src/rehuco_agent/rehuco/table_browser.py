@@ -26,7 +26,7 @@ from .catalog_table_model import (
     CatalogTotals,
     RowKey,
 )
-from .copied_paths import PathsWriter, json_paths, quoted_paths
+from .copied_paths import CopyFormat, json_paths, quoted_paths
 from .filter_line import SCOPE_SEPARATOR, SCOPE_TOKEN, parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 from .status_line_label import StatusLineLabel
@@ -50,11 +50,15 @@ FILTER_HELP: Final = (
 )
 """The filter line's tooltip: its grammar, under whatever it could not apply."""
 
-COPY_PATHS_ENTRIES: Final[tuple[tuple[str, PathsWriter], ...]] = (
-    ("Copy paths", quoted_paths),
-    ("Copy paths as JSON", json_paths),
+COPY_PATHS_ENTRIES: Final = (
+    CopyFormat("Copy paths", quoted_paths),
+    CopyFormat("Copy paths as JSON", json_paths, names_licenses=True),
 )
-"""The menu's entries for a selection (#646), in menu order: each one's text and the format it copies in."""
+"""The menu's entries for a selection (#646), in menu order: each one's text and the format it copies in; the JSON also
+names each asset's license text (#688)."""
+
+REFRESH_LICENSE_TEXT: Final = "Refresh License"
+"""The menu's entry that reads the selected assets' licenses again and compares them with the texts saved (#688)."""
 
 OPEN_PAGES_TEXT: Final = "Open in Web Browser"
 """The menu's entry that opens the selected records' pages (#679)."""
@@ -103,11 +107,17 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     """Emitted with the new :attr:`current_resource` -- a ``(root_id, relative)`` pair, or ``None`` -- whenever it
     changes: by a selection, or by the selected row itself being renamed or removed."""
 
-    copy_paths_requested: Signal = Signal(object, object)
+    copy_paths_requested: Signal = Signal(object, object, object)
     """Emitted when *Copy paths* or *Copy paths as JSON* is chosen (#646), with the selected rows'
-    :data:`~rehuco_agent.rehuco.catalog_table_model.RowKey` tuple in the table's order and the
-    :data:`~.copied_paths.PathsWriter` that writes their paths: the browser cannot resolve a key to a path, the catalog
-    can. Typed as plain ``object`` for the reason ``BrowsersDock.open_requested`` is."""
+    :data:`~rehuco_agent.rehuco.catalog_table_model.RowKey` tuple in the table's order, the
+    :class:`~.copied_paths.CopyFormat` that writes their paths and, for a format that names licenses, which of the rows
+    are assets (#688): the browser cannot resolve a key to a path, the catalog can. Typed as plain ``object`` for the
+    reason ``BrowsersDock.open_requested`` is."""
+
+    refresh_license_requested: Signal = Signal(object)
+    """Emitted when *Refresh License* is chosen (#688), with the selected rows'
+    :data:`~rehuco_agent.rehuco.catalog_table_model.RowKey` tuple in the table's order: the catalog resolves them to
+    records. Typed as plain ``object``, as above."""
 
     DEFAULT_NAME: Final = DEFAULT_BROWSER_NAME
     """What a browser made without a name is called."""
@@ -350,6 +360,23 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         return sorted(index.row() for index in self.__ui.catalog_view.selectionModel().selectedRows())
 
+    def __selected_assets(self) -> frozenset[RowKey]:
+        """Which of the selected rows are assets (#688).
+
+        :returns: their keys.
+        """
+        keys = (self.__model.row_key(row) for row in self.__selected_rows() if self.__model.is_asset(row))
+        return frozenset(key for key in keys if key is not None)
+
+    def __request_copy(self, selected: tuple[RowKey, ...], copy_format: CopyFormat) -> None:
+        """Ask for the selected rows' paths to be copied in a format.
+
+        :param selected: the selected rows' keys, in the table's order.
+        :param copy_format: the format.
+        """
+        assets = self.__selected_assets() if copy_format.names_licenses else frozenset[RowKey]()
+        self.copy_paths_requested.emit(selected, copy_format, assets)
+
     def __selected_pages(self) -> tuple[str, ...]:
         """The web pages of the selected rows' records (#679).
 
@@ -431,8 +458,8 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __on_context_menu(self, position: QPoint) -> None:
         """Open the table's menu, if it has anything to offer: an Authors cell offers to filter by each of its authors
-        (#460), and a selection to open its rows' pages (#679) or copy their paths (#646), after a separator when both
-        do. A cell with no authors and nothing selected opens nothing.
+        (#460), and a selection to open its rows' pages (#679), refresh their licenses (#688) or copy their paths
+        (#646), after a separator when both do. A cell with no authors and nothing selected opens nothing.
 
         :param position: where it was asked for, in the table's viewport coordinates.
         """
@@ -453,10 +480,13 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
                 open_pages = menu.addAction(OPEN_PAGES_TEXT)
                 open_pages.setEnabled(bool(pages))
                 open_pages.triggered.connect(lambda _checked=False: open_web_pages(self, pages))
-                for text, write in COPY_PATHS_ENTRIES:
-                    action = menu.addAction(text)
+                refresh = menu.addAction(REFRESH_LICENSE_TEXT)
+                refresh.setEnabled(bool(self.__selected_assets()))
+                refresh.triggered.connect(lambda _checked=False: self.refresh_license_requested.emit(selected))
+                for copy_format in COPY_PATHS_ENTRIES:
+                    action = menu.addAction(copy_format.text)
                     action.triggered.connect(
-                        lambda _checked=False, writer=write: self.copy_paths_requested.emit(selected, writer)
+                        lambda _checked=False, chosen=copy_format: self.__request_copy(selected, chosen)
                     )
             menu.exec(view.viewport().mapToGlobal(position))
         finally:

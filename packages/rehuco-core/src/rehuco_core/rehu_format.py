@@ -25,8 +25,13 @@ CORE_BLOCK_KEY: Final = "core"
 holds the common fields every type shares -- :data:`~rehuco_core.CORE_PLUGIN` describes it, but its *name*
 is grammar and lives here."""
 
-RESERVED_KEYS: Final = frozenset({FORMAT_VERSION_KEY, CORE_BLOCK_KEY})
-"""The two top-level ``.rehu`` keys that are not plugin blocks ([[data-model#rehu-format]]): the file's
-own version stamp, and the common core's block. The single source of truth
+LICENSE_TERMS_KEY: Final = "license_terms"
+"""Where a document holds its license text in memory ([[assets#licenses]], #688): the ``.rehuterms`` sidecar's terms,
+joined into the payload as the per-user sidecars are, so a save, a revert and a conflict treat them as the record's own.
+Never written into the ``.rehu``: a save splits it out to the sidecar, and one the file itself holds is not read."""
+
+RESERVED_KEYS: Final = frozenset({FORMAT_VERSION_KEY, CORE_BLOCK_KEY, LICENSE_TERMS_KEY})
+"""The top-level ``.rehu`` keys that are not plugin blocks ([[data-model#rehu-format]]): the file's own version
+stamp, the common core's block and the license text a document holds in memory. The single source of truth
 :class:`~rehuco_core.PluginRegistry` (no plugin may declare one) and ``RehuDocument`` (no document may
 misuse one as a block) both check against."""

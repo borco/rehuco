@@ -11,6 +11,8 @@ from uuid import UUID
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt
 from PySide6.QtGui import QGuiApplication, QPalette
 from rehuco_core import (
+    ASSET_PLUGIN,
+    DEFAULT_PLUGIN_REGISTRY,
     CatalogRow,
     RecordKind,
     catalog_path_key,
@@ -521,6 +523,16 @@ class CatalogTableModel(QAbstractTableModel):  # pylint: disable=too-many-instan
         if not 0 <= row < len(self.__rows):
             return ()
         return tuple(self.__rows[row].record.authors)
+
+    def is_asset(self, row: int) -> bool:
+        """Whether a row's record is an asset ([[assets#licenses]], #688), however it spells its type.
+
+        :param row: the row.
+        :returns: whether it is; ``False`` out of range.
+        """
+        if not 0 <= row < len(self.__rows):
+            return False
+        return DEFAULT_PLUGIN_REGISTRY.main_key(self.__rows[row].record.type) == ASSET_PLUGIN.key
 
     def url_of(self, row: int) -> str:
         """The primary source's URL of a row's record, as stored, without the blanks around it.

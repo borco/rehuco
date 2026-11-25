@@ -107,6 +107,7 @@ class SavePayload:  # pylint: disable=too-many-instance-attributes
                 "metadata_hash": base.metadata_hash,
                 "file_hash": base.file_hash,
                 "user_fields": [list(field) for field in base.user_fields],
+                "license_hash": base.license_hash,
             },
             "dropped": list(self.dropped),
             "discarded": list(self.discarded),
@@ -165,7 +166,10 @@ class SavePayload:  # pylint: disable=too-many-instance-attributes
             if not isinstance(field, list) or len(field) != 4 or not all(isinstance(part, str) for part in field):
                 raise ValueError("A saved record save's per-user field hash is malformed.")
             user_fields.append((field[0], field[1], field[2], field[3]))
-        return RecordVersion(metadata, file_hash, tuple(user_fields))
+        license_hash = value.get("license_hash", "")
+        if not isinstance(license_hash, str):
+            raise ValueError("A saved record save's license hash is malformed.")
+        return RecordVersion(metadata, file_hash, tuple(user_fields), license_hash)
 
 
 @dataclass(frozen=True, slots=True)

@@ -13,16 +13,14 @@ from collections.abc import Callable, Iterator, Mapping
 from typing import Any, Final
 from urllib.parse import quote, urlencode, urlsplit
 
-import requests
 from rehuco_core import LibraryCursor, LicenseTerms
 
 from ..browser_fetcher import PersonaLease
-from ..html_markdown import HtmlMarkdown
-from ..http_fetcher import HttpPageFetcher
-from ..library_site import LibraryEntry, ScannedItem, StoreOfflineError
-from ..protocols import FetchError, LoginRequiredError, PageGoneError
+from ..library_site import LibraryEntry, ScannedItem
+from ..protocols import FetchError, PageGoneError
 from ..results import InvalidScrapeResultError, ScrapeResult
-from .fab import EULA_URL, HOSTS, LIBRARY_ASSET_URL, LISTING_URL, NON_SLUG, SITE_URL, Fab
+from .fab import HOSTS, LIBRARY_ASSET_URL, LISTING_URL, NON_SLUG, SITE_URL, Fab
+from .fab_license_texts import FabLicenseTexts
 from .fab_session_fetcher import FabSessionFetcher
 
 LOG: Final = logging.getLogger(__name__)
@@ -35,25 +33,6 @@ LIBRARY_QUERY: Final = {"sort_by": "createdAt", "source": "acquired"}
 
 CHECK_QUERY: Final = {"source": "acquired", "count": 0, "aggregate_on": "category_per_listing_type"}
 """A request that lists nothing and answers only for a session that may read the library."""
-
-EULA_JSON_URL: Final = SITE_URL + "/i/eula/fab_eula"
-"""The Standard License's text, public JSON whose ``body`` is HTML."""
-
-EULA_TITLE: Final = "Standard License"
-"""What the Standard License's sidecar is titled: Fab's own name for the group."""
-
-CC_TEXTS: Final = {
-    "license/cc/cc-by": (
-        "Creative Commons Attribution 4.0 International (CC BY 4.0)",
-        "https://creativecommons.org/licenses/by/4.0/legalcode.txt",
-    ),
-}
-"""The licenses whose text is a page of its own, by Fab's path: the title the sidecar takes and where the plain text is
-read. Fab's *Creative Commons* tiers all arrive as ``license/cc/cc-by``, the generic index its group links to being no
-text."""
-
-STANDARD_PATH_PREFIX: Final = "license/standard/"
-"""What the path of each Standard License tier starts with: one text covers them all."""
 
 OWNED_LICENSE_ORDER: Final = (
     ("standard", "professional"),
@@ -170,7 +149,8 @@ class FabLibrarySession:
         return ScannedItem(checked, str(fields["url"]), license_path)
 
     def read_license(self, path: str) -> LicenseTerms | None:
-        """Read a license's text.
+        """Read a license's text, through the persona for Fab's own and plainly for the Creative Commons page
+        (:class:`~.fab_license_texts.FabLicenseTexts`).
 
         :param path: Fab's stable id for the license (``license/cc/cc-by``).
         :returns: the terms; ``None`` for a license Fab states no text for, the Marketplace's.
@@ -178,24 +158,7 @@ class FabLibrarySession:
         :raises StoreOfflineError: Fab, or the page holding a Creative Commons text, does not answer.
         :raises FetchError: Fab's text is not the JSON it should be.
         """
-        today = datetime.date.today()
-        if path.startswith(STANDARD_PATH_PREFIX):
-            body = self.__get_json(EULA_JSON_URL).get("body")
-            if not isinstance(body, str) or not body:
-                raise FetchError(f"Fab answered no text for its Standard License: {EULA_JSON_URL}")
-            return LicenseTerms(EULA_TITLE, EULA_URL, today, HtmlMarkdown.convert(body))
-        if path in CC_TEXTS:
-            title, url = CC_TEXTS[path]
-            try:
-                page = HttpPageFetcher().fetch(url)
-            except (requests.RequestException, LoginRequiredError) as error:
-                raise StoreOfflineError(f"The license text could not be read: {url}: {error}") from error
-            # a refusal that passes comes back as a page: its body is never a license's text
-            if page.status != 200 or not page.html.strip():
-                raise StoreOfflineError(f"The license text could not be read: {url} answered {page.status}")
-            return LicenseTerms(title, url, today, page.html.strip())
-        LOG.info("Fab states no text for the license %s.", path)
-        return None
+        return FabLicenseTexts(self.__get_json).read(path)
 
     def __get_json(self, url: str) -> dict[str, Any]:
         """One request to Fab, its answer read as a JSON object.

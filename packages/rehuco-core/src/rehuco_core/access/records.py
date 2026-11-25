@@ -2,10 +2,12 @@
 against a :class:`~rehuco_core.RecordVersion`, the text as stored, legacy conversion. Reverting is loading again."""
 
 import logging
+import os
 from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Final
 
+from ..license_terms import license_terms_path
 from ..progress_renames import reattach_renamed_progress
 from ..record_file_lock import locked_record
 from ..record_versions import RecordVersion, merge_users, record_version, same_details
@@ -116,6 +118,7 @@ class Records:
                     users_merged = self.__merge_theirs(
                         document, theirs, base, username=username, overwrite=overwrite, dropped=dropped
                     )
+                self.__settle_license(document, theirs, base, overwrite=overwrite)
                 # a Measure's lengths are the file's: one that landed after this save's snapshot is kept, not undone
                 take_videos(document, theirs[0])
                 # whether this write changes the resource is a question about the file, not about the document's own
@@ -157,6 +160,38 @@ class Records:
         if theirs_version.metadata_hash != base.metadata_hash and not overwrite:
             raise RecordConflict(theirs_document, theirs_version)
         return merge_users(document.data, theirs_document.data, base, username, dropped=dropped)
+
+    @staticmethod
+    def __settle_license(
+        document: RehuDocument,
+        theirs: tuple[RehuDocument, RecordVersion],
+        base: RecordVersion | None,
+        *,
+        overwrite: bool,
+    ) -> None:
+        """Judge the license text on disk against the one ``document`` holds ([[assets#licenses]], #688).
+
+        A document that holds none never removes the file's, so it takes it: what was saved and what the document
+        shows then agree. One that holds a text is refused when the file's was changed since ``base`` into another --
+        but not when the file already holds the document's own, as after a save cut short between the text and the
+        record, whose retry must go through.
+
+        :param document: what is about to be written, given the file's text when it holds none.
+        :param theirs: the record on disk now, and its version.
+        :param base: the version ``document`` was read at, or ``None`` for one never read from this file.
+        :param overwrite: write over a text changed on disk since ``base``.
+        :raises RecordConflict: the text on disk changed since ``base`` into one that is not the document's, and
+            ``overwrite`` is not set.
+        """
+        theirs_document, theirs_version = theirs
+        mine, on_disk = document.license_terms, theirs_document.license_terms
+        if mine is None:
+            if on_disk is not None:
+                document.license_terms = on_disk
+        elif (
+            base is not None and not overwrite and theirs_version.license_hash != base.license_hash and on_disk != mine
+        ):
+            raise RecordConflict(theirs_document, theirs_version)
 
     def record_progress(  # pylint: disable=too-many-arguments
         self,
@@ -306,7 +341,7 @@ class Records:
 
     def stored_files(self, key: ResourceKey) -> list[tuple[str, str]]:
         """A record's files as stored: the record, then each of its per-user sidecars ([[data-model#single-file]]) --
-        every user's, in name order. A legacy ``.tc`` has none.
+        every user's, in name order -- and its license text's ([[assets#licenses]]). A legacy ``.tc`` has none.
 
         :param key: the record.
         :returns: each file's name and text; a sidecar gone between the listing and its read is left out.
@@ -316,7 +351,11 @@ class Records:
         files = [(path.name, path.read_text(encoding="utf-8"))]
         if path.suffix.lower() == LEGACY_SUFFIX:
             return files
-        for sidecar in sorted(user_sidecar_paths(path).values(), key=lambda sidecar: sidecar.name):
+        sidecars = sorted(user_sidecar_paths(path).values(), key=lambda sidecar: sidecar.name)
+        terms = license_terms_path(path)
+        if os.path.isfile(terms):
+            sidecars.append(terms)
+        for sidecar in sidecars:
             try:
                 files.append((sidecar.name, sidecar.read_text(encoding="utf-8")))
             except FileNotFoundError:
@@ -382,7 +421,7 @@ class Records:
         :raises OSError: it could not be read.
         :raises RehuFormatError: it is not a readable record.
         """
-        document, text = RehuDocument.load_with_text(path, username=username)
+        document, text = RehuDocument.load_with_text(path, username=username, license_terms=True)
         return document, record_version(document.data, text)
 
     def __read_existing(self, path: Path, username: str) -> tuple[RehuDocument, RecordVersion] | None:
@@ -418,8 +457,9 @@ class Records:
 
     @staticmethod
     def __signature(path: Path) -> FileSignature | None:
-        """A record's modification time and size, with its per-user sidecars' -- the latest time and the sizes summed
-        -- since it is read with them ([[data-model#single-file]]): another device's progress is a change to it too.
+        """A record's modification time and size, with its per-user sidecars' and its license text's -- the latest time
+        and the sizes summed -- since it is read with them ([[data-model#single-file]], [[assets#licenses]]): another
+        device's progress is a change to it too, and so is its license text.
 
         :param path: the record.
         :returns: its signature, or ``None`` when the record cannot be stat'ed or its folder listed -- what a watch
@@ -431,9 +471,9 @@ class Records:
         except OSError:
             return None
         mtime_ns, size = stat.st_mtime_ns, stat.st_size
-        for sidecar in sidecars:
+        for sidecar in (*sidecars, license_terms_path(path)):
             try:
-                status = sidecar.stat()
+                status = os.stat(sidecar)
             except OSError:
                 continue
             mtime_ns, size = max(mtime_ns, status.st_mtime_ns), size + status.st_size

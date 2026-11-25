@@ -21,10 +21,11 @@ from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsFocusTracker, QtAdsLayout, QtAdsMaximizeHandler, QtAdsTitleBarActionVisibility
 from borco_pyside.theming import ActionIconThemeHandler, GlyphActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity, ToolBarStretch
-from PySide6.QtCore import QEvent, QMimeData, QObject, Qt, Signal, SignalInstance
-from PySide6.QtGui import QAction, QColor, QDropEvent, QIcon
+from PySide6.QtCore import QEvent, QMimeData, QObject, Qt, QUrl, Signal, SignalInstance
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QDropEvent, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QToolBar, QWidget, QWidgetAction
 from rehuco_core import (
+    ASSET_PLUGIN,
     IMAGE_EXTENSIONS,
     REFERENCE_IMAGES_PLUGIN,
     TUTORIAL_PLUGIN,
@@ -87,6 +88,7 @@ from .document_fields import EDITOR_IMAGES_TAB, EDITOR_MAIN_TAB, VIEWER_DESCRIPT
 from .files_view import FilesView
 from .image_downloads import ImageDownloads
 from .latest_runner import LatestRunner
+from .license_panel import LicensePanel
 from .maximized_restore import folder_images, is_wide, relative_key, resolve_key
 from .name_suggestion_model import NameSuggestionModel
 from .notes_panel import NotesPanel
@@ -136,6 +138,7 @@ CONTENT_IMAGES_ICON_RESOURCE: Final = ":/icons/document_content_reference_images
 PLAYER_ICON_RESOURCE: Final = ":/icons/document_content_tutorials.svg"
 TREE_ICON_RESOURCE: Final = ":/icons/document_video_tree.svg"
 NOTES_ICON_RESOURCE: Final = ":/icons/document_video_notes.svg"
+LICENSE_ICON_RESOURCE: Final = ":/icons/document_license.svg"
 DEFAULT_LAYOUT_ICON_RESOURCE: Final = ":/icons/document_default_layout.svg"
 
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
@@ -151,6 +154,7 @@ STAGE_NOTES_NAME: Final = "stage_notes"
 PLAYER_DOCK_NAME: Final = "player"
 TREE_DOCK_NAME: Final = "tree"
 NOTES_DOCK_NAME: Final = "notes"
+LICENSE_DOCK_NAME: Final = "license"
 """Object names of the read-only inspection docks (#111), this resource's own log (#200), its
 per-file checksum table (#244), its own folder (#266), its content images (#221) and a tutorial's player (#317);
 namespaced apart from the ``viewer:``/``editor:`` docks, and the keys `restore_state` restores their
@@ -165,6 +169,7 @@ CONTENT_IMAGES_DOCK_TITLE: Final = "Content Images"
 PLAYER_DOCK_TITLE: Final = "Player"
 TREE_DOCK_TITLE: Final = "Tree"
 NOTES_DOCK_TITLE: Final = "Notes"
+LICENSE_DOCK_TITLE: Final = "License"
 """Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
 write) and the verbatim on-disk file -- of this resource's own log (#200), of its own folder (#266), of
 its content images (#221, #392) and of a tutorial's player (#317)."""
@@ -176,6 +181,7 @@ CONTENT_IMAGES_DOCK_MIN_HEIGHT: Final = 160
 PLAYER_DOCK_MIN_HEIGHT: Final = 220
 TREE_DOCK_MIN_HEIGHT: Final = 160
 NOTES_DOCK_MIN_HEIGHT: Final = 160
+LICENSE_DOCK_MIN_HEIGHT: Final = 160
 IMAGES_DOCK_MIN_HEIGHT: Final = 200
 """Size floors a splitter drag can't cross, chosen by eye against a real layout so each dock keeps its
 header and summary readable rather than being squeezed to a sliver."""
@@ -258,12 +264,13 @@ TYPE_DOCK_NAMES: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
     {
         REFERENCE_IMAGES_PLUGIN.key: frozenset({CONTENT_IMAGES_DOCK_NAME}),
         TUTORIAL_PLUGIN.key: frozenset({PLAYER_DOCK_NAME, TREE_DOCK_NAME, NOTES_DOCK_NAME}),
+        ASSET_PLUGIN.key: frozenset({LICENSE_DOCK_NAME}),
     }
 )
 """The sub-docks each resource type adds to the common shell ([[plugins#dock-shell]], #320), keyed by
-the type's main key: a reference pack's Content Images (#221); a tutorial's player (#317); a collection
-nothing. [[plugins#core-vs-plugin]] applied to docks -- the viewers, the editors and the inspection set
-are every document's, and the rest is the type's own."""
+the type's main key: a reference pack's Content Images (#221); a tutorial's player (#317); an asset's License
+(#688); a collection nothing. [[plugins#core-vs-plugin]] applied to docks -- the viewers, the editors and the
+inspection set are every document's, and the rest is the type's own."""
 
 
 def type_dock_names(layout_type: str) -> frozenset[str]:
@@ -902,6 +909,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         self.__player_dock: QtAds.CDockWidget | None = None
         self.__tree_view: VideoTreeView | None = None
         self.__notes_panel: NotesPanel | None = None
+        self.__license_panel: LicensePanel | None = None
+        self.__license_dock: QtAds.CDockWidget | None = None
         self.__awaiting_type = model.pending
         self.__type_docks: dict[str, QtAds.CDockWidget] = self.__add_type_docks(type_dock_names(self.layout_type))
         # the archives are found relative to the path, so a path change re-enumerates them; connected
@@ -1167,6 +1176,8 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__tree_view.detach()
         if self.__notes_panel is not None:
             self.__notes_panel.detach()
+        if self.__license_panel is not None:
+            self.__license_panel.detach()
 
     def stop_playback(self) -> None:
         """Stop the player, so it records where it stopped, and write at once what the recorder then holds (#317).
@@ -2023,14 +2034,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             dock = self.__type_docks.pop(name, None)
             if dock is None:
                 continue
-            if name in (PLAYER_DOCK_NAME, TREE_DOCK_NAME, NOTES_DOCK_NAME) and self.__player_view is not None:
-                self.__player_view.panels.detach()
-            if name == PLAYER_DOCK_NAME and self.__player_view is not None:
-                self.__player_view.stop()
-            if name == TREE_DOCK_NAME and self.__tree_view is not None:
-                self.__tree_view.detach()
-            if name == NOTES_DOCK_NAME and self.__notes_panel is not None:
-                self.__notes_panel.detach()
+            self.__let_go_of_type_view(name)
             self.__hide_dock(dock)
             self.__toolbar.removeAction(dock.toggleViewAction())
             self.__dock_manager.removeDockWidget(dock)
@@ -2049,6 +2053,26 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
                 self.__tree_view = None
             if name == NOTES_DOCK_NAME:
                 self.__notes_panel = None
+            if name == LICENSE_DOCK_NAME:
+                self.__license_panel = None
+                self.__license_dock = None
+
+    def __let_go_of_type_view(self, name: str) -> None:
+        """Let the view of a type dock about to be removed stop following the document and everything else it follows
+        (#320, #688).
+
+        :param name: the dock's name.
+        """
+        if name in (PLAYER_DOCK_NAME, TREE_DOCK_NAME, NOTES_DOCK_NAME) and self.__player_view is not None:
+            self.__player_view.panels.detach()
+        if name == PLAYER_DOCK_NAME and self.__player_view is not None:
+            self.__player_view.stop()
+        if name == TREE_DOCK_NAME and self.__tree_view is not None:
+            self.__tree_view.detach()
+        if name == NOTES_DOCK_NAME and self.__notes_panel is not None:
+            self.__notes_panel.detach()
+        if name == LICENSE_DOCK_NAME and self.__license_panel is not None:
+            self.__license_panel.detach()
 
     def __add_type_docks(self, names: frozenset[str]) -> dict[str, QtAds.CDockWidget]:
         """Build the docks ``names`` asks for, each hidden and stacked with the inspection set (#320).
@@ -2080,6 +2104,10 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         if NOTES_DOCK_NAME in names:
             self.__notes_panel = NotesPanel(self.__model, self.__host.widget)
             docks[NOTES_DOCK_NAME] = self.__add_notes_dock(self.__notes_panel)
+        if LICENSE_DOCK_NAME in names:
+            self.__license_panel = LicensePanel(self.__model, self.__host.widget)
+            self.__license_dock = self.__add_license_dock(self.__license_panel)
+            docks[LICENSE_DOCK_NAME] = self.__license_dock
         self.__add_player_panels()
         return docks
 
@@ -3102,6 +3130,7 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
         view.images_activated.connect(self.__on_folder_images_activated)
         view.video_activated.connect(self.__on_video_activated)
         view.video_clicked.connect(self.__on_video_clicked)
+        view.license_activated.connect(self.__on_license_activated)
         view.status_message.connect(self.status_message)
         return self.__add_hidden_inspection_dock(
             FILES_DOCK_NAME,
@@ -3238,6 +3267,41 @@ class DocumentSubDocks(QObject):  # pylint: disable=too-many-instance-attributes
             self.__player_view.surface_clicked.connect(self.__on_surface_clicked)
             panel.set_video(self.__player_view.current_key)
         return dock
+
+    def __add_license_dock(self, panel: LicensePanel) -> QtAds.CDockWidget:
+        """Build an asset's License dock, stacked with the inspection docks and hidden (#688).
+
+        Its *Edit* action sits on the dock's title bar, and a double-click on the record's ``.rehuterms`` in the Files
+        sub-dock shows it (:meth:`__on_license_activated`).
+
+        :param panel: the license panel.
+        :returns: the dock, hidden.
+        """
+        dock = self.__add_hidden_inspection_dock(
+            LICENSE_DOCK_NAME,
+            LICENSE_DOCK_TITLE,
+            LICENSE_ICON_RESOURCE,
+            panel,
+            insert_mode=QtAds.CDockWidget.eInsertMode.ForceNoScrollArea,
+            min_content_height=LICENSE_DOCK_MIN_HEIGHT,
+        )
+        dock.setTitleBarActions(panel.title_bar_actions)
+        QtAdsTitleBarActionVisibility(dock)
+        return dock
+
+    def __on_license_activated(self, path: object) -> None:
+        """Show the license text of a record whose ``.rehuterms`` was double-clicked in the Files sub-dock (#688): in
+        the License dock, in view mode -- or in the system's app where the record's type has no such dock.
+
+        :param path: the sidecar, as the object-typed relay carried it.
+        """
+        panel, dock = self.__license_panel, self.__license_dock
+        if panel is None or dock is None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+            return
+        panel.set_editing(False)
+        dock.toggleView(True)
+        dock.setAsCurrentTab()
 
     def __on_content_images_toggled(self, visible: bool) -> None:
         """Re-enumerate when the Content Images dock is shown; let go of its archives when it is hidden.
