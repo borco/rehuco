@@ -65,6 +65,7 @@ from rehuco_agent.main_window import (
 )
 from rehuco_agent.recycle_bin_deleter import RecycleBinDeleter
 from rehuco_agent.rehuco import BrowsersDock, RootCatalog, RootsPanel, selection_preview
+from rehuco_agent.rehuco.license_lookup import LicenseLookup
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.document_session_settings import (
     SESSION_VERSION,
@@ -7554,6 +7555,24 @@ def test_closing_detaches_the_rehuco_dock_from_the_queue(mocker: MockerFixture, 
     window.closeEvent(QCloseEvent())
 
     detach.assert_called_once()
+
+
+def test_closing_stops_the_browsers_license_lookup(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A lookup still out on a share delivers nothing into a window that is going (#688).
+
+    **Test steps:**
+
+    * spy on the lookups' ``stop``
+    * dispatch a close event
+    * verify it ran
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    stop = mocker.spy(LicenseLookup, "stop")
+
+    window.closeEvent(QCloseEvent())
+
+    stop.assert_called_once()
 
 
 def test_a_resource_double_clicked_in_the_rehuco_dock_opens_through_open_path(

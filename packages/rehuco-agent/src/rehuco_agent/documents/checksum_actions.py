@@ -23,6 +23,7 @@ from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu
 from rehuco_core import (
+    FINISHED_JOB_STATES,
     ChecksumJob,
     ChecksumRecordError,
     GenerateChecksumsJob,
@@ -461,13 +462,19 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         capture is under ([[appendices.task-queue#lifetime]]). A job that ended without a report --
         canceled, or failed before it established anything -- says nothing here, because a run that
         was stopped part-way has established nothing to say ([[data-model#checksums]]).
+
+        **A job whose row has not ended is not read yet, whatever it holds**: a run has its report a moment before its
+        row ends, and a finding told then would invite a verify that :func:`job_already_queued` refuses.
         """
         reported = ""
         clean = True
         finished = False
+        unfinished = [
+            self.__queue.job(status.serial) for status in self.__queue.jobs() if status.state not in FINISHED_JOB_STATES
+        ]
         for job in list(self.__pending):
             outcome = job.outcome
-            if outcome is None:
+            if outcome is None or job in unfinished:
                 continue
             self.__pending.remove(job)
             finished = True

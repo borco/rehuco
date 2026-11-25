@@ -222,7 +222,7 @@ class LicensePanel(QWidget):
         if reason:
             return html.escape(reason + UNREADABLE_HINT)
         if terms is None:
-            return html.escape(NO_TERMS_TEXT + (WRITE_HINT if editable else ""))
+            return html.escape(NO_TERMS_TEXT + (WRITE_HINT if editable and not self.__editing else ""))
         day = terms.read.isoformat()
         if terms.url is None:
             line = html.escape(f"Written for this item, {day}.")
@@ -263,6 +263,7 @@ class LicensePanel(QWidget):
         :param editing: whether the editors are to be shown.
         """
         self.__editing = editing
+        self.__ui.info_label.setText(self.__info(self.__model.license_terms, self.__editable()))
         if not editing:
             self.__render()
         page = 1 if editing else 0

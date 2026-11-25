@@ -3,9 +3,6 @@
 """
 
 import logging
-import os
-from dataclasses import replace
-from functools import partial
 from pathlib import Path
 from typing import Final, cast
 from uuid import UUID
@@ -35,14 +32,14 @@ from rehuco_core import (
 )
 
 from ..dock_maximize import attach_maximize_handler
-from ..documents.latest_runner import LatestRunner
 from ..filter_urls import filter_url_token
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.catalog_state_store import BrowserState, CatalogStateStore
 from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from .catalog_rows_loader import CatalogRowsLoad, CatalogRowsLoader
 from .catalog_table_model import RowKey
-from .copied_paths import CopiedPath, CopyFormat, PathsWriter
+from .copied_paths import CopiedPath, CopyFormat
+from .license_lookup import LicenseLookup
 from .root_catalog import RootCatalog
 from .root_storage import ROOT_STORAGE_OFFLINE_TOOLTIPS
 from .table_browser import TableBrowser
@@ -123,9 +120,9 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Every browser's dock, in the order the browsers were added."""
         self.__loader: Final = CatalogRowsLoader(catalog.rows, self)
         self.__loader.loaded.connect(self.__on_loaded)
-        self.__copies: Final = LatestRunner(self)
+        self.__license_lookup: Final = LicenseLookup(self)
         """What looks for the license texts a *Copy paths as JSON* names, off the GUI thread (#688)."""
-        self.__copies.read.connect(self.__on_copied)
+        self.__license_lookup.written.connect(self.__put_on_clipboard)
         self.__offline: dict[UUID, str] = {}
         self.__servers: dict[UUID, str] = {}
         """Why each root that cannot be reached cannot, by its id."""
@@ -381,6 +378,10 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     # endregion
 
+    def detach(self) -> None:
+        """Hear no more from a license lookup still out on a share, before the window goes (#688)."""
+        self.__license_lookup.stop()
+
     # region opening and closing a catalog's browsers
 
     def __open_browsers(self, file: RehucoFile) -> None:
@@ -530,35 +531,10 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if not copied:
             return
         if chosen.names_licenses:
-            self.__copies.start("copy", partial(BrowsersDock.__written, copied, chosen.write))
+            self.__license_lookup.start(copied, chosen.write)
         else:
-            self.__copies.discard()
-            BrowsersDock.__put_on_clipboard(chosen.write(copied))
-
-    @staticmethod
-    def __written(copied: list[CopiedPath], write: PathsWriter) -> str:
-        """Write the selection with the license texts that are there (a worker's).
-
-        :param copied: the resources, an asset's ``license`` the place its text would be.
-        :param write: the format.
-        :returns: the text.
-        """
-        return write(
-            replace(item, license=item.license if item.license is not None and os.path.isfile(item.license) else None)
-            for item in copied
-        )
-
-    def __on_copied(self, tag: str, result: object) -> None:
-        """Put what a worker wrote on the clipboard, or say it failed (GUI thread).
-
-        :param tag: what the work was.
-        :param result: the text, or the exception that ended it.
-        """
-        del tag
-        if isinstance(result, str):
-            BrowsersDock.__put_on_clipboard(result)
-        else:
-            LOG.error("The paths could not be copied: %s", result)
+            self.__license_lookup.discard()
+            self.__put_on_clipboard(chosen.write(copied))
 
     @staticmethod
     def __put_on_clipboard(text: str) -> None:
