@@ -17,7 +17,13 @@ from PySide6.QtGui import QDesktopServices, QKeySequence
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.license_panel import NO_TERMS_TEXT, READ_ONLY_HINT, UNREADABLE_HINT, LicensePanel
+from rehuco_agent.documents.license_panel import (
+    NO_TERMS_TEXT,
+    READ_ONLY_HINT,
+    UNREADABLE_HINT,
+    WRITE_HINT,
+    LicensePanel,
+)
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.description_editor_settings import shared_description_editor_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
@@ -145,15 +151,21 @@ def test_a_record_with_none_says_so_and_offers_writing_them(qtbot: QtBot, tmp_pa
     """**Test steps:**
 
     * open a record with no license text
-    * verify the line says none is saved, the title is empty and the viewer shows nothing
+    * verify the line says none is saved and offers writing them, the title is empty and the viewer shows nothing
+    * edit and verify the line offers it no more, then leave and verify it does again
     """
     panel = show(qtbot, make_model(tmp_path, None))
 
     ui = parts(panel)
-    assert ui.info_label.text().startswith(NO_TERMS_TEXT)
+    assert ui.info_label.text() == NO_TERMS_TEXT + WRITE_HINT
     assert ui.title_label.text() == ""
     assert ui.text_view.toPlainText() == ""
     assert ui.edit_action.isEnabled()
+
+    ui.edit_action.setChecked(True)
+    assert ui.info_label.text() == NO_TERMS_TEXT
+    ui.edit_action.setChecked(False)
+    assert ui.info_label.text() == NO_TERMS_TEXT + WRITE_HINT
 
 
 def test_a_sidecar_that_cannot_be_read_is_named_and_blocks_editing(qtbot: QtBot, tmp_path: Path) -> None:
@@ -214,6 +226,27 @@ def test_a_document_with_no_file_of_its_own_cannot_edit_its_terms_either(qtbot: 
 # endregion
 
 # region editing
+
+
+@mark.parametrize("editing", [False, True])
+def test_the_text_takes_all_the_height_the_title_and_the_line_leave(
+    qtbot: QtBot, tmp_path: Path, editing: bool
+) -> None:
+    """The title and the line under it keep their own height, and the terms, read or edited, get the rest.
+
+    **Test steps:**
+
+    * show the panel tall over a record with no text, reading and then editing
+    * verify the title is no taller than its hint and the text's part fills what is left
+    """
+    panel = show(qtbot, make_model(tmp_path, None))
+    panel.resize(500, 700)
+    panel.set_editing(editing)
+    ui = parts(panel)
+
+    qtbot.waitUntil(lambda: ui.text_stack.height() > 500)
+
+    assert ui.title_stack.height() <= ui.title_stack.sizeHint().height()
 
 
 def test_edit_swaps_the_viewer_for_a_title_line_and_the_editor_and_back(panel: LicensePanel) -> None:

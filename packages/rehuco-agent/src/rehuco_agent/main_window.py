@@ -2119,6 +2119,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__rehuco_settings.current_path = self.__root_catalog.rehuco_path or self.__remembered.deferred_rehuco
         self.__rehuco_settings.save(persistent_settings())
         self.__roots_panel.detach()
+        self.__browsers_dock.detach()
         self.__root_catalog.detach()
         # pause, wait, save, shut down (#202, [[appendices.task-queue#teardown]]) -- before the outer
         # dock layout is captured below
