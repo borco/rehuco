@@ -53,8 +53,18 @@
             "unknown"
           ]
         },
-        "license": { "type": "string" },
-        "license_url": { "type": "string" },
+        "licenses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "license": { "type": "string", "minLength": 1 },
+              "url": { "type": "string" }
+            },
+            "required": ["license"],
+            "additionalProperties": false
+          }
+        },
         "formats": { "type": "array", "items": { "type": "string" } },
         "compatibility": { "type": "object", "additionalProperties": { "type": "string" } },
         "source_updated": { "type": ["string", "null"] },

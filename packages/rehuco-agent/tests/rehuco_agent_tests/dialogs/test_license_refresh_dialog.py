@@ -27,7 +27,9 @@ def saved(name: str, day: datetime.date) -> SavedLicense:
     :param day: the day it read it.
     :returns: the record.
     """
-    return SavedLicense(Path("/assets") / name / "info.rehu", LicenseTerms("Old", STORE.url, day, "Old"))
+    return SavedLicense(
+        Path("/assets") / name / "info.rehu", "fab-standard", LicenseTerms("Old", STORE.url, day, "Old")
+    )
 
 
 ONE_DAY: Final = datetime.date(2026, 3, 1)

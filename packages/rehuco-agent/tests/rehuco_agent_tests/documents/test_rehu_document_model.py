@@ -38,6 +38,7 @@ from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     FORMAT_VERSION_KEY,
     SCREENSHOT_NAME_PATTERNS,
+    AssetLicense,
     CoveringRecord,
     LearningPathEntry,
     LockReasonKind,
@@ -4286,8 +4287,10 @@ def test_a_declared_field_with_no_model_property_is_written_into_the_block() -> 
 
 ASSET_BLOCK: Final = {
     "kind": "model",
-    "license": "cc-by-4.0",
-    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "licenses": [
+        {"license": "cc-by-4.0", "url": "https://creativecommons.org/licenses/by/4.0/"},
+        {"license": "fab-ue-only"},
+    ],
     "formats": ["fbx", "obj"],
     "compatibility": {"unreal": "5.0-5.5"},
     "source_updated": "2025-09-08",
@@ -4304,18 +4307,21 @@ ASSET_BLOCK: Final = {
 
 
 def test_the_model_seeds_every_asset_field_from_the_block() -> None:
-    """Each field the asset type declares of its own has a property on the model, read from the block (#701).
+    """Each field the asset type declares of its own has a property on the model, read from the block (#701), its
+    licenses as entries (#705).
 
     **Test steps:**
 
     * verify the sample block names every asset field the core declares
     * construct a model over an asset whose block holds them all
-    * verify each property holds its value, and the model is not dirty
+    * verify each property holds its value, the licenses as the entries they store, and the model is not dirty
     """
     assert set(ASSET_BLOCK) == set(ASSET_FIELD_NAMES)
     model = RehuDocumentModel(RehuDocument({"type": "asset", "asset": dict(ASSET_BLOCK)}))
 
-    assert {name: getattr(model, name) for name in ASSET_BLOCK} == ASSET_BLOCK
+    plain = {name: value for name, value in ASSET_BLOCK.items() if name != "licenses"}
+    assert {name: getattr(model, name) for name in plain} == plain
+    assert model.licenses == AssetLicense.read_list(ASSET_BLOCK["licenses"])
     assert model.dirty is False
 
 
@@ -4369,16 +4375,39 @@ def test_clearing_an_optional_asset_field_removes_its_key() -> None:
 
     **Test steps:**
 
-    * over an asset holding a license and a size, set both to ``None``
+    * over an asset holding a kind and a size, set both to ``None``
     * verify neither key is in the block
     """
-    document = RehuDocument({"type": "asset", "asset": {"license": "fab-standard", "advertised_size": 5}})
+    document = RehuDocument({"type": "asset", "asset": {"kind": "model", "advertised_size": 5}})
     model = RehuDocumentModel(document)
 
-    model.license = None
+    model.kind = None
     model.advertised_size = None
 
-    assert not {"license", "advertised_size"} & set(document.active_block)
+    assert not {"kind", "advertised_size"} & set(document.active_block)
+
+
+def test_an_assets_licenses_are_written_through_and_none_removes_the_key() -> None:
+    """The licenses are an edit of the record, and an asset holding none has no key for them (#705).
+
+    **Test steps:**
+
+    * over an asset holding one license, give the model two
+    * verify the block holds both as stored and the model is dirty
+    * give it none and verify the key is gone
+    """
+    document = RehuDocument({"type": "asset", "asset": {"licenses": [{"license": "fab-standard"}]}})
+    model = RehuDocumentModel(document)
+
+    model.licenses = [AssetLicense("fab-standard"), AssetLicense("cc-by-4.0", "https://example.com/cc")]
+
+    assert document.active_block["licenses"] == [
+        {"license": "fab-standard"},
+        {"license": "cc-by-4.0", "url": "https://example.com/cc"},
+    ]
+    assert model.dirty
+    model.licenses = []
+    assert "licenses" not in document.active_block
 
 
 def test_emptying_an_assets_formats_or_compatibility_removes_its_key() -> None:

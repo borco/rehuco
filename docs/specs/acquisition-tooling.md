@@ -209,8 +209,8 @@ at scrape time. Left out on purpose are what the app measures from the local fil
 `original_duration`, `current_duration`, `current_count` — a page's own claim goes in `advertised_duration` /
 `advertised_count` instead) and the user's own state (`hidden_images`, `extra_tags`, the boolean flags, `rating`,
 `learning_paths`, the `.rehu` timestamps): a scraper converts the page it fetched, and none of those come from a
-page. **The asset block's** scraped fields ([[assets#block]], #701) are the ones a store states: `kind`, `license`
-and `license_url`, `formats`, `compatibility`, `source_updated`, `advertised_version`, `advertised_size` and the
+page. **The asset block's** scraped fields ([[assets#block]], #701) are the ones a store states: `kind`,
+`licenses` (each `{license, url}`, #705), `formats`, `compatibility`, `source_updated`, `advertised_version`, `advertised_size` and the
 two advertised counts; never `acquired`, which only the library scan knows from the account, nor the measured
 `triangles` and `texture_size`. **`description`** is Markdown, with any images the scraper chooses to embed already rewritten to a stem-less
 placeholder in encounter order (the `<stem>` of `<stem>NN` is a per-document fact no scraper knows). **`images`**
@@ -804,11 +804,11 @@ Every scan takes turns on the queue's one library chain, whatever its store, and
   ([[acquisition-tooling#scraper-protocols]]), and the record is filled from it by the rule a drop fills an open
   editor with (`ScrapeApplication`, #682), so an item filed either way reads alike. The listing's own facts, the store's
   id and `acquired`, are written beside it.
-- **Its license text is saved with it**, as the record's `.rehuterms` ([[assets#licenses]]): each distinct license is
-  read once per run, keyed by the store's license **path** (Fab: `license/cc/cc-by`), not by `license_url`, since one
-  license arrives under different URLs and the URL may be empty. A known item's saved text is never touched by a scan.
+- **Its license texts are saved with it**, as the record's `.rehuterms` ([[assets#licenses]]), one per license it is
+  held under: each distinct license is read once per run, keyed by the store's license **path** (Fab:
+  `license/cc/cc-by`), not by its `url`, since one license arrives under different URLs and the URL may be empty. A known item's saved text is never touched by a scan.
   The text of a Fab license is read by one class (`FabLicenseTexts`) that the scan calls by path, through the persona,
-  and *Refresh License* ([[assets#licenses]], #688) by the address a record states, over plain HTTP.
+  and *Refresh License* ([[assets#licenses]], #688) by the address a record's license states, over plain HTTP.
 - **An item whose public page is gone** (Fab: `isActiveInLive` false, its listing a 404; 102 of 4,250) is still in the
   account, so it is written from the library entry alone, its unknown fields left empty and `online` left true, and
   **its source URL is the library link** (`/library/assets/<entitlement id>`) instead of the dead public one.

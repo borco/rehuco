@@ -13,7 +13,7 @@ import logging
 from collections.abc import Callable, Collection
 from typing import Any, Final, Protocol, cast
 
-from rehuco_core import SITE_ID_KEY
+from rehuco_core import SITE_ID_KEY, AssetLicense
 
 from .markdown_images import substitute_image_stem
 from .results import ScrapedImage, ScrapeResult
@@ -23,6 +23,10 @@ LOG: Final = logging.getLogger(__name__)
 SOURCE_FIELD_NAMES: Final = frozenset({"description", "url", SITE_ID_KEY})
 """The scraped fields that are not written as a field: ``url`` and ``site_id`` land on a source, and ``description``
 is written with the scrape's own Markdown (:meth:`ScrapeApplication.apply`)."""
+
+FIELD_READERS: Final[dict[str, Callable[[Any], object]]] = {"licenses": AssetLicense.read_list}
+"""How a scraped field whose value the targets hold as objects is read from its JSON before it is written: an asset's
+``licenses`` arrive as ``{license, url?}`` objects and are written as `~rehuco_core.AssetLicense` entries (#705)."""
 
 
 class ScrapeTarget(Protocol):
@@ -98,7 +102,8 @@ class ScrapeApplication:
             if name not in declared:
                 LOG.info("%s is not a field of this document's type; left unset.", name)
                 continue
-            write_field(name, value)
+            reader = FIELD_READERS.get(name)
+            write_field(name, value if reader is None else reader(value))
         canonical_url = result.fields.get("url")
         site_id = cast("str | None", result.fields.get(SITE_ID_KEY))
         if isinstance(canonical_url, str) and canonical_url:

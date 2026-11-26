@@ -173,7 +173,7 @@ and the file's format version, with the URL and a tutorial's or a reference pack
 header away, an asset's among them — and double-clicking a row opens that resource in Documents. Each table has a **filter line**: free
 text, every word of which must be found in a title, a path, or part of an author, publisher or tag (`"quoted words"`
 as one phrase, case and accents ignored; `in:title`, `in:authors,tags` and the like keep the words to those places),
-and `field:value` tokens (`folder`, `authors`, `tags`, `publishers`, `type`, `kind`, `license`, `formats`), each matching a whole value, narrow the
+and `field:value` tokens (`folder`, `authors`, `tags`, `publishers`, `type`, `kind`, `licenses`, `formats`), each matching a whole value, narrow the
 rows as the text settles. The rows are read from
 the cache in the background, every row when it opens and then only the rows a scan or a change touched, and a filter
 picks from the rows already read. Clicking an

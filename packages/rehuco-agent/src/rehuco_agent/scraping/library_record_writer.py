@@ -31,7 +31,7 @@ from rehuco_core import (
     BucketSplitter,
     JobPaused,
     JobWaiting,
-    LicenseTerms,
+    LicenseTermsSet,
     RecordBucketMover,
     RecordLockedError,
     RecordNaming,
@@ -99,15 +99,13 @@ class LibraryRecordWriter:
         self.__username: Final = username
         self.__checkpoint: Final = checkpoint
 
-    def write(
-        self, entry: LibraryEntry, item: ScannedItem, publisher: str, terms: LicenseTerms | None
-    ) -> WrittenRecord:
+    def write(self, entry: LibraryEntry, item: ScannedItem, publisher: str, terms: LicenseTermsSet) -> WrittenRecord:
         """Write the record of a library item that has none in the root yet.
 
         :param entry: what the listing said of the item.
         :param item: the item, read in full.
         :param publisher: the site, as the record's source names it.
-        :param terms: the text of the license the item is held under, saved beside it; ``None`` for none.
+        :param terms: the text of each license the item is held under, by id, saved beside it; empty for none.
         :returns: where it landed; a record of the item already at its place (written before a crash, not yet in the
             cache) is returned as it is, never written over.
         :raises JobPaused: the layout refuses the record, its place is taken by something else, or the disk is full.
@@ -227,9 +225,9 @@ class LibraryRecordWriter:
         document: RehuDocument,
         images: tuple[ScrapedImage, ...],
         item: ScannedItem,
-        terms: LicenseTerms | None,
+        terms: LicenseTermsSet,
     ) -> None:
-        """Write the record's screenshots, its license text and, last, the record itself into the staging folder.
+        """Write the record's screenshots, its license texts and, last, the record itself into the staging folder.
 
         The ``.rehu`` goes last, so until the very end the folder holds nothing a catalog scan reads as a record.
 
@@ -237,7 +235,7 @@ class LibraryRecordWriter:
         :param document: the record.
         :param images: its screenshots, to fetch.
         :param item: the item, whose page names a screenshot that could not be fetched.
-        :param terms: its license's text, or ``None``.
+        :param terms: its licenses' texts, by id; none written when empty.
         """
         if staging.exists():
             shutil.rmtree(staging)
@@ -251,7 +249,7 @@ class LibraryRecordWriter:
             except (RequestException, NotAnImageError, ValueError) as error:
                 # a slot past the numbered set's end is a ValueError: one image lost, never the record
                 LOG.warning("A screenshot of %s was left out: %s (%s)", item.page_url, image.url, error)
-        if terms is not None:
+        if terms.terms:
             with locked_record(rehu, user=self.__username):
                 write_license_terms(rehu, terms)
         Records().save(ResourceKey(rehu), document, None, username=self.__username, overwrite=False, new=True)

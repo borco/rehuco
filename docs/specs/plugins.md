@@ -745,7 +745,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     line, every path in double quotes as Explorer's *Copy as path* writes them, with a newline, a carriage return and
     a quote written `\n`, `\r` and `\"` and nothing else escaped, so it reads, not reverses (`C:\Users\new` already
     holds `\n`). *Copy paths as JSON* is for scripts — a list with an object for each resource, one key per line, that
-    reads back exactly: its `path` and, for an asset that has a `.rehuterms`, its `license` (#688,
+    reads back exactly: its `path` and, for an asset that has a `.rehuterms`, its `license`: that file (#688,
     [[assets#licenses]]); that one waits for a worker that asks the disk which assets have one. Both copy plain text
     only, never a file list, so a paste into Explorer copies no folders.
   - **Refresh License** (#688, [[assets#licenses]]). With rows selected, the entry between *Open in Web Browser* and the
@@ -758,7 +758,7 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     (`web_pages.is_web_page`, the rule of the Roots preview's link). It is disabled when no selected record has one.
     More than ten pages asks "Open N pages in the web browser?" first, Cancel the default.
   - **The filter line** (#398) is GitHub-style: free text plus `field:value` or `field:"quoted value"` tokens
-    (`folder`, `authors`, `tags`, `publishers`, `type`, and an asset's `kind`, `license` and `formats`), all ANDed. Free text is **one term per word**, each found in a
+    (`folder`, `authors`, `tags`, `publishers`, `type`, and an asset's `kind`, `licenses` and `formats`), all ANDed. Free text is **one term per word**, each found in a
     title, a path, or part of any author, publisher or tag name (any one of them), so `foo bar` finds "bar then foo"; a
     `"quoted run"` is one term, the phrase (#475). **`in:` says where free text looks** (#647), as GitHub's search
     does: a comma list of `title`, `path`, `authors`, `publishers`, `tags` (`ann in:authors,publishers`), several

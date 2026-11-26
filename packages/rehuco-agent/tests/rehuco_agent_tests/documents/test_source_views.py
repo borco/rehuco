@@ -126,7 +126,7 @@ def test_save_preview_lists_the_license_text_a_save_would_write_beside_the_recor
     """
     assert all(not name.endswith(".rehuterms") for name, _ in save_preview.files())
 
-    model.edit_license(text="Use freely.\n")
+    model.edit_license("fab-standard", text="Use freely.\n")
 
     terms = model.document.serialize_license_terms()
     assert terms is not None

@@ -54,7 +54,7 @@ from uuid import UUID
 from borco_core import fold
 
 from .constants import REHUDB_SUFFIX
-from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, FORMATS_VERSION, SchemaChain
+from .migrations.rehudb import BASE_VERSION, CHAIN, FOLD_STAMP_VERSION, FORMATS_VERSION, LICENSES_VERSION, SchemaChain
 from .migrations.runner import chain_head
 from .path_keys import path_key
 from .plugins import ASSET_FIELD_NAMES, ASSET_PLUGIN, DEFAULT_PLUGIN_REGISTRY, PluginRegistry
@@ -90,8 +90,8 @@ class CatalogField(StrEnum):
     PUBLISHERS = "publishers"
     TYPE = "type"
     KIND = "kind"
-    LICENSE = "license"
     FORMATS = "formats"
+    LICENSES = "licenses"
 
 
 class CatalogRangeField(StrEnum):
@@ -178,8 +178,7 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     :param advertised_count: the pack's own claim of how many images it holds, as text (``500+``), or ``None``.
     :param current_count: the measured content-image count, or ``None``.
     :param asset_kind: an asset's ``kind`` ([[assets#kind]]), or ``None`` when its block names none; type-specific,
-        like the eleven below and ``formats`` ([[assets#block]], #676).
-    :param license: the license's short id, or ``None``.
+        like the ten below, ``formats`` and ``licenses`` ([[assets#block]], #676).
     :param compatibility: what the item works with and in which versions, in the block's order.
     :param source_updated: when the store last changed the item, as stored, or ``None``.
     :param advertised_version: the version the store offers, or ``None``.
@@ -193,6 +192,7 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     :param acquired: when the account got the item, as stored -- a UTC time where the store gives one, so that text
         order is time order -- or ``None``.
     :param formats: the file formats delivered, in order.
+    :param licenses: the short id of each license the item is held under, in order ([[assets#licenses]], #705).
     :param format_version: the file's own ``format_version`` as it is on disk (``0`` for an unstamped ``.rehu``), or
         ``None``: always for a legacy ``.tc``, which has no version of its own, and for a ``.rehu`` that could not be
         read (#379).
@@ -224,7 +224,6 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     advertised_count: str | None = None
     current_count: int | None = None
     asset_kind: str | None = None
-    license: str | None = None
     compatibility: tuple[tuple[str, str], ...] = ()
     source_updated: str | None = None
     advertised_version: str | None = None
@@ -236,6 +235,7 @@ class CatalogRecord:  # pylint: disable=too-many-instance-attributes
     texture_size: int | None = None
     acquired: str | None = None
     formats: tuple[str, ...] = ()
+    licenses: tuple[str, ...] = ()
     format_version: int | None = None
     mtime_ns: int = 0
     size: int = 0
@@ -415,8 +415,8 @@ class CatalogQuery:
     :param terms: each matched anywhere in any place of ``scope`` -- part of a title, a root-relative path, or one
         author, publisher or tag name -- ignoring case and diacritics (:func:`borco_core.fold`, #475); none matches all.
     :param tokens: ``(field, value)`` pairs. ``folder`` is a ``<label>/<relative path>`` prefix; ``authors``,
-        ``tags``, ``publishers`` and ``formats`` match one value whole, ignoring case and diacritics; ``type`` and
-        ``license`` match the type or the license as ASCII folds it; ``kind`` matches an asset's kind the same way,
+        ``tags``, ``publishers``, ``formats`` and ``licenses`` match one value whole, ignoring case and diacritics;
+        ``type`` matches the type as ASCII folds it; ``kind`` matches an asset's kind the same way,
         with ``unknown`` finding an asset with no kind too and an empty value finding only that (#678).
     :param scope: where a term is looked for (#647); every place by default, and none when empty, which matches no row
         once there is a term.
@@ -434,19 +434,22 @@ JOINS: Final = (
     ("tags", "resource_tags"),
     ("publishers", "resource_publishers"),
 )
-"""Each value table a search reads and its join table -- with :data:`FORMATS_JOIN`, the only names ever formatted
-into a statement."""
+"""Each value table a search reads and its join table -- with :data:`FORMATS_JOIN` and :data:`LICENSES_JOIN`, the only
+names ever formatted into a statement."""
 
 FORMATS_JOIN: Final = ("formats", "resource_formats")
 """An asset's file formats and their join table (schema v10, #676): kept as tags are, and searched by the ``formats``
 token (#678), though never by a free-text term."""
 
-VALUE_JOINS: Final = (*JOINS, FORMATS_JOIN)
+LICENSES_JOIN: Final = ("licenses", "resource_licenses")
+"""The ids of an asset's licenses and their join table (schema v12, #705): kept as formats are, and searched by the
+``licenses`` token, though never by a free-text term."""
+
+VALUE_JOINS: Final = (*JOINS, FORMATS_JOIN, LICENSES_JOIN)
 """Every value table and its join table, in the order a row is written and read with them."""
 
 TOKEN_CLAUSES: Final = {
     CatalogField.TYPE: "r.type = ? COLLATE NOCASE",
-    CatalogField.LICENSE: "r.license = ? COLLATE NOCASE",
     **{
         # driven from the value's folded-name index and the join's value index, not probed once per resource (#454)
         CatalogField(table): (
@@ -457,9 +460,9 @@ TOKEN_CLAUSES: Final = {
     },
 }
 """The clause each token field adds but ``folder`` and ``kind``, each with exactly one parameter -- folded for a value
-table's, as it is for ``type`` and ``license``, whose ``NOCASE`` folds ASCII only."""
+table's, as it is for ``type``, whose ``NOCASE`` folds ASCII only."""
 
-UNFOLDED_FIELDS: Final = frozenset({CatalogField.TYPE, CatalogField.LICENSE})
+UNFOLDED_FIELDS: Final = frozenset({CatalogField.TYPE})
 """The token fields whose value is compared as the cache's ``NOCASE`` does, not folded as a name is."""
 
 UNKNOWN_KIND: Final = "unknown"
@@ -504,11 +507,11 @@ FOLDER_SUBTREE_CLAUSE: Final = f"({FOLDER_ROOT_CLAUSE} AND r.path_key >= ? AND r
 folder's ``/``-terminated prefix. The path part folds as the filesystem does (:func:`catalog_path_key`)."""
 
 ASSET_COLUMNS: Final = tuple(
-    "asset_kind" if name == "kind" else name for name in ASSET_FIELD_NAMES if name not in {"license_url", "formats"}
+    "asset_kind" if name == "kind" else name for name in ASSET_FIELD_NAMES if name not in {"licenses", "formats"}
 )
 """An asset's columns, its block's fields in their declared order (#676, #678): the block's ``kind`` is ``asset_kind``,
-since ``kind`` is the record's format; ``license_url`` has no column, nothing filtering or sorting by it; ``formats``
-is kept in a value table instead (:data:`FORMATS_JOIN`)."""
+since ``kind`` is the record's format; ``formats`` and ``licenses`` are kept in value tables instead
+(:data:`FORMATS_JOIN`, :data:`LICENSES_JOIN`)."""
 
 TYPE_FIELD_COLUMNS: Final = (
     "advertised_duration",
@@ -523,9 +526,9 @@ TYPE_FIELD_COLUMNS: Final = (
 image counts (schema v3, #399), an asset's scalars and its ``compatibility`` (schema v10, #676) and its two advertised
 ranges (schema v11, #678). A scan fills one only where the record's type declares it."""
 
-TYPE_FIELD_NAMES: Final = (*TYPE_FIELD_COLUMNS, "formats")
-"""Every type-specific field the cache stores: :data:`TYPE_FIELD_COLUMNS` and an asset's ``formats``, kept in a value
-table instead (:data:`FORMATS_JOIN`)."""
+TYPE_FIELD_NAMES: Final = (*TYPE_FIELD_COLUMNS, "formats", "licenses")
+"""Every type-specific field the cache stores: :data:`TYPE_FIELD_COLUMNS` and an asset's ``formats`` and
+``licenses``, kept in value tables instead (:data:`FORMATS_JOIN`, :data:`LICENSES_JOIN`)."""
 
 BOUND_COLUMNS: Final = tuple(f"{field.value}_{end}" for field in CatalogRangeField for end in ("lower", "upper"))
 """The columns holding each range field's two bounds (schema v11, #678): derived from the field's text when a row is
@@ -1217,6 +1220,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             tags=values["tags"].get(resource_id, ()),
             publishers=values["publishers"].get(resource_id, ()),
             formats=values["formats"].get(resource_id, ()),
+            licenses=values["licenses"].get(resource_id, ()),
             site_ids=site_ids,
         )
 
@@ -1295,6 +1299,19 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         stored = connection.execute("SELECT value FROM cache_meta WHERE key = ?", (FOLD_STAMP_KEY,)).fetchone()
         return stored is not None and stored[0] == fold(FOLD_PROBE)
 
+    @staticmethod
+    def __value_joins_at(version: int) -> tuple[tuple[str, str], ...]:
+        """The value tables a file at a version has.
+
+        :param version: the version the file is stamped with.
+        :returns: :data:`JOINS`, and :data:`FORMATS_JOIN` and :data:`LICENSES_JOIN` from the versions that add them.
+        """
+        return (
+            *JOINS,
+            *((FORMATS_JOIN,) if version >= FORMATS_VERSION else ()),
+            *((LICENSES_JOIN,) if version >= LICENSES_VERSION else ()),
+        )
+
     @classmethod
     def __refold_if_stale(cls, connection: sqlite3.Connection, version: int) -> None:
         """Write the folded columns again from the real ones when the ``fold`` that wrote them is not this one (#475).
@@ -1305,7 +1322,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
         refill is one transaction of about a second per 100k resources, and no scan.
 
         :param connection: the cache, at a version with ``cache_meta``.
-        :param version: the version the file is stamped with, which says whether it has a formats table yet.
+        :param version: the version the file is stamped with, which says which value tables it has yet.
         """
         if cls.__fold_is_current(connection):
             return
@@ -1318,7 +1335,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
                 "UPDATE resources SET folded_title = ?, folded_path = ? WHERE id = ?",
                 [(fold(title), fold(path), resource_id) for resource_id, title, path in resources],
             )
-            for table, _ in VALUE_JOINS if version >= FORMATS_VERSION else JOINS:
+            for table, _ in cls.__value_joins_at(version):
                 names = connection.execute(f"SELECT id, name FROM {table}").fetchall()  # nosec  # B608: fixed names
                 connection.executemany(
                     f"UPDATE {table} SET folded = ? WHERE id = ?",  # nosec  # B608: fixed names
@@ -1456,7 +1473,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
             f"{updates} RETURNING id",
             (root_id, key, stamp, *derived, *fields),
         ).fetchone()
-        value_names = (record.authors, record.tags, record.publishers, record.formats)
+        value_names = (record.authors, record.tags, record.publishers, record.formats, record.licenses)
         for (table, join), names_of in zip(VALUE_JOINS, value_names, strict=True):
             CatalogCache.__write_values(connection, table, join, resource_id, names_of)
         connection.execute("DELETE FROM resource_sources WHERE resource_id = ?", (resource_id,))
@@ -1626,7 +1643,7 @@ class CatalogCache:  # pylint: disable=too-many-public-methods
 
     @staticmethod
     def __prune_values(connection: sqlite3.Connection) -> None:
-        """Drop every author, tag, publisher and format no resource names any more."""
+        """Drop every author, tag, publisher, format and license no resource names any more."""
         for table, join in VALUE_JOINS:
             orphans = f"DELETE FROM {table} WHERE id NOT IN (SELECT value_id FROM {join})"  # nosec  # B608: fixed names
             connection.execute(orphans)

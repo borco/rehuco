@@ -14,6 +14,7 @@
 - [#678: feat(agent): asset fields in the editor, the browser and the search line](https://github.com/borco/rehuco/issues/678)
 - [#679: feat(agent): Open in Web Browser on the browser's selection](https://github.com/borco/rehuco/issues/679)
 - [#688: feat(agent): the license subdock, Refresh License, and the sidecar's path in Copy as JSON](https://github.com/borco/rehuco/issues/688)
+- [#705: feat: an asset holds a list of licenses, each with its own text](https://github.com/borco/rehuco/issues/705)
 
 **The block, the cache, the license sidecar, the editor, the browser and the license's dock are built**
 (#674, #676, #677, #678, #679, #688): `asset` is a declared type whose fields are read and checked as §19.1 says, kept
@@ -45,8 +46,7 @@ block does ([[plugins#plugin-blocks]]).
 | Key | Value type | Filled by | Meaning |
 | --- | --- | --- | --- |
 | `kind` | one of [[assets#kind]] | scan, or by hand | what the item is; `unknown` until something says |
-| `license` | string | scan | a license's short id ([[assets#licenses]]): `fab-standard`, `cc-by-4.0`, `fab-ue-only` |
-| `license_url` | string | scan | where the store states the terms for this item |
+| `licenses` | list of `{license, url}` | scan | each license the item is held under ([[assets#licenses]]): a short id (`fab-standard`, `cc-by-4.0`, `fab-ue-only`), unique in the list, and where the store states its terms, if it does |
 | `formats` | string list | scan | file formats delivered: `fbx`, `glb`, `blend`, `uasset` |
 | `compatibility` | map, string to string | scan | what it works with and in which versions: `{"blender": ">=4,<5", "unreal": "5.1-5.6"}` |
 | `source_updated` | partial-precision date | scan | when the store last changed the item |
@@ -98,12 +98,11 @@ block does ([[plugins#plugin-blocks]]).
   - `ai-forbidden` where the listing is `isAiForbidden`, Fab's *NoAI* mark: no generative-AI datasets, development
     or training under a Standard License, as the item was tagged when it was got. It does not bar using AI tools on
     the file ([[appendices.assets#ai-tags]]);
-  - `ai-generated` where the listing is `isAiGenerated`, Fab's *CreatedWithAI* mark;
-  - `license-<id>` for each license tier the account owns the item under, `<id>` the short id the tier gets as a
-    `license` (`license-fab-standard`, `license-fab-uefn-reference-only`), so a library can be filtered by every tier an
-    item is held under, though `license` itself holds one ([[assets#licenses]]).
+  - `ai-generated` where the listing is `isAiGenerated`, Fab's *CreatedWithAI* mark.
+
+  The licenses an item is owned under are its `licenses`, never tags (#705).
 - **A delisted item**, written without its listing, carries only the labels its library entry states: `rating-mature`
-  and `platform-<name>`, and `license-<id>`. The AI marks are a listing's alone.
+  and `platform-<name>`. The AI marks are a listing's alone.
 - **A rig and levels of detail are the user's tags** (`extra_tags`). Fab states them per format and mostly leaves
   them empty, so the scan writes nothing for them.
 - **What an item needs or supplies is not here.** No Fab listing states it; Daz3D's products do, and its design adds
@@ -142,8 +141,9 @@ One value from a closed list: `model`, `pack`, `character`, `animation`, `materi
 - A missing `kind` reads as not known. The kind filter still finds such a record both as `unknown` and as an empty
   kind, so the unsorted items are one filter away whichever way they came to be: `kind:unknown` finds an asset with
   that kind or none, `kind:""` an asset with none, and both only among assets, a tutorial's kind being missing for good.
-  The other tokens an asset adds are `license:` and `formats:`, each matching one value whole as the other field tokens do
-  (`license` as ASCII folds it, `formats` as a tag does).
+  The other tokens an asset adds are `licenses:` and `formats:`, each matching one value whole as the other field
+  tokens do, case and accents ignored as a tag's are: `licenses:fab-standard` finds every asset holding that license
+  among its licenses.
 - A MetaHuman is a `character`. A Blender add-on or an Unreal code plugin is a `plugin`; a standalone program is a
   `tool`; a sample project is a `template`.
 - **`unknown` is a real value, not a missing one.** A scan that cannot classify an item writes `unknown`, so the items
@@ -156,15 +156,21 @@ One value from a closed list: `model`, `pack`, `character`, `animation`, `materi
 [[[assets#licenses]]]
 
 The terms are what decides whether an item can ship, and they are the store's to change or to take down. So **a
-record keeps the text itself, in a sidecar beside it**: `<stem>.rehuterms`, one per record, never shared between
-records. `license` in the block stays the short id a library is filtered by, and `license_url` where the store states
-the terms.
+record keeps the texts themselves, in a sidecar beside it**: `<stem>.rehuterms`, one per record, never shared between
+records. **An item is held under a list of licenses** (#705): an account can own one under several -- the Standard
+License and its *UEFN - Reference only* tier, say -- so the block's `licenses` names each, in the user's order, by its
+short id (what a library is filtered by) and, where the store states its terms, their `url`. Ids are unique in the list,
+so Fab's Personal and Professional tiers, which grant the same rights, are one `fab-standard`.
 
-- **The file is a YAML header and the terms as Markdown.** The header, between `---` lines, holds `title`, `url`
-  (where the text was read) and `read`, the date it was read: a store's terms change, and a saved text is only as good
-  as its date. A file with no `url` has no `url` key. It is read and written by `rehuco_core.license_terms`, an atomic
-  write as a `.rehu` gets, under the record's own lock, and a file that cannot be read is refused, never taken for
-  empty terms.
+- **The file is JSON, one text per license id.** Each id holds `title`, `url` (where the text was read), `read`, the
+  date it was read -- a store's terms change, and a saved text is only as good as its date -- and `text`, the terms as
+  Markdown **as a list of their lines**, so the file reads line by line and every line is kept exactly, trailing
+  spaces included; text with no `url` has no `url` key. It is written as a `.rehu` is (two-space indents, characters
+  as they are), read and written by `rehuco_core.license_terms`, an atomic write under the record's own lock, and a
+  file that cannot be read is refused, never taken for empty terms. JSON over YAML (#705): a YAML block shows a text
+  better, but turns any line ending in a space into one escaped string, and its parser is ten to five hundred times
+  slower (0.5-25 ms against 0.05 ms for a 57 KB text), which Refresh License over a library of 20,000 feels; the
+  cache's scan never opens the file.
 - **It is bookkeeping, not content.** Named by its suffix alone, `<stem>.rehuterms` is left out of a record's content,
   size and checksums as a screenshot and a `.rehuser` are, so a scan writing it or a refresh replacing it never makes a
   checksum stale, and a move never refuses a record for it. The Files list shows it as the record's *license*.
@@ -172,28 +178,42 @@ the terms.
   record moved by hand takes it along with the rest of its files. A root that is offline takes nothing from another
   root's records, and a store that has gone leaves every text where it was.
 - **The scan writes it with a new record** ([[acquisition-tooling#library-scan-job]]), reading each distinct license
-  once per run, keyed by the store's license **path** rather than by `license_url`, which differs between labels of
-  one license and may be empty (below). The text is therefore the terms on the day of the scan, which for an item got years
+  once per run, keyed by the store's license **path** rather than by its `url`, which differs between labels of one
+  license and may be empty (below). The text is therefore the terms on the day of the scan, which for an item got years
   earlier is not the day it was got; `acquired` beside `read` shows the gap, and nothing recovers the older text.
-- **An item owned under several tiers holds under the broadest** (#684): `license` and the text saved are those of the
-  first tier owned of Professional, Personal, *CC BY*, *UE Marketplace* and *UEFN - Reference only*, a tier no list
-  names coming after; every owned tier is also a `license-<id>` tag ([[assets#block]]). The tiers are the library
-  entry's, never the public listing's, which offers all of them.
+- **An item owned under several tiers holds every one** (#684, #705): each is an entry of `licenses` with its text,
+  broadest first -- Professional, Personal, *CC BY*, *UE Marketplace*, *UEFN - Reference only*, a tier no list names
+  coming after under its own group and slug, with no `url` -- and an id met twice is kept once, its text read from
+  the first tier of it. The tiers are the library entry's, never the public listing's, which offers all of them.
 - **What Fab gives** (#686): each owned item names its license(s) as a `group` (`name`, `slug`, `url`) and a `path`
   (`license/standard/reference-plus-source`, `license/cc/cc-by`, `license/legacy/uem`). **The `path` is the stable
   identifier** and the short id is derived from it; the label is not (*Creative Commons* and *Creative Commons
   Attribution (CC BY 4.0)* are both `license/cc/cc-by`, and their URLs differ: a generic index page, and the license's
   own page). *Standard License* links to `/eula`, whose full text is public JSON at `/i/eula/fab_eula`; the CC pages
-  read logged out; *UE Marketplace* has no URL, so its record has a `license` and no text. An item may hold several
+  read logged out; *UE Marketplace* has no URL, so its entry has an id and no text. An item may hold several
   licenses (a Personal and a UEFN *reference only* tier; 241 of 4,250), and three delisted items hold none.
 - **A file with no `url` is terms written for that item alone.** It is typed in, and nothing ever refreshes it.
-- **It is read and edited in a License subdock of its own** (#688), as the description is, since the text can be long.
-  An asset's document has it, hidden by default, and the one dock has two modes: the terms **rendered as Markdown**
-  under their title, a line saying the day and the address they were read from, and **an editor** for the title and
-  the text, which **F2** or the dock's *Edit* action toggles. The `url` and the day are shown and never edited, since
-  only a refresh makes them. Typing into a record with none makes terms written for that item alone, titled as typed,
-  else by the record's `license` id, else *License*, with no `url` and today for the day; terms typed and emptied again
-  before a save are gone, and a saved text is never removed, only emptied. **A double-click on the record's
+- **It is read and edited in a License subdock of its own** (#688, #705), as the description is, since the text can
+  be long; the Main Editor shows no license. An asset's document has it, hidden by default. **At its top, a list of
+  the record's licenses**, each its id and its `url`, growing with its rows and never scrolling; the first is selected
+  when the record is shown, and the one selected is kept while the record still holds it, under a new id too. Below
+  it, the selected license's terms **rendered as Markdown** under their title, with a line saying the day and the
+  address they were read from. **F2** or the dock's *Edit* action makes the list editable and swaps the rendered terms
+  for **an editor** of the text: the list shows an add and a delete button beside it and a grip at each row's left
+  that drags the row to another place, as the Roots view's do. **The id is picked from a list**: *Custom* first, then
+  the presets a scan writes, a preset another row holds shown but not to be picked. **A preset is its `url` and its
+  text**: picking one sets the row's `url` and reads its text in the background over plain HTTP, as *Refresh License*
+  does, the text landing when it arrives (none for `fab-ue-only`, which has no terms page; a text that cannot be read
+  is logged, and a refresh fills it in later). **Picking *Custom* leaves that name in the cell, selected**, to be typed over or kept as it
+  is, with no `url` or text of a preset's -- many records can hold a license so named, each with its own text; a custom license renamed keeps the `url` and text its user gave it. The `url` cell is
+  typed into. An id is never emptied or given twice. **A row added stays while the dock edits**, wherever the focus
+  goes, and is a license once it has an id; the rows still without one go when the editing stops or the record is
+  saved. Deleting a license takes its text out of the file. Reading, the list shows neither buttons nor grips and
+  takes no edit. A license with no text shows nothing but its row, the empty view saying so. The text's day, and its
+  `url` where it was read, are shown and never edited. Typing into a license with none makes terms written for that
+  item alone, titled by the license's id, with no `url` and today for the day; terms typed and emptied again before a
+  save are gone, and a saved text is never removed by
+  typing, only emptied. **A double-click on the record's
   `.rehuterms` row in the Files list shows the dock** in its reading mode; for a type with no such dock, as in the
   Roots view, the system's app opens the file. A file that cannot be read is named in the dock and left alone until it
   is fixed, and a document that cannot be written shows the terms and cannot edit them.
@@ -207,17 +227,18 @@ the terms.
   file that cannot be read is never written over. A text changed on disk meanwhile is the record changed there: an open
   document without edits reads it again, and one with edits is told, and the save shows the difference.
 - **Nothing reads a license from the net when a record is opened.** A saved text changes only through *Refresh
-  License*, on the browser dock's selection: each distinct `license_url` among the selected records is read once and
-  compared with what each record holds.
+  License*, on the browser dock's selection: each distinct `url` among the selected records' licenses is read once and
+  compared with what each record holds for that license.
 - **A refresh never replaces a text unasked.** A record with none gets one. Where the terms differ, the user is shown
   the license, both dates and how many records hold the older text, and it is replaced only on a yes. The text an item
   was got under may be the one that still applies to it, so it is not the tool's to overwrite.
 - **How a refresh runs** (#688). It is a job on the task queue, off the GUI thread, unchained and not kept across a
   quit.
-  Each record is read for its type, its `license_url` and its saved text; **a text is compared as its Markdown without
-  the blanks around it**, never by its title or its day. A file with no `url` is never touched, whatever its record's
-  `license_url` says, and a record that is not an asset, states no address or states one no reader knows is left as
-  it is. The texts Fab's listings point at are read over plain HTTP, with no login: the Standard License from its
+  Each record is read for its type, its licenses and its saved texts, and **each license is settled on its own**:
+  **a text is compared as its Markdown without the blanks around it**, never by its title or its day, and a write
+  changes that license's text alone. A text with no `url` is never touched, whatever its license's `url` says, and a
+  record that is not an asset, a license that states no address and one that states an address no reader knows are
+  left as they are. The texts Fab's listings point at are read over plain HTTP, with no login: the Standard License from its
   public JSON and Creative Commons BY from its plain legal code (an address is matched to its reader whatever its case
   or closing slash, since the record's is the license's page and not where its text is read from); a text is kept with
   its lines ended in LF whatever the server sent. A store that does not answer costs the records of that license,

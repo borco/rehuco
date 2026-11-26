@@ -35,7 +35,7 @@ def test_an_asset_row_shows_each_of_its_fields() -> None:
             asset(
                 "a/info.rehu",
                 asset_kind="model",
-                license="fab-standard",
+                licenses=("fab-standard", "fab-uefn-reference-only"),
                 formats=("fbx", "glb"),
                 compatibility=(("unreal", "5.1-5.6"), ("blender", ">=4")),
                 source_updated="2025-02",
@@ -53,7 +53,7 @@ def test_an_asset_row_shows_each_of_its_fields() -> None:
 
     assert [cell(model, 0, column) for column in ASSET_COLUMNS] == [
         "model",
-        "fab-standard",
+        "fab-standard, fab-uefn-reference-only",
         "fbx, glb",
         "unreal: 5.1-5.6, blender: >=4",
         "2025-02",

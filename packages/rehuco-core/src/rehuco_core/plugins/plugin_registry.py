@@ -86,8 +86,7 @@ watched, while a reference pack does not lose images ([[field-schema#duration-si
 
 ASSET_FIELD_NAMES: Final = (
     "kind",
-    "license",
-    "license_url",
+    "licenses",
     "formats",
     "compatibility",
     "source_updated",
@@ -100,7 +99,7 @@ ASSET_FIELD_NAMES: Final = (
     "texture_size",
     "acquired",
 )
-"""The **Asset-only** tier ([[assets#block]]): what an item bought from a store is, the license it came under, the
+"""The **Asset-only** tier ([[assets#block]]): what an item bought from a store is, the licenses it came under, the
 formats and versions it works with, and what the store says of it. Every one is optional, and a missing one means
 *not known* -- never a zero.
 
@@ -147,8 +146,8 @@ ASSET_LICENSES: Final = (
     FAB_UE_ONLY_LICENSE,
     FAB_UEFN_REFERENCE_ONLY_LICENSE,
 )
-"""The short ids a scan writes as an asset's ``license``, which the editor offers; any other text can still be typed,
-since a license no list names has an id of its own ([[assets#licenses]])."""
+"""The short ids a scan writes as an entry of an asset's ``licenses``, which the editor offers; any other text can
+still be typed, since a license no list names has an id of its own ([[assets#licenses]])."""
 
 CORE_PLUGIN: Final = PluginSpec((CORE_BLOCK_KEY,), field_names=CORE_FIELD_NAMES)
 """The common core's own identity ([[data-model#rehu-format]]) -- descriptive only, **never registered**.

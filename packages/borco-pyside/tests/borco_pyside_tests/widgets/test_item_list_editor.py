@@ -472,6 +472,39 @@ def test_focus_leaving_the_list_abandons_a_waiting_insert(qtbot: QtBot) -> None:
     assert model.rows == (("a", "1"),)
 
 
+def test_focus_going_into_a_popup_the_view_opened_is_not_leaving(qtbot: QtBot) -> None:
+    """A popup is a window of its own -- a combo box's list, opened from a cell's editor -- but still the view's: focus
+    moving into it keeps the row.
+
+    **Test steps:**
+
+    * insert and Tab to the second cell
+    * focus a line in a popup window whose parent is the view's viewport
+    * verify the blank row is still there
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    model = PairModel()
+    editor = ItemListEditor(ContentSizedTableView(), model)
+    QVBoxLayout(page).addWidget(editor)
+    model.set_rows([("a", "1")])
+    with qtbot.waitExposed(page):
+        page.show()
+    page.activateWindow()
+    insert_and_tab_to_the_second_cell(editor)
+    popup = QWidget(editor.view.viewport(), Qt.WindowType.Popup)
+    line = QLineEdit(popup)
+    with qtbot.waitExposed(popup):
+        popup.show()
+
+    line.setFocus()
+    qtbot.waitUntil(line.hasFocus)
+    QTest.qWait(10)  # long enough for a removal that must not happen to have happened
+
+    assert model.count == 2
+    popup.close()
+
+
 def test_tabbing_through_the_rows_own_cells_is_not_leaving_but_into_the_next_row_is(
     pairs: ItemListEditor, qtbot: QtBot
 ) -> None:

@@ -125,6 +125,10 @@ FORMATS_VERSION: Final = 10
 """The first version whose file has the ``formats`` value table (#676), so the first whose folded names include
 formats."""
 
+LICENSES_VERSION: Final = 12
+"""The first version whose file has the ``licenses`` value table (#705), so the first whose folded names include
+licenses."""
+
 
 def create_schema_v1(connection: sqlite3.Connection) -> None:
     """0 -> 1: the first schema -- roots, the resources under them, and the three value tables with their joins.
@@ -346,6 +350,39 @@ def add_advertised_ranges_v11(connection: sqlite3.Connection) -> None:
         connection.execute(statement)
 
 
+V12_STATEMENTS: Final = (
+    "CREATE TABLE licenses (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, "
+    "folded TEXT NOT NULL DEFAULT '')",
+    "CREATE INDEX licenses_folded ON licenses (folded)",
+    """
+    CREATE TABLE resource_licenses (
+        resource_id INTEGER NOT NULL REFERENCES resources (id) ON DELETE CASCADE,
+        value_id INTEGER NOT NULL REFERENCES licenses (id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        name TEXT,
+        PRIMARY KEY (resource_id, value_id)
+    )
+    """,
+    "CREATE INDEX resource_licenses_value ON resource_licenses (value_id)",
+    "ALTER TABLE resources DROP COLUMN license",
+    "UPDATE resources SET mtime_ns = 0, content_hash = ''",
+)
+"""Version 12's statements -- frozen, like :data:`V1_STATEMENTS`."""
+
+
+def add_licenses_v12(connection: sqlite3.Connection) -> None:
+    """11 -> 12: an asset's licenses as a value table with its join, as its formats are (#705, [[assets#licenses]]),
+    in place of the one ``license`` column, which goes.
+
+    As in version 3, nothing on disk says a row written before this step lacks them, so its stat signature is cleared
+    and the next scan reads it again.
+
+    :param connection: the cache, inside the transaction the caller opened.
+    """
+    for statement in V12_STATEMENTS:
+        connection.execute(statement)
+
+
 CHAIN: Final[SchemaChain] = (
     (1, create_schema_v1),
     (2, add_join_spellings_v2),
@@ -358,6 +395,7 @@ CHAIN: Final[SchemaChain] = (
     (9, add_source_ids_v9),
     (10, add_asset_fields_v10),
     (11, add_advertised_ranges_v11),
+    (12, add_licenses_v12),
 )
 """This target's ordered ``(target, step)`` chain."""
 

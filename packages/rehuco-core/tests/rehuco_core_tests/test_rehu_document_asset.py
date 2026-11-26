@@ -15,6 +15,7 @@ from rehuco_core import (
     ASSET_KINDS,
     ASSET_PLUGIN,
     DEFAULT_PLUGIN_REGISTRY,
+    AssetLicense,
     LockReasonKind,
     RehuDocument,
     current_block_version,
@@ -24,7 +25,6 @@ from rehuco_core_tests.test_rehu_document import FAKE_PATH, mock_writes
 
 SCALARS: Final = (
     ("kind", "texture"),
-    ("license", "fab-standard"),
     ("source_updated", "2025-03"),
     ("advertised_version", "1.2"),
     ("current_version", "1.1"),
@@ -40,7 +40,6 @@ SCALARS: Final = (
 MALFORMED_SCALARS: Final = (
     ("kind", "lamp", "one of the asset kinds"),
     ("kind", 3, "one of the asset kinds"),
-    ("license", 7, "a string"),
     ("advertised_version", 1.2, "a string"),
     ("advertised_triangles", 12, "a string"),
     ("advertised_texture_size", [1024], "a string"),
@@ -332,17 +331,89 @@ def test_a_malformed_list_or_map_reads_its_clean_entries_and_locks(
     ]
 
 
-def test_a_malformed_license_url_locks_though_nothing_reads_it() -> None:
-    """``license_url`` has no accessor yet, but a non-string still locks, so no later edit can flatten it.
+STORED_LICENSES: Final = [{"license": "fab-standard", "url": "https://www.fab.com/eula"}, {"license": "fab-ue-only"}]
+"""Two licenses as the block stores them: one with the address of its terms, one with none."""
+
+MALFORMED_LICENSES: Final = (
+    param([{"license": "fab-standard"}, {"license": "fab-standard", "url": "x"}], [0], id="a-repeated-id"),
+    param([{"license": ""}, {"license": "fab-ue-only"}], [1], id="an-empty-id"),
+    param([{"license": 7}, {"license": "fab-ue-only"}], [1], id="an-id-not-a-string"),
+    param([{"license": "fab-standard", "url": 404}], [], id="a-url-not-a-string"),
+    param([{"license": "fab-standard", "url": None}], [0], id="a-null-url"),
+    param([{"license": "fab-standard", "note": "x"}], [0], id="a-key-of-its-own"),
+    param(["fab-standard"], [], id="an-entry-not-an-object"),
+    param("fab-standard", [], id="not-a-list"),
+    param(None, [], id="null"),
+)
+"""A stored ``licenses`` the getter must read past, and the places of the entries it reads."""
+
+
+def test_licenses_read_back_as_entries_and_their_setter_writes_the_block() -> None:
+    """``licenses`` reads its entries in order, a missing ``url`` as ``None``, and the setter writes them as stored
+    (#705).
 
     **Test steps:**
 
-    * build an asset document whose ``license_url`` is a number
-    * verify one invalid-field reason names it
+    * verify a stored list reads back as its entries, without locking
+    * write those entries to an empty asset through the setter
+    * verify the block holds the list as stored
     """
-    doc = asset_doc({"license_url": 404})
+    entries = [AssetLicense("fab-standard", "https://www.fab.com/eula"), AssetLicense("fab-ue-only")]
+    assert asset_doc({"licenses": STORED_LICENSES}).licenses == entries
+    doc = asset_doc({})
 
-    assert [reason.message.split(" (")[0] for reason in doc.lock_reasons] == ["license_url: present but not a string"]
+    doc.licenses = entries
+
+    assert doc.active_block["licenses"] == STORED_LICENSES
+    assert not doc.lock_reasons
+
+
+def test_setting_no_licenses_removes_the_key() -> None:
+    """An emptied ``licenses`` leaves the block, as an emptied ``formats`` does.
+
+    **Test steps:**
+
+    * over an asset holding two licenses, set none
+    * verify the key is gone, the accessor reads empty and nothing locks
+    """
+    doc = asset_doc({"licenses": STORED_LICENSES})
+
+    doc.licenses = []
+
+    assert "licenses" not in doc.active_block
+    assert doc.licenses == []
+    assert not doc.lock_reasons
+
+
+@mark.parametrize(("stored", "kept"), MALFORMED_LICENSES)
+def test_a_licenses_list_read_past_reads_its_clean_entries_and_locks(stored: Any, kept: list[int]) -> None:
+    """A ``licenses`` holding what its getter cannot read -- an entry of the wrong shape, an id twice -- reads only the
+    first clean entry of each id and locks, naming the key.
+
+    :param stored: the stored value.
+    :param kept: the places of the entries it reads.
+    """
+    doc = asset_doc({"licenses": stored})
+
+    assert doc.licenses == [AssetLicense.from_data(stored[index]) for index in kept]
+    assert [(reason.kind, reason.message.split(" (")[0]) for reason in doc.lock_reasons] == [
+        (LockReasonKind.INVALID_FIELD, "licenses: present but not a list of licenses, each with its own id")
+    ]
+
+
+def test_license_ids_differing_by_case_are_two_licenses() -> None:
+    """An id is compared exactly, as a store spells it: ``fab-standard`` and ``FAB-STANDARD`` are two entries, and
+    nothing locks.
+
+    **Test steps:**
+
+    * build an asset holding both spellings
+    * verify both read and nothing locks
+    """
+    doc = asset_doc({"licenses": [{"license": "fab-standard"}, {"license": "FAB-STANDARD"}]})
+
+    assert doc.licenses == [AssetLicense("fab-standard"), AssetLicense("FAB-STANDARD")]
+    assert not doc.lock_reasons
 
 
 # endregion
@@ -351,7 +422,7 @@ def test_a_malformed_license_url_locks_though_nothing_reads_it() -> None:
 # region other types
 OTHER_TYPE_FIELDS: Final = {
     "kind": "lecture",
-    "license": {"id": 1},
+    "licenses": {"id": 1},
     "formats": "duf",
     "compatibility": ["4"],
     "triangles": "many",

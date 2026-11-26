@@ -10,10 +10,10 @@ from PySide6.QtGui import QColor, QFontMetricsF, QImage, QPainter, QPalette
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QStyle, QStyleOptionViewItem
 
 from ..documents.files_rows import CHECKSUM_STATE_ICONS
+from ..grip_reorder import GRIP_WIDTH, paint_grip
 from ..svg_icon_cache import SvgIconCache
 from .roots_checksum import RowChecksum, warning_ink
 from .roots_folder_model import RootsFolderModel
-from .roots_grip import GRIP_WIDTH, paint_grip
 
 ICON_SIZE: Final = 16
 """A row's glyph is this many pixels square, as in the files sub-dock."""

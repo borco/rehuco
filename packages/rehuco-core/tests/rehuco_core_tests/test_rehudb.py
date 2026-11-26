@@ -1625,7 +1625,7 @@ def test_a_token_on_its_own_reads_resources_through_an_index_never_a_scan(
         if "FROM resources r" in statement
     }
 
-    assert len(plans) == 6  # the rows, the four value tables and the sources' ids
+    assert len(plans) == 7  # the rows, the five value tables and the sources' ids
     assert not [step for steps in plans.values() for step in steps if re.fullmatch(r"SCAN r( .*)?", step)]
 
 
@@ -1696,22 +1696,23 @@ def test_rows_read_while_a_scan_commits_show_the_catalog_as_it_was_before_the_sc
 
 def test_a_type_contributes_the_stored_fields_its_plugin_declares() -> None:
     """A tutorial contributes its durations and level, a reference pack -- by any of its spellings -- its image
-    counts, and an asset every field of its block but the license URL, its ``kind`` as ``asset_kind`` (#676) and its
-    formats last, kept in a table of their own, in the cache's order (#399, #678).
+    counts, and an asset every field of its block, its ``kind`` as ``asset_kind`` (#676) and its formats and licenses
+    last, kept in tables of their own, in the cache's order (#399, #678, #705).
 
     **Test steps:**
 
     * ask for a tutorial's, a reference pack's (by its tc4 spelling) and an asset's fields
     * verify the first two are their types' stored fields, in the cache's order
-    * verify the asset's, read as the block fields they hold, are its block's in its declared order, the URL left out
-      and the formats last
+    * verify the asset's, read as the block fields they hold, are its block's in its declared order, the formats and
+      licenses last
     """
     assert catalog_type_fields("tutorial") == ("advertised_duration", "original_duration", "current_duration", "level")
     assert catalog_type_fields("ReferenceImages") == ("advertised_count", "current_count")
     assert catalog_type_fields("asset")[0] == "asset_kind"
     assert tuple(COLUMN_FIELDS.get(column, column) for column in catalog_type_fields("asset")) == (
-        *(name for name in ASSET_FIELD_NAMES if name not in {"license_url", "formats"}),
+        *(name for name in ASSET_FIELD_NAMES if name not in {"licenses", "formats"}),
         "formats",
+        "licenses",
     )
 
 

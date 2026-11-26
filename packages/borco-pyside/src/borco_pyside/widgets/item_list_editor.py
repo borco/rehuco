@@ -244,9 +244,23 @@ class ItemListEditor(QWidget):
         :param event: the event; only a widget's ``FocusIn`` is read, and nothing is ever consumed.
         :returns: ``False``, always -- this filter only watches.
         """
-        if event.type() == QEvent.Type.FocusIn and isinstance(watched, QWidget):
-            if watched is not self.__view and not self.__view.isAncestorOf(watched):
-                self.__abandon_later()
+        if event.type() == QEvent.Type.FocusIn and isinstance(watched, QWidget) and not self.__holds(watched):
+            self.__abandon_later()
+        return False
+
+    def __holds(self, widget: QWidget) -> bool:
+        """Whether a widget is the view or inside it -- a cell's editor, or a popup one opened, such as a combo box's
+        list. ``isAncestorOf`` stops at a window, and a popup is a window of its own, so focus moving into an editor's
+        popup would read as leaving the row.
+
+        :param widget: the widget focus went to.
+        :returns: whether it is the view's.
+        """
+        current: QWidget | None = widget
+        while current is not None:
+            if current is self.__view:
+                return True
+            current = current.parentWidget()
         return False
 
     def set_ordering_visible(self, visible: bool) -> None:

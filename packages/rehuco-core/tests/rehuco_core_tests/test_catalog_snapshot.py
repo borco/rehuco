@@ -82,8 +82,8 @@ TYPES: Final = ("Tutorial", "tutorial", "REFERENCE_images", "Bóok", "Asset", "a
 KINDS: Final = (None, "model", "Model", "unknown", "UNKNOWN", "pack", "Pack", "TEXTURE", "bóok")
 """An asset's kinds, with the missing one, alike but for ASCII case, and one with an accent."""
 
-LICENSES: Final = (None, "fab-standard", "FAB-STANDARD", "cc-by-4.0", "fab-ue-only")
-"""An asset's licenses, with the missing one."""
+LICENSES: Final = ("fab-standard", "FAB-STANDARD", "cc-by-4.0", "fab-ue-only", "Fäb-ünï")
+"""License ids, alike but for case, and one an accent changes."""
 
 FORMATS: Final = ("fbx", "FBX", "glb", "blend", "Blénd", "ﬁsh")
 """File formats, alike but for case, and one an accent or a ligature changes."""
@@ -142,7 +142,7 @@ def record(index: int, rng: random.Random) -> CatalogRecord:
         tags=tuple(rng.sample(WORDS, rng.randint(0, 3))),
         publishers=tuple(rng.sample(WORDS, rng.randint(0, 1))),
         asset_kind=rng.choice(KINDS) if scraped else None,
-        license=rng.choice(LICENSES) if scraped else None,
+        licenses=tuple(rng.sample(LICENSES, rng.randint(0, 2))) if scraped else (),
         formats=tuple(rng.sample(FORMATS, rng.randint(0, 3))) if scraped else (),
         advertised_triangles=rng.choice(RANGES) if scraped else None,
         advertised_texture_size=rng.choice(RANGES) if scraped else None,
@@ -229,7 +229,7 @@ def battery() -> list[CatalogQuery]:
 
 
 def asset_battery() -> list[CatalogQuery]:
-    """The queries an asset's own fields add (#678): the kind, license and format tokens, and a comparison of every
+    """The queries an asset's own fields add (#678): the kind, licenses and format tokens, and a comparison of every
     operator on both ranges.
 
     :returns: the queries.
@@ -238,8 +238,8 @@ def asset_battery() -> list[CatalogQuery]:
     for kind in ("unknown", "UNKNOWN", "model", "MODEL", "pack", "texture", "bóok", "BÓOK", "", "none"):
         queries.append(CatalogQuery(tokens=((CatalogField.KIND, kind),)))
     queries.append(CatalogQuery(tokens=((CatalogField.KIND, "unknown"), (CatalogField.TYPE, "tutorial"))))
-    for license_id in ("fab-standard", "FAB-STANDARD", "cc-by-4.0", "fab-ue-only", "nothing"):
-        queries.append(CatalogQuery(tokens=((CatalogField.LICENSE, license_id),)))
+    for license_id in ("fab-standard", "FAB-STANDARD", "cc-by-4.0", "fab-ue-only", "fab-uni", "FÄB-ÜNÏ", "nothing"):
+        queries.append(CatalogQuery(tokens=((CatalogField.LICENSES, license_id),)))
     for name in ("fbx", "FBX", "glb", "blend", "blénd", "BLEND", "fish", "ﬁsh", "none"):
         queries.append(CatalogQuery(tokens=((CatalogField.FORMATS, name),)))
     queries.append(CatalogQuery(terms=("fbx",)))

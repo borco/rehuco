@@ -222,7 +222,8 @@ def test_a_creative_commons_listing_gives_its_license_formats_and_the_lead_forma
     **Test steps:**
 
     * scrape the CC-BY listing, its formats answering the samples' size and ranges (blender), none (fbx), no files (obj)
-    * verify the license pair, the formats' extensions in order, and the size of the first format's files only
+    * verify the one license with its terms' address, the formats' extensions in order, and the size of the first
+      format's files only
     * verify the counts, each a single value written as one
     """
     listing = sample("listing-cc-by")
@@ -231,8 +232,9 @@ def test_a_creative_commons_listing_gives_its_license_formats_and_the_lead_forma
 
     result = scrape(listing, {"blender": glb, "fbx": other, "obj": {"files": [], "techDetails": {}}})
 
-    assert result.fields["license"] == "cc-by-4.0"
-    assert result.fields["license_url"] == "https://creativecommons.org/licenses/by/4.0/"
+    assert result.fields["licenses"] == [
+        {"license": "cc-by-4.0", "url": "https://creativecommons.org/licenses/by/4.0/"}
+    ]
     assert result.fields["formats"] == ["blend", "fbx", "obj"]
     assert result.fields["advertised_size"] == 12_096_296
     assert result.fields["advertised_triangles"] == "12"
@@ -244,31 +246,31 @@ def test_a_creative_commons_listing_gives_its_license_formats_and_the_lead_forma
 
 
 @mark.parametrize(
-    ("name", "kind", "license_fields"),
+    ("name", "kind", "licenses"),
     [
-        param("listing-plugin", "plugin", {}, id="a plugin, two tiers"),
+        param("listing-plugin", "plugin", None, id="a plugin, two tiers"),
         param(
             "listing-ue-marketplace",
             "template",
-            {"license": "fab-ue-only"},
+            [{"license": "fab-ue-only"}],
             id="a Marketplace tutorial, limited to Unreal, with no terms page",
         ),
     ],
 )
 def test_the_listing_type_gives_the_kind_and_the_license_gives_its_id(
-    name: str, kind: str, license_fields: dict[str, str]
+    name: str, kind: str, licenses: list[dict[str, str]] | None
 ) -> None:
     """The remaining samples: a type to a kind, and a single legacy license to its restriction without a URL (#701).
 
     **Test steps:**
 
     * scrape the listing with no formats answering
-    * verify its kind and its license fields
+    * verify its kind and its licenses
     """
     result = scrape(sample(name))
 
     assert result.fields["kind"] == kind
-    assert {key: value for key, value in result.fields.items() if key.startswith("license")} == license_fields
+    assert result.fields.get("licenses") == licenses
 
 
 @mark.parametrize(
@@ -312,39 +314,39 @@ def test_the_kind_follows_the_listing_type(changes: dict[str, Any], expected: st
     [
         param(
             [{"group": "standard", "slug": "personal"}],
-            {"license": "fab-standard", "license_url": f"{SITE}/eula"},
+            [{"license": "fab-standard", "url": f"{SITE}/eula"}],
             id="one tier",
         ),
         param(
             [{"group": "standard", "slug": "personal"}, {"group": "standard", "slug": "professional"}],
-            {},
+            None,
             id="two tiers",
         ),
         param(
             [{"group": "standard", "slug": "uefn-reference-only"}],
-            {"license": "fab-uefn-reference-only", "license_url": f"{SITE}/eula"},
+            [{"license": "fab-uefn-reference-only", "url": f"{SITE}/eula"}],
             id="the reference-only tier, a restriction with an id of its own",
         ),
-        param([{"group": "cc", "slug": "cc0"}], {}, id="a license without an id here"),
-        param([], {}, id="none"),
+        param([{"group": "cc", "slug": "cc0"}], None, id="a license without an id here"),
+        param([], None, id="none"),
     ],
 )
 def test_a_license_is_written_only_when_the_listing_offers_one_the_scraper_knows(
-    licenses: list[dict[str, str]], expected: dict[str, str]
+    licenses: list[dict[str, str]], expected: list[dict[str, str]] | None
 ) -> None:
-    """Several tiers, an unknown pair and no license each leave the pair out; the library, which knows the owned tier,
-    fills it (#701).
+    """Several tiers, an unknown pair and no license each leave ``licenses`` out; the library, which knows the owned
+    tiers, fills it (#701, #705).
 
     **Test steps:**
 
     * scrape the CC-BY listing with its licenses replaced
-    * verify the license fields written
+    * verify the licenses written
     """
     listing = {**sample("listing-cc-by"), "licenses": licenses}
 
     result = scrape(listing)
 
-    assert {key: value for key, value in result.fields.items() if key.startswith("license")} == expected
+    assert result.fields.get("licenses") == expected
 
 
 @mark.parametrize(
@@ -939,7 +941,9 @@ def test_scrape_page_reads_a_listing_body_alone() -> None:
 
     result = Fab().scrape_page(page_of(url, listing))
 
-    assert result.fields["license"] == "cc-by-4.0"
+    assert result.fields["licenses"] == [
+        {"license": "cc-by-4.0", "url": "https://creativecommons.org/licenses/by/4.0/"}
+    ]
     assert not {"advertised_size", "advertised_triangles", "compatibility"} & set(result.fields)
     with raises(PageGoneError):
         Fab().scrape_page(page_of(url, {"detail": "Not found."}, 404))

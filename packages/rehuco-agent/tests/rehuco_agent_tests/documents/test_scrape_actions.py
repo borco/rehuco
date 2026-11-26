@@ -18,7 +18,7 @@ from rehuco_agent.scraping.registry import ScraperRegistry
 from rehuco_agent.scraping.results import Page, ScrapedImage, ScrapeResult
 from rehuco_agent.scraping.scraper_executor import ScraperExecutor
 from rehuco_agent.scraping.url_drop import UrlDrop
-from rehuco_core import LockReason, LockReasonKind, RehuDocument
+from rehuco_core import AssetLicense, LockReason, LockReasonKind, RehuDocument
 from rehuco_core.access import LoadedRecord, ResourceKey
 
 PATH: Final = Path.cwd() / "fake" / "library" / "sculpting" / "info.rehu"
@@ -291,7 +291,7 @@ def test_an_asset_s_scraped_fields_reach_the_record(qtbot: QtBot, image_download
     fields = {
         "title": "New Title",
         "kind": "model",
-        "license": "cc-by-4.0",
+        "licenses": [{"license": "cc-by-4.0", "url": "https://creativecommons.org/licenses/by/4.0/"}],
         "formats": ["fbx", "obj"],
         "compatibility": {"unreal": "5.0-5.5"},
         "source_updated": "2025-09-08",
@@ -304,7 +304,8 @@ def test_an_asset_s_scraped_fields_reach_the_record(qtbot: QtBot, image_download
     resolve(qtbot, doc_actions, drop())
 
     record = doc_model.document
-    assert (record.kind, record.license, record.formats) == ("model", "cc-by-4.0", ["fbx", "obj"])
+    assert (record.kind, record.formats) == ("model", ["fbx", "obj"])
+    assert record.licenses == [AssetLicense("cc-by-4.0", "https://creativecommons.org/licenses/by/4.0/")]
     assert record.compatibility == {"unreal": "5.0-5.5"}
     assert (record.source_updated, record.advertised_size, record.advertised_triangles) == ("2025-09-08", 123, "12")
     assert doc_model.title == "New Title"

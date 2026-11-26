@@ -1,6 +1,8 @@
-"""Tests for the license sidecar's names, parsing, serializing, reading and writing (#677, [[assets#licenses]])."""
+"""Tests for the license sidecar's names, parsing, serializing, reading and writing (#677, #705,
+[[assets#licenses]])."""
 
 import datetime
+import json
 from pathlib import Path
 from typing import Final
 
@@ -10,6 +12,7 @@ from rehuco_core import (
     LICENSE_SIDECAR_SUFFIX,
     LicenseTerms,
     LicenseTermsError,
+    LicenseTermsSet,
     is_license_terms_name,
     license_terms_owner,
     license_terms_path,
@@ -21,6 +24,8 @@ MODULE: Final = "rehuco_core.license_terms"
 NAME: Final = "foo.rehuterms"
 READ: Final = datetime.date(2026, 11, 18)
 TERMS: Final = LicenseTerms("Standard License", "https://example.com/eula", READ, "# Terms\n\nUse freely.\n")
+CUSTOM: Final = LicenseTerms("Custom", None, READ, "Mine.")
+SET: Final = LicenseTermsSet({"fab-standard": TERMS, "mine": CUSTOM})
 
 
 # region Names
@@ -66,126 +71,137 @@ def test_a_license_sidecar_is_known_by_its_name_alone(filename: str, owner: str 
 # region Parsing and serializing
 
 
-def test_a_sidecar_round_trips_through_its_text() -> None:
-    """What ``to_text`` writes ``parse`` reads back, the header and the Markdown both.
+def test_a_sidecar_is_json_keyed_by_license_id_with_each_text_as_its_lines() -> None:
+    """The file is a ``.rehu``'s kind of JSON: an object by license id, each text a list of its lines (#705).
 
     **Test steps:**
 
-    * serialize terms with a url
-    * verify the text opens with the fence and carries the header keys in order
-    * parse it back and verify the terms are equal
+    * serialize two licenses' texts
+    * verify the file is two-space-indented JSON ending in a newline, each entry's keys in order, the texts split at
+      each line end, and no ``url`` key for the one with none
     """
-    text = TERMS.to_text()
+    text = SET.to_text()
 
-    assert text.startswith("---\ntitle: Standard License\nurl: https://example.com/eula\nread: 2026-11-18\n---\n\n")
-    assert LicenseTerms.parse(text, NAME) == TERMS
+    assert text.endswith("}\n")
+    assert text.startswith('{\n  "fab-standard": {\n    "title": "Standard License",\n')
+    assert json.loads(text) == {
+        "fab-standard": {
+            "title": "Standard License",
+            "url": "https://example.com/eula",
+            "read": "2026-11-18",
+            "text": ["# Terms", "", "Use freely.", ""],
+        },
+        "mine": {"title": "Custom", "read": "2026-11-18", "text": ["Mine."]},
+    }
 
 
-def test_terms_with_no_url_write_no_url_key() -> None:
-    """No ``url`` means terms written for the item alone, which nothing refreshes.
+@mark.parametrize(
+    "body",
+    [
+        "Line with two trailing spaces  \nnext",
+        "",
+        "\n",
+        'Ünïcode — "quotes" and \\ backslash\tand a tab',
+        "Above\n\n---\n\nBelow\n",
+    ],
+)
+def test_every_text_round_trips_exactly(body: str) -> None:
+    """A text comes back as it went, trailing spaces, empty lines, characters JSON escapes and a rule line included.
 
     **Test steps:**
 
-    * serialize terms whose url is ``None``
-    * verify the header has no ``url`` key
-    * parse it back and verify the url is still ``None``
+    * serialize a set holding ``body`` and parse it back
+    * verify the set is equal
     """
-    terms = LicenseTerms("Custom", None, READ, "Mine.\n")
+    terms = LicenseTermsSet({"x": LicenseTerms("T", None, READ, body)})
 
-    text = terms.to_text()
-
-    assert "url" not in text
-    assert LicenseTerms.parse(text, NAME) == terms
+    assert LicenseTermsSet.parse(terms.to_text(), NAME) == terms
 
 
-def test_markdown_that_holds_a_fence_line_is_not_cut_short() -> None:
-    """Only the header's own closing fence ends it: a ``---`` rule in the terms stays text.
+def test_characters_are_written_as_they_are() -> None:
+    """``ensure_ascii`` is off, as for a ``.rehu``, so a text reads in the file as typed.
 
     **Test steps:**
 
-    * round-trip terms whose Markdown holds a ``---`` line
-    * verify the Markdown came back whole
+    * serialize a text with accented letters
+    * verify they are in the file unescaped
     """
-    terms = LicenseTerms("Rules", None, READ, "Above\n\n---\n\nBelow\n")
-
-    assert LicenseTerms.parse(terms.to_text(), NAME) == terms
+    assert "Ünï" in LicenseTermsSet({"x": LicenseTerms("T", None, READ, "Ünï")}).to_text()
 
 
-def test_windows_line_endings_parse() -> None:
-    """A sidecar saved with CRLF endings still reads.
+def test_two_sets_of_the_same_texts_are_equal_in_any_order() -> None:
+    """A reorder of a record's licenses is no change to its texts, so a save never rewrites the sidecar for it.
 
     **Test steps:**
 
-    * parse a text whose lines end in CRLF
-    * verify the header and the Markdown
+    * build the set's two texts in the other order
+    * verify the sets are equal
     """
-    text = "---\r\ntitle: T\r\nread: 2026-11-18\r\n---\r\n\r\nBody\r\n"
-
-    parsed = LicenseTerms.parse(text, NAME)
-
-    assert (parsed.title, parsed.url, parsed.read, parsed.text) == ("T", None, READ, "Body\r\n")
+    assert LicenseTermsSet({"mine": CUSTOM, "fab-standard": TERMS}) == SET
 
 
 @mark.parametrize(
     ("text", "reason"),
     [
-        ("", "expected a YAML header"),
-        ("title: T\n", "expected a YAML header"),
-        ("---\ntitle: T\n", "never closed"),
-        ("---\ntitle: [\n---\n", "invalid YAML header"),
-        ("---\n- a\n---\n", "expected a YAML mapping"),
-        ("---\nread: 2026-11-18\n---\n", "title is missing"),
-        ("---\ntitle: 4\nread: 2026-11-18\n---\n", "title is missing"),
-        ("---\ntitle: T\nread: 2026-11-18\nurl: 4\n---\n", "url is not a string"),
-        ("---\ntitle: T\n---\n", "read is missing"),
-        ("---\ntitle: T\nread: yesterday\n---\n", "read is missing or not a date"),
-        ("---\ntitle: T\nread: 2026-11-18 10:30:00\n---\n", "read is missing or not a date"),
+        ("", "invalid JSON"),
+        ("title: T\n", "invalid JSON"),
+        ("[]", "expected a JSON object"),
+        ('{"x": "terms"}', "x: The license terms are not an object"),
+        ('{"x": {"read": "2026-11-18", "text": []}}', "x: .*need a title"),
+        ('{"x": {"title": 4, "read": "2026-11-18", "text": []}}', "x: .*need a title"),
+        ('{"x": {"title": "T", "read": "2026-11-18", "text": "one string"}}', "x: .*need a title and a text"),
+        ('{"x": {"title": "T", "read": "2026-11-18", "text": ["a", 4]}}', "x: .*need a title and a text"),
+        ('{"x": {"title": "T", "read": "2026-11-18", "text": [], "url": 4}}', "x: .*url that is a string"),
+        ('{"x": {"title": "T", "text": []}}', "x: .*date is not a day"),
+        ('{"x": {"title": "T", "read": "yesterday", "text": []}}', "x: .*date is not a day"),
     ],
 )
 def test_a_sidecar_that_cannot_be_read_is_refused_with_its_name(text: str, reason: str) -> None:
-    """Every malformed header is a :class:`LicenseTermsError` that starts with the file's name.
+    """Every malformed file is a :class:`LicenseTermsError` that starts with the file's name, and an entry's with its
+    license id.
 
     **Test steps:**
 
     * parse ``text``
     * verify the refusal starts with the file name and names ``reason``
     """
-    with raises(LicenseTermsError, match=f"^{NAME}: .*{reason}"):
-        LicenseTerms.parse(text, NAME)
+    with raises(LicenseTermsError, match=f"^{NAME}: {reason}"):
+        LicenseTermsSet.parse(text, NAME)
 
 
 def test_terms_round_trip_through_the_data_a_document_holds_them_as() -> None:
-    """A document holds its terms as JSON primitives (#688), a date as its day, and reads the same terms back; no url is
-    no key.
+    """A document holds its texts as JSON primitives by license id (#688, #705), a date as its day and a text as one
+    string, and reads the same texts back; no url is no key.
 
     **Test steps:**
 
-    * turn terms with and without a url into data
-    * verify the keys, the day as text, and that ``from_data`` reads each back equal
+    * turn a set into data
+    * verify the keys, the day as text, the text as one string, and that ``from_data`` reads it back equal
     """
-    custom = LicenseTerms("Custom", None, READ, "Mine.\n")
-
-    assert TERMS.to_data() == {
-        "title": "Standard License",
-        "url": "https://example.com/eula",
-        "read": "2026-11-18",
-        "text": "# Terms\n\nUse freely.\n",
+    assert SET.to_data() == {
+        "fab-standard": {
+            "title": "Standard License",
+            "url": "https://example.com/eula",
+            "read": "2026-11-18",
+            "text": "# Terms\n\nUse freely.\n",
+        },
+        "mine": {"title": "Custom", "read": "2026-11-18", "text": "Mine."},
     }
-    assert "url" not in custom.to_data()
-    assert LicenseTerms.from_data(TERMS.to_data()) == TERMS
-    assert LicenseTerms.from_data(custom.to_data()) == custom
+    assert LicenseTermsSet.from_data(SET.to_data()) == SET
 
 
 @mark.parametrize(
     "data",
     [
         "terms",
-        {"url": "u", "read": "2026-11-18", "text": ""},
-        {"title": "T", "read": "2026-11-18"},
-        {"title": "T", "text": "", "read": "2026-11-18", "url": 3},
-        {"title": "T", "text": ""},
-        {"title": "T", "text": "", "read": "yesterday"},
-        {"title": "T", "text": "", "read": 20261118},
+        {"x": "terms"},
+        {"x": {"url": "u", "read": "2026-11-18", "text": ""}},
+        {"x": {"title": "T", "read": "2026-11-18"}},
+        {"x": {"title": "T", "text": "", "read": "2026-11-18", "url": 3}},
+        {"x": {"title": "T", "text": ""}},
+        {"x": {"title": "T", "text": "", "read": "yesterday"}},
+        {"x": {"title": "T", "text": "", "read": 20261118}},
+        {"x": {"title": "T", "text": ["a"], "read": "2026-11-18"}},
     ],
 )
 def test_data_that_is_not_terms_is_refused(data: object) -> None:
@@ -193,11 +209,49 @@ def test_data_that_is_not_terms_is_refused(data: object) -> None:
 
     **Test steps:**
 
-    * read data with no title, no text, a url that is no string, or a date that is no day
+    * read data that is no object, or an entry with no title, no text, a url that is no string, a date that is no
+      day, or the file's list of lines where one string belongs
     * verify each raises ``LicenseTermsError``
     """
     with raises(LicenseTermsError):
-        LicenseTerms.from_data(data)
+        LicenseTermsSet.from_data(data)
+
+
+def test_one_license_text_is_set_in_its_place_added_last_and_removed() -> None:
+    """``with_terms`` keeps a replaced text where it was, puts a new one last, and drops one set to ``None``.
+
+    **Test steps:**
+
+    * replace the first text, add a third, and remove the second
+    * verify each set's ids in order and its texts
+    """
+    other = LicenseTerms("Other", None, READ, "Other.")
+
+    replaced = SET.with_terms("fab-standard", other)
+    added = SET.with_terms("cc-by-4.0", other)
+    removed = SET.with_terms("mine", None)
+
+    assert list(replaced.terms) == ["fab-standard", "mine"]
+    assert replaced.get("fab-standard") == other
+    assert list(added.terms) == ["fab-standard", "mine", "cc-by-4.0"]
+    assert removed == LicenseTermsSet({"fab-standard": TERMS})
+    assert SET.get("nothing") is None
+
+
+def test_a_text_kept_under_another_id_keeps_its_place() -> None:
+    """``renamed`` moves a text to a new id where it was, drops a text the new id already had, and gives the set back
+    for an id with no text or a rename to itself.
+
+    **Test steps:**
+
+    * rename the first id to a new one, then to the second id
+    * verify the order and texts, and that renaming an absent id or to itself gives the set back
+    """
+    assert list(SET.renamed("fab-standard", "fab-new").terms) == ["fab-new", "mine"]
+    assert SET.renamed("fab-standard", "fab-new").get("fab-new") == TERMS
+    assert SET.renamed("fab-standard", "mine") == LicenseTermsSet({"mine": TERMS})
+    assert SET.renamed("nothing", "mine") is SET
+    assert SET.renamed("mine", "mine") is SET
 
 
 # endregion
@@ -225,8 +279,8 @@ def test_a_written_sidecar_reads_back(tmp_path: Path) -> None:
     * verify the file is at the record's sidecar path and reads back the later terms
     """
     record = tmp_path / "foo.rehu"
-    write_license_terms(record, TERMS)
-    later = LicenseTerms("Other", None, READ, "Later.\n")
+    write_license_terms(record, SET)
+    later = LicenseTermsSet({"other": LicenseTerms("Other", None, READ, "Later.\n")})
 
     write_license_terms(record, later)
 
@@ -244,9 +298,9 @@ def test_a_write_goes_through_the_atomic_write(tmp_path: Path, mocker: MockerFix
     """
     atomic = mocker.patch(f"{MODULE}.atomic_write_text")
 
-    write_license_terms(tmp_path / "foo.rehu", TERMS)
+    write_license_terms(tmp_path / "foo.rehu", SET)
 
-    atomic.assert_called_once_with(tmp_path / NAME, TERMS.to_text())
+    atomic.assert_called_once_with(tmp_path / NAME, SET.to_text())
 
 
 def test_an_unparsable_sidecar_is_refused_on_read(tmp_path: Path) -> None:
@@ -257,23 +311,23 @@ def test_an_unparsable_sidecar_is_refused_on_read(tmp_path: Path) -> None:
     * write junk at a record's sidecar path
     * verify reading it raises, naming the file
     """
-    (tmp_path / NAME).write_text("not a header", encoding="utf-8")
+    (tmp_path / NAME).write_text("not json", encoding="utf-8")
 
     with raises(LicenseTermsError, match=NAME):
         read_license_terms(tmp_path / "foo.rehu")
 
 
 def test_a_sidecar_saved_with_a_byte_order_mark_reads(tmp_path: Path) -> None:
-    """An editor's byte-order mark in front of the header is no part of the text, so the file reads as without it.
+    """An editor's byte-order mark in front of the object is no part of the text, so the file reads as without it.
 
     **Test steps:**
 
     * write a sidecar's text behind a UTF-8 byte-order mark
     * verify it reads back as the terms
     """
-    (tmp_path / NAME).write_bytes(b"\xef\xbb\xbf" + TERMS.to_text().encode("utf-8"))
+    (tmp_path / NAME).write_bytes(b"\xef\xbb\xbf" + SET.to_text().encode("utf-8"))
 
-    assert read_license_terms(tmp_path / "foo.rehu") == TERMS
+    assert read_license_terms(tmp_path / "foo.rehu") == SET
 
 
 def test_a_sidecar_that_is_not_utf8_is_refused_on_read(tmp_path: Path) -> None:
@@ -285,7 +339,7 @@ def test_a_sidecar_that_is_not_utf8_is_refused_on_read(tmp_path: Path) -> None:
     * write bytes that are not UTF-8 at a record's sidecar path
     * verify reading it raises, naming the file
     """
-    (tmp_path / NAME).write_bytes(b"---\ntitle: \xff\xfe\n---\n")
+    (tmp_path / NAME).write_bytes(b'{"x": {"title": "\xff\xfe"}}')
 
     with raises(LicenseTermsError, match=f"^{NAME}: not UTF-8 text"):
         read_license_terms(tmp_path / "foo.rehu")
@@ -299,7 +353,7 @@ def test_an_oversized_sidecar_is_refused_before_it_is_read(tmp_path: Path, mocke
     * write a sidecar and make the cap report it oversized
     * verify reading raises, naming the file and saying it refuses to parse
     """
-    (tmp_path / NAME).write_text(TERMS.to_text(), encoding="utf-8")
+    (tmp_path / NAME).write_text(SET.to_text(), encoding="utf-8")
     mocker.patch(f"{MODULE}.oversized_file_reason", return_value="too big")
 
     with raises(LicenseTermsError, match=f"^{NAME}: refusing to parse — too big"):

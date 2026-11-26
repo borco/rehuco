@@ -16,7 +16,7 @@ from pytest import LogCaptureFixture, fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco.copied_paths import CopiedPath, CopyFormat, json_paths, quoted_paths
-from rehuco_core import CatalogRecord, CatalogRow, LicenseTerms, RecordKind, write_license_terms
+from rehuco_core import CatalogRecord, CatalogRow, LicenseTerms, LicenseTermsSet, RecordKind, write_license_terms
 
 from .test_catalog_docks import (  # noqa: F401  # pylint: disable=unused-import
     PACKS,
@@ -54,7 +54,9 @@ QUOTED: Final = CopyFormat("Copy paths", quoted_paths)
 AS_JSON: Final = CopyFormat("Copy paths as JSON", json_paths, names_licenses=True)
 """The JSON copy, which looks for each asset's license text."""
 
-TERMS: Final = LicenseTerms("Standard License", "https://example.com/eula", datetime.date(2026, 11, 18), "Terms")
+TERMS: Final = LicenseTermsSet(
+    {"fab-standard": LicenseTerms("Standard License", "https://example.com/eula", datetime.date(2026, 11, 18), "Terms")}
+)
 """What a record's ``.rehuterms`` holds."""
 
 

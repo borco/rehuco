@@ -21,6 +21,7 @@ document's null-normalization walk.
 from collections.abc import Collection
 from typing import Any, Final
 
+from .asset_license import AssetLicense
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import current_block_version
 from .plugins import ASSET_KINDS, PluginRegistry
@@ -63,8 +64,6 @@ OPTIONAL_INT_ASSET_KEYS: Final = ("advertised_size", "triangles", "texture_size"
 rule's to judge."""
 
 OPTIONAL_TEXT_ASSET_KEYS: Final = (
-    "license",
-    "license_url",
     "advertised_version",
     "current_version",
     "advertised_triangles",
@@ -96,6 +95,10 @@ on a block whose type declares the key."""
 STR_LIST_ASSET_KEYS: Final = ("formats",)
 """An asset block's plain-string lists ([[assets#block]]), read and locked by the rule :data:`STR_LIST_CORE_KEYS`
 follows."""
+
+LICENSES_ASSET_KEY: Final = "licenses"
+"""An asset block's licenses ([[assets#licenses]]): a list of :class:`~rehuco_core.AssetLicense` objects, unique by id.
+An entry that cannot be read, or repeats an id, is skipped by the getter and locks."""
 
 STR_MAP_ASSET_KEYS: Final = ("compatibility",)
 """An asset block's string-to-string maps ([[assets#block]]): absent reads as ``{}``; a non-object, or an object
@@ -399,13 +402,14 @@ def invalid_asset_reasons(active_block: dict[str, Any], declared: Collection[str
     malformed-but-recoverable original ([[data-model#write-integrity]]). A scalar of JSON ``null`` is already
     normalized to absent; a ``null`` list or map locks, as a ``null`` tag list does.
 
-    **Only a key the active type declares is checked.** ``kind``, ``license`` and ``formats`` are common words, and a
+    **Only a key the active type declares is checked.** ``kind``, ``licenses`` and ``formats`` are common words, and a
     block of another type, or of one no plugin here claims, may carry them with a meaning of its own: nothing reads
     them through these getters there, so nothing could save a coerced value over them.
 
     :param active_block: the active plugin block's fields.
     :param declared: the field names the active type declares.
-    :returns: the reasons: the integers, the text, the dates, ``kind``, the lists, then the maps, in key order.
+    :returns: the reasons: the integers, the text, the dates, ``kind``, the lists, the licenses, then the maps, in
+        key order.
     """
     reasons: list[LockReason] = []
 
@@ -426,6 +430,10 @@ def invalid_asset_reasons(active_block: dict[str, Any], declared: Collection[str
     for key in STR_LIST_ASSET_KEYS:
         if key in active_block and key in declared and coerced_str_list(active_block[key]) != active_block[key]:
             refuse(key, "a list of strings")
+    if LICENSES_ASSET_KEY in active_block and LICENSES_ASSET_KEY in declared:
+        stored = active_block[LICENSES_ASSET_KEY]
+        if AssetLicense.list_data(AssetLicense.read_list(stored)) != stored:
+            refuse(LICENSES_ASSET_KEY, "a list of licenses, each with its own id")
     for key in STR_MAP_ASSET_KEYS:
         if key in active_block and key in declared and coerced_str_map(active_block[key]) != active_block[key]:
             refuse(key, "a map of strings")

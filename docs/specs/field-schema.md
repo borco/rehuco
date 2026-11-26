@@ -766,8 +766,8 @@ The distinct value types the viewer must handle:
 | Markdown | rich text; resolves embedded image paths relative to the file's folder |
 | int | plain integer; `collection_index`, `current_count` (which adds a measure/apply row, [[data-model#resource-scoping]]) |
 | count claim | a whole number, optionally suffixed `+` (`500`, `500+`); stored as **text**, never coerced to an integer — `advertised_count` |
-| optional text | one line a record may leave out; empty is **absent**, never `""`. An asset's versions and its two advertised ranges (text in the notation of [[assets#ranges]], never refused); `license_url` is the same shown as a link (#678) |
-| choice | one of a closed list, or none; an asset's `kind`. `license` is the same with the known ids offered and any other text allowed (#678) |
+| optional text | one line a record may leave out; empty is **absent**, never `""`. An asset's versions and its two advertised ranges (text in the notation of [[assets#ranges]], never refused) |
+| choice | one of a closed list, or none; an asset's `kind` |
 | string map | a table of keys and the values they map to; an asset's `compatibility` (#678) |
 | record list | list of small records; `sources`, `collections`, `learning_paths` ([[field-schema#sources]]) |
 

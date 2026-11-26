@@ -1,5 +1,5 @@
-"""Tests for the fields an asset adds to the editor (#678): optional text and link, a closed choice, text with known
-values, a map of text to text, a size, and a date that keeps a time. Each binds an asset's own field, empty meaning
+"""Tests for the fields an asset adds to the editor (#678): optional text, a closed choice, a map of text to text, a
+size, and a date that keeps a time. Each binds an asset's own field, empty meaning
 absent."""
 
 from datetime import UTC, datetime
@@ -10,22 +10,19 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.widgets import (
     DateEdit,
-    EditableChoiceComboBox,
     LineEdit,
     SingleChoiceComboBox,
     SizeEdit,
     StringMapValueEditor,
 )
-from rehuco_core import ASSET_KINDS, ASSET_LICENSES
+from rehuco_core import ASSET_KINDS
 
 from rehuco_agent_tests.fields.field_testers import (
     ChoiceFieldTester,
     DateFieldTester,
     OptionalTextFieldTester,
-    OptionalUrlFieldTester,
     SizeFieldTester,
     StringMapFieldTester,
-    TextChoiceFieldTester,
 )
 
 # region Optional text
@@ -99,38 +96,6 @@ def test_optional_text_never_refuses_what_is_typed(qtbot: QtBot, asset_model: Re
 
 # endregion
 
-# region Optional link
-
-
-def test_optional_url_links_what_is_stored_and_edits_as_text(qtbot: QtBot, asset_model: RehuDocumentModel) -> None:
-    """The viewer is a link to the stored URL, blank when there is none, and the editor clears to absent.
-
-    **Test steps:**
-
-    * build the ``license_url`` viewer and editor over an asset with none
-    * verify the link is blank, store a URL and verify it links there
-    * clear the editor and verify the key is gone
-    """
-    field = OptionalUrlFieldTester("license_url", "License URL")
-    viewer = field.make_viewer(asset_model.bind(field)).viewer
-    editor = field.make_editor(asset_model.bind(field)).editor
-    assert isinstance(viewer, QLabel)
-    assert isinstance(editor, LineEdit)
-    qtbot.addWidget(viewer)
-    qtbot.addWidget(editor)
-    assert viewer.text() == ""
-
-    editor.setText("https://fab.com/eula")
-
-    assert asset_model.license_url == "https://fab.com/eula"
-    assert "https://fab.com/eula" in viewer.text()
-    editor.setText("")
-    assert "license_url" not in asset_model.document.active_block
-    assert viewer.text() == ""
-
-
-# endregion
-
 # region Closed choice
 
 
@@ -188,61 +153,6 @@ def test_choice_follows_the_model_and_a_stray_value_shows_blank(qtbot: QtBot, as
     asset_model.kind = None
     assert viewer.text() == ""
     assert editor.currentIndex() == 0
-
-
-# endregion
-
-# region Text with known values
-
-
-def test_text_choice_offers_the_known_values_and_takes_any_text(qtbot: QtBot, asset_model: RehuDocumentModel) -> None:
-    """The combo lists the known values and starts blank for an absent value; a typed text is written as it is, and
-    clearing it removes the key.
-
-    **Test steps:**
-
-    * build the ``license`` editor over an asset with none
-    * verify it offers the known licenses, blank
-    * type a license no list names, then clear the line
-    * verify the model holds that text and then nothing
-    """
-    field = TextChoiceFieldTester("license", choices=ASSET_LICENSES)
-    viewer = field.make_viewer(asset_model.bind(field)).viewer
-    editor = field.make_editor(asset_model.bind(field)).editor
-    assert isinstance(viewer, QLabel)
-    assert isinstance(editor, EditableChoiceComboBox)
-    qtbot.addWidget(viewer)
-    qtbot.addWidget(editor)
-    assert [editor.itemText(index) for index in range(editor.count())] == list(ASSET_LICENSES)
-    assert editor.currentText() == ""
-
-    editor.setEditText("daz-interactive")
-    assert asset_model.license == "daz-interactive"
-    assert viewer.text() == "daz-interactive"
-
-    editor.setEditText("")
-    assert asset_model.license is None
-    assert "license" not in asset_model.document.active_block
-
-
-def test_text_choice_follows_the_model(qtbot: QtBot, asset_model: RehuDocumentModel) -> None:
-    """A license set from elsewhere shows in the line.
-
-    **Test steps:**
-
-    * build the editor, then set the license on the model
-    * verify the editor shows it, and is blank again once the license is cleared
-    """
-    field = TextChoiceFieldTester("license", choices=ASSET_LICENSES)
-    editor = field.make_editor(asset_model.bind(field)).editor
-    assert isinstance(editor, EditableChoiceComboBox)
-    qtbot.addWidget(editor)
-
-    asset_model.license = "cc-by-4.0"
-    assert editor.currentText() == "cc-by-4.0"
-
-    asset_model.license = None
-    assert editor.currentText() == ""
 
 
 # endregion

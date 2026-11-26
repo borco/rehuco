@@ -310,8 +310,8 @@ class CatalogRecordReader:  # pylint: disable=too-few-public-methods
     @staticmethod
     def __type_fields(document: RehuDocument) -> dict[str, Any]:
         """The type-specific fields the cache stores (:data:`~rehuco_core.rehudb.TYPE_FIELD_COLUMNS`, and an asset's
-        ``formats``) that the record's type declares -- so a stray key in another type's block, or a type no plugin
-        here claims, stays empty rather than showing in a column that is not its type's."""
+        ``formats`` and ``licenses``) that the record's type declares -- so a stray key in another type's block, or a
+        type no plugin here claims, stays empty rather than showing in a column that is not its type's."""
         values = {
             "advertised_duration": document.advertised_duration,
             "original_duration": document.original_duration,
@@ -320,9 +320,9 @@ class CatalogRecordReader:  # pylint: disable=too-few-public-methods
             "advertised_count": document.advertised_count,
             "current_count": document.current_count,
             "asset_kind": document.kind,
-            "license": document.license,
             "compatibility": tuple(document.compatibility.items()),
             "formats": tuple(document.formats),
+            "licenses": tuple(entry.license for entry in document.licenses),
             "source_updated": document.source_updated,
             "advertised_version": document.advertised_version,
             "current_version": document.current_version,

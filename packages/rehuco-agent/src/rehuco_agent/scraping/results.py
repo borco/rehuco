@@ -83,8 +83,7 @@ SCRAPED_FIELD_NAMES: Final = (
     "advertised_count",
     "level",
     "kind",
-    "license",
-    "license_url",
+    "licenses",
     "formats",
     "compatibility",
     "source_updated",
@@ -101,9 +100,10 @@ boolean flags, `rating`, `learning_paths`, the `.rehu` timestamps) come from els
 be read from, so :data:`SCRAPE_RESULT_SCHEMA` rejects them rather than accept a guess.
 
 **The asset block's** scraped fields ([[assets#block]], #701) are the ones a store states: ``kind``, the
-license pair, ``formats``, ``compatibility``, ``source_updated``, ``advertised_version``, ``advertised_size``
-and the two advertised counts (a range's text, `rehuco_core.ValueRange`). Not ``acquired``, which only the
-library scan knows from the account, and not the measured ``triangles`` and ``texture_size``.
+``licenses`` (each ``{license, url?}``, #705), ``formats``, ``compatibility``, ``source_updated``,
+``advertised_version``, ``advertised_size`` and the two advertised counts (a range's text, `rehuco_core.ValueRange`).
+Not ``acquired``, which only the library scan knows from the account, and not the measured ``triangles`` and
+``texture_size``.
 
 ``site_id`` is the store's own id for the item ([[assets#site-id]]): like ``url``, it lands on the scraped page's
 source rather than in a field of its own.

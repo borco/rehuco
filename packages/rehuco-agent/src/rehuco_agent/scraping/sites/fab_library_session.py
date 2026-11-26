@@ -44,9 +44,6 @@ OWNED_LICENSE_ORDER: Final = (
 """Fab's license tiers, the broadest rights first: the one an item holds under, when the account owns several, is the
 first of these it owns, and a tier named here goes before one that is not."""
 
-TAG_LICENSE_PREFIX: Final = "license-"
-"""Prefixes the tag of each tier an item is owned under, so licenses can be filtered on ([[assets#block]])."""
-
 NULL_UID: Final = "00000000-0000-0000-0000-000000000000"
 """The entitlement id of a cursor that stands before every entry of its millisecond."""
 
@@ -139,14 +136,14 @@ class FabLibrarySession:
             result = Fab.scrape_library_entry(raw)
         owned = FabLibrarySession.__owned_tiers(raw)
         fields = dict(result.fields)
-        license_path = FabLibrarySession.__license_fields(fields, owned)
+        license_paths = FabLibrarySession.__license_fields(fields, owned)
         merged = ScrapeResult(fields=fields, description=result.description, images=result.images)
         try:
             checked = ScrapeResult.coerce(merged)
         except InvalidScrapeResultError as error:
             # one item Fab states oddly stops the scan with its name, never with a traceback
             raise FetchError(f"{entry.title} ({entry.url}) cannot be written: {error}") from error
-        return ScannedItem(checked, str(fields["url"]), license_path)
+        return ScannedItem(checked, str(fields["url"]), license_paths)
 
     def read_license(self, path: str) -> LicenseTerms | None:
         """Read a license's text, through the persona for Fab's own and plainly for the Creative Commons page
@@ -304,28 +301,29 @@ class FabLibrarySession:
         return str(group.get("slug") if isinstance(group, dict) else ""), str(tier.get("slug") or "")
 
     @staticmethod
-    def __license_fields(fields: dict[str, Any], owned: list[dict[str, Any]]) -> str | None:
-        """Write the owned license into an item's fields: the broadest tier as its license, each as a tag.
+    def __license_fields(fields: dict[str, Any], owned: list[dict[str, Any]]) -> dict[str, str]:
+        """Write the owned licenses into an item's fields: each tier an entry of its ``licenses``, the broadest first
+        and each id once (#705); a tier this scraper has no id for is kept under its own slug, with no url.
 
         :param fields: the item's fields, changed here.
         :param owned: the owned tiers, the broadest first.
-        :returns: the broadest tier's path, which names the text to save; ``None`` when none is owned.
+        :returns: the path naming each license's text, by id, from the first tier of that id that states one; empty
+            when none is owned.
         """
-        if not owned:
-            return None
-        group, slug = FabLibrarySession.__pair_of(owned[0])
-        known = Fab.license_fields(group, slug)
-        # what the listing offered is replaced: the library names the tier that is owned
-        for key in ("license", "license_url"):
-            fields.pop(key, None)
-        fields.update(known)
-        tags = [str(tag) for tag in fields.get("advertised_tags") or []]
+        # what the listing offered is replaced: the library names the tiers that are owned
+        fields.pop("licenses", None)
+        entries: list[dict[str, str]] = []
+        paths: dict[str, str] = {}
         for tier in owned:
             pair = FabLibrarySession.__pair_of(tier)
-            name = Fab.license_fields(*pair).get("license") or NON_SLUG.sub("-", "-".join(pair).lower()).strip("-")
-            tag = f"{TAG_LICENSE_PREFIX}{name}"
-            if tag.casefold() not in {kept.casefold() for kept in tags}:
-                tags.append(tag)
-        fields["advertised_tags"] = tags
-        path = owned[0].get("path")
-        return path if isinstance(path, str) and path else None
+            entry = Fab.license_entry(*pair) or {"license": NON_SLUG.sub("-", "-".join(pair).lower()).strip("-")}
+            license_id = entry["license"]
+            if not license_id or any(kept["license"] == license_id for kept in entries):
+                continue
+            entries.append(entry)
+            path = tier.get("path")
+            if isinstance(path, str) and path:
+                paths[license_id] = path
+        if entries:
+            fields["licenses"] = entries
+        return paths
