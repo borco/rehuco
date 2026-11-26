@@ -231,6 +231,11 @@ Facts about Qt and PySide that cost time to find, beyond the thread rules above.
 - **Painting**: `ElidedLabel` re-sets its tooltip on every resize, so pass `tooltip=` (#639). A `QLabel` pixmap does
   not follow the palette: build it from `recolored_svg_icon`, and redraw on `PaletteChange` and `EnabledChange`
   (#649).
+- **`QTextLayout`** (#700): a `QTextLine` is a view of its layout, so a line taken from a temporary one
+  (`make_layout().lineAt(0)`) is used freed and crashes the process: hold the layout in a name for as long as its
+  lines are read. A layout is one paragraph and does not break at `\n`, which `drawText` does: lay the text out with
+  U+2028 in its place, one character for one, so offsets into the text still hold (`LogMessageDelegate`). Its line
+  heights are not `QFontMetrics`' (the leading differs by font), so paint, size and hit-testing read the one layout.
 - **The QtAds stub** `typings/PySide6QtAds/__init__.pyi` lists only the methods the code calls: one pyright calls
   unknown is added there (#624).
 - **Images beyond Qt** (#650): the PySide wheels read no HEIC or AVIF, so `image_source` routes both to Pillow
