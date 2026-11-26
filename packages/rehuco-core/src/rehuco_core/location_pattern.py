@@ -2,12 +2,12 @@
 fields ([[plugins#tutorial-plugin]], #322, #349, #577).
 
 **A pattern is a format string with optional groups.** ``{title}`` / ``{publisher}`` / ``{authors}`` /
-``{year}`` interpolate the record's fields, and a ``{{ ... }}`` group is emitted only when every
-placeholder inside it has a value -- so ``{title}{{ [{year}]}}`` names a resource ``Title [2026]`` with a
-year and plain ``Title`` without one, instead of ``Title []``. Whitespace inside a group is kept
-verbatim, which is how a group carries its own separator. This deliberately takes ``{{`` away from
-:meth:`str.format`'s literal-brace meaning: a literal brace in a folder name is never wanted, and a
-group that can drop out is.
+``{author_0}`` (the first author alone, #707) / ``{year}`` interpolate the record's fields, and a ``{{ ... }}``
+group is emitted only when every placeholder inside it has a value -- so ``{title}{{ [{year}]}}`` names a
+resource ``Title [2026]`` with a year and plain ``Title`` without one, instead of ``Title []``. Whitespace
+inside a group is kept verbatim, which is how a group carries its own separator. This deliberately takes
+``{{`` away from :meth:`str.format`'s literal-brace meaning: a literal brace in a folder name is never wanted,
+and a group that can drop out is.
 
 The agent's rename suggestions and a root's layouts (:mod:`rehuco_core.root_destination`) both render through
 it, so the two can never disagree on what a pattern means.
@@ -19,7 +19,7 @@ from typing import Final
 
 from .rehu_document import AuthorEntry, author_name
 
-KNOWN_PLACEHOLDERS: Final = frozenset({"title", "publisher", "authors", "year", "site", "site_id"})
+KNOWN_PLACEHOLDERS: Final = frozenset({"title", "publisher", "authors", "author_0", "year", "site", "site_id"})
 """The fields every type's pattern may interpolate ([[field-schema#field-mapping]]), regardless of which plugin it
 belongs to -- :func:`known_placeholders_for` is what a type's *full* set is, this plus whichever
 :data:`PLUGIN_PLACEHOLDERS` entries that type's declared fields back (#349). ``{site}`` is the primary source's
@@ -36,12 +36,14 @@ PLUGIN_PLACEHOLDERS: Final[Mapping[str, str]] = {"count": "advertised_count"}
 refused on a tutorial one, without either page's declaration knowing the other's shape. Keyed by
 placeholder name, which is what a pattern spells and what :func:`known_placeholders_for` returns."""
 
-PLACEHOLDERS: Final = ("title", "publisher", "authors", "year", "count", "site", "site_id")
+PLACEHOLDERS: Final = ("title", "publisher", "authors", "author_0", "year", "count", "site", "site_id")
 """Every placeholder a template of any type may name for a value, in the order a page shows them:
 :data:`KNOWN_PLACEHOLDERS` and the :data:`PLUGIN_PLACEHOLDERS` names (#637). :data:`BUCKETS_PLACEHOLDER` names no
 value, so it is not one of them."""
 
-BLANK_PATTERN_PROBLEM: Final = "A pattern is a format string interpolating {title} / {publisher} / {authors} / {year}."
+BLANK_PATTERN_PROBLEM: Final = (
+    "A pattern is a format string interpolating {title} / {publisher} / {authors} / {author_0} / {year}."
+)
 MALFORMED_PATTERN_PROBLEM: Final = (
     "This does not parse as a format string: a { or } is unbalanced, or a placeholder carries a "
     "format spec or conversion, which a name never needs."
@@ -306,7 +308,9 @@ def location_values(  # pylint: disable=too-many-arguments
 
     :param title: the record's title.
     :param publisher: its publisher, which is also its site (#675).
-    :param authors: its author entries, joined by ``", "`` under their names.
+    :param authors: its author entries, joined by ``", "`` under ``{authors}``; ``{author_0}`` is the first name
+        among them alone (#707), an entry with no name passed over as the cache drops it, so a record's place is
+        the same read from its file and from the cache.
     :param released: its release date, whose first four characters are the year; ``None`` leaves the year empty.
     :param advertised_count: its advertised count, ``None`` when it has none.
     :param site_id: the store's id for it, ``None`` when it has none (#680).
@@ -316,6 +320,7 @@ def location_values(  # pylint: disable=too-many-arguments
         "title": title,
         "publisher": publisher,
         "authors": ", ".join(author_name(entry) for entry in authors),
+        "author_0": next((name for name in map(author_name, authors) if name), ""),
         "year": (released or "")[:4],
         "count": advertised_count or "",
         "site": publisher,

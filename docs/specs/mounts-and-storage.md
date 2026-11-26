@@ -150,7 +150,8 @@ references** to such files and nothing more about a root: its role is to aggrega
 - **`layouts`** says where a record of each type lives under this root: a map from a resource type's main key, or
   `*` for any type not named, to a **list of path templates** (#638; a plain string reads as a list of one, and a save
   writes lists) — each the Locations grammar ([[plugins#tutorial-plugin]]'s
-  placeholders, `{site}` and `{site_id}` among them, `{{ … }}` optional groups, `{count}` where the type declares it,
+  placeholders, `{site}`, `{site_id}` and `{author_0}` (the first author alone, #707) among them, `{{ … }}` optional
+  groups, `{count}` where the type declares it,
   the Location Replacements applied after) **plus `/` as a level separator** and **`{buckets}`, a level spreading the
   next over prefix buckets** ([[mounts-and-storage#buckets]]), each segment sanitized as a name is today and the
   separators kept; a segment that starts with a dot refuses the layout for that record (#680). The

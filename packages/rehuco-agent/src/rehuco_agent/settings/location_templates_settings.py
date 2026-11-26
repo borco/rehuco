@@ -60,14 +60,16 @@ its own can name ``{count}``."""
 
 
 def sample_values(sample: Sequence[str]) -> dict[str, str]:
-    """A Try-it sample record as a pattern reads it: each field under its placeholder, and ``{site}`` as its
-    publisher, which a site's scraper sets it to (#680).
+    """A Try-it sample record as a pattern reads it: each field under its placeholder, ``{site}`` as its
+    publisher, which a site's scraper sets it to (#680), and ``{author_0}`` as the first name on its
+    comma-separated authors line (#707).
 
     :param sample: the record, in :data:`SAMPLE_FIELDS` order.
     :returns: the values, by placeholder name.
     """
     values = dict(zip(SAMPLE_FIELDS, sample, strict=True))
-    return values | {"site": values["publisher"]}
+    first_author = next((name for name in map(str.strip, values["authors"].split(",")) if name), "")
+    return values | {"site": values["publisher"], "author_0": first_author}
 
 
 NAME_SUGGESTION_PATTERNS: Final = (

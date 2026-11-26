@@ -18,6 +18,7 @@ from rehuco_agent.settings.location_templates_settings import (
     SAMPLE_FIELDS,
     LocationTemplatesSettings,
     normalize_location_templates,
+    sample_values,
     shared_location_templates_settings,
 )
 from rehuco_core import (
@@ -423,6 +424,23 @@ def test_samples_round_trip_through_their_own_group(settings: FakeSettings) -> N
 
     assert loaded.sample_for("reference_images") == sample
     assert not loaded.patterns
+
+
+def test_the_sample_names_its_first_author_for_author_0() -> None:
+    """The Try-it sample's ``{author_0}`` is the first of its comma-separated authors, empty with none (#707).
+
+    **Test steps:**
+
+    * read the values of the shipped sample, of one typed with a stray comma and no spaces, and of one with none
+    * verify ``{author_0}`` in each
+    """
+    shipped = sample_values(DEFAULT_SAMPLE)
+    single = sample_values(("T", "P", " ,Jane,John", "2025", "", ""))
+    nobody = sample_values(("T", "P", "", "2025", "", ""))
+
+    assert shipped["author_0"] == "Jane Doe"
+    assert single["author_0"] == "Jane"
+    assert nobody["author_0"] == ""
 
 
 def test_a_type_with_no_stored_sample_shows_the_shipped_one() -> None:

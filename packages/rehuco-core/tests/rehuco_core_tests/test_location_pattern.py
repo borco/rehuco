@@ -244,7 +244,7 @@ def test_location_values_spell_a_records_fields_as_placeholders() -> None:
     **Test steps:**
 
     * build the values of a record with mixed author entries, a date, a count and a site id, then of one with none
-    * verify each placeholder's value
+    * verify each placeholder's value, ``{author_0}`` the first author's name alone (#707)
     """
     full = location_values("Intro", "Acme", ["Jane", {"name": "John"}], "2025-03-01", "900+", site_id="a1b2")
     empty = location_values("Intro", "", [], None, None)
@@ -253,6 +253,7 @@ def test_location_values_spell_a_records_fields_as_placeholders() -> None:
         "title": "Intro",
         "publisher": "Acme",
         "authors": "Jane, John",
+        "author_0": "Jane",
         "year": "2025",
         "count": "900+",
         "site": "Acme",
@@ -262,11 +263,38 @@ def test_location_values_spell_a_records_fields_as_placeholders() -> None:
         "title": "Intro",
         "publisher": "",
         "authors": "",
+        "author_0": "",
         "year": "",
         "count": "",
         "site": "",
         "site_id": "",
     }
+
+
+def test_author_0_is_the_first_author_alone_and_no_other_index_is_known() -> None:
+    """``{author_0}`` renders the first author's name, so a group around it drops out for a record with none;
+    an entry with no name is passed over, as the cache drops it; ``{author_1}`` is refused by name like any
+    unknown placeholder (#707).
+
+    **Test steps:**
+
+    * render ``{{{author_0} - }}{title}`` for a record with two authors, one, one after a nameless entry, and none
+    * verify the first author's name each time, and the title alone for none
+    * verify ``{author_1}`` is refused by name
+    """
+    pattern = "{{{author_0} - }}{title}"
+    two = location_values("Intro", "Acme", ["Jane", "John"], None, None)
+    one = location_values("Intro", "Acme", [{"name": "Jane"}], None, None)
+    unnamed_first = location_values("Intro", "Acme", ["", "Jane"], None, None)
+    none = location_values("Intro", "Acme", [], None, None)
+
+    assert render_location_pattern(pattern, two, KNOWN_PLACEHOLDERS) == "Jane - Intro"
+    assert render_location_pattern(pattern, one, KNOWN_PLACEHOLDERS) == "Jane - Intro"
+    assert render_location_pattern(pattern, unnamed_first, KNOWN_PLACEHOLDERS) == "Jane - Intro"
+    assert render_location_pattern(pattern, none, KNOWN_PLACEHOLDERS) == "Intro"
+    assert location_pattern_problem("{author_1}", KNOWN_PLACEHOLDERS) == (
+        UNKNOWN_PLACEHOLDER_PROBLEM_TEMPLATE.format(name="author_1")
+    )
 
 
 def test_a_pattern_says_which_placeholders_it_names_and_which_are_optional() -> None:

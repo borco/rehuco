@@ -225,6 +225,7 @@ def test_a_cached_records_naming_is_its_fields() -> None:
         "title": "Poses",
         "publisher": "Fab",
         "authors": "Jane, John",
+        "author_0": "Jane",
         "year": "2024",
         "count": "500+",
         "site": "Fab",
