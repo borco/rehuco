@@ -1,11 +1,11 @@
 """The table a reader actually reads a log in -- wrapped rows, and a tail it can follow."""
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from typing import Final, override
 
-from PySide6.QtCore import QAbstractItemModel, QAbstractProxyModel, QModelIndex, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QKeySequence, QResizeEvent
-from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableView, QWidget
+from PySide6.QtCore import QAbstractItemModel, QAbstractProxyModel, QEvent, QModelIndex, QPoint, Qt, Signal
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QKeySequence, QMouseEvent, QResizeEvent
+from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QStyleOptionViewItem, QTableView, QWidget
 
 from ..shortcuts import Command, CommandScope, bind_or_apply
 from .log_level_band import LogLevelBand
@@ -51,6 +51,11 @@ class LogView(QTableView):
     :attr:`follow_tail` is still settable, because the reader is owed a way to say *"stay at the
     bottom"* without holding the scrollbar there, and a way to stop following without scrolling away.
 
+    **A record's links are clickable** (:attr:`~.log_entry.LogEntry.links`): the pointer is a hand over one, and a
+    click that is pressed and released on the same one reports its target through :attr:`link_activated` -- once, on
+    the release, so a press that turns into a drag to select text opens nothing. The row is selected by the same click
+    as ever. What a target means is the host's to say; this view only reports it.
+
     :param parent: optional Qt parent. First and positional, because Qt Designer constructs a promoted
         custom widget as ``LogView(parent)`` and nothing else -- the tints arrive later, through
         :attr:`band_colors`.
@@ -61,11 +66,17 @@ class LogView(QTableView):
     reader coming back, or :attr:`follow_tail` being set. What a toggle button in a toolbar stays in
     step with, including when the scroll position is what changed it."""
 
+    link_activated = Signal(object)
+    """Fires with the target of the link a reader clicked (:attr:`borco_core.logging.LogLink.target`), typed as plain
+    ``object`` so that whatever the host put there -- not only a ``str`` -- arrives as itself."""
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__follow_tail = True
         self.__scrolling_to_tail = False
+        self.__pressed_link: Hashable | None = None
         self.__level_delegate: Final = LogLevelDelegate(self)
+        self.__message_delegate: Final = LogMessageDelegate(self)
 
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -80,7 +91,9 @@ class LogView(QTableView):
         self.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
         self.setItemDelegateForColumn(LEVEL_COLUMN, self.__level_delegate)
-        self.setItemDelegateForColumn(MESSAGE_COLUMN, LogMessageDelegate(self))
+        self.setItemDelegateForColumn(MESSAGE_COLUMN, self.__message_delegate)
+        # without it the pointer is only followed while a button is down, and a link could not show a hand
+        self.viewport().setMouseTracking(True)
 
         # the visible affordance for copying -- a right-click menu holding the one action this view
         # offers, which also carries the copy shortcut (`LOG_COPY_COMMAND`)
@@ -202,6 +215,68 @@ class LogView(QTableView):
         del parent, first, last
         if self.__follow_tail:
             self.scroll_to_tail()
+
+    # endregion
+
+    # region links
+
+    def __link_at(self, pos: QPoint) -> Hashable | None:
+        """The link under a point of the viewport.
+
+        :param pos: the point, in viewport coordinates.
+        :returns: the link's target; ``None`` over plain text, another column or nothing.
+        """
+        index = self.indexAt(pos)
+        if not index.isValid() or index.column() != MESSAGE_COLUMN:
+            return None
+        option = QStyleOptionViewItem()
+        self.initViewItemOption(option)
+        option.rect = self.visualRect(index)
+        return self.__message_delegate.link_at(option, index, pos)
+
+    @override
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802  (Qt API name)
+        """Remember the link a left press lands on, then select as usual.
+
+        :param event: the mouse event.
+        """
+        self.__pressed_link = (
+            self.__link_at(event.position().toPoint()) if event.button() == Qt.MouseButton.LeftButton else None
+        )
+        super().mousePressEvent(event)
+
+    @override
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802  (Qt API name)
+        """Report the link a left release lands on, if it is the one the press landed on.
+
+        :param event: the mouse event.
+        """
+        pressed, self.__pressed_link = self.__pressed_link, None
+        super().mouseReleaseEvent(event)
+        if pressed is not None and event.button() == Qt.MouseButton.LeftButton:
+            if self.__link_at(event.position().toPoint()) == pressed:
+                self.link_activated.emit(pressed)
+
+    @override
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802  (Qt API name)
+        """Show a hand over a link, the arrow elsewhere.
+
+        :param event: the mouse event.
+        """
+        if self.__link_at(event.position().toPoint()) is None:
+            self.viewport().unsetCursor()
+        else:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        super().mouseMoveEvent(event)
+
+    @override
+    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802  (Qt API name)
+        """Give the arrow back once the pointer has left, so a hand is never left behind.
+
+        :param event: the leave event.
+        """
+        self.viewport().unsetCursor()
+        super().leaveEvent(event)
 
     # endregion
 

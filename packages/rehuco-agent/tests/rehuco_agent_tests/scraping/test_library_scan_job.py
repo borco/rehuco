@@ -14,9 +14,11 @@ from unittest.mock import MagicMock, Mock, call
 from uuid import UUID
 
 import pytest
+from borco_core.logging import LogLink
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.scraping import library_scan_job as job_module
+from rehuco_agent.scraping.library_record_link import LibraryRecordLink
 from rehuco_agent.scraping.library_record_writer import WrittenRecord
 from rehuco_agent.scraping.library_scan_job import (
     ADDED_LINE,
@@ -267,6 +269,32 @@ def test_a_run_files_what_the_root_lacks_from_where_its_records_reach(
     assert PRESENT_LINE % (FILED.title, FILED.url) in caplog.text
     assert control.report.call_args_list == [call(1), call(2)]
     assert job.outcome == JobOutcome("1 added, 1 already there")
+
+
+def test_an_items_line_links_its_title_to_its_record_and_its_url_to_its_page(
+    store: Store, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Each item's line carries two links as data (#700): the title, naming the record by the store's id so that a
+    record moved after the line was logged is still found, and the address, naming the page.
+
+    **Test steps:**
+
+    * run a scan over an item already filed and a new one
+    * verify each line's record carries the title's link, naming the root, the store and the store's id
+    * verify each carries the address link, its target the address itself
+    """
+    caplog.set_level("INFO")
+    store.entries = [FILED, NEW]
+    scan_target = target(tmp_path)
+
+    job_of(store, scan_target).run(Mock(spec=JobControl))
+
+    for entry in (FILED, NEW):
+        (record,) = (found for found in caplog.records if found.getMessage().startswith(entry.title))
+        assert LogLink.of(record) == (
+            LogLink(entry.title, LibraryRecordLink(scan_target.root_id, "Fab", entry.site_id)),
+            LogLink(entry.url, entry.url),
+        )
 
 
 def test_a_license_is_read_once_per_run_and_handed_to_the_writer(store: Store, tmp_path: Path) -> None:

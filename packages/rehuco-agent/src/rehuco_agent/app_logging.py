@@ -13,6 +13,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QWidget
 
 from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
+from .log_link_relay import LogLinkRelay
 from .settings.logs_settings import shared_logs_settings
 
 LOG_VIEW_ICON_RESOURCE: Final = ":/icons/log_view.svg"
@@ -85,8 +86,20 @@ def shared_log_bridge() -> LogBridge:
     return bridge
 
 
+@lru_cache(maxsize=1)
+def shared_log_link_relay() -> LogLinkRelay:
+    """The single relay every log surface reports a clicked link through (#700).
+
+    An ``lru_cache`` accessor for the reason :func:`shared_log_bridge` is one: the surfaces are built inside the
+    documents and the Tasks dock, layers with no other reason to know what a link opens.
+
+    :returns: the shared relay.
+    """
+    return LogLinkRelay()
+
+
 def build_log_widget(parent: QWidget | None = None, *, limit: int | None = DEFAULT_LOG_LIMIT) -> LogWidget:
-    """Build a `LogWidget` wearing this app's icons and colors.
+    """Build a `LogWidget` wearing this app's icons and colors, its link clicks reported to the shared relay.
 
     One place, so the app-wide dock and every resource's dock are recognizably the same surface -- the
     thing that differs between them is which records they are shown, not how they look.
@@ -95,4 +108,6 @@ def build_log_widget(parent: QWidget | None = None, *, limit: int | None = DEFAU
     :param limit: how many records the surface keeps, or ``None`` for all of them.
     :returns: the widget, not yet attached to the bridge.
     """
-    return LogWidget(parent, icons=LOG_WIDGET_ICONS, band_colors=LOG_BAND_COLORS, limit=limit)
+    widget = LogWidget(parent, icons=LOG_WIDGET_ICONS, band_colors=LOG_BAND_COLORS, limit=limit)
+    widget.link_activated.connect(shared_log_link_relay().activated)
+    return widget

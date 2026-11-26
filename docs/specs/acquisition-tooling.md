@@ -829,9 +829,12 @@ Every scan takes turns on the queue's one library chain, whatever its store, and
   moment it is written, so a scan run again and again only adds what was acquired since, and keeps no copy of what it
   wrote to compare an edit against.
 - **Every item is logged**, in the job's own log scope ([[appendices.logging#scopes]]): one line with its title, the
-  URL read, and whether the record was added or already there. **Both are to be links** (#700): the URL opening the
-  page in the user's browser, the title opening the record in the documents dock as clicking it in the browser dock
-  does. Until then the line is plain text.
+  URL read, and whether the record was added or already there. **Both are links** (#700,
+  [[appendices.logging#surfaces]]): the URL opens the page in the user's browser, the title opens the record in the
+  documents dock as a double-click on its row in a browser does, so a record in a root out of reach is refused with the
+  same reason. The title names the record by the **store's id** (root, store, `site_id`) and the catalog is asked at
+  the click, off the GUI thread, so a record a bucket split moved after the line was logged is still found; one that
+  is gone says so on the status bar.
 - **It shares the persona with a drop.** A scan holds the persona browser for hours, and a URL dropped meanwhile must not
   wait behind it: the scan takes a *lease* on the profile, keeping its session between items and giving it up before
   the next item, or in the wait between two pages, whenever a drop's fetch or another store's scan is waiting for it.

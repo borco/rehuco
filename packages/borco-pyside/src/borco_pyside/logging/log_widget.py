@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Final
 
 import cbor2
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import QSizePolicy, QToolBar, QWidget
 
@@ -79,6 +80,9 @@ class LogWidget(QWidget):
         (:class:`~.log_level_delegate.LogLevelDelegate`).
     :param limit: how many entries this surface keeps, or ``None`` for all of them; see :attr:`limit`.
     """
+
+    link_activated = Signal(object)
+    """Fires with the target of a link the reader clicked in the table (:attr:`LogView.link_activated`)."""
 
     def __init__(
         self,
@@ -171,6 +175,7 @@ class LogWidget(QWidget):
             self.__proxy.set_band_visible(band, action.isChecked())
         ui.follow_tail_action.toggled.connect(self.__on_follow_tail_toggled)
         ui.log_view.follow_tail_changed.connect(self.__on_view_follow_tail_changed)
+        ui.log_view.link_activated.connect(self.link_activated)
         ui.search_edit.textChanged.connect(self.__on_search_changed)
 
     # endregion

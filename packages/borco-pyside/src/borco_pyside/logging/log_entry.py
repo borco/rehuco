@@ -4,6 +4,8 @@ from collections.abc import Hashable
 from dataclasses import dataclass
 from logging import LogRecord
 
+from .log_link_span import LogLinkSpan
+
 
 @dataclass(frozen=True, slots=True)
 class LogEntry:
@@ -39,3 +41,8 @@ class LogEntry:
     record over time and the same record has a different row in each surface holding it. The serial is
     what survives that: it is how the bridge knows which entries a sink has already been given, and the
     one number a reader can carry between two surfaces showing the same run."""
+
+    links: tuple[LogLinkSpan, ...] = ()
+    """Which parts of :attr:`message` are links, placed in it **once**, when the record arrived, for the same reason
+    the message is formatted once: a repaint must not search for them again. Empty for a record with none -- which is
+    drawn, wrapped and searched exactly as it always was."""

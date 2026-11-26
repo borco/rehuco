@@ -10,9 +10,10 @@ import logging
 import threading
 from collections.abc import Callable, Iterator, Sequence
 
-from borco_core.logging import LOG_SCOPE_ATTRIBUTE, LogScope
+from borco_core.logging import LOG_LINKS_ATTRIBUTE, LOG_SCOPE_ATTRIBUTE, LogLink, LogScope
 from borco_pyside.logging.log_bridge import DEFAULT_LOG_LIMIT, LogBridge
 from borco_pyside.logging.log_entry import LogEntry
+from borco_pyside.logging.log_link_span import LogLinkSpan
 from borco_pyside.logging.log_record_sink import LogRecordSink
 from PySide6.QtCore import QCoreApplication, QEvent
 from pytest import fixture
@@ -867,6 +868,50 @@ def test_a_recording_sink_satisfies_the_protocol() -> None:
     * verify it satisfies it
     """
     assert isinstance(RecordingSink(), LogRecordSink)
+
+
+# endregion
+
+
+# region links
+
+
+def test_an_entry_carries_its_links_placed_in_the_formatted_message(bridge: LogBridge, log: logging.Logger) -> None:
+    """A record's links are placed in the message as formatted, so a formatter's prefix cannot shift them.
+
+    **Test steps:**
+
+    * format the message with a prefix, then log a record naming a link
+    * attach a sink
+    * verify the entry's span covers the link's text in the formatted message
+    """
+    bridge.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+    log.info("saved %s now", "title", extra={LOG_LINKS_ATTRIBUTE: (LogLink("title", 7),)})
+    sink = RecordingSink()
+
+    bridge.add_sink(sink)
+
+    assert sink.messages == ["[INFO] saved title now"]
+    assert [found.links for found in sink.batches[0]] == [(LogLinkSpan(13, 18, 7),)]
+    assert sink.messages[0][13:18] == "title"
+
+
+def test_an_entry_without_links_has_none(bridge: LogBridge, log: logging.Logger) -> None:
+    """A record that names no links, or names something that is not one, is drawn plain.
+
+    **Test steps:**
+
+    * log a plain record and one whose links extra is garbage
+    * attach a sink
+    * verify neither entry has a span
+    """
+    log.info("plain")
+    log.info("garbage", extra={LOG_LINKS_ATTRIBUTE: "not links"})
+    sink = RecordingSink()
+
+    bridge.add_sink(sink)
+
+    assert [entry.links for entry in sink.batches[0]] == [(), ()]
 
 
 # endregion

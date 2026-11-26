@@ -6,10 +6,11 @@ from logging import Handler, LogRecord
 from typing import Final, override
 from weakref import WeakMethod
 
-from borco_core.logging import LogScope
+from borco_core.logging import LogLink, LogScope
 from PySide6.QtCore import QObject, Qt, Signal
 
 from .log_entry import LogEntry
+from .log_link_span import LogLinkSpan
 from .log_record_sink import LogRecordSink
 
 DEFAULT_LOG_LIMIT: Final = 500
@@ -252,13 +253,20 @@ class LogBridge(Handler):
         """Cache one record and wake the GUI thread if it is not already awake.
 
         Runs on whatever thread logged, under the lock `logging.Handler.handle` holds. Everything that
-        can only be answered here is answered here: the record is formatted **once**, and its scopes are
-        resolved while the context that opened them is still the current one.
+        can only be answered here is answered here: the record is formatted **once**, its links are placed in that
+        message once, and its scopes are resolved while the context that opened them is still the current one.
 
         :param record: the record ``logging`` is handing over.
         """
         try:
-            entry = LogEntry(record, self.format(record), LogScope.of(record), self.__next_serial)
+            message = self.format(record)
+            entry = LogEntry(
+                record,
+                message,
+                LogScope.of(record),
+                self.__next_serial,
+                LogLinkSpan.placed(message, LogLink.of(record)),
+            )
         except Exception:  # pylint: disable=broad-exception-caught  # noqa: BLE001
             # logging's own contract: a handler reports its failure through handleError and never
             # raises into the code that logged -- a broken format string is not the caller's problem

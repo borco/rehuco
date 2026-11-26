@@ -10,12 +10,13 @@
 import logging
 
 from borco_pyside.logging.log_entry import LogEntry
+from borco_pyside.logging.log_link_span import LogLinkSpan
 from borco_pyside.logging.log_message_delegate import LogMessageDelegate
 from borco_pyside.logging.log_metrics import TEXT_HPADDING, TEXT_VPADDING
 from borco_pyside.logging.log_model import MESSAGE_COLUMN, LogModel
 from borco_pyside.widgets import StringItemListModel
-from PySide6.QtCore import QRect, Qt
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtGui import QColor, QFontMetrics, QImage, QPainter, QPalette
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -269,3 +270,167 @@ def test_a_row_that_is_not_a_log_entry_falls_back_to_the_base_hint(
 
 
 # endregion
+
+
+# region links
+
+LINKED_MESSAGE = "Pack \N{EM DASH} https://store.example/pack: added"
+"""A title, the address after it, and plain words around both."""
+
+TITLE_LINK = LogLinkSpan(0, 4, "record")
+URL_LINK = LogLinkSpan(7, 33, "page")
+
+
+def make_linked_entry(message: str = LINKED_MESSAGE) -> LogEntry:
+    """Build an entry with a title link and an address link.
+
+    :param message: the formatted message; the two links sit at the start of the default.
+    :returns: the entry.
+    """
+    record = logging.LogRecord("test", logging.INFO, __file__, 1, message, None, None)
+    return LogEntry(record, message, (), 0, (TITLE_LINK, URL_LINK))
+
+
+def linked_cell(delegate: LogMessageDelegate, entry: LogEntry, width: int = 400) -> tuple[QStyleOptionViewItem, object]:
+    """A one-row model holding ``entry`` and an option over a cell of ``width``, as a view would paint it.
+
+    :param delegate: the delegate, whose size hint gives the cell its height.
+    :param entry: the entry.
+    :param width: the cell's width.
+    :returns: the option and the model, which the caller keeps alive.
+    """
+    model = LogModel()
+    model.handle_log_records([entry])
+    item = QStyleOptionViewItem()
+    item.rect = QRect(0, 0, width, 20)
+    item.rect.setHeight(delegate.sizeHint(item, model.index(0, MESSAGE_COLUMN)).height())
+    return item, model
+
+
+def test_a_row_without_links_is_measured_as_it_was(delegate: LogMessageDelegate, option: QStyleOptionViewItem) -> None:
+    """The plain path is unchanged: a record with no links is still sized by the word-wrapped text.
+
+    **Test steps:**
+
+    * Measure a long message through the delegate.
+    * Assert it is the font metrics' own wrapped height plus the padding.
+    """
+    model = LogModel()
+    model.handle_log_records([make_entry(LONG_MESSAGE)])
+
+    size = delegate.sizeHint(option, model.index(0, MESSAGE_COLUMN))
+
+    wrapped = option.fontMetrics.boundingRect(delegate.text_rect(option), Qt.TextFlag.TextWordWrap, LONG_MESSAGE)
+    assert size.height() == wrapped.height() + 2 * TEXT_VPADDING
+
+
+def test_a_linked_row_wraps_and_grows_when_narrow(delegate: LogMessageDelegate) -> None:
+    """A linked row is measured from its own layout: narrower means more lines, so taller.
+
+    **Test steps:**
+
+    * Measure the same linked record in a wide cell and in a narrow one.
+    * Assert the narrow one is taller.
+    """
+    wide = QStyleOptionViewItem()
+    wide.rect = QRect(0, 0, 600, 20)
+    narrow = QStyleOptionViewItem()
+    narrow.rect = QRect(0, 0, 90, 20)
+    model = LogModel()
+    model.handle_log_records([make_linked_entry()])
+    index = model.index(0, MESSAGE_COLUMN)
+
+    assert delegate.sizeHint(narrow, index).height() > delegate.sizeHint(wide, index).height()
+
+
+def test_link_at_finds_the_link_under_a_point(delegate: LogMessageDelegate) -> None:
+    """The title and the address each answer with their own target.
+
+    **Test steps:**
+
+    * Lay a linked row out in a wide cell.
+    * Ask for the link at the title's first character and at the address's.
+    * Assert each target, with a point on the plain words answering ``None``.
+    """
+    option, model = linked_cell(delegate, make_linked_entry())
+    index = model.index(0, MESSAGE_COLUMN)  # type: ignore[attr-defined]
+    metrics = QFontMetrics(option.font)
+    y = TEXT_VPADDING + 3
+
+    def at(characters: int) -> object:
+        return delegate.link_at(
+            option, index, QPoint(TEXT_HPADDING + metrics.horizontalAdvance(LINKED_MESSAGE[:characters]) + 2, y)
+        )
+
+    assert at(0) == "record"
+    assert at(8) == "page"
+    assert at(5) is None  # the dash between the two
+
+
+def test_link_at_misses_outside_the_text(delegate: LogMessageDelegate) -> None:
+    """Empty space past the last character, above the text or in a row without links is no link.
+
+    **Test steps:**
+
+    * Ask at a point far right of a short linked message, above the first line, and over a plain row.
+    * Assert each answers ``None``.
+    """
+    option, model = linked_cell(delegate, make_linked_entry())
+    index = model.index(0, MESSAGE_COLUMN)  # type: ignore[attr-defined]
+    assert delegate.link_at(option, index, QPoint(option.rect.width() - 1, TEXT_VPADDING + 3)) is None
+    assert delegate.link_at(option, index, QPoint(TEXT_HPADDING + 2, -5)) is None
+
+    plain = LogModel()
+    plain.handle_log_records([make_entry(SHORT_MESSAGE)])
+    assert (
+        delegate.link_at(option, plain.index(0, MESSAGE_COLUMN), QPoint(TEXT_HPADDING + 2, TEXT_VPADDING + 3)) is None
+    )
+
+
+def test_a_linked_row_paints_its_links_in_the_link_color(delegate: LogMessageDelegate) -> None:
+    """The link is drawn in the palette's link color, and the plain text is not.
+
+    **Test steps:**
+
+    * Paint a linked row onto an image with a distinctive link color.
+    * Assert pixels of that color are present.
+    """
+    option, model = linked_cell(delegate, make_linked_entry())
+    link_color = QColor(200, 0, 200)
+    palette = QPalette(option.palette)
+    palette.setColor(QPalette.ColorRole.Link, link_color)
+    option.palette = palette
+    image = QImage(option.rect.size(), QImage.Format.Format_ARGB32)
+    image.fill(Qt.GlobalColor.white)
+    painter = QPainter(image)
+    delegate.paint(painter, option, model.index(0, MESSAGE_COLUMN))  # type: ignore[attr-defined]
+    painter.end()
+
+    colors = {image.pixelColor(x, y).rgb() for x in range(image.width()) for y in range(image.height())}
+    assert link_color.rgb() in colors
+
+
+# endregion
+
+
+def test_a_linked_row_keeps_the_line_breaks_of_its_message(delegate: LogMessageDelegate) -> None:
+    """A record with links and a traceback under its first line is laid out on as many lines as it has, and its link
+    is still found where it is drawn.
+
+    **Test steps:**
+
+    * Measure a three-line message with a link on its last line, and a one-line message with a link.
+    * Assert the first has three times the text height of the second.
+    * Ask for the link in the middle of the third line, and assert its target.
+    """
+    message = "first line\nsecond line\nlink here"
+    record = logging.LogRecord("test", logging.INFO, __file__, 1, message, None, None)
+    option, model = linked_cell(delegate, LogEntry(record, message, (), 0, (LogLinkSpan(23, 27, "record"),)))
+    short = logging.LogRecord("test", logging.INFO, __file__, 1, "link", None, None)
+    one_line, _kept = linked_cell(delegate, LogEntry(short, "link", (), 0, (LogLinkSpan(0, 4, "record"),)))
+    line_height = one_line.rect.height() - 2 * TEXT_VPADDING
+
+    assert option.rect.height() - 2 * TEXT_VPADDING == 3 * line_height
+    third_line = QPoint(TEXT_HPADDING + 2, TEXT_VPADDING + 2 * line_height + line_height // 2)
+    index = model.index(0, MESSAGE_COLUMN)  # type: ignore[attr-defined]
+    assert delegate.link_at(option, index, third_line) == "record"

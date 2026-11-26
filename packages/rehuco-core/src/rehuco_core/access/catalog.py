@@ -112,6 +112,25 @@ class Catalog:
             return None
         return next((row for row in rows if row.root_id == location.root.root_id), None)
 
+    def find_by_site_id(self, site: str, site_id: str, root_id: UUID) -> CatalogRow | None:
+        """The record of a store's item in a root of the view, found by the store's own id ([[assets#site-id]]) -- how
+        a library scan's log line finds its record again after the record was moved (#700).
+
+        :param site: the source's site, matched ignoring ASCII case.
+        :param site_id: the store's id for the item.
+        :param root_id: the root; one the view does not list finds nothing.
+        :returns: the row; ``None`` when there is none, or while nothing is attached.
+        :raises CatalogUnreadable: when the cache cannot be read.
+        """
+        session = self.__session
+        if session is None or root_id not in session.root_ids:
+            return None
+        try:
+            with CatalogCache.open(session.cache_path) as cache:
+                return next(iter(cache.find_by_site_id(site, site_id, root_id)), None)
+        except (OSError, sqlite3.Error) as error:
+            raise CatalogUnreadable(f"Could not read the catalog {session.cache_path}: {error}") from error
+
     def count(self, root_id: UUID) -> int:
         """How many resources the cache lists under a root -- what removing it would drop.
 

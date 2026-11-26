@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Final, override
 from uuid import UUID
 
+from borco_core.logging import LOG_LINKS_ATTRIBUTE, LogLink
 from rehuco_core import (
     DEFAULT_RECORD_MOVE_HOST,
     LIBRARY_CHAIN,
@@ -55,6 +56,7 @@ from rehuco_core import (
 from ..settings.identity_settings import shared_identity_settings
 from ..settings.scrapers_settings import shared_scrapers_settings
 from .browser_fetcher import PersonaLease, shared_persona_browser
+from .library_record_link import LibraryRecordLink
 from .library_record_writer import LOCKED_RETRY_SECONDS, LibraryRecordWriter
 from .library_rescan import LibraryRescan
 from .library_site import LibraryEntry, LibrarySession, LibrarySite, StoreOfflineError, StorePausedError
@@ -77,10 +79,11 @@ STORE_OFFLINE_RETRY_SECONDS: Final = 60.0
 """How long a scan waits for a store that does not answer before trying again."""
 
 ADDED_LINE: Final = "%s — %s: added"
-"""The log line of an item written to the root: its title and its page."""
+"""The log line of an item written to the root: its title and its page. Both are links (#700): see
+:meth:`LibraryScanJob.item_links`."""
 
 PRESENT_LINE: Final = "%s — %s: already there"
-"""The log line of an item the root already holds a record of."""
+"""The log line of an item the root already holds a record of, linked as :data:`ADDED_LINE` is."""
 
 GONE_LINE: Final = "%s is no longer in the account: marked offline."
 """The log line of a record a full rescan did not find in the library."""
@@ -389,7 +392,7 @@ class LibraryScanJob(TaskJobBase):
         """
         if cache.find_by_site_id(site.name, entry.site_id, target.root_id):
             self.__counts.present += 1
-            LOG.info(PRESENT_LINE, entry.title, entry.url)
+            LOG.info(PRESENT_LINE, entry.title, entry.url, extra=self.item_links(entry, target.root_id, site.name))
             return
         item = session.read_item(entry)
         terms = LicenseTermsSet(
@@ -404,8 +407,28 @@ class LibraryScanJob(TaskJobBase):
             LOG.warning(UNLISTED_LINE, written.path)
         # counted before its buckets settle: a wait met there leaves the record written, and added by this run
         self.__counts.added += 1
-        LOG.info(ADDED_LINE, entry.title, entry.url)
+        LOG.info(ADDED_LINE, entry.title, entry.url, extra=self.item_links(entry, target.root_id, site.name))
         writer.settle(written)
+
+    @staticmethod
+    def item_links(entry: LibraryEntry, root_id: UUID, site: str) -> dict[str, tuple[LogLink, ...]]:
+        """The links of an item's log line: its title opens the record in the documents dock, its page the store's
+        page in the user's browser (#700).
+
+        The record is named by the store's id and looked up when the link is clicked, never by a path, since a bucket
+        split moves records after the line is logged.
+
+        :param entry: the item.
+        :param root_id: the root the scan files it into.
+        :param site: the store, as its records' source names it.
+        :returns: the ``extra`` to log the line with.
+        """
+        return {
+            LOG_LINKS_ATTRIBUTE: (
+                LogLink(entry.title, LibraryRecordLink(root_id, site, entry.site_id)),
+                LogLink(entry.url, entry.url),
+            )
+        }
 
     def __mark_gone(
         self,
