@@ -34,7 +34,7 @@ from rehuco_agent import (  # pylint: disable=unused-import  # main_rc registers
     main_rc,  # noqa: F401
     node_host,
 )
-from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.app_logging import shared_log_bridge, shared_log_link_relay
 from rehuco_agent.commands import shared_command_registry
 from rehuco_agent.dialogs import conversion_backups_dialog
 from rehuco_agent.fields.widgets.markdown_view import render_markdown
@@ -891,7 +891,7 @@ def isolate_shared_node_settings(mocker: MockerFixture) -> Iterator[None]:
 
 @fixture(autouse=True)
 def isolate_shared_log_bridge() -> Iterator[None]:
-    """Isolate every test from the process-wide `LogBridge` (#200).
+    """Isolate every test from the process-wide `LogBridge` (#200) and the link relay (#700).
 
     Two reasons, and the second is the sharp one. The bridge subscribes to
     :func:`~rehuco_agent.settings.logs_settings.shared_logs_settings` for its limit, so a bridge built in
@@ -905,12 +905,14 @@ def isolate_shared_log_bridge() -> Iterator[None]:
     holding it.
     """
     drop_shared(shared_log_bridge)
+    drop_shared(shared_log_link_relay)
     yield
     root = logging.getLogger()
     for handler in [handler for handler in root.handlers if isinstance(handler, LogBridge)]:
         root.removeHandler(handler)
         handler.close()
     drop_shared(shared_log_bridge)
+    drop_shared(shared_log_link_relay)
 
 
 @fixture(autouse=True)

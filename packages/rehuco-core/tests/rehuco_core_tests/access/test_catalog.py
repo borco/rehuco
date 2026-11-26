@@ -310,6 +310,55 @@ def test_a_root_counts_its_rows(cache: MagicMock) -> None:
     cache.resource_count.assert_called_once_with(LIBRARY_ID)
 
 
+def test_a_record_is_found_by_its_stores_id_in_a_root_of_the_view(cache: MagicMock) -> None:
+    """The record of a store's item is the cache's lookup by that id, in the root asked for.
+
+    **Test steps:**
+
+    * make the cache answer one row for a store id, and look it up in a root of the view
+    * verify the row, with the lookup made in that root
+    * look an id up that the cache has no row for, and verify nothing is found
+    """
+    row = cached_row(1, LIBRARY, "a/info.rehu")
+    cache.find_by_site_id.return_value = [row]
+    catalog = attached(LIBRARY, PACKS)
+
+    assert catalog.find_by_site_id("Fab", "abc", LIBRARY_ID) is row
+    cache.find_by_site_id.assert_called_once_with("Fab", "abc", LIBRARY_ID)
+
+    cache.find_by_site_id.return_value = []
+    assert catalog.find_by_site_id("Fab", "missing", LIBRARY_ID) is None
+
+
+def test_a_store_id_is_not_looked_up_where_the_view_lists_no_root(cache: MagicMock) -> None:
+    """A detached catalog, and a root the view dropped, find nothing and open nothing.
+
+    **Test steps:**
+
+    * look an id up in a detached catalog, and in a root the view does not list
+    * verify nothing was found and the cache was not asked
+    """
+    assert Catalog().find_by_site_id("Fab", "abc", LIBRARY_ID) is None
+    assert attached(LIBRARY).find_by_site_id("Fab", "abc", PACKS_ID) is None
+
+    cache.find_by_site_id.assert_not_called()
+
+
+def test_a_store_id_lookup_that_cannot_read_the_cache_raises(cache: MagicMock) -> None:
+    """Like a query, the lookup raises :class:`~rehuco_core.CatalogUnreadable`, never ``sqlite3.Error``.
+
+    **Test steps:**
+
+    * attach, then make the lookup raise a database error
+    * verify :class:`~rehuco_core.CatalogUnreadable` is raised
+    """
+    catalog = attached(LIBRARY)
+    cache.find_by_site_id.side_effect = sqlite3.OperationalError("locked")
+
+    with raises(CatalogUnreadable, match="Could not read the catalog .*locked"):
+        catalog.find_by_site_id("Fab", "abc", LIBRARY_ID)
+
+
 def test_any_thread_may_read(mocker: MockerFixture, cache: MagicMock) -> None:
     """Each call opens the cache on the calling thread, so a worker reads as the attaching thread does.
 

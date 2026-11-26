@@ -496,7 +496,15 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         :param row: the row's ``(root_id, relative)``, as the object-typed relay carried it.
         """
-        root_id, relative = cast(RowKey, row)
+        self.open_row(cast(RowKey, row))
+
+    def open_row(self, row: RowKey) -> None:
+        """Ask for a catalog row's resource to be opened, as a double-click on it does -- by the key the catalog
+        resolves it to, or refused with why when its root cannot be reached (#700: a log link opens its record so).
+
+        :param row: the row's ``(root_id, relative)``.
+        """
+        root_id, relative = row
         reason = self.__offline.get(root_id)
         if reason is not None:
             self.open_refused.emit(reason)

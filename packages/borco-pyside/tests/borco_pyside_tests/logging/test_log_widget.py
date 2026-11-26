@@ -722,3 +722,25 @@ def test_a_key_of_the_wrong_type_is_ignored(widget: LogWidget) -> None:
 
 
 # endregion
+
+
+# region links
+
+
+def test_a_link_clicked_in_the_view_is_reported_by_the_widget(widget: LogWidget) -> None:
+    """The widget relays its table's link clicks, so a host connects to the surface and never reaches inside it.
+
+    **Test steps:**
+
+    * Emit the view's link signal with a target.
+    * Assert the widget's own signal carried the same target.
+    """
+    reported: list[object] = []
+    widget.link_activated.connect(reported.append)
+
+    ui(widget).log_view.link_activated.emit("target")
+
+    assert reported == ["target"]
+
+
+# endregion

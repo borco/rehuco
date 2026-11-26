@@ -6,13 +6,16 @@ from borco_pyside.logging.log_entry import LogEntry
 from borco_pyside.logging.log_filter_model import LogFilterModel
 from borco_pyside.logging.log_level_band import LogLevelBand
 from borco_pyside.logging.log_level_delegate import LogLevelDelegate
+from borco_pyside.logging.log_link_span import LogLinkSpan
 from borco_pyside.logging.log_message_delegate import LogMessageDelegate
+from borco_pyside.logging.log_metrics import TEXT_HPADDING, TEXT_VPADDING
 from borco_pyside.logging.log_model import LEVEL_COLUMN, MESSAGE_COLUMN, LogModel
 from borco_pyside.logging.log_view import COPY_COLUMN_SEPARATOR, LOG_COMMANDS, LOG_COPY_COMMAND, LogView
 from borco_pyside.shortcuts import CommandRegistry, Keymap
 from borco_pyside.widgets import StringItemListModel
-from PySide6.QtCore import QItemSelectionModel, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QItemSelectionModel, QPoint, Qt
 from PySide6.QtGui import QColor, QGuiApplication, QKeySequence
+from PySide6.QtTest import QTest
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 
@@ -476,6 +479,173 @@ def test_another_key_is_left_to_the_base_view(view: LogView, model: LogModel, qt
     view.selectRow(0)
     qtbot.keyClick(view, Qt.Key.Key_Down)
     assert view.currentIndex().row() == 1
+
+
+# endregion
+
+
+# region links
+
+LINKED_MESSAGE = "Pack - https://store.example/pack: added"
+TITLE_SPAN = LogLinkSpan(0, 4, "record")
+URL_SPAN = LogLinkSpan(7, 33, "page")
+
+
+def add_linked_row(model: LogModel) -> None:
+    """Put one record with a title link and an address link in ``model``.
+
+    :param model: the model.
+    """
+    record = logging.LogRecord("test", logging.INFO, __file__, 1, LINKED_MESSAGE, None, None)
+    model.handle_log_records([LogEntry(record, LINKED_MESSAGE, (), 0, (TITLE_SPAN, URL_SPAN))])
+
+
+def message_point(view: LogView, characters: int) -> QPoint:
+    """The viewport point just inside the character at an offset of the first row's message, on its first line.
+
+    :param view: the view.
+    :param characters: how many characters of the message lie before the point.
+    :returns: the point.
+    """
+    rect = view.visualRect(view.model().index(0, MESSAGE_COLUMN))
+    advance = view.fontMetrics().horizontalAdvance(LINKED_MESSAGE[:characters])
+    return QPoint(rect.left() + TEXT_HPADDING + advance + 2, rect.top() + TEXT_VPADDING + 3)
+
+
+def test_a_click_on_a_link_reports_its_target(view: LogView, model: LogModel) -> None:
+    """A press and release on the same link report that link's target, once.
+
+    **Test steps:**
+
+    * Show a row with a title link and an address link.
+    * Click the title, then the address, with real mouse input.
+    * Assert the targets reported, in order.
+    """
+    add_linked_row(model)
+    reported: list[object] = []
+    view.link_activated.connect(reported.append)
+
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, message_point(view, 0))
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, message_point(view, 9))
+
+    assert reported == ["record", "page"]
+
+
+def test_a_click_off_a_link_reports_nothing_and_still_selects(view: LogView, model: LogModel) -> None:
+    """Plain text, the level column and the empty space beside the text are not links, and the row is selected.
+
+    **Test steps:**
+
+    * Click the dash between the links, the level cell, and the space far right of the text.
+    * Assert nothing was reported and the row is selected.
+    """
+    add_linked_row(model)
+    reported: list[object] = []
+    view.link_activated.connect(reported.append)
+    level_rect = view.visualRect(model.index(0, LEVEL_COLUMN))
+    message_rect = view.visualRect(model.index(0, MESSAGE_COLUMN))
+
+    for point in (
+        message_point(view, 5),
+        level_rect.center(),
+        QPoint(message_rect.right() - 2, message_rect.top() + TEXT_VPADDING + 3),
+    ):
+        QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, point)
+
+    assert not reported
+    assert view.selectionModel().selectedRows()
+
+
+def test_a_click_on_a_link_selects_its_row(view: LogView, model: LogModel) -> None:
+    """Clicking a link is also a click on the row, as ever.
+
+    **Test steps:**
+
+    * Click the title link.
+    * Assert its row is selected.
+    """
+    add_linked_row(model)
+
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, message_point(view, 0))
+
+    assert [index.row() for index in view.selectionModel().selectedRows()] == [0]
+
+
+def test_a_press_on_one_link_released_on_another_reports_nothing(view: LogView, model: LogModel) -> None:
+    """A press that is dragged to somewhere else is a selection gesture, not a click on either link.
+
+    **Test steps:**
+
+    * Press on the title, move to the address and release.
+    * Assert nothing was reported; likewise for a press on a link released on plain text.
+    """
+    add_linked_row(model)
+    reported: list[object] = []
+    view.link_activated.connect(reported.append)
+    viewport = view.viewport()
+
+    for released_at in (message_point(view, 9), message_point(view, 5)):
+        QTest.mousePress(viewport, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, message_point(view, 0))
+        QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, released_at)
+
+    assert not reported
+
+
+def test_only_the_left_button_activates_a_link(view: LogView, model: LogModel) -> None:
+    """A right-click opens the context menu and nothing else.
+
+    **Test steps:**
+
+    * Right-click the title link, then middle-click it.
+    * Assert nothing was reported.
+    """
+    add_linked_row(model)
+    reported: list[object] = []
+    view.link_activated.connect(reported.append)
+
+    for button in (Qt.MouseButton.RightButton, Qt.MouseButton.MiddleButton):
+        QTest.mouseClick(view.viewport(), button, Qt.KeyboardModifier.NoModifier, message_point(view, 0))
+
+    assert not reported
+
+
+def test_the_pointer_is_a_hand_over_a_link_only(view: LogView, model: LogModel) -> None:
+    """The hand shows over a link and goes back to the arrow over plain text and when the pointer leaves.
+
+    **Test steps:**
+
+    * Move the pointer over the title, then over the dash, then over the address.
+    * Assert the viewport's cursor shape after each; then leave the view and assert it is the arrow.
+    """
+    add_linked_row(model)
+    viewport = view.viewport()
+
+    def shape_at(characters: int) -> Qt.CursorShape:
+        QTest.mouseMove(viewport, message_point(view, characters))
+        return viewport.cursor().shape()
+
+    assert shape_at(0) == Qt.CursorShape.PointingHandCursor
+    assert shape_at(5) == Qt.CursorShape.ArrowCursor
+    assert shape_at(9) == Qt.CursorShape.PointingHandCursor
+
+    QCoreApplication.sendEvent(view, QEvent(QEvent.Type.Leave))
+    assert viewport.cursor().shape() == Qt.CursorShape.ArrowCursor
+
+
+def test_copying_a_linked_row_copies_plain_text(view: LogView, model: LogModel) -> None:
+    """Links are data beside the message: a copied line reads as the plain text it always was.
+
+    **Test steps:**
+
+    * Select a linked row and copy it.
+    * Assert the clipboard holds the level, a tab and the message, with nothing else.
+    """
+    add_linked_row(model)
+    view.selectRow(0)
+
+    view.copy_selected()
+
+    assert QGuiApplication.clipboard().text() == f"INFO{COPY_COLUMN_SEPARATOR}{LINKED_MESSAGE}"
 
 
 # endregion

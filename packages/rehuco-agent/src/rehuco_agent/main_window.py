@@ -60,7 +60,7 @@ from rehuco_core import (
 from rehuco_core.access import Catalog, ChangeFeed, KeyRelocation, Records, ResourceKey
 from rehuco_core.notify import RootNotifiers
 
-from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
+from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge, shared_log_link_relay
 from .archives import ARCHIVE_EXTENSIONS
 from .commands import (
     CLOSE_ALL,
@@ -104,6 +104,7 @@ from .recycle_bin_deleter import configured_deleter
 from .rehuco import BrowsersDock, RootCatalog, RootsPanel
 from .rehuco.catalog_table_model import RowKey
 from .rehuco.license_refresh import LicenseRefresh
+from .rehuco.log_link_opener import LogLinkOpener
 from .rehuco.map_roots_dialog import MapRootsDialog
 from .rehuco.selection_preview import SelectionPreview
 from .rehuco.table_browser import TableBrowser
@@ -510,6 +511,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__browsers_dock.open_refused.connect(
             lambda reason: self.statusBar().showMessage(reason, STATUS_MESSAGE_TIMEOUT_MS)
         )
+        # a link clicked in any log surface: a store's page in the browser, a scanned item's record in the documents
+        # dock as a double-click on its row opens it (#700)
+        self.__log_link_opener: Final = LogLinkOpener(self.__catalog, self.__browsers_dock.open_row, self)
+        self.__log_link_opener.refused.connect(
+            lambda reason: self.statusBar().showMessage(reason, STATUS_MESSAGE_TIMEOUT_MS)
+        )
+        shared_log_link_relay().activated.connect(self.__log_link_opener.open)
         # a resource double-clicked in a browser or opened from the Roots view opens through the ordinary route (#377)
         self.__browsers_dock.open_requested.connect(self.__open_key)
         # Refresh License on a browser's selection (#688): the jobs, and the question between them

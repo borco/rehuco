@@ -6,6 +6,7 @@ from .log_entry import LogEntry
 from .log_filter_model import LogFilterModel
 from .log_level_band import LogLevelBand
 from .log_level_delegate import BAND_TINT_ALPHA, LogLevelDelegate
+from .log_link_span import LogLinkSpan
 from .log_message_delegate import LogMessageDelegate
 from .log_model import LEVEL_COLUMN, MESSAGE_COLUMN, LogModel
 from .log_record_sink import LogRecordSink
@@ -25,6 +26,7 @@ __all__ = [
     "LogFilterModel",
     "LogLevelBand",
     "LogLevelDelegate",
+    "LogLinkSpan",
     "LogMessageDelegate",
     "LogModel",
     "LogRecordSink",

@@ -411,6 +411,36 @@ def test_a_double_click_on_a_row_of_a_root_out_of_reach_says_why_and_opens_nothi
     assert requested.args == [RECORD]
 
 
+def test_a_row_asked_for_by_its_key_opens_as_a_double_click_does(
+    qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
+) -> None:
+    """A log link opens a record by its row's key (#700): the same refusal for a root out of reach, the same request
+    otherwise.
+
+    **Test steps:**
+
+    * report the first root out of reach, and open its row by key
+    * verify the refusal carried the reason, and no open was asked for
+    * report it back and open the row again: verify the record is asked to be opened
+    """
+    dock, events = followed
+    events.changes.publish(RootReachable(FIRST_ROOT, False))
+
+    with (
+        qtbot.assertNotEmitted(dock.browsers.open_requested),
+        qtbot.waitSignal(dock.browsers.open_refused) as refused,
+    ):
+        dock.browsers.open_row((FIRST_ROOT, "python/info.rehu"))
+
+    assert refused.args == [offline_reason(dock)]
+
+    events.changes.publish(RootReachable(FIRST_ROOT, True))
+    with qtbot.waitSignal(dock.browsers.open_requested) as requested:
+        dock.browsers.open_row((FIRST_ROOT, "python/info.rehu"))
+
+    assert requested.args == [RECORD]
+
+
 @mark.usefixtures("served")
 def test_the_roots_out_of_reach_are_read_from_the_cache_when_the_roots_change(
     qtbot: QtBot, followed: tuple[CatalogDocks, ResourceEvents]
