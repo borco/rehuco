@@ -52,9 +52,10 @@ class LogView(QTableView):
     bottom"* without holding the scrollbar there, and a way to stop following without scrolling away.
 
     **A record's links are clickable** (:attr:`~.log_entry.LogEntry.links`): the pointer is a hand over one, and a
-    click that is pressed and released on the same one reports its target through :attr:`link_activated` -- once, on
-    the release, so a press that turns into a drag to select text opens nothing. The row is selected by the same click
-    as ever. What a target means is the host's to say; this view only reports it.
+    **plain** left click on one reports its target through :attr:`link_activated`, once, on the release. A click with
+    ``Ctrl`` or ``Shift`` held is the selection gesture it is anywhere else on the row and opens nothing, and so does
+    a press that leaves its link before the release, even one brought back to it: that is a drag to select rows. The
+    row is selected by the same click as ever. What a target means is the host's to say; this view only reports it.
 
     :param parent: optional Qt parent. First and positional, because Qt Designer constructs a promoted
         custom widget as ``LogView(parent)`` and nothing else -- the tints arrive later, through
@@ -236,13 +237,12 @@ class LogView(QTableView):
 
     @override
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802  (Qt API name)
-        """Remember the link a left press lands on, then select as usual.
+        """Remember the link a plain left press lands on, then select as usual.
 
         :param event: the mouse event.
         """
-        self.__pressed_link = (
-            self.__link_at(event.position().toPoint()) if event.button() == Qt.MouseButton.LeftButton else None
-        )
+        plain = event.button() == Qt.MouseButton.LeftButton and event.modifiers() == Qt.KeyboardModifier.NoModifier
+        self.__pressed_link = self.__link_at(event.position().toPoint()) if plain else None
         super().mousePressEvent(event)
 
     @override
@@ -259,14 +259,17 @@ class LogView(QTableView):
 
     @override
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802  (Qt API name)
-        """Show a hand over a link, the arrow elsewhere.
+        """Show a hand over a link, the arrow elsewhere; a press that leaves its link is a drag, and opens nothing.
 
         :param event: the mouse event.
         """
-        if self.__link_at(event.position().toPoint()) is None:
+        link = self.__link_at(event.position().toPoint())
+        if link is None:
             self.viewport().unsetCursor()
         else:
             self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        if link != self.__pressed_link:
+            self.__pressed_link = None
         super().mouseMoveEvent(event)
 
     @override

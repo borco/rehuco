@@ -17,7 +17,9 @@ always were."""
 class LogLink:
     """A part of a record's message that a surface may draw as a link.
 
-    :param text: the part of the formatted message to show as the link; found in it, in order, after the link before.
+    :param text: the part of the formatted message to show as the link: its **first** occurrence after the link
+        before it, so a text short enough to occur earlier in the message (a one-letter title after ``saved``)
+        is linked there. Links are given in message order.
     :param target: what the host is handed back when the link is clicked. Opaque to the log stack, which never reads
         it; hashable so a surface can compare two of them.
     """
