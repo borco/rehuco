@@ -210,8 +210,8 @@ design was dropped on 2026-10-16 (#509, [[appendices.post-mortem#architecture]])
 - **`public` is reserved by convention only** — nothing refuses it as the identity ([[field-schema#per-user-shared]]).
 - **A location is a name; where it lives is a separate axis** (#322) — "which root or node" is its own control, or the
   move step (#339, #443), not more Locations rows.
-- **`type:`, `license:`, `kind:` and a `folder:` root label fold ASCII only** (SQLite `NOCASE`), while free text and
-  `authors`/`tags`/`publishers` fold case and diacritics since #475.
+- **`type:`, `kind:` and a `folder:` root label fold ASCII only** (SQLite `NOCASE`), while free text and
+  `authors`/`tags`/`publishers`/`formats`/`licenses` fold case and diacritics since #475.
 - **The history pages' missing rows** (#471) — the tag/author/publisher/learning-path tree, the rename that rewrote
   every `info.tc`, filters by collection and saved searches are decided ([[plugins#tag-browser]],
   [[sync#value-rename]]); still open are TutCatalogPy2's include/exclude clicks, filters by path or flag, and

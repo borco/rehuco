@@ -42,13 +42,14 @@ class ScannedItem:
     :param result: the item's fields, description and images, as a dropped URL of it would give them
         ([[acquisition-tooling#scraper-protocols]]).
     :param page_url: the page it was read from, the record's source.
-    :param license_path: the store's stable id for the license it is held under (Fab: ``license/cc/cc-by``,
-        [[assets#licenses]]), whose text is saved beside the record; ``None`` when it names none.
+    :param license_paths: the store's stable id of each license it is held under (Fab: ``license/cc/cc-by``,
+        [[assets#licenses]]), by the license's short id, whose text is saved beside the record; empty when it names
+        none.
     """
 
     result: ScrapeResult
     page_url: str
-    license_path: str | None = None
+    license_paths: Mapping[str, str] = field(default_factory=dict)
 
 
 class StorePausedError(Exception):

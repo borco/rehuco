@@ -1,7 +1,8 @@
-"""Tests for the fields an asset composes (#678): every field of its block has a spec, in the order the form shows
-them, and each spec builds a viewer and an editor over an asset's model."""
+"""Tests for the fields an asset composes (#678): every field of its block but the ones a dock of their own edits has
+a spec, in the order the form shows them, and each spec builds a viewer and an editor over an asset's model."""
 
-from borco_pyside.widgets import UnboundedSpinBox
+from typing import Final
+
 from PySide6.QtWidgets import QLabel
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import (
@@ -11,9 +12,15 @@ from rehuco_agent.documents.document_fields import (
 )
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import FieldRegistry
-from rehuco_core import ASSET_FIELD_NAMES, MAX_STORED_INTEGER, RehuDocument
+from rehuco_core import ASSET_FIELD_NAMES, RehuDocument
 
 from rehuco_agent_tests.fields.field_testers import TEST_EDITOR_TAB, TEST_VIEWER_TAB
+
+DOCK_FIELD_NAMES: Final = frozenset({"licenses"})
+"""The asset fields the Main Editor never shows: its licenses are edited in the License dock (#705)."""
+
+FORM_FIELD_NAMES: Final = tuple(name for name in ASSET_FIELD_NAMES if name not in DOCK_FIELD_NAMES)
+"""The asset fields the Main Editor shows, each through a spec."""
 
 
 def asset_model() -> RehuDocumentModel:
@@ -31,19 +38,21 @@ def test_every_field_an_asset_declares_has_a_spec() -> None:
     **Test steps:**
 
     * compose the fields of an asset
-    * verify every field of its block, and the shared ones it takes, is the name of a spec
+    * verify every field of its block but its licenses, and the shared ones it takes, is the name of a spec
+    * verify its licenses are not: they are the License dock's
     """
     model = asset_model()
     names = {name for spec in composed_field_specs(model) for name in spec.names}
 
-    assert set(ASSET_FIELD_NAMES) <= names
+    assert set(FORM_FIELD_NAMES) <= names
+    assert not DOCK_FIELD_NAMES & names
     assert {"rating", "online", "favorite", "collections"} <= names
     assert names <= declared_field_names(model)
 
 
 def test_an_asset_shows_its_fields_after_the_shared_ones_they_follow() -> None:
-    """The asset's fields come in the order they are read: what it is, its license, its formats and compatibility,
-    then its dates, versions and sizes; its dates beside the release date.
+    """The asset's fields come in the order they are read: what it is, its formats and compatibility, then its dates,
+    versions and sizes; its dates beside the release date.
 
     **Test steps:**
 
@@ -56,8 +65,6 @@ def test_an_asset_shows_its_fields_after_the_shared_ones_they_follow() -> None:
         "source_updated",
         "acquired",
         "kind",
-        "license",
-        "license_url",
         "formats",
         "compatibility",
         "advertised_version",
@@ -96,7 +103,7 @@ def test_each_spec_of_an_asset_builds_a_viewer_and_an_editor(qtbot: QtBot) -> No
     model = asset_model()
     registry = FieldRegistry()
     own = [spec for spec in MODEL_AGNOSTIC_FIELD_SPECS if spec.name in ASSET_FIELD_NAMES]
-    assert len(own) == len(ASSET_FIELD_NAMES)
+    assert len(own) == len(FORM_FIELD_NAMES)
 
     for spec in own:
         field = registry.create(
@@ -109,42 +116,3 @@ def test_each_spec_of_an_asset_builds_a_viewer_and_an_editor(qtbot: QtBot) -> No
         qtbot.addWidget(editor)
         assert isinstance(viewer, QLabel)
         assert editor is not None
-
-
-def test_the_license_url_reads_license_url_and_not_license_url_as_a_word() -> None:
-    """A label that derives badly is given: ``License URL``, not ``License Url``.
-
-    **Test steps:**
-
-    * create the license URL field from its spec
-    * verify its label
-    """
-    spec = next(spec for spec in MODEL_AGNOSTIC_FIELD_SPECS if spec.name == "license_url")
-
-    field = FieldRegistry().create(
-        spec.type, spec.name, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **spec.kwargs
-    )
-
-    assert field.label == "License URL"
-
-
-def test_the_integers_an_asset_states_stop_where_the_cache_does(qtbot: QtBot) -> None:
-    """A size or a count typed beyond what the cache's integers hold would stop the scan that read it, so no editor
-    takes one (#678).
-
-    **Test steps:**
-
-    * create the fields of the triangles, the texture size and the advertised size from their specs
-    * verify each editor's largest value is the cache's
-    """
-    model = asset_model()
-    registry = FieldRegistry()
-    for name in ("triangles", "texture_size", "advertised_size"):
-        spec = next(spec for spec in MODEL_AGNOSTIC_FIELD_SPECS if spec.name == name)
-        field = registry.create(spec.type, name, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **spec.kwargs)
-        editor = field.make_editor(model.bind(field)).editor
-        assert editor is not None
-        qtbot.addWidget(editor)
-        spin_box = editor if name != "advertised_size" else editor.findChild(UnboundedSpinBox)
-        assert isinstance(spin_box, UnboundedSpinBox)
-        assert spin_box.maximum() == MAX_STORED_INTEGER

@@ -49,7 +49,7 @@ LICENSE_URL_PATHS: Final = {
     EULA_URL.casefold(): STANDARD_PATH_PREFIX,
     LICENSES[("cc", "cc-by")][1].rstrip("/").casefold(): "license/cc/cc-by",
 }
-"""The ``license_url`` a record states, as :meth:`FabLicenseTexts.path_of_url` spells it, to a path
+"""The ``url`` a record's license states, as :meth:`FabLicenseTexts.path_of_url` spells it, to a path
 :meth:`FabLicenseTexts.read` reads: the two texts Fab's listings point at. The URL of a record is the license's own
 page, which is not always where its text is read from -- the Creative Commons page is HTML and its legal code is a file
 beside it."""
@@ -67,7 +67,7 @@ class FabLicenseTexts:
 
     @staticmethod
     def path_of_url(url: str) -> str | None:
-        """The path a record's ``license_url`` is read through, if there is a text for it.
+        """The path a record's license ``url`` is read through, if there is a text for it.
 
         :param url: the address a record states, any case, with or without its closing slash.
         :returns: a path :meth:`read` accepts; ``None`` for an address no reader here knows.
@@ -103,7 +103,7 @@ class FabLicenseTexts:
         return None
 
     def read_url(self, url: str) -> LicenseTerms | None:
-        """Read the text of the license a record's ``license_url`` names.
+        """Read the text a record's license ``url`` names.
 
         :param url: the address the record states.
         :returns: the terms, read today; ``None`` for an address no reader here knows.

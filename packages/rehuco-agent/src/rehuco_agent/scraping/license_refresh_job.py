@@ -1,13 +1,14 @@
-"""*Refresh License* as two jobs on the task queue ([[assets#licenses]], #688): one that reads and compares, one that
-replaces what the user chose to replace.
+"""*Refresh License* as two jobs on the task queue ([[assets#licenses]], #688, #705): one that reads and compares, one
+that replaces what the user chose to replace.
 
-**A record's saved text is only changed by a refresh when it has none.** The first job reads each distinct
-``license_url`` among the records once and puts it beside each record's ``.rehuterms``: a record with no text gets the
-file, one holding the same text is left alone, and one holding another text is **kept as it is** and handed back as a
-:class:`LicenseDifference` -- the license, the store's text, and every record holding another -- for the user to decide
-on (:mod:`~rehuco_agent.rehuco.license_refresh`). A file with no ``url`` is terms written for that item alone and is
-never touched, whatever its record's ``license_url`` says. The second job replaces the texts the user confirmed, and
-only those still as the first job read them.
+**A record's saved text of a license is only changed by a refresh when it has none.** A record holds several licenses,
+each with its own text in its ``.rehuterms`` (#705), so the jobs work on each license of each record. The first job
+reads each distinct ``url`` among the selected records' licenses once and puts it in each record's ``.rehuterms`` under
+that license's id: a license with no text gets it, one holding the same text is left alone, and one holding another
+text is **kept as it is** and handed back as a :class:`LicenseDifference` -- the license, the store's text, and every
+record holding another -- for the user to decide on (:mod:`~rehuco_agent.rehuco.license_refresh`). A text with no
+``url`` is terms written for that item alone and is never touched, whatever its license's ``url`` says. The second job
+replaces the texts the user confirmed, and only those still as the first job read them.
 
 Neither writes the ``.rehu``: a text lives in its own file, written under the record's lock like every write of a
 record's files, inside the rename barrier. What no reader knows, what cannot be read, and what is locked or on a share
@@ -31,6 +32,7 @@ from rehuco_core import (
     JobOutcome,
     LicenseTerms,
     LicenseTermsError,
+    LicenseTermsSet,
     RecordLockedError,
     RehuDocument,
     RehuFormatError,
@@ -47,13 +49,14 @@ from .protocols import FetchError
 LOG: Final = logging.getLogger(__name__)
 
 type LicenseTextReader = Callable[[str], LicenseTerms | None]
-"""What reads the text a ``license_url`` names, today: the terms, or ``None`` for an address it knows no text for. It
+"""What reads the text a license's ``url`` names, today: the terms, or ``None`` for an address it knows no text for. It
 raises :class:`~.library_site.StoreOfflineError` for a store that does not answer and
 :class:`~.protocols.FetchError` for an answer that is no text."""
 
 
 class LicenseRefreshResult(Enum):
-    """What became of one record in a refresh, in the order a summary says them."""
+    """What became of one license of a record in a refresh -- or of the whole record, when it was left out before its
+    licenses were looked at -- in the order a summary says them."""
 
     WRITTEN = "written"
     REPLACED = "replaced"
@@ -87,13 +90,15 @@ may pass."""
 
 @dataclass(frozen=True)
 class SavedLicense:
-    """A record whose saved text is not the one the store gives today.
+    """A record whose saved text of one license is not the one the store gives today.
 
     :param record: the ``.rehu``.
-    :param terms: the text it holds, as read.
+    :param license_id: the license, by its short id.
+    :param terms: the text the record holds for it, as read.
     """
 
     record: Path
+    license_id: str
     terms: LicenseTerms
 
 
@@ -101,7 +106,7 @@ class SavedLicense:
 class LicenseDifference:
     """One license whose text the store gives differently from some records' saved text.
 
-    :param url: the ``license_url`` the records state.
+    :param url: the ``url`` the records' license states.
     :param terms: the store's text, read today.
     :param holders: the records holding another text, in the order they were selected.
     """
@@ -143,7 +148,8 @@ class LicenseRefreshJobBase(TaskJobBase):  # pylint: disable=abstract-method  # 
 
     @property
     def results(self) -> Counter[LicenseRefreshResult]:
-        """How many records each result happened to in the last run."""
+        """How many licenses of records -- or whole records, for one left out -- each result happened to in the last
+        run."""
         return self._results
 
     @property
@@ -168,14 +174,22 @@ class LicenseRefreshJobBase(TaskJobBase):  # pylint: disable=abstract-method  # 
         LOG.warning("%s: its license text could not be %s: %s", record, "reached" if offline else "read", error)
 
     def _write(
-        self, record: Path, terms: LicenseTerms, *, expecting: LicenseTerms | None, written: LicenseRefreshResult
+        self,
+        record: Path,
+        license_id: str,
+        terms: LicenseTerms,
+        *,
+        expecting: LicenseTerms | None,
+        written: LicenseRefreshResult,
     ) -> None:
-        """Write a record's ``.rehuterms`` under its lock, if it still holds what the run read there.
+        """Write one license's text into a record's ``.rehuterms`` under its lock, if it still holds what the run read
+        there; the record's other texts are left as they are.
 
         :param record: the ``.rehu``.
+        :param license_id: the license, by its short id.
         :param terms: the text to write.
-        :param expecting: what the file held when it was read, ``None`` for no file: a file that holds something else
-            now was written meanwhile, and is left as it is.
+        :param expecting: the text of that license the file held when it was read, ``None`` for none: one that holds
+            something else now was written meanwhile, and is left as it is.
         :param written: what a write counts as.
         """
         try:
@@ -184,11 +198,12 @@ class LicenseRefreshJobBase(TaskJobBase):  # pylint: disable=abstract-method  # 
                     self._results[LicenseRefreshResult.GONE] += 1
                     LOG.warning("%s is gone: its license text was not written.", record)
                     return
-                if read_license_terms(record) != expecting:
+                current = read_license_terms(record) or LicenseTermsSet()
+                if current.get(license_id) != expecting:
                     self._results[LicenseRefreshResult.CHANGED] += 1
-                    LOG.info("%s: its license text changed meanwhile; left as it is.", record)
+                    LOG.info("%s: its text of %s changed meanwhile; left as it is.", record, license_id)
                     return
-                write_license_terms(record, terms)
+                write_license_terms(record, current.with_terms(license_id, terms))
         except RecordLockedError as error:
             self._results[LicenseRefreshResult.LOCKED] += 1
             LOG.warning("%s: its license text was not written: %s", record, error)
@@ -199,14 +214,14 @@ class LicenseRefreshJobBase(TaskJobBase):  # pylint: disable=abstract-method  # 
             self._unreachable(record, error)
         else:
             self._results[written] += 1
-            LOG.info("%s: its license text was %s.", record, written.value)
+            LOG.info("%s: its text of %s was %s.", record, license_id, written.value)
 
 
 class RefreshLicenseJob(LicenseRefreshJobBase):
     """Read the texts the selected records' licenses name, and write the ones that have none.
 
     :param records: the ``.rehu`` of each selected record.
-    :param read_text: what reads a ``license_url``'s text.
+    :param read_text: what reads the text a license's ``url`` names.
     :param username: whose identity the locks are written under.
     :param coordinator: the rename barrier the records' files are read and written inside.
     """
@@ -240,20 +255,22 @@ class RefreshLicenseJob(LicenseRefreshJobBase):
 
     @override
     def run(self, control: JobControl) -> None:
-        """Read the records, then each distinct license once, then settle each record against it.
+        """Read the records, then each distinct license address once, then settle each record's license against it.
 
         :param control: the engine's face to this job.
         """
         self._results.clear()
         self.__differences = ()
-        wanted: dict[str, list[tuple[Path, LicenseTerms | None]]] = {}
+        wanted: dict[str, list[tuple[Path, str, LicenseTerms | None]]] = {}
+        left_out = 0
         for record in self.__records:
             self.checkpoint()
             found = self.__inspect(record)
-            if found is not None:
-                wanted.setdefault(found[0], []).append((record, found[1]))
-        total = len(self.__records)
-        done = total - sum(len(group) for group in wanted.values())
+            left_out += not found
+            for url, license_id, saved in found:
+                wanted.setdefault(url, []).append((record, license_id, saved))
+        total = left_out + sum(len(group) for group in wanted.values())
+        done = left_out
         control.report(done, total)
         differences: list[LicenseDifference] = []
         for url, group in wanted.items():
@@ -264,57 +281,61 @@ class RefreshLicenseJob(LicenseRefreshJobBase):
                 control.report(done, total)
                 continue
             holders: list[SavedLicense] = []
-            for record, saved in group:
+            for record, license_id, saved in group:
                 self.checkpoint()
                 if saved is None:
-                    self._write(record, terms, expecting=None, written=LicenseRefreshResult.WRITTEN)
+                    self._write(record, license_id, terms, expecting=None, written=LicenseRefreshResult.WRITTEN)
                 elif same_text(saved, terms):
                     self._results[LicenseRefreshResult.UNCHANGED] += 1
                 else:
                     self._results[LicenseRefreshResult.DIFFERENT] += 1
-                    holders.append(SavedLicense(record, saved))
+                    holders.append(SavedLicense(record, license_id, saved))
                 done += 1
                 control.report(done, total)
             if holders:
                 differences.append(LicenseDifference(url, terms, tuple(holders)))
         self.__differences = tuple(differences)
 
-    def __inspect(self, record: Path) -> tuple[str, LicenseTerms | None] | None:
-        """What a record needs of the store: the address of its license and the text it holds.
+    def __inspect(self, record: Path) -> list[tuple[str, str, LicenseTerms | None]]:
+        """What a record needs of the store: the address of each of its licenses and the text it holds for it.
 
         :param record: the ``.rehu``.
-        :returns: the address and the saved text, ``None`` for none; ``None`` for a record left out -- counted as
-            why: not an asset, stating no address, holding terms of its own, or unreadable.
+        :returns: each license's address, id and saved text, ``None`` for none; a license or a record left out is
+            counted as why: not an asset, stating no address, holding terms of its own, or unreadable.
         """
         try:
             with self._coordinator.holding():
                 document = RehuDocument.load(record, username=self._username)
-                saved = read_license_terms(record)
+                saved = read_license_terms(record) or LicenseTermsSet()
         except (RehuFormatError, LicenseTermsError) as error:
             self._results[LicenseRefreshResult.UNREADABLE] += 1
             LOG.warning("%s: %s", record, error)
-            return None
+            return []
         except OSError as error:
             self._unreachable(record, error)
-            return None
+            return []
         if document.type != ASSET_PLUGIN.key:
             self._results[LicenseRefreshResult.NOT_ASSET] += 1
-            return None
-        stated = document.active_field("license_url")
-        url = stated.strip() if isinstance(stated, str) else ""
-        if not url:
+            return []
+        found: list[tuple[str, str, LicenseTerms | None]] = []
+        for entry in document.licenses:
+            url = (entry.url or "").strip()
+            held = saved.get(entry.license)
+            if not url:
+                self._results[LicenseRefreshResult.NO_TEXT] += 1
+            elif held is not None and held.url is None:
+                self._results[LicenseRefreshResult.OWN] += 1
+            else:
+                found.append((url, entry.license, held))
+        if not document.licenses:
             self._results[LicenseRefreshResult.NO_TEXT] += 1
-            return None
-        if saved is not None and saved.url is None:
-            self._results[LicenseRefreshResult.OWN] += 1
-            return None
-        return url, saved
+        return found
 
     def __fresh(self, url: str, records: int) -> LicenseTerms | None:
         """The text a license address gives today.
 
         :param url: the address.
-        :param records: how many records state it, for what it counts when there is no text.
+        :param records: how many licenses of records state it, for what it counts when there is no text.
         :returns: the terms; ``None`` when there are none to compare with, counted as why: a store that does not
             answer costs the records of that license and no other, and the refresh is asked for again.
         """
@@ -370,7 +391,11 @@ class ReplaceLicenseJob(LicenseRefreshJobBase):
             for holder in difference.holders:
                 self.checkpoint()
                 self._write(
-                    holder.record, difference.terms, expecting=holder.terms, written=LicenseRefreshResult.REPLACED
+                    holder.record,
+                    holder.license_id,
+                    difference.terms,
+                    expecting=holder.terms,
+                    written=LicenseRefreshResult.REPLACED,
                 )
                 done += 1
                 control.report(done, total)

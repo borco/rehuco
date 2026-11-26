@@ -6,7 +6,7 @@ The persona is a mock: what a request answers is told by address, as `FabSession
 import base64
 import json
 from collections.abc import Callable
-from typing import Any, Final, cast
+from typing import Any, Final
 from unittest.mock import Mock
 from urllib.parse import parse_qs, unquote, urlsplit
 
@@ -455,8 +455,8 @@ def test_a_live_item_is_read_through_the_fab_scraper(monkeypatch: MonkeyPatch) -
 
     assert item.page_url == f"{SITE}/listings/{LISTING_UID}"
     assert item.result.fields["title"] == "Public Title"
-    assert item.result.fields["license"] == "fab-standard"
-    assert item.license_path == "license/standard/reference-plus-source"
+    assert item.result.fields["licenses"] == [{"license": "fab-standard", "url": f"{SITE}/eula"}]
+    assert item.license_paths == {"fab-standard": "license/standard/reference-plus-source"}
 
 
 def test_a_listing_that_answers_404_is_written_from_its_library_entry(monkeypatch: MonkeyPatch) -> None:
@@ -511,57 +511,72 @@ def test_an_entry_whose_listing_is_no_object_is_read_as_live(monkeypatch: Monkey
     item = session.read_item(entry)
 
     assert item.page_url == f"{SITE}/listings/{LISTING_UID}"
-    assert item.license_path is None
+    assert not item.license_paths
 
 
 @mark.parametrize(
-    ("owned", "license_id", "path", "tags"),
+    ("owned", "licenses", "paths"),
     [
         param(
             [UEFN, PERSONAL],
-            "fab-standard",
-            "license/standard/reference-plus-source",
-            ["license-fab-standard", "license-fab-uefn-reference-only"],
-            id="Personal beats UEFN reference only, and both are tagged",
+            [
+                {"license": "fab-standard", "url": f"{SITE}/eula"},
+                {"license": "fab-uefn-reference-only", "url": f"{SITE}/eula"},
+            ],
+            {
+                "fab-standard": "license/standard/reference-plus-source",
+                "fab-uefn-reference-only": "license/standard/reference-only",
+            },
+            id="Personal before UEFN reference only, each its own license",
         ),
         param(
             [PERSONAL, PROFESSIONAL],
-            "fab-standard",
-            "license/standard/professional",
-            ["license-fab-standard"],
-            id="Professional comes first, one tag for the one id",
+            [{"license": "fab-standard", "url": f"{SITE}/eula"}],
+            {"fab-standard": "license/standard/professional"},
+            id="Professional comes first, and the one id is held once",
         ),
-        param([CC_BY], "cc-by-4.0", "license/cc/cc-by", ["license-cc-by-4.0"], id="Creative Commons"),
-        param([MARKETPLACE], "fab-ue-only", "license/legacy/uem", ["license-fab-ue-only"], id="Marketplace"),
+        param(
+            [CC_BY],
+            [{"license": "cc-by-4.0", "url": "https://creativecommons.org/licenses/by/4.0/"}],
+            {"cc-by-4.0": "license/cc/cc-by"},
+            id="Creative Commons",
+        ),
+        param(
+            [MARKETPLACE],
+            [{"license": "fab-ue-only"}],
+            {"fab-ue-only": "license/legacy/uem"},
+            id="Marketplace, with no terms page",
+        ),
         param(
             [UNKNOWN_TIER, CC_BY],
-            "cc-by-4.0",
-            "license/cc/cc-by",
-            ["license-cc-by-4.0", "license-new-fancy-one"],
-            id="a tier unknown to Fab's table is tagged by its group and slug, after the known",
+            [
+                {"license": "cc-by-4.0", "url": "https://creativecommons.org/licenses/by/4.0/"},
+                {"license": "new-fancy-one"},
+            ],
+            {"cc-by-4.0": "license/cc/cc-by", "new-fancy-one": "license/new/fancy"},
+            id="a tier unknown to Fab's table is kept by its group and slug, after the known",
         ),
     ],
 )
-def test_the_broadest_owned_tier_is_the_license_and_every_tier_is_a_tag(
-    monkeypatch: MonkeyPatch, owned: list[dict[str, Any]], license_id: str, path: str, tags: list[str]
+def test_every_owned_tier_is_a_license_of_the_record_broadest_first(
+    monkeypatch: MonkeyPatch, owned: list[dict[str, Any]], licenses: list[dict[str, str]], paths: dict[str, str]
 ) -> None:
-    """The record holds under the broadest rights the account owns, and every owned tier can be filtered on.
+    """The record holds every license the account owns the item under, broadest first and each id once, and each
+    names the path its text is read from (#705); no ``license-`` tag is written.
 
     **Test steps:**
 
     * read a live item owned under each set of tiers
-    * verify the license, and the path naming its text, are the broadest tier's
-    * verify the ``license-`` tags are each owned tier's, none twice, after the listing's own tags
+    * verify its ``licenses`` and the path naming each one's text
+    * verify the tags are the listing's own alone
     """
     session, _ = session_with(monkeypatch, live_fetcher(public_listing()))
 
     item = session.read_item(entry_of(result_of(licenses=owned)))
 
-    assert item.result.fields["license"] == license_id
-    assert item.license_path == path
-    advertised = cast(list[str], item.result.fields["advertised_tags"])
-    assert advertised[-len(tags) :] == tags
-    assert advertised[:2] == ["Environments", "interior"]
+    assert item.result.fields["licenses"] == licenses
+    assert item.license_paths == paths
+    assert item.result.fields["advertised_tags"] == ["Environments", "interior"]
 
 
 def test_a_listing_offering_one_tier_does_not_outweigh_the_tier_owned(monkeypatch: MonkeyPatch) -> None:
@@ -570,15 +585,14 @@ def test_a_listing_offering_one_tier_does_not_outweigh_the_tier_owned(monkeypatc
     **Test steps:**
 
     * read a listing offering only a Creative Commons tier, owned under the Marketplace license
-    * verify the license is the Marketplace's and the listing's license URL is gone
+    * verify the one license is the Marketplace's, with no address
     """
     listing = public_listing(licenses=[{"group": "cc", "slug": "cc-by"}])
     session, _ = session_with(monkeypatch, live_fetcher(listing))
 
     item = session.read_item(entry_of(result_of(licenses=[MARKETPLACE])))
 
-    assert item.result.fields["license"] == "fab-ue-only"
-    assert "license_url" not in item.result.fields
+    assert item.result.fields["licenses"] == [{"license": "fab-ue-only"}]
 
 
 def test_an_item_owned_under_no_tier_has_no_license(monkeypatch: MonkeyPatch) -> None:
@@ -587,15 +601,17 @@ def test_an_item_owned_under_no_tier_has_no_license(monkeypatch: MonkeyPatch) ->
     **Test steps:**
 
     * read a live item whose entry lists no tier, and a delisted one with a tier that has no path
-    * verify no license path is named, and the tags are the scraper's own for the first
+    * verify no license or path is named for the first, and the second holds its license with no path
     """
     session, _ = session_with(monkeypatch, live_fetcher(public_listing(licenses=[])))
-    assert session.read_item(entry_of(result_of(licenses=[]))).license_path is None
+    bare = session.read_item(entry_of(result_of(licenses=[])))
+    assert not bare.license_paths
+    assert "licenses" not in bare.result.fields
 
     pathless = {"group": {"slug": "standard"}, "slug": "personal"}
     item = session.read_item(entry_of(result_of(licenses=[pathless], live=False)))
-    assert item.license_path is None
-    assert item.result.fields["license"] == "fab-standard"
+    assert not item.license_paths
+    assert item.result.fields["licenses"] == [{"license": "fab-standard", "url": f"{SITE}/eula"}]
 
 
 def test_an_entry_with_no_entitlement_object_has_no_tiers(monkeypatch: MonkeyPatch) -> None:
@@ -609,7 +625,7 @@ def test_an_entry_with_no_entitlement_object_has_no_tiers(monkeypatch: MonkeyPat
     session, _ = session_with(monkeypatch, Mock())
     for entitlement in (None, {"licenses": "none"}):
         raw = {**result_of(live=False), "entitlement": entitlement}
-        assert session.read_item(entry_of(raw)).license_path is None
+        assert not session.read_item(entry_of(raw)).license_paths
 
 
 # endregion

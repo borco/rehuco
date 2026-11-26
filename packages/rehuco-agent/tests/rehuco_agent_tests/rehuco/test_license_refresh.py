@@ -18,10 +18,10 @@ from rehuco_agent.dialogs.license_refresh_dialog import LicenseRefreshDialog
 from rehuco_agent.rehuco.license_refresh import LicenseRefresh
 from rehuco_agent.scraping.license_refresh_job import RefreshLicenseJob, ReplaceLicenseJob
 from rehuco_agent.tasks import TaskQueueModel
-from rehuco_core import DEFAULT_RENAME_COORDINATOR, FINISHED_JOB_STATES, JobState, TaskQueue, read_license_terms
+from rehuco_core import DEFAULT_RENAME_COORDINATOR, FINISHED_JOB_STATES, JobState, TaskQueue
 
 from rehuco_agent_tests.delete_at_teardown import DeleteAtTeardown
-from rehuco_agent_tests.scraping.test_license_refresh_job import OLD, STORE, URL, asset
+from rehuco_agent_tests.scraping.test_license_refresh_job import OLD, STORE, URL, asset, saved_text
 
 pytestmark = mark.usefixtures("real_path_stat")
 
@@ -100,7 +100,7 @@ def test_a_refresh_is_a_job_on_the_queue_that_writes_the_missing_texts_and_asks_
     qtbot.wait(100)
 
     rig.read_text.assert_called_once_with(URL)
-    assert read_license_terms(record) == STORE
+    assert saved_text(record) == STORE
     assert rig.window.findChild(LicenseRefreshDialog) is None
 
 
@@ -123,12 +123,12 @@ def test_a_record_holding_another_text_is_asked_about_and_replaced_only_when_che
     dialog = rig.dialog(qtbot)
 
     assert dialog.chosen == ()
-    assert read_license_terms(older) == OLD
-    assert read_license_terms(empty) == STORE
+    assert saved_text(older) == OLD
+    assert saved_text(empty) == STORE
     dialog._LicenseRefreshDialog__ui.licenses_list.item(0).setCheckState(Qt.CheckState.Checked)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     dialog.replace_button.click()
     rig.settle(qtbot, ReplaceLicenseJob)
-    qtbot.waitUntil(lambda: read_license_terms(older) == STORE, timeout=TIMEOUT)
+    qtbot.waitUntil(lambda: saved_text(older) == STORE, timeout=TIMEOUT)
 
     assert any(isinstance(rig.queue.job(status.serial), ReplaceLicenseJob) for status in rig.queue.jobs())
 
@@ -146,7 +146,7 @@ def test_keeping_every_text_replaces_nothing_and_enqueues_nothing(qtbot: QtBot, 
     dialog.reject()
     qtbot.wait(100)
 
-    assert read_license_terms(older) == OLD
+    assert saved_text(older) == OLD
     assert [type(rig.queue.job(status.serial)) for status in rig.queue.jobs()] == [RefreshLicenseJob]
 
 

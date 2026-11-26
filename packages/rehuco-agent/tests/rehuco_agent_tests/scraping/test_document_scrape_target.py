@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from rehuco_agent.scraping.document_scrape_target import DocumentScrapeTarget
 from rehuco_agent.scraping.results import ScrapedImage, ScrapeResult
-from rehuco_core import SITE_ID_KEY, RehuDocument
+from rehuco_core import SITE_ID_KEY, AssetLicense, RehuDocument
 
 PAGE_URL = "https://www.fab.com/listings/1234"
 """The page every result below was read from."""
@@ -30,27 +30,44 @@ def asset_document(tmp_path: Path) -> RehuDocument:
 
 
 def test_declared_fields_are_written_and_others_left_unset(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """A field the record's type declares is written, through its property or into the block; another is logged.
+    """A field the record's type declares is written through its property, its JSON read into what the property
+    holds; another is logged.
 
     **Test steps:**
 
-    * apply a result with a core field, a block field with no property of its own, and a Tutorial-only field
-    * verify the first two are written, the third is not and is logged
+    * apply a result with a core field, an asset's licenses as their JSON, and a Tutorial-only field
+    * verify the first two are written, the licenses as entries, and the third is not and is logged
     """
     caplog.set_level(logging.INFO)
     document = asset_document(tmp_path)
-    result = ScrapeResult(
-        {"title": "Rock pack", "license_url": "https://www.fab.com/eula", "advertised_duration": 60},
-        None,
-        (),
-    )
+    licenses = [{"license": "fab-standard", "url": "https://www.fab.com/eula"}, {"license": "fab-ue-only"}]
+    result = ScrapeResult({"title": "Rock pack", "licenses": licenses, "advertised_duration": 60}, None, ())
 
     DocumentScrapeTarget(document).apply(result, publisher="Fab", page_url=PAGE_URL)
 
     assert document.title == "Rock pack"
-    assert document.active_field("license_url") == "https://www.fab.com/eula"
+    assert document.licenses == [AssetLicense("fab-standard", "https://www.fab.com/eula"), AssetLicense("fab-ue-only")]
+    assert document.active_field("licenses") == licenses
     assert document.active_field("advertised_duration") is None
     assert "advertised_duration is not a field of this document's type" in caplog.text
+
+
+def test_a_declared_field_with_no_property_is_written_into_the_block(tmp_path: Path) -> None:
+    """A field a type declares that the document has no property for is written into the type's block as it came.
+
+    **Test steps:**
+
+    * apply a result with a tutorial's level onto a tutorial record
+    * verify the block holds it
+    """
+    document = RehuDocument.new(tmp_path / "course" / "info.rehu")
+    document.set_active_type("tutorial")
+
+    DocumentScrapeTarget(document).apply(
+        ScrapeResult({"level": ["beginner"]}, None, ()), publisher="X", page_url=PAGE_URL
+    )
+
+    assert document.active_field("level") == ["beginner"]
 
 
 def test_the_page_becomes_the_primary_source_with_the_site_id(tmp_path: Path) -> None:

@@ -89,7 +89,7 @@ def test_every_column_has_a_header_and_the_first_four_keep_their_places(model: C
     assert headers.count("Format") == 1
     assert headers[-13:] == [
         "Kind",
-        "License",
+        "Licenses",
         "Formats",
         "Compatibility",
         "Source updated",

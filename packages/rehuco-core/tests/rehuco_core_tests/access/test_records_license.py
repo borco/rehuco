@@ -17,6 +17,7 @@ from rehuco_core import (
     LICENSE_TERMS_KEY,
     LicenseTerms,
     LicenseTermsError,
+    LicenseTermsSet,
     RecordConflict,
     Records,
     RehuDocument,
@@ -32,14 +33,26 @@ from rehuco_core_tests.access.test_records import USERNAME, load, on_disk, tutor
 SAVED_AT: Final = "2026-10-12T10:00:00+00:00"
 """When a save under test happens, and so what it stamps."""
 
-TERMS: Final = LicenseTerms("Standard License", "https://example.com/eula", datetime.date(2026, 11, 18), "# Terms\n")
-"""The terms a record is written with."""
+TERMS: Final = LicenseTermsSet(
+    {
+        "fab-standard": LicenseTerms(
+            "Standard License", "https://example.com/eula", datetime.date(2026, 11, 18), "# Terms\n"
+        )
+    }
+)
+"""The texts a record is written with: one license's."""
 
-EDITED: Final = LicenseTerms("Standard License", "https://example.com/eula", datetime.date(2026, 11, 18), "# Mine\n")
-"""The same terms, with the text edited."""
+EDITED: Final = LicenseTermsSet(
+    {
+        "fab-standard": LicenseTerms(
+            "Standard License", "https://example.com/eula", datetime.date(2026, 11, 18), "# Mine\n"
+        )
+    }
+)
+"""The same texts, that license's edited."""
 
 
-def record_with_terms(tmp_path: Path, terms: LicenseTerms | None = TERMS) -> ResourceKey:
+def record_with_terms(tmp_path: Path, terms: LicenseTermsSet | None = TERMS) -> ResourceKey:
     """A record, and its ``.rehuterms`` when given terms.
 
     :param tmp_path: the folder.
@@ -127,7 +140,7 @@ def test_an_unreadable_sidecar_is_named_and_left_out_and_the_record_still_loads(
     * verify the reason starts with the file's name, no terms are held, the record is unlocked, and the log says so
     """
     key = record_with_terms(tmp_path, None)
-    license_terms_path(key.path).write_text("no header", encoding="utf-8")
+    license_terms_path(key.path).write_text("not json", encoding="utf-8")
 
     with caplog.at_level(logging.WARNING):
         loaded = load(Records(), key)
@@ -187,7 +200,7 @@ def test_a_document_reloads_its_license_text_with_the_rest(tmp_path: Path) -> No
     * verify it holds the terms and no longer calls the sidecar unreadable
     """
     key = record_with_terms(tmp_path, None)
-    license_terms_path(key.path).write_text("no header", encoding="utf-8")
+    license_terms_path(key.path).write_text("not json", encoding="utf-8")
     document = load(Records(), key).document
     write_license_terms(key.path, TERMS)
 
@@ -293,13 +306,13 @@ def test_a_save_refuses_to_write_over_a_sidecar_it_cannot_read(tmp_path: Path) -
     key = record_with_terms(tmp_path)
     records = Records()
     loaded = load(records, key)
-    license_terms_path(key.path).write_text("no header", encoding="utf-8")
+    license_terms_path(key.path).write_text("not json", encoding="utf-8")
     loaded.document.license_terms = EDITED
 
     with pytest.raises(LicenseTermsError):
         records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=True)
 
-    assert license_terms_path(key.path).read_text(encoding="utf-8") == "no header"
+    assert license_terms_path(key.path).read_text(encoding="utf-8") == "not json"
 
 
 def test_a_save_refuses_terms_that_are_not_terms(tmp_path: Path) -> None:
@@ -335,7 +348,13 @@ def test_terms_changed_on_disk_meanwhile_are_a_conflict_with_the_files_side_offe
     key = record_with_terms(tmp_path)
     records = Records()
     loaded = load(records, key)
-    elsewhere = LicenseTerms("Standard License", "https://example.com/eula", datetime.date(2026, 11, 20), "# Theirs\n")
+    elsewhere = LicenseTermsSet(
+        {
+            "fab-standard": LicenseTerms(
+                "Standard License", "https://example.com/eula", datetime.date(2026, 11, 20), "# Theirs\n"
+            )
+        }
+    )
     write_license_terms(key.path, elsewhere)
     loaded.document.license_terms = EDITED
 
@@ -484,7 +503,9 @@ def test_overwrite_writes_the_documents_text_over_one_changed_on_disk(tmp_path: 
     key = record_with_terms(tmp_path)
     records = Records()
     loaded = load(records, key)
-    write_license_terms(key.path, LicenseTerms("Other", None, datetime.date(2026, 11, 20), "Theirs"))
+    write_license_terms(
+        key.path, LicenseTermsSet({"mine": LicenseTerms("Other", None, datetime.date(2026, 11, 20), "Theirs")})
+    )
     loaded.document.license_terms = EDITED
 
     records.save(key, loaded.document, loaded.version, username=USERNAME, overwrite=True)

@@ -1,6 +1,7 @@
-"""Tests for *Refresh License* as jobs (#688, [[assets#licenses]]): what a refresh does with a record that has no saved
-text, the same one, another one or terms of its own, how it counts and survives what it cannot read, and the second job
-that replaces only what was confirmed.
+"""Tests for *Refresh License* as jobs (#688, #705, [[assets#licenses]]): what a refresh does with a license of a record
+that has no saved text, the same one, another one or terms of its own, how it counts and survives what it cannot read,
+and the second job that replaces only what was confirmed -- each license's text on its own, the others' left as they
+are.
 
 Real records under ``tmp_path``, read and written through core; the store's reader is a stand-in answering by address.
 """
@@ -28,6 +29,7 @@ from rehuco_core import (
     JobCanceled,
     JobControl,
     LicenseTerms,
+    LicenseTermsSet,
     RecordLockedError,
     RehuDocument,
     license_terms_path,
@@ -43,6 +45,8 @@ OLD_DAY: Final = datetime.date(2026, 3, 1)
 NEW_DAY: Final = datetime.date(2026, 11, 25)
 STORE: Final = LicenseTerms("Standard License", URL, NEW_DAY, "# Terms\n\nUse freely.")
 OLD: Final = LicenseTerms("Standard License", URL, OLD_DAY, "# Terms\n\nOlder wording.")
+LICENSE_ID: Final = "fab-standard"
+"""The license every record below is held under, unless a test gives it another beside."""
 USER: Final = "admin"
 JOB_MODULE: Final = "rehuco_agent.scraping.license_refresh_job"
 
@@ -54,8 +58,8 @@ def asset(
 
     :param tmp_path: the folder.
     :param name: the record's folder name.
-    :param url: its ``license_url``; none stated for ``None``.
-    :param terms: what the sidecar holds; none made for ``None``.
+    :param url: the address its one license states; no license at all for ``None``.
+    :param terms: what the sidecar holds for that license; none made for ``None``.
     :param kind: the record's type.
     :returns: the ``.rehu``.
     """
@@ -65,11 +69,32 @@ def asset(
     document.core["type"] = kind
     document.title = name
     if url is not None:
-        document.set_active_field("license_url", url)
+        document.set_active_field("licenses", [{"license": LICENSE_ID, "url": url}])
     document.save()
     if terms is not None:
-        write_license_terms(path, terms)
+        keep_text(path, terms)
     return path
+
+
+def saved_text(record: Path, license_id: str = LICENSE_ID) -> LicenseTerms | None:
+    """What a record's sidecar holds for one license.
+
+    :param record: the ``.rehu``.
+    :param license_id: the license.
+    :returns: its text; ``None`` for no sidecar, or none for that license.
+    """
+    texts = read_license_terms(record)
+    return None if texts is None else texts.get(license_id)
+
+
+def keep_text(record: Path, terms: LicenseTerms, license_id: str = LICENSE_ID) -> None:
+    """Write one license's text into a record's sidecar, keeping the others it holds.
+
+    :param record: the ``.rehu``.
+    :param terms: the text.
+    :param license_id: the license.
+    """
+    write_license_terms(record, (read_license_terms(record) or LicenseTermsSet()).with_terms(license_id, terms))
 
 
 def reader(texts: dict[str, LicenseTerms | Exception | None] | None = None) -> Mock:
@@ -133,7 +158,7 @@ def test_a_record_with_no_saved_text_gets_the_stores(tmp_path: Path) -> None:
 
     job = refresh([record])
 
-    assert read_license_terms(record) == STORE
+    assert saved_text(record) == STORE
     assert count(job, LicenseRefreshResult.WRITTEN) == 1
     assert not job.differences
 
@@ -173,11 +198,13 @@ def test_a_record_holding_another_text_is_kept_and_offered_for_the_user_to_decid
 
     job = refresh([first, second, third], read_text)
 
-    assert read_license_terms(first) == OLD
-    assert read_license_terms(second) == OLD
-    assert read_license_terms(third) == STORE
+    assert saved_text(first) == OLD
+    assert saved_text(second) == OLD
+    assert saved_text(third) == STORE
     read_text.assert_called_once_with(URL)
-    assert job.differences == (LicenseDifference(URL, STORE, (SavedLicense(first, OLD), SavedLicense(second, OLD))),)
+    assert job.differences == (
+        LicenseDifference(URL, STORE, (SavedLicense(first, LICENSE_ID, OLD), SavedLicense(second, LICENSE_ID, OLD))),
+    )
     assert count(job, LicenseRefreshResult.DIFFERENT) == 2
 
 
@@ -196,14 +223,14 @@ def test_terms_with_no_address_are_the_items_own_and_never_touched(tmp_path: Pat
     job = refresh([record], read_text)
 
     read_text.assert_not_called()
-    assert read_license_terms(record) == own
+    assert saved_text(record) == own
     assert count(job, LicenseRefreshResult.OWN) == 1
 
 
 def test_a_record_that_states_no_license_address_has_no_text_to_refresh(tmp_path: Path) -> None:
     """**Test steps:**
 
-    * refresh an asset with no ``license_url``
+    * refresh an asset holding no license
     * verify nothing was read or written, and it is counted as having no text to read
     """
     record = asset(tmp_path, "a", url=None)
@@ -279,7 +306,7 @@ def test_a_store_that_does_not_answer_costs_the_records_of_that_license_and_no_o
 
     assert count(job, LicenseRefreshResult.UNANSWERED) == 1
     assert not license_terms_path(down).exists()
-    assert read_license_terms(fine) == STORE
+    assert saved_text(fine) == STORE
 
 
 def test_a_text_that_cannot_be_read_costs_its_records_and_nothing_else(tmp_path: Path) -> None:
@@ -294,7 +321,7 @@ def test_a_text_that_cannot_be_read_costs_its_records_and_nothing_else(tmp_path:
     job = refresh([broken, fine], reader({OTHER_URL: FetchError("not JSON"), URL: STORE}))
 
     assert count(job, LicenseRefreshResult.UNANSWERED) == 1
-    assert read_license_terms(fine) == STORE
+    assert saved_text(fine) == STORE
     assert not license_terms_path(broken).exists()
 
 
@@ -313,7 +340,7 @@ def test_a_sidecar_or_a_record_that_cannot_be_read_is_counted_and_the_rest_go_on
     job = refresh([bad_sidecar, bad_record, good])
 
     assert count(job, LicenseRefreshResult.UNREADABLE) == 2
-    assert read_license_terms(good) == STORE
+    assert saved_text(good) == STORE
     assert license_terms_path(bad_sidecar).read_text(encoding="utf-8") == "no header"
 
 
@@ -352,7 +379,7 @@ def test_a_record_locked_by_someone_else_is_counted_and_left_without_a_text(
 
     assert count(job, LicenseRefreshResult.LOCKED) == 1
     assert not license_terms_path(locked).exists()
-    assert read_license_terms(free) == STORE
+    assert saved_text(free) == STORE
 
 
 def test_a_sidecar_written_between_the_read_and_the_write_is_not_written_over(tmp_path: Path) -> None:
@@ -368,12 +395,12 @@ def test_a_sidecar_written_between_the_read_and_the_write_is_not_written_over(tm
 
     def read(url: str) -> LicenseTerms:
         del url
-        write_license_terms(record, other)
+        keep_text(record, other)
         return STORE
 
     job = refresh([record], read)
 
-    assert read_license_terms(record) == other
+    assert saved_text(record) == other
     assert count(job, LicenseRefreshResult.CHANGED) == 1
 
 
@@ -423,7 +450,7 @@ def test_a_write_that_fails_or_meets_a_sidecar_broken_meanwhile_is_counted_and_t
     failing, broken, fine = asset(tmp_path, "a"), asset(tmp_path, "b"), asset(tmp_path, "c")
     real_write = write_license_terms
 
-    def write(record: Path, terms: LicenseTerms) -> None:
+    def write(record: Path, terms: LicenseTermsSet) -> None:
         if record == failing:
             raise PermissionError("denied")
         real_write(record, terms)
@@ -438,7 +465,7 @@ def test_a_write_that_fails_or_meets_a_sidecar_broken_meanwhile_is_counted_and_t
     job = refresh([failing, broken, fine], read)
 
     assert count(job, LicenseRefreshResult.UNREADABLE) == 2
-    assert read_license_terms(fine) == STORE
+    assert saved_text(fine) == STORE
 
 
 # endregion
@@ -530,12 +557,14 @@ def test_a_confirmed_text_replaces_the_one_a_record_holds(tmp_path: Path) -> Non
     * verify both hold the store's, and the run says it replaced two
     """
     first, second = asset(tmp_path, "a", terms=OLD), asset(tmp_path, "b", terms=OLD)
-    difference = LicenseDifference(URL, STORE, (SavedLicense(first, OLD), SavedLicense(second, OLD)))
+    difference = LicenseDifference(
+        URL, STORE, (SavedLicense(first, LICENSE_ID, OLD), SavedLicense(second, LICENSE_ID, OLD))
+    )
     job = ReplaceLicenseJob([difference], username=USER)
 
     job.run(Mock(spec=JobControl))
 
-    assert read_license_terms(first) == read_license_terms(second) == STORE
+    assert saved_text(first) == saved_text(second) == STORE
     assert job.outcome is not None and job.outcome.summary == "2 replaced"
     assert job.label == "Replace License text - 2 records"
 
@@ -550,14 +579,16 @@ def test_a_text_changed_since_it_was_compared_is_not_replaced(tmp_path: Path) ->
     """
     edited, untouched = asset(tmp_path, "a", terms=OLD), asset(tmp_path, "b", terms=OLD)
     typed = LicenseTerms("Typed", URL, OLD_DAY, "Typed since.")
-    write_license_terms(edited, typed)
-    difference = LicenseDifference(URL, STORE, (SavedLicense(edited, OLD), SavedLicense(untouched, OLD)))
+    keep_text(edited, typed)
+    difference = LicenseDifference(
+        URL, STORE, (SavedLicense(edited, LICENSE_ID, OLD), SavedLicense(untouched, LICENSE_ID, OLD))
+    )
     job = ReplaceLicenseJob([difference], username=USER)
 
     job.run(Mock(spec=JobControl))
 
-    assert read_license_terms(edited) == typed
-    assert read_license_terms(untouched) == STORE
+    assert saved_text(edited) == typed
+    assert saved_text(untouched) == STORE
     assert job.results[LicenseRefreshResult.CHANGED] == 1
     assert job.results[LicenseRefreshResult.REPLACED] == 1
     assert job.outcome is not None and not job.outcome.clean
@@ -570,7 +601,7 @@ def test_a_second_run_of_a_replacement_counts_afresh(tmp_path: Path) -> None:
     * verify the second run counts its own, the first run's records now holding the store's text
     """
     record = asset(tmp_path, "a", terms=OLD)
-    job = ReplaceLicenseJob([LicenseDifference(URL, STORE, (SavedLicense(record, OLD),))], username=USER)
+    job = ReplaceLicenseJob([LicenseDifference(URL, STORE, (SavedLicense(record, LICENSE_ID, OLD),))], username=USER)
     job.run(Mock(spec=JobControl))
 
     job.reset()
@@ -579,6 +610,61 @@ def test_a_second_run_of_a_replacement_counts_afresh(tmp_path: Path) -> None:
 
     assert job.results[LicenseRefreshResult.CHANGED] == 1
     assert job.results[LicenseRefreshResult.REPLACED] == 0
+
+
+# endregion
+
+
+# region several licenses
+
+
+def test_each_license_of_a_record_is_settled_on_its_own(tmp_path: Path) -> None:
+    """A record of three licenses: one holding the store's text, one with none and one stating no address (#705).
+
+    **Test steps:**
+
+    * save a record holding the Standard License with its text, a second license with none, and a third with no url
+    * refresh it
+    * verify the second got the store's text under its own id, the first was left as it was, and the third counted
+      as having no text to read
+    """
+    second_text = LicenseTerms("Other License", OTHER_URL, NEW_DAY, "Other terms.")
+    record = asset(tmp_path, "a", terms=STORE)
+    document = RehuDocument.load(record)
+    document.set_active_field(
+        "licenses",
+        [{"license": LICENSE_ID, "url": URL}, {"license": "other", "url": OTHER_URL}, {"license": "fab-ue-only"}],
+    )
+    document.save()
+
+    job = refresh([record], reader({URL: STORE, OTHER_URL: second_text}))
+
+    assert saved_text(record) == STORE
+    assert saved_text(record, "other") == second_text
+    assert saved_text(record, "fab-ue-only") is None
+    assert (count(job, LicenseRefreshResult.UNCHANGED), count(job, LicenseRefreshResult.WRITTEN)) == (1, 1)
+    assert count(job, LicenseRefreshResult.NO_TEXT) == 1
+
+
+def test_a_replacement_changes_its_license_s_text_alone(tmp_path: Path) -> None:
+    """Replacing one license's text keeps every other text the record holds (#705).
+
+    **Test steps:**
+
+    * save a record holding an older Standard text and a text of another license
+    * replace the Standard text as confirmed
+    * verify it is the store's now, and the other license's text is as it was
+    """
+    other = LicenseTerms("Other License", OTHER_URL, OLD_DAY, "Other terms.")
+    record = asset(tmp_path, "a", terms=OLD)
+    keep_text(record, other, "other")
+
+    ReplaceLicenseJob([LicenseDifference(URL, STORE, (SavedLicense(record, LICENSE_ID, OLD),))], username=USER).run(
+        Mock(spec=JobControl)
+    )
+
+    assert saved_text(record) == STORE
+    assert saved_text(record, "other") == other
 
 
 # endregion

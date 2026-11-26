@@ -27,19 +27,12 @@
     <number>2</number>
    </property>
    <item>
-    <widget class="QStackedWidget" name="title_stack">
-     <widget class="ElidedLabel" name="title_label">
-      <property name="font">
-       <font>
-        <bold>true</bold>
-       </font>
-      </property>
-     </widget>
-     <widget class="QLineEdit" name="title_edit">
-      <property name="placeholderText">
-       <string>License title</string>
-      </property>
-     </widget>
+    <widget class="ElidedLabel" name="title_label">
+     <property name="font">
+      <font>
+       <bold>true</bold>
+      </font>
+     </property>
     </widget>
    </item>
    <item>
@@ -66,7 +59,7 @@
     <string>Edit</string>
    </property>
    <property name="toolTip">
-    <string>Edit the license text as Markdown. It is saved with the record.</string>
+    <string>Edit the licenses and their texts. They are saved with the record.</string>
    </property>
   </action>
  </widget>

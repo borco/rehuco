@@ -66,7 +66,7 @@ for the buyer only if they can show they acquired under it and nothing since rep
 [[[appendices.assets#record-keeps]]]
 
 - **Two dates say which text is held and since when.** `acquired` is when the license was formed; `read` in the
-  `.rehuterms` header is the day the saved text was read ([[assets#licenses]]). A scan reads the terms on the day it
+  `.rehuterms` is the day each saved text was read ([[assets#licenses]]). A scan reads the terms on the day it
   runs, so for an item acquired years earlier the two differ, and nothing recovers the older text unless it was saved.
 - **A saved text is evidence, not a cache.** That is why a refresh never replaces it unasked: the text an item was
   acquired under may be the one that still applies, so it is not the tool's to overwrite.

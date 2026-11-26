@@ -37,7 +37,7 @@ class LicenseRefresh(QObject):
 
     :param queue: the app's task queue.
     :param rows: the Tasks dock's model of it.
-    :param read_text: what reads the text a ``license_url`` names.
+    :param read_text: what reads the text a license's ``url`` names.
     :param window: the window the question is shown over, which owns this.
     :param coordinator: the rename barrier the jobs read and write the records' files inside.
     """

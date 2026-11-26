@@ -98,8 +98,8 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
     :param tag_text: every tag, the same way.
     :param publisher_text: every publisher, the same way.
     :param kind: an asset's kind, ASCII-lowered, or ``None`` when its block names none (#678).
-    :param license: the license, the same way.
     :param formats: every file format, folded, as a token compares it whole.
+    :param licenses: every license's short id, the same way (#705).
     :param advertised_triangles_lower: the smallest value of the advertised triangle count, or ``None`` for text that
         is no range; the next three are the largest, and the two ends of the advertised texture size.
     :param advertised_triangles_upper: see above.
@@ -122,8 +122,8 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
     tag_text: str
     publisher_text: str
     kind: str | None
-    license: str | None
     formats: tuple[str, ...]
+    licenses: tuple[str, ...]
     advertised_triangles_lower: int | None
     advertised_triangles_upper: int | None
     advertised_texture_size_lower: int | None
@@ -162,8 +162,8 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
             tag_text,
             publisher_text,
             None if record.asset_kind is None else record.asset_kind.translate(ASCII_LOWER),
-            None if record.license is None else record.license.translate(ASCII_LOWER),
             tuple(fold(name) for name in record.formats),
+            tuple(fold(name) for name in record.licenses),
             *triangles,
             *textures,
             TEXT_SEPARATOR.join((title, path, author_text, publisher_text, tag_text)),
@@ -172,15 +172,13 @@ class CatalogSearchKey:  # pylint: disable=too-many-instance-attributes
 
 @dataclass(frozen=True, slots=True)
 class AssetMatcher:
-    """The part of a :class:`~rehuco_core.CatalogQuery` that reads an asset's own fields (#678): its ``license`` and
-    ``kind`` tokens and its comparisons of a range, as the cache's ``WHERE`` reads them.
+    """The part of a :class:`~rehuco_core.CatalogQuery` that reads an asset's own fields (#678): its ``kind`` tokens
+    and its comparisons of a range, as the cache's ``WHERE`` reads them.
 
-    :param licenses: the ``license`` tokens' values, ASCII-lowered.
-    :param kinds: the ``kind`` tokens' values, the same way.
+    :param kinds: the ``kind`` tokens' values, ASCII-lowered.
     :param comparisons: the comparisons of a range field.
     """
 
-    licenses: tuple[str, ...]
     kinds: tuple[str, ...]
     comparisons: tuple[CatalogComparison, ...]
 
@@ -192,7 +190,6 @@ class AssetMatcher:
         :returns: the matcher.
         """
         return cls(
-            tuple(value.translate(ASCII_LOWER) for field, value in query.tokens if field is CatalogField.LICENSE),
             tuple(value.translate(ASCII_LOWER) for field, value in query.tokens if field is CatalogField.KIND),
             query.comparisons,
         )
@@ -203,8 +200,6 @@ class AssetMatcher:
         :param keys: the keys still picked.
         :returns: those that do.
         """
-        for value in self.licenses:
-            keys = [key for key in keys if key.license == value]
         for value in self.kinds:
             keys = [key for key in keys if self.__has_kind(key, value)]
         for comparison in self.comparisons:
@@ -267,7 +262,14 @@ class CatalogMatcher:
         self.__values: Final = tuple(
             (attrgetter(field.value), fold(value))
             for field, value in query.tokens
-            if field in (CatalogField.AUTHORS, CatalogField.TAGS, CatalogField.PUBLISHERS, CatalogField.FORMATS)
+            if field
+            in (
+                CatalogField.AUTHORS,
+                CatalogField.TAGS,
+                CatalogField.PUBLISHERS,
+                CatalogField.FORMATS,
+                CatalogField.LICENSES,
+            )
         )
         self.__assets: Final = AssetMatcher.of(query)
         self.__folders: Final = tuple(

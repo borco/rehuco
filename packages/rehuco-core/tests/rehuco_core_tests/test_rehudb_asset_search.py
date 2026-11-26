@@ -1,4 +1,4 @@
-"""Tests for what the cache lets a search ask of an asset: its kind, license and formats, and a comparison of an
+"""Tests for what the cache lets a search ask of an asset: its kind, licenses and formats, and a comparison of an
 advertised range by its bounds (#678, [[assets#ranges]], [[assets#kind]]).
 
 The cache is :mod:`test_rehudb`'s, over a shared-cache in-memory database; its fixtures are imported by name.
@@ -282,12 +282,13 @@ def test_a_kind_matches_whole_and_ignores_ascii_case(cache: CatalogCache) -> Non
     assert not found(cache, kind_query("BÓOK"))
 
 
-def test_a_license_matches_whole_and_ignores_ascii_case(cache: CatalogCache) -> None:
-    """``license:`` finds the records under one license id, as ``type:`` finds a type.
+def test_a_license_matches_any_entry_whole_by_its_folded_id(cache: CatalogCache) -> None:
+    """``licenses:`` finds the records holding one license id among theirs, case and accents ignored, as ``formats:``
+    finds a format (#705).
 
     **Test steps:**
 
-    * scan assets under ``fab-standard`` (two spellings), ``cc-by-4.0`` and none
+    * scan assets under ``fab-standard`` (two spellings, one beside another license), ``cc-by-4.0`` and none
     * search ``FAB-STANDARD``
     * verify the first two are found
     """
@@ -295,14 +296,14 @@ def test_a_license_matches_whole_and_ignores_ascii_case(cache: CatalogCache) -> 
     cache.apply_root_scan(
         root.root_id,
         [
-            record("a/info.rehu", type="asset", license="fab-standard"),
-            record("b/info.rehu", type="asset", license="Fab-Standard"),
-            record("c/info.rehu", type="asset", license="cc-by-4.0"),
+            record("a/info.rehu", type="asset", licenses=("fab-standard",)),
+            record("b/info.rehu", type="asset", licenses=("fab-uefn-reference-only", "Fab-Standard")),
+            record("c/info.rehu", type="asset", licenses=("cc-by-4.0",)),
             record("d/info.rehu", type="asset"),
         ],
     )
 
-    query = CatalogQuery(tokens=((CatalogField.LICENSE, "FAB-STANDARD"),))
+    query = CatalogQuery(tokens=((CatalogField.LICENSES, "FAB-STANDARD"),))
 
     assert found(cache, query) == ["a/info.rehu", "b/info.rehu"]
 
@@ -347,3 +348,36 @@ def test_a_version_10_cache_upgrades_with_no_ranges_and_stale(
     assert row.record.title == "T"
     assert (row.record.advertised_triangles, row.record.advertised_texture_size) == (None, None)
     assert (row.record.mtime_ns, row.record.content_hash) == (0, "")
+
+
+def test_a_version_11_cache_upgrades_with_no_licenses_and_stale(
+    memory: Callable[[], MemoryDatabase], mocker: MockerFixture
+) -> None:
+    """The version-12 step keeps licenses in a value table and drops the one ``license`` column (#705): a row from
+    before it reads no licenses, and carries no signature a real file could match, so the next scan reads them in.
+
+    **Test steps:**
+
+    * build a version-11 cache holding one scanned record and reopen it with the full chain
+    * verify the row is kept, it has no licenses, and its signature is cleared
+    """
+    row = upgraded_one_record(memory, mocker, 11)
+
+    assert row.record.title == "T"
+    assert row.record.licenses == ()
+    assert (row.record.mtime_ns, row.record.content_hash) == (0, "")
+
+
+def test_the_cache_has_no_license_column_any_more(cache: CatalogCache) -> None:
+    """A record's licenses are a value table's, so ``resources`` keeps no column of one license (#705).
+
+    **Test steps:**
+
+    * read the columns of ``resources`` in a current cache
+    * verify none is ``license``, and the licenses tables exist
+    """
+    columns = {name for _, name, *_ in cache.connection.execute("PRAGMA table_info(resources)")}
+    tables = {name for (name,) in cache.connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+    assert "license" not in columns
+    assert {"licenses", "resource_licenses"} <= tables

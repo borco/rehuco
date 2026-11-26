@@ -1,5 +1,5 @@
-"""The License sub-dock: a record's license text, read as rendered Markdown and edited in place
-([[assets#licenses]], #688)."""
+"""The License sub-dock: a record's licenses, and the text of the one selected, read as rendered Markdown and edited
+in place ([[assets#licenses]], #688, #705)."""
 
 import html
 from typing import Final
@@ -9,7 +9,7 @@ from borco_pyside.core import ConnectionList
 from PySide6.QtCore import QSignalBlocker, QUrl
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import QWidget
-from rehuco_core import LicenseTerms
+from rehuco_core import AssetLicense, LicenseTerms
 
 from ..commands import LICENSE_EDIT, shared_command_registry
 from ..fields.widgets.markdown_edit import MarkdownEdit
@@ -17,16 +17,11 @@ from ..rehuco.web_pages import is_web_page
 from ..settings.description_editor_settings import shared_description_editor_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from .license_panel_ui import Ui_LicensePanel
+from .licenses_list_editor import LicensesListEditor
 from .rehu_document_model import RehuDocumentModel
 
 EDITING_STATE_KEY: Final = "editing"
 """The key of a panel's saved state: whether it shows the editors."""
-
-NO_TERMS_TEXT: Final = "No license text is saved for this record."
-"""What the panel says while the record has no ``.rehuterms``."""
-
-WRITE_HINT: Final = " Edit it to write the terms for this item."
-"""What follows :data:`NO_TERMS_TEXT` while the record can be edited."""
 
 UNREADABLE_HINT: Final = " It cannot be shown or edited until the file is fixed; Revert reads it again."
 """What follows the reason a ``.rehuterms`` could not be read."""
@@ -36,15 +31,19 @@ READ_ONLY_HINT: Final = " It cannot be edited now."
 
 
 class LicensePanel(QWidget):
-    """One view of a record's license text: its title, where and when it was read, and the terms as rendered Markdown,
-    until the **Edit** action swaps in a title line and the Markdown editor.
+    """One view of a record's licenses: the list of them, and for the one selected its title, where and when its text
+    was read, and the terms as rendered Markdown, until the **Edit** action makes the list editable -- add, delete, a
+    grip to drag a row by, its id picked or typed and its URL typed in place (:class:`LicensesListEditor`) -- and
+    swaps in the Markdown editor; a preset picked brings its text, which the list reads in the background. The first
+    license is selected when the record is shown, and a selection is kept while its license is, under a new id too.
 
-    **The text is the document's, edited as any of its details are**: typing writes through
-    (:meth:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.edit_license`) and makes the document
-    dirty, and the record's Save writes the ``.rehuterms`` with it -- no write of its own, so Revert drops an edit and
-    a save that cannot land is a failed save. The ``url`` and the date it was read are shown, never edited: only a
-    refresh makes them. **A file that cannot be read** is named and left alone until it is fixed; **a document that
-    cannot be written** shows the terms and cannot edit them.
+    **The licenses and their texts are the document's, edited as any of its details are**: an edit writes through
+    (:meth:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.edit_license` and the list's own) and makes
+    the document dirty, and the record's Save writes the ``.rehuterms`` with it -- no write of its own, so Revert
+    drops an edit and a save that cannot land is a failed save. A license being added has no text until it has an
+    id. The ``url`` and the date it was read are shown, never edited: only a refresh makes them. **A file that cannot
+    be read** is named and left alone until it is fixed; **a document that cannot be written** shows the terms and
+    cannot edit them.
 
     A link in the terms opens in the system's browser when it is a web page, and does nothing otherwise: the text is
     outside input. Images are never loaded.
@@ -57,11 +56,17 @@ class LicensePanel(QWidget):
         super().__init__(parent)
         self.__model: Final = model
         self.__editing = False
+        self.__selected: str | None = None
+        """The short id of the license whose text is shown, or ``None`` while the record holds none."""
         self.__settings: Final = ConnectionList()
         self.__ui: Final = Ui_LicensePanel()
         self.__ui.setupUi(self)
         self.__editor: Final = self.__make_editor()
         self.__ui.text_stack.addWidget(self.__editor)
+        self.__list: Final = LicensesListEditor(model, self)
+        self.__ui.main_layout.insertWidget(0, self.__list)
+        self.__list.current_index_changed.connect(self.__sync_selected)
+        self.__list.licenses.dataChanged.connect(self.__sync_selected)
         view = self.__ui.text_view
         view.setOpenLinks(False)
         view.setOpenExternalLinks(False)
@@ -69,11 +74,12 @@ class LicensePanel(QWidget):
         view.anchorClicked.connect(self.__on_anchor)
         self.__ui.info_label.linkActivated.connect(self.__on_link)
         self.__ui.edit_action.toggled.connect(self.__on_edit_toggled)
-        self.__ui.title_edit.textEdited.connect(self.__on_title_edited)
         self.__editor.notifyChange.connect(lambda *_: self.__on_text_edited())
         shared_command_registry().bind(self.__ui.edit_action, LICENSE_EDIT.id)
         self.addAction(self.__ui.edit_action)
         self.__follow_settings()
+        model.licenses_changed.connect(self.__on_licenses_changed)  # type: ignore[attr-defined]
+        self.__on_licenses_changed(model.licenses)
         for signal in (
             model.license_terms_changed,  # type: ignore[attr-defined]
             model.license_unreadable_changed,  # type: ignore[attr-defined]
@@ -87,6 +93,8 @@ class LicensePanel(QWidget):
     def detach(self) -> None:
         """Stop following the document and the settings, before this panel is destroyed."""
         model = self.__model
+        model.licenses_changed.disconnect(self.__on_licenses_changed)  # type: ignore[attr-defined]
+        self.__list.detach()
         for signal in (
             model.license_terms_changed,  # type: ignore[attr-defined]
             model.license_unreadable_changed,  # type: ignore[attr-defined]
@@ -101,6 +109,11 @@ class LicensePanel(QWidget):
     def title_bar_actions(self) -> list[QAction]:
         """*Edit*, for the dock's title bar."""
         return [self.__ui.edit_action]
+
+    @property
+    def selected(self) -> str | None:
+        """The short id of the license whose text is shown, or ``None`` while the record holds none."""
+        return self.__selected
 
     @property
     def editing(self) -> bool:
@@ -176,6 +189,14 @@ class LicensePanel(QWidget):
 
     # region What it shows
 
+    def __terms(self) -> LicenseTerms | None:
+        """The selected license's text.
+
+        :returns: its terms; ``None`` when none is selected or it has no text.
+        """
+        texts = self.__model.license_terms
+        return None if texts is None or self.__selected is None else texts.get(self.__selected)
+
     def __editable(self) -> bool:
         """Whether the document can take an edit of the text now.
 
@@ -190,39 +211,53 @@ class LicensePanel(QWidget):
     def __show(self) -> None:
         """Show the license text as the document holds it: the title, the line saying where it is from, the rendered
         terms, and what the editors hold -- each only where it differs, so a keystroke is never echoed back."""
-        model = self.__model
-        terms = model.license_terms
+        terms = self.__terms()
         editable = self.__editable()
         self.__ui.edit_action.setEnabled(editable)
         if not editable and self.__editing:
             self.__ui.edit_action.setChecked(False)
-        title = "" if terms is None else terms.title
-        self.__ui.title_label.set_text(title)
-        self.__ui.info_label.setText(self.__info(terms, editable))
+        self.__show_title(terms)
+        self.__set_info(self.__info(terms, editable))
         if not self.__editing:
             self.__render()
-        self.__give(title, "" if terms is None else terms.text)
-        self.__ui.title_edit.setEnabled(editable)
-        self.__editor.setEnabled(editable)
+        self.__give("" if terms is None else terms.text)
+        self.__editor.setEnabled(editable and self.__selected is not None)
+
+    def __show_title(self, terms: LicenseTerms | None) -> None:
+        """Show the selected license's title above its rendered terms; none while editing, where the list holds it.
+
+        :param terms: the selected license's terms, or ``None`` for none.
+        """
+        title = "" if terms is None else terms.title
+        self.__ui.title_label.set_text(title)
+        self.__ui.title_label.setVisible(bool(title) and not self.__editing)
 
     def __render(self) -> None:
         """Render the terms as they are -- not while they are being typed, which the viewer behind the editor would
         render again at every keystroke; leaving the editors does."""
-        terms = self.__model.license_terms
+        terms = self.__terms()
         self.__ui.text_view.set_markdown("" if terms is None else terms.text)
 
-    def __info(self, terms: LicenseTerms | None, editable: bool) -> str:
-        """The line under the title: where and when the terms were read, or why there are none to show.
+    def __set_info(self, line: str) -> None:
+        """Show the line under the title, and the label only while it says something.
 
-        :param terms: the terms, or ``None`` for none.
+        :param line: the line, as rich text; empty for none.
+        """
+        self.__ui.info_label.setText(line)
+        self.__ui.info_label.setVisible(bool(line))
+
+    def __info(self, terms: LicenseTerms | None, editable: bool) -> str:
+        """The line under the title: where and when the terms were read, or why they cannot be shown.
+
+        :param terms: the selected license's terms, or ``None`` for none.
         :param editable: whether the document can take an edit.
-        :returns: the line, as rich text.
+        :returns: the line, as rich text; empty for a license with no text, whose empty view says so itself.
         """
         reason = self.__model.license_unreadable
         if reason:
             return html.escape(reason + UNREADABLE_HINT)
         if terms is None:
-            return html.escape(NO_TERMS_TEXT + (WRITE_HINT if editable and not self.__editing else ""))
+            return ""
         day = terms.read.isoformat()
         if terms.url is None:
             line = html.escape(f"Written for this item, {day}.")
@@ -232,16 +267,11 @@ class LicensePanel(QWidget):
             line = f"Read {day} from {where}."
         return line if editable else line + html.escape(READ_ONLY_HINT)
 
-    def __give(self, title: str, text: str) -> None:
-        """Put the title and the text in the editors, where they differ -- without writing them back.
+    def __give(self, text: str) -> None:
+        """Put the text in the editor, where it differs -- without writing it back.
 
-        :param title: the title the document holds.
         :param text: the terms' Markdown.
         """
-        edit = self.__ui.title_edit
-        if edit.text() != title:
-            with QSignalBlocker(edit):
-                edit.setText(title)
         if self.__text() != text:
             with QSignalBlocker(self.__editor):
                 self.__editor.setText(text)
@@ -258,28 +288,57 @@ class LicensePanel(QWidget):
     # region What is done to it
 
     def __on_edit_toggled(self, editing: bool) -> None:
-        """Swap the rendered terms for the editors, or back.
+        """Make the list editable and swap the rendered terms for the editor, or back.
 
         :param editing: whether the editors are to be shown.
         """
         self.__editing = editing
-        self.__ui.info_label.setText(self.__info(self.__model.license_terms, self.__editable()))
+        self.__list.set_editable(editing)
+        terms = self.__terms()
+        self.__show_title(terms)
+        self.__set_info(self.__info(terms, self.__editable()))
         if not editing:
             self.__render()
-        page = 1 if editing else 0
-        self.__ui.title_stack.setCurrentIndex(page)
-        self.__ui.text_stack.setCurrentIndex(page)
-
-    def __on_title_edited(self, title: str) -> None:
-        """Hand a title the user typed to the document.
-
-        :param title: the title line's text.
-        """
-        self.__model.edit_license(title=title)
+        self.__ui.text_stack.setCurrentIndex(1 if editing else 0)
 
     def __on_text_edited(self) -> None:
         """Hand the text the user typed to the document."""
-        self.__model.edit_license(text=self.__text())
+        if self.__selected is not None:
+            self.__model.edit_license(self.__selected, text=self.__text())
+
+    def __on_licenses_changed(self, licenses: list[AssetLicense]) -> None:
+        """Show the record's licenses, keeping the one selected while the record still holds it, else the first; a row
+        being added stays where it is.
+
+        :param licenses: the licenses, in order.
+        """
+        keep = self.__selected
+        rows = self.__list.licenses
+        rows.set_entries(licenses)
+        current = self.__list.current_index
+        if 0 <= current < rows.count and rows.license_at(current) in (keep, None):
+            self.__sync_selected()
+            return
+        row = rows.row_of(keep) if keep is not None else -1
+        self.__list.set_current_index(row if row >= 0 else (0 if rows.count else -1))
+        self.__sync_selected()
+
+    def __sync_selected(self, *_args: object) -> None:
+        """Show the text of the license in the current row -- after the row changed, or the license in it did.
+
+        :param _args: whichever signal's arguments arrived; unused.
+        """
+        self.__set_selected(self.__list.licenses.license_at(self.__list.current_index))
+
+    def __set_selected(self, license_id: str | None) -> None:
+        """Show one license's text.
+
+        :param license_id: its short id, or ``None`` for none.
+        """
+        if license_id == self.__selected:
+            return
+        self.__selected = license_id
+        self.__show()
 
     def __on_anchor(self, url: QUrl) -> None:
         """Take a click on a link in the rendered terms.

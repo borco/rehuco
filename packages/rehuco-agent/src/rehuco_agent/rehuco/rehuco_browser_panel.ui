@@ -29,7 +29,7 @@
    <item>
     <widget class="QLineEdit" name="filter_edit">
      <property name="placeholderText">
-      <string>Filter: text, in:, folder:, authors:, tags:, publishers:, type:, kind:, license:, formats:</string>
+      <string>Filter: text, in:, folder:, authors:, tags:, publishers:, type:, kind:, licenses:, formats:</string>
      </property>
     </widget>
    </item>

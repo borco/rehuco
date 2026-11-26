@@ -27,6 +27,7 @@ from uuid import uuid4
 
 from borco_core import atomic_write_text
 
+from .asset_license import AssetLicense
 from .collection_entries import COLLECTIONS_KEY, CollectionEntry, collection_entries, collection_records
 from .learning_path_entries import (
     LEARNING_PATHS_KEY,
@@ -35,7 +36,13 @@ from .learning_path_entries import (
     learning_path_ref,
     visible_learning_paths,
 )
-from .license_terms import LicenseTerms, LicenseTermsError, license_terms_path, read_license_terms, write_license_terms
+from .license_terms import (
+    LicenseTermsError,
+    LicenseTermsSet,
+    license_terms_path,
+    read_license_terms,
+    write_license_terms,
+)
 from .lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
 from .migrations import (
     CURRENT_FORMAT_VERSION,
@@ -641,8 +648,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         **The license text goes between them** ([[assets#licenses]], #688), to its ``.rehuterms`` and only where it
         differs from what is there. A payload that holds none leaves the file as it is: a writer that read the record
-        without the text -- progress, a Measure, a value rename -- never removes it, and neither does a document, whose
-        text is only ever emptied.
+        without the text -- progress, a Measure, a value rename -- never removes it. A payload that holds texts is
+        written as it is: a license taken off the record leaves its text out (#705).
 
         :param target: the record's path.
         :raises UserSidecarError: the payload holds fields for a sidecar that cannot be read, which is never written
@@ -656,7 +663,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         record, sidecars = split_user_sidecars(payload)
         write_user_sidecars(target, sidecars)
         if terms is not None:
-            wanted = LicenseTerms.from_data(terms)
+            wanted = LicenseTermsSet.from_data(terms)
             if read_license_terms(target) != wanted:
                 write_license_terms(target, wanted)
         text = self.__record_text(record)
@@ -959,22 +966,22 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         return self.__unreadable_sidecars
 
     @property
-    def license_terms(self) -> LicenseTerms | None:
-        """The record's license text ([[assets#licenses]], #688), held in the payload as the per-user sidecars' fields
-        are and written to its ``.rehuterms`` by a save, never to the record.
+    def license_terms(self) -> LicenseTermsSet | None:
+        """The record's license texts, by license id ([[assets#licenses]], #688, #705), held in the payload as the
+        per-user sidecars' fields are and written to its ``.rehuterms`` by a save, never to the record.
 
-        :returns: the terms; ``None`` when there are none -- no sidecar, one that could not be read
+        :returns: the texts; ``None`` when there are none -- no sidecar, one that could not be read
             (:attr:`license_unreadable`), or a payload kept from elsewhere that holds something else.
         """
         try:
             data = self.__data.get(LICENSE_TERMS_KEY)
-            return None if data is None else LicenseTerms.from_data(data)
+            return None if data is None else LicenseTermsSet.from_data(data)
         except LicenseTermsError as error:
             LOG.warning("%s: the license text is left out: %s", self.__path, error)
             return None
 
     @license_terms.setter
-    def license_terms(self, terms: LicenseTerms | None) -> None:
+    def license_terms(self, terms: LicenseTermsSet | None) -> None:
         if terms is None:
             self.__data.pop(LICENSE_TERMS_KEY, None)
         else:
@@ -2300,14 +2307,15 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__set_active_or_remove("kind", value)
 
     @property
-    def license(self) -> str | None:
-        """An asset's license short id, such as ``fab-standard`` ([[assets#licenses]]); a shared field on the active
-        plugin block. ``None`` when absent or JSON ``null``; a present non-string reads ``None`` and locks."""
-        return optional_str(self.active_field("license"))
+    def licenses(self) -> list[AssetLicense]:
+        """The licenses an asset is held under, in the user's order, unique by id ([[assets#licenses]], #705); a shared
+        field on the active plugin block. Empty when absent; an entry that cannot be read, or repeats an id, is skipped
+        and locks. Setting it empty removes the key, as :attr:`formats` does."""
+        return AssetLicense.read_list(self.active_field("licenses"))
 
-    @license.setter
-    def license(self, value: str | None) -> None:
-        self.__set_active_or_remove("license", value)
+    @licenses.setter
+    def licenses(self, value: list[AssetLicense]) -> None:
+        self.__set_active_or_remove("licenses", AssetLicense.list_data(value) or None)
 
     @property
     def formats(self) -> list[str]:

@@ -7,8 +7,8 @@ size and engine versions from ``/i/listings/<uid>/asset-formats/<code>`` (#686).
 addresses itself, and never reads the page. The library scan (#684) reads each of its items through the same mapping,
 so an item filed either way reads alike.
 
-**What a listing does not say is left out**, never guessed: a license of several tiers (the account owns one, which only
-the library says), a size with no files, a count Fab states no range for. ``acquired`` is the scan's alone.
+**What a listing does not say is left out**, never guessed: a license of several tiers (the account owns some, which
+only the library says), a size with no files, a count Fab states no range for. ``acquired`` is the scan's alone.
 """
 
 import json
@@ -188,19 +188,19 @@ class Fab:
         return Fab.__result(listing, tuple(Fab.__format_of(fetcher, uid, code) for code in codes))
 
     @staticmethod
-    def license_fields(group: object, slug: object) -> dict[str, str]:
-        """The record's license fields for one of Fab's license tiers, which the library scan uses for the tier the
-        account owns.
+    def license_entry(group: object, slug: object) -> dict[str, str] | None:
+        """The ``licenses`` entry of one of Fab's license tiers ([[assets#licenses]], #705), which the library scan uses
+        for each tier the account owns.
 
         :param group: the tier's group slug (``standard``).
         :param slug: the tier's own slug (``personal``).
-        :returns: ``license`` and, where Fab states terms, ``license_url``; empty for a tier this scraper has no id for.
+        :returns: ``license`` and, where Fab states terms, ``url``; ``None`` for a tier this scraper has no id for.
         """
         known = LICENSES.get((str(group), str(slug)))
         if known is None:
-            return {}
+            return None
         short_id, url = known
-        return {"license": short_id, **({"license_url": url} if url else {})}
+        return {"license": short_id, **({"url": url} if url else {})}
 
     @staticmethod
     def scrape_library_entry(entry: Mapping[str, Any]) -> ScrapeResult:
@@ -440,17 +440,15 @@ class Fab:
         return found
 
     @staticmethod
-    def __license(listing: Mapping[str, Any]) -> dict[str, str]:
-        """The license a listing offers when it offers one: its short id and where its terms are.
+    def __license(listing: Mapping[str, Any]) -> dict[str, list[dict[str, str]]]:
+        """The license a listing offers when it offers one, as the record's one ``licenses`` entry.
 
         :param listing: the listing's JSON.
-        :returns: ``license`` and, where Fab states terms, ``license_url``; empty for several tiers, or for a license
-            this scraper has no id for.
+        :returns: ``licenses`` of that one entry; empty for several tiers, or for a license this scraper has no id for.
         """
         licenses = Fab.__entries(listing, "licenses")
-        if len(licenses) != 1:
-            return {}
-        return Fab.license_fields(licenses[0].get("group"), licenses[0].get("slug"))
+        entry = Fab.license_entry(licenses[0].get("group"), licenses[0].get("slug")) if len(licenses) == 1 else None
+        return {} if entry is None else {"licenses": [entry]}
 
     @staticmethod
     def __format_fields(formats: tuple[dict[str, Any], ...]) -> dict[str, Any]:

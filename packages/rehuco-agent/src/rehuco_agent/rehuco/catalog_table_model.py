@@ -60,7 +60,7 @@ class CatalogColumn(IntEnum):
     SERVER = 17
     ROOT = 18
     KIND = 19
-    LICENSE = 20
+    LICENSES = 20
     FORMATS = 21
     COMPATIBILITY = 22
     SOURCE_UPDATED = 23
@@ -180,8 +180,12 @@ COLUMNS: Final[Mapping[CatalogColumn, ColumnSpec]] = {
     CatalogColumn.KIND: ColumnSpec(
         "Kind", lambda entry: entry.record.asset_kind, default_visible=False, sort_key=folded, preset_visible=False
     ),
-    CatalogColumn.LICENSE: ColumnSpec(
-        "License", lambda entry: entry.record.license, default_visible=False, sort_key=folded, preset_visible=False
+    CatalogColumn.LICENSES: ColumnSpec(
+        "Licenses",
+        lambda entry: joined(entry.record.licenses),
+        default_visible=False,
+        sort_key=folded,
+        preset_visible=False,
     ),
     CatalogColumn.FORMATS: ColumnSpec(
         "Formats",
@@ -268,7 +272,6 @@ TYPE_COLUMNS: Final[Mapping[str, CatalogColumn]] = {
     "advertised_count": CatalogColumn.ADVERTISED_COUNT,
     "current_count": CatalogColumn.CURRENT_COUNT,
     "asset_kind": CatalogColumn.KIND,
-    "license": CatalogColumn.LICENSE,
     "compatibility": CatalogColumn.COMPATIBILITY,
     "source_updated": CatalogColumn.SOURCE_UPDATED,
     "advertised_version": CatalogColumn.ADVERTISED_VERSION,
@@ -280,6 +283,7 @@ TYPE_COLUMNS: Final[Mapping[str, CatalogColumn]] = {
     "texture_size": CatalogColumn.TEXTURE_SIZE,
     "acquired": CatalogColumn.ACQUIRED,
     "formats": CatalogColumn.FORMATS,
+    "licenses": CatalogColumn.LICENSES,
 }
 """The column each of the cache's type-specific fields (:data:`~rehuco_core.TYPE_FIELD_NAMES`) shows in, by the
 field's name -- what turns a type's :func:`~rehuco_core.catalog_type_fields` into columns (#400, #678)."""

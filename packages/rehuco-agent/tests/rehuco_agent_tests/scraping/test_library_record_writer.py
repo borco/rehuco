@@ -26,6 +26,7 @@ from rehuco_core import (
     JobPaused,
     JobWaiting,
     LicenseTerms,
+    LicenseTermsSet,
     RecordLockedError,
     Records,
     RehuDocument,
@@ -42,8 +43,17 @@ ACQUIRED: Final = "2024-05-03T12:34:56.789123Z"
 ENTRY: Final = LibraryEntry("1234", ACQUIRED, "Rock pack", "https://www.fab.com/listings/1234")
 """The item every test writes."""
 
-TERMS: Final = LicenseTerms("Standard License", "https://www.fab.com/eula", datetime.date(2026, 11, 22), "The terms.")
-"""The license the item is held under."""
+TERMS: Final = LicenseTermsSet(
+    {
+        "fab-standard": LicenseTerms(
+            "Standard License", "https://www.fab.com/eula", datetime.date(2026, 11, 22), "The terms."
+        )
+    }
+)
+"""The text of the license the item is held under."""
+
+NO_TERMS: Final = LicenseTermsSet()
+"""No license texts."""
 
 IMAGE: Final = ScrapedImage(0, "https://cdn.example/0.png", None)
 """The item's one screenshot."""
@@ -54,15 +64,14 @@ ROOT_ID: Final = UUID(int=1)
 pytestmark = pytest.mark.usefixtures("real_path_stat")
 
 
-def item(*images: ScrapedImage, license_path: str | None = "license/standard") -> ScannedItem:
+def item(*images: ScrapedImage) -> ScannedItem:
     """The item, read in full.
 
     :param images: its screenshots.
-    :param license_path: the license it is held under.
     :returns: the item.
     """
     result = ScrapeResult({"title": "Rock pack"}, "See ![](#image-00).", images)
-    return ScannedItem(result, ENTRY.url, license_path)
+    return ScannedItem(result, ENTRY.url, {"fab-standard": "license/standard"})
 
 
 @fixture(name="root")
@@ -130,7 +139,7 @@ def test_an_item_with_no_license_text_gets_no_sidecar(root: Path) -> None:
     * write an item with no license text
     * verify the record has no license sidecar
     """
-    written = writer(root).write(ENTRY, item(license_path=None), "Fab", None)
+    written = writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
     assert read_license_terms(written.path) is None
 
@@ -148,7 +157,7 @@ def test_a_staging_folder_a_crash_left_is_replaced(root: Path) -> None:
     staging.mkdir(parents=True)
     (staging / "stray.txt").write_text("half", encoding="utf-8")
 
-    written = writer(root).write(ENTRY, item(), "Fab", None)
+    written = writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
     assert not (written.path.parent / "stray.txt").exists()
     assert not staging.exists()
@@ -163,10 +172,10 @@ def test_a_record_of_the_item_already_at_its_place_is_kept(root: Path) -> None:
     * write the item again
     * verify the same record is handed back, unchanged
     """
-    first = writer(root).write(ENTRY, item(), "Fab", None)
+    first = writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
     text = first.path.read_text(encoding="utf-8")
 
-    again = writer(root).write(ENTRY, item(), "Fab", None)
+    again = writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
     assert again == WrittenRecord(first.path)
     assert first.path.read_text(encoding="utf-8") == text
@@ -184,7 +193,7 @@ def test_a_place_taken_by_something_else_pauses_the_scan(root: Path) -> None:
     (root / "Fab" / "1234").mkdir(parents=True)
 
     with raises(JobPaused, match="is already there") as paused:
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
     assert "1234" in str(paused.value.reason)
 
@@ -203,7 +212,7 @@ def test_a_layout_that_refuses_the_record_pauses_the_scan(root: Path) -> None:
     root_file.save()
 
     with raises(JobPaused, match="does not admit"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
 
 def test_an_unreadable_root_file_pauses_the_scan(root: Path) -> None:
@@ -218,7 +227,7 @@ def test_an_unreadable_root_file_pauses_the_scan(root: Path) -> None:
     (root.parent / "root.rehuroot").write_text("not json", encoding="utf-8")
 
     with raises(JobPaused, match="root's file cannot be read"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
 
 def test_a_missing_root_file_on_a_root_that_answers_pauses_the_scan(root: Path) -> None:
@@ -233,7 +242,7 @@ def test_a_missing_root_file_on_a_root_that_answers_pauses_the_scan(root: Path) 
     (root.parent / "root.rehuroot").unlink()
 
     with raises(JobPaused, match="root's file cannot be read"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
 
 def test_a_root_file_whose_folder_does_not_answer_makes_the_scan_wait(root: Path, mocker: MockerFixture) -> None:
@@ -253,7 +262,7 @@ def test_a_root_file_whose_folder_does_not_answer_makes_the_scan_wait(root: Path
     )
 
     with raises(JobWaiting, match="Waiting for the root"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
 
 def test_an_unreadable_record_at_the_items_place_pauses_the_scan(root: Path) -> None:
@@ -270,7 +279,7 @@ def test_an_unreadable_record_at_the_items_place_pauses_the_scan(root: Path) -> 
     (folder / "info.rehu").write_text("not json", encoding="utf-8")
 
     with raises(JobPaused, match="is already there"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
 
 def test_a_write_failing_as_the_root_goes_quiet_makes_the_scan_wait(root: Path, mocker: MockerFixture) -> None:
@@ -287,7 +296,7 @@ def test_a_write_failing_as_the_root_goes_quiet_makes_the_scan_wait(root: Path, 
     mocker.patch.object(Records, "save", side_effect=OSError(errno.ENETUNREACH, "unreachable"))
 
     with raises(JobWaiting, match="Waiting for the root"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
 
 def test_a_root_this_machine_does_not_map_pauses_the_scan(root: Path, mocker: MockerFixture) -> None:
@@ -317,7 +326,7 @@ def test_a_root_that_does_not_answer_makes_the_scan_wait(root: Path, mocker: Moc
     mocker.patch.object(writer_module, "presence_of", return_value=Presence.OFFLINE)
 
     with raises(JobWaiting, match="Waiting for the root"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
 
 def test_a_full_disk_pauses_the_scan_and_leaves_nothing_staged(root: Path, mocker: MockerFixture) -> None:
@@ -332,7 +341,7 @@ def test_a_full_disk_pauses_the_scan_and_leaves_nothing_staged(root: Path, mocke
     mocker.patch.object(Records, "save", side_effect=OSError(errno.ENOSPC, "No space left on device"))
 
     with raises(JobPaused, match="is full"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
     assert not (root / "Fab" / f"{STAGING_PREFIX}1234").exists()
 
@@ -349,7 +358,7 @@ def test_another_disk_failure_is_raised(root: Path, mocker: MockerFixture) -> No
     mocker.patch.object(Records, "save", side_effect=PermissionError(errno.EACCES, "Access is denied"))
 
     with raises(PermissionError):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
 
 def test_a_screenshot_that_cannot_be_fetched_is_left_out(
@@ -365,7 +374,7 @@ def test_a_screenshot_that_cannot_be_fetched_is_left_out(
     """
     mocker.patch.object(writer_module, "acquire", side_effect=RequestsConnectionError("refused"))
 
-    written = writer(root).write(ENTRY, item(IMAGE), "Fab", None)
+    written = writer(root).write(ENTRY, item(IMAGE), "Fab", NO_TERMS)
 
     assert written.path.is_file()
     assert scan_rehu_screenshot_files(written.path.parent, "info") == []
@@ -488,7 +497,7 @@ def test_a_bucketed_layout_places_the_record_and_names_its_level_to_settle(root:
     root_file.layouts = {"asset": ("{site}/{buckets}/{site_id}",)}
     root_file.save()
 
-    written = writer(root).write(ENTRY, item(), "Fab", None)
+    written = writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
     assert written.path == root / "Fab" / "1234" / "info.rehu"
     assert written.chains == (BucketChain(PurePosixPath("Fab"), ()),)
@@ -507,7 +516,7 @@ def test_a_folder_the_layout_does_not_bucket_pauses_the_scan(root: Path) -> None
     (root / "Fab" / BUCKETS_MARKER).touch()
 
     with raises(JobPaused, match="Fab is split into buckets"):
-        writer(root).write(ENTRY, item(), "Fab", None)
+        writer(root).write(ENTRY, item(), "Fab", NO_TERMS)
 
     assert [path.name for path in (root / "Fab").iterdir()] == [BUCKETS_MARKER]
 
@@ -524,7 +533,7 @@ def test_a_screenshot_whose_slot_the_set_cannot_hold_is_left_out(
     """
     del fetched
 
-    written = writer(root).write(ENTRY, item(ScrapedImage(100, "https://cdn.example/x.png", None)), "Fab", None)
+    written = writer(root).write(ENTRY, item(ScrapedImage(100, "https://cdn.example/x.png", None)), "Fab", NO_TERMS)
 
     assert written.path.is_file()
     assert not scan_rehu_screenshot_files(written.path.parent, "info")

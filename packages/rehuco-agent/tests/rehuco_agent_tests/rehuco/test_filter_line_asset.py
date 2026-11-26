@@ -112,7 +112,7 @@ def test_a_word_that_is_no_comparison_of_a_range_field_stays_free_text(line: str
     assert parsed.query.terms == (line.strip('"'),)
 
 
-@pytest.mark.parametrize("field", ["kind", "license", "formats"])
+@pytest.mark.parametrize("field", ["kind", "licenses", "formats"])
 def test_an_asset_token_matches_a_whole_value(field: str) -> None:
     """The three tokens an asset adds are field tokens like the others.
 
@@ -131,12 +131,12 @@ def test_an_empty_kind_in_quotes_asks_for_a_record_with_none_and_no_other_empty_
     **Test steps:**
 
     * parse ``kind:""`` and verify it is a kind token with no value
-    * parse ``kind:``, ``kind:"`` and ``license:""`` and verify none is applied
+    * parse ``kind:``, ``kind:"`` and ``licenses:""`` and verify none is applied
     """
     assert parse_filter('kind:""').query.tokens == ((CatalogField.KIND, ""),)
     assert not parse_filter("kind:").query.tokens
     assert not parse_filter('kind:"').query.tokens
-    assert not parse_filter('license:""').query.tokens
+    assert not parse_filter('licenses:""').query.tokens
 
 
 def test_an_empty_kind_is_written_and_replaced_as_a_quoted_token() -> None:

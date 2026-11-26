@@ -54,29 +54,32 @@ def entry(**changes: Any) -> dict[str, Any]:
         param(
             "standard",
             "personal",
-            {"license": "fab-standard", "license_url": "https://www.fab.com/eula"},
+            {"license": "fab-standard", "url": "https://www.fab.com/eula"},
             id="Standard",
         ),
         param("legacy", "legacy-uem", {"license": "fab-ue-only"}, id="a license with no terms page"),
         param(
             "cc",
             "cc-by",
-            {"license": "cc-by-4.0", "license_url": "https://creativecommons.org/licenses/by/4.0/"},
+            {"license": "cc-by-4.0", "url": "https://creativecommons.org/licenses/by/4.0/"},
             id="CC",
         ),
-        param("new", "tier", {}, id="a tier this scraper has no id for"),
-        param(None, 3, {}, id="what is no text"),
+        param("new", "tier", None, id="a tier this scraper has no id for"),
+        param(None, 3, None, id="what is no text"),
     ],
 )
-def test_a_tier_names_the_license_fields_of_its_record(group: object, slug: object, expected: dict[str, str]) -> None:
-    """The library names the tier an account owns, and the scraper's table gives its id and where its terms are.
+def test_a_tier_names_the_licenses_entry_of_its_record(
+    group: object, slug: object, expected: dict[str, str] | None
+) -> None:
+    """The library names the tiers an account owns, and the scraper's table gives each its id and where its terms are
+    (#705).
 
     **Test steps:**
 
-    * ask for the license fields of each tier
-    * verify the id and, where Fab states terms, their address; nothing for a tier the table lacks
+    * ask for the ``licenses`` entry of each tier
+    * verify the id and, where Fab states terms, their address; none for a tier the table lacks
     """
-    assert Fab.license_fields(group, slug) == expected
+    assert Fab.license_entry(group, slug) == expected
 
 
 def test_a_library_entry_is_an_item_of_its_own() -> None:

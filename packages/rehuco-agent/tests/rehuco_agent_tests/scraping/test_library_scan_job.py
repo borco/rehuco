@@ -47,6 +47,7 @@ from rehuco_core import (
     JobPaused,
     JobWaiting,
     LibraryCursor,
+    LicenseTermsSet,
     PersistableTaskJob,
     RecordConflict,
     RecordKind,
@@ -84,14 +85,16 @@ def target(tmp_path: Path, *, full_rescan: bool = False) -> LibraryScanTarget:
     return LibraryScanTarget("fab", ROOT_ID, "Assets", tmp_path / "root.rehuroot", tmp_path / "c.rehudb", full_rescan)
 
 
-def scanned(entry: LibraryEntry, license_path: str | None = "license/standard") -> ScannedItem:
+def scanned(entry: LibraryEntry, license_paths: dict[str, str] | None = None) -> ScannedItem:
     """An item read in full.
 
     :param entry: what the listing said of it.
-    :param license_path: the license it is held under.
+    :param license_paths: the path of the text of each license it is held under, by id; one Standard License when
+        ``None``.
     :returns: the item.
     """
-    return ScannedItem(ScrapeResult({"title": entry.title}, None, ()), entry.url, license_path)
+    paths = {"fab-standard": "license/standard"} if license_paths is None else license_paths
+    return ScannedItem(ScrapeResult({"title": entry.title}, None, ()), entry.url, paths)
 
 
 # one stand-in for each thing a scan drives, and the listing it walks
@@ -273,7 +276,7 @@ def test_a_license_is_read_once_per_run_and_handed_to_the_writer(store: Store, t
 
     * list two new items under the same license
     * run the scan
-    * verify the license was read once, and both writes were handed its text
+    * verify the license was read once, and both writes were handed its text under its id
     """
     store.entries = [NEW, NEWER]
     terms = Mock()
@@ -282,7 +285,30 @@ def test_a_license_is_read_once_per_run_and_handed_to_the_writer(store: Store, t
     job_of(store, target(tmp_path)).run(Mock(spec=JobControl))
 
     store.session.read_license.assert_called_once_with("license/standard")
-    assert [write.args[3] for write in store.writer.write.call_args_list] == [terms, terms]
+    handed = LicenseTermsSet({"fab-standard": terms})
+    assert [write.args[3] for write in store.writer.write.call_args_list] == [handed, handed]
+
+
+def test_each_license_of_an_item_with_a_text_is_handed_to_the_writer(store: Store, tmp_path: Path) -> None:
+    """An item held under several licenses gets each one's text under its id; one the store states none for is left
+    out (#705).
+
+    **Test steps:**
+
+    * list an item under a Standard License and a Marketplace license, the store answering a text for the first only
+    * run the scan
+    * verify each path was read, and the write was handed the one text under its id
+    """
+    store.entries = [NEW]
+    paths = {"fab-standard": "license/standard", "fab-ue-only": "license/legacy/uem"}
+    store.session.read_item.side_effect = lambda entry: scanned(entry, paths)
+    terms = Mock()
+    store.session.read_license.side_effect = lambda path: terms if path == "license/standard" else None
+
+    job_of(store, target(tmp_path)).run(Mock(spec=JobControl))
+
+    assert [read.args[0] for read in store.session.read_license.call_args_list] == list(paths.values())
+    assert store.writer.write.call_args.args[3] == LicenseTermsSet({"fab-standard": terms})
 
 
 def test_a_license_is_read_again_by_the_next_run(store: Store, tmp_path: Path) -> None:
@@ -310,15 +336,15 @@ def test_an_item_naming_no_license_reads_none(store: Store, tmp_path: Path) -> N
 
     * list a new item naming no license
     * run the scan
-    * verify no license was read and the write was handed none
+    * verify no license was read and the write was handed no text
     """
     store.entries = [NEW]
-    store.session.read_item.side_effect = lambda entry: scanned(entry, None)
+    store.session.read_item.side_effect = lambda entry: scanned(entry, {})
 
     job_of(store, target(tmp_path)).run(Mock(spec=JobControl))
 
     store.session.read_license.assert_not_called()
-    assert store.writer.write.call_args.args[3] is None
+    assert store.writer.write.call_args.args[3] == LicenseTermsSet()
 
 
 def test_the_persona_is_offered_to_a_drop_before_every_item_and_in_every_wait(store: Store, tmp_path: Path) -> None:

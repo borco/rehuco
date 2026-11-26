@@ -44,6 +44,7 @@ from rehuco_core import (
     JobWaiting,
     LibraryCursor,
     LicenseTerms,
+    LicenseTermsSet,
     RecordConflict,
     RecordLockedError,
     Records,
@@ -391,7 +392,13 @@ class LibraryScanJob(TaskJobBase):
             LOG.info(PRESENT_LINE, entry.title, entry.url)
             return
         item = session.read_item(entry)
-        terms = None if item.license_path is None else self.__license(session, item.license_path)
+        terms = LicenseTermsSet(
+            {
+                license_id: text
+                for license_id, path in item.license_paths.items()
+                if (text := self.__license(session, path)) is not None
+            }
+        )
         written = writer.write(entry, item, site.name, terms)
         if not CatalogRecordUpdater(cache).upsert(written.path):
             LOG.warning(UNLISTED_LINE, written.path)

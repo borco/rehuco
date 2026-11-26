@@ -13,7 +13,6 @@ from typing import Any, Final, NamedTuple
 
 from rehuco_core import (
     ASSET_KINDS,
-    ASSET_LICENSES,
     CORE_FIELD_NAMES,
     MAX_STORED_INTEGER,
     ContentUnreachableError,
@@ -173,8 +172,6 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("collections", "collections"),
     FieldSpec("url", "url", {"viewer_only": True}),
     FieldSpec("choice", "kind", {"choices": ASSET_KINDS}),
-    FieldSpec("text_choice", "license", {"choices": ASSET_LICENSES}),
-    FieldSpec("optional_url", "license_url", {"label": "License URL"}),
     FieldSpec("text_list", "formats"),
     FieldSpec("string_map", "compatibility", {"key_title": "Works with", "value_title": "Versions"}),
     FieldSpec("duration", "advertised_duration"),
@@ -214,7 +211,8 @@ went missing while being declared, coerced, and round-tripped (#195); ``test_plu
 sides together so the next hole fails a test instead of shipping. #196 mapped that count to ``int``, and
 #198 split it into the ``advertised_count``/``current_count`` pair ReferenceImages declares today, which
 is why two rows render there and none elsewhere; the names left unmapped here are the ones a surface builds
-directly (``description``, ``hidden_images``) or never shows at all (``created``, ``updated``).
+directly (``description``, ``hidden_images``, an asset's ``licenses`` in its License dock, #705) or never shows at all
+(``created``, ``updated``).
 
 **Registration order is not display order.** How fields are ordered and placed on screen is a
 presentation concern the viewer/editor own; that they currently render fields in this registration

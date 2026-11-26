@@ -46,7 +46,6 @@ def test_every_asset_field_round_trips(cache: CatalogCache) -> None:
         "a/info.rehu",
         type="asset",
         asset_kind="model",
-        license="fab-standard",
         compatibility=(("unreal", "5.1-5.6"), ("blender", ">=4,<5")),
         source_updated="2025-02",
         advertised_version="1.2",
@@ -56,6 +55,7 @@ def test_every_asset_field_round_trips(cache: CatalogCache) -> None:
         texture_size=4096,
         acquired="2024-05-03T12:34:56.789123Z",
         formats=("glb", "fbx"),
+        licenses=("fab-standard", "fab-uefn-reference-only"),
     )
 
     cache.apply_root_scan(root.root_id, [written])

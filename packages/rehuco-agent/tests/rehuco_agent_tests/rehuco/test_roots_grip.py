@@ -24,10 +24,11 @@ from PySide6.QtWidgets import QAbstractItemView, QApplication, QStyle, QStyleOpt
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.grip_reorder import GRIP_TOOLTIP, GRIP_WIDTH, paint_grip
 from rehuco_agent.rehuco.root_row_delegate import RootRowDelegate
 from rehuco_agent.rehuco.roots_column_view import RootsColumnView
 from rehuco_agent.rehuco.roots_folder_model import RootsFolderModel
-from rehuco_agent.rehuco.roots_grip import GRIP_TOOLTIP, GRIP_WIDTH, RootsGripFilter, paint_grip
+from rehuco_agent.rehuco.roots_grip import RootsGripFilter
 from rehuco_agent.rehuco.roots_item_delegate import RootsItemDelegate
 from rehuco_agent.rehuco.roots_node import NodeListing
 from rehuco_core import RootFolderLister, RootStorage
@@ -228,7 +229,7 @@ def test_pressing_and_moving_a_grip_drags_its_root_whose_place_is_the_shadow_mea
     view, model = roots
     viewport = first_column(view).viewport()
     during: list[list[int | None]] = []
-    drag_class = mocker.patch("rehuco_agent.rehuco.roots_grip.QDrag")
+    drag_class = mocker.patch("rehuco_agent.grip_reorder.QDrag")
     drag_class.return_value.exec.side_effect = lambda *_args: during.append(shown(view))
     grip = QPoint(GRIP_WIDTH // 2, row_point(view, 1, "middle").y())
 
@@ -257,7 +258,7 @@ def test_a_press_off_the_grip_or_while_reordering_is_off_starts_no_drag(
     """
     view, model = roots
     viewport = first_column(view).viewport()
-    drag_class = mocker.patch("rehuco_agent.rehuco.roots_grip.QDrag")
+    drag_class = mocker.patch("rehuco_agent.grip_reorder.QDrag")
 
     press_and_move(viewport, OFF_GRIP)
     QTest.mouseRelease(viewport, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, OFF_GRIP)
@@ -279,7 +280,7 @@ def test_a_press_that_has_not_moved_far_enough_starts_no_drag_yet(
     """
     view, _model = roots
     viewport = first_column(view).viewport()
-    drag_class = mocker.patch("rehuco_agent.rehuco.roots_grip.QDrag")
+    drag_class = mocker.patch("rehuco_agent.grip_reorder.QDrag")
     QTest.mousePress(viewport, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, ON_GRIP)
     nudge = QPointF(ON_GRIP + QPoint(0, 1))
 
@@ -615,7 +616,7 @@ def test_hovering_the_grip_says_what_it_is_for(
     view, _model = roots
     first = first_column(view)
     viewport = first.viewport()
-    show = mocker.patch("rehuco_agent.rehuco.roots_grip.QToolTip.showText")
+    show = mocker.patch("rehuco_agent.grip_reorder.QToolTip.showText")
 
     QApplication.sendEvent(viewport, QHelpEvent(QEvent.Type.ToolTip, ON_GRIP, viewport.mapToGlobal(ON_GRIP)))
 
@@ -664,8 +665,8 @@ def test_the_grip_keeps_working_after_the_columns_wrapper_is_invalidated(
     """
     view, _model = roots
     grip = first_column(view).viewport().mapTo(view, ON_GRIP)
-    drag_class = mocker.patch("rehuco_agent.rehuco.roots_grip.QDrag")
-    tooltip = mocker.patch("rehuco_agent.rehuco.roots_grip.QToolTip.showText")
+    drag_class = mocker.patch("rehuco_agent.grip_reorder.QDrag")
+    tooltip = mocker.patch("rehuco_agent.grip_reorder.QToolTip.showText")
     shiboken6.invalidate(first_column(view))
     gc.collect()
 

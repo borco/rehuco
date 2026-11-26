@@ -299,7 +299,7 @@ def test_an_asset_is_read_with_its_own_fields_and_formats(tree: FakeTree) -> Non
     content = payload("Rock", type="asset")
     content["asset"] = {
         "kind": "model",
-        "license": "fab-standard",
+        "licenses": [{"license": "fab-standard", "url": "https://www.fab.com/eula"}, {"license": "fab-ue-only"}],
         "formats": ["fbx", "blend"],
         "compatibility": {"unreal": "5.1-5.6", "blender": ">=4,<5"},
         "source_updated": "2025-02",
@@ -316,7 +316,8 @@ def test_an_asset_is_read_with_its_own_fields_and_formats(tree: FakeTree) -> Non
 
     (record,) = scan().records
 
-    assert (record.asset_kind, record.license, record.formats) == ("model", "fab-standard", ("fbx", "blend"))
+    assert (record.asset_kind, record.formats) == ("model", ("fbx", "blend"))
+    assert record.licenses == ("fab-standard", "fab-ue-only")
     assert record.compatibility == (("unreal", "5.1-5.6"), ("blender", ">=4,<5"))
     assert (record.source_updated, record.advertised_version, record.current_version) == ("2025-02", "1.2", "1.1")
     assert (record.advertised_size, record.triangles, record.texture_size) == (12096296, 5000, 4096)

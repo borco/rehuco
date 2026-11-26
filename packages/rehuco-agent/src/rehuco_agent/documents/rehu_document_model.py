@@ -26,11 +26,13 @@ from rehuco_core import (
     LICENSE_TERMS_KEY,
     TUTORIAL_PLUGIN,
     USERS_KEY,
+    AssetLicense,
     AuthorEntry,
     Deleter,
     FieldPath,
     JobWaiting,
     LicenseTerms,
+    LicenseTermsSet,
     LockReason,
     ProgressEntry,
     RecordConflict,
@@ -115,8 +117,6 @@ asset's ([[assets#block]]). Defaults live on each
 TYPE_FIELD_STR_NAMES: Final = (
     "advertised_count",
     "kind",
-    "license",
-    "license_url",
     "source_updated",
     "advertised_version",
     "current_version",
@@ -199,10 +199,6 @@ PRIMARY_SOURCE_FIELD_NAMES: Final = ("title", "publisher", "url")
 """The members of :data:`COMMON_FIELD_NAMES` that are the **top source's own** values
 ([[field-schema#sources]]): writing one changes an entry of :attr:`RehuDocumentModel.sources`, which is
 re-read after it so the list never lags its own top row."""
-
-DEFAULT_LICENSE_TITLE: Final = "License"
-"""What license text typed into a record is titled while the record names no license and no title is typed
-([[assets#licenses]], #688)."""
 
 UNTITLED_LABEL: Final = "Untitled"
 """Stand-in display label for a document with no location -- :attr:`RehuDocumentModel.label` is empty
@@ -441,16 +437,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     kind = SimpleProperty[str | None](None)
     """What an asset is, one of `~rehuco_core.ASSET_KINDS` ([[assets#kind]]), or ``None`` when not known."""
 
-    license = SimpleProperty[str | None](None)
-    """An asset's license short id, such as ``fab-standard`` ([[assets#licenses]]), or ``None`` when absent."""
+    licenses = SimpleProperty[list[AssetLicense]](default_factory=list)
+    """The licenses an asset is held under, in the user's order, unique by id ([[assets#licenses]], #705)."""
 
-    license_url = SimpleProperty[str | None](None)
-    """Where the store states an asset's terms ([[assets#licenses]]), or ``None`` when absent."""
-
-    license_terms = SimpleProperty[LicenseTerms | None](None)
-    """The record's license text, kept in its ``.rehuterms`` ([[assets#licenses]], #688), or ``None`` when it has none.
-    Held in the document's payload as per-user state is, so an edit of it is an edit of the record: it makes the
-    document dirty, a save writes the sidecar, a revert reads it again. Changed through :meth:`edit_license`."""
+    license_terms = SimpleProperty[LicenseTermsSet | None](None)
+    """The record's license texts by license id, kept in its ``.rehuterms`` ([[assets#licenses]], #688, #705), or
+    ``None`` when it has none. Held in the document's payload as per-user state is, so an edit of one is an edit of the
+    record: it makes the document dirty, a save writes the sidecar, a revert reads it again. Changed through
+    :meth:`edit_license`."""
 
     license_unreadable = SimpleProperty("")
     """Why the ``.rehuterms`` beside the record could not be read, mirrored from :attr:`document`'s
@@ -765,6 +759,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_record_list_changed(key, value))
         self.license_terms_changed.connect(self.__on_license_terms_changed)  # type: ignore[attr-defined]
+        self.licenses_changed.connect(self.__on_licenses_changed)  # type: ignore[attr-defined]
 
     # the constructor's own seams, forwarded whole
     @classmethod
@@ -2621,6 +2616,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             if description:
                 self.description = self.__document.description
             self.license_terms = self.__document.license_terms
+            self.licenses = self.__document.licenses
             self.hidden_images = self.__document.hidden_images
             self.original_size = self.__document.original_size
             self.current_size = self.__document.current_size
@@ -2989,46 +2985,108 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     # region The license text
 
-    def edit_license(self, *, title: str | None = None, text: str | None = None) -> None:
-        """Change the record's license text, as the License dock's editors do (#688, [[assets#licenses]]): typed into a
-        record that has none, it makes terms written for this item alone -- no ``url``, read today, titled as typed,
-        else as its license id, else :data:`DEFAULT_LICENSE_TITLE`.
+    def edit_license(self, license_id: str, text: str) -> None:
+        """Change the text of one of the record's licenses, as the License dock's editor does (#688, #705,
+        [[assets#licenses]]): typed into a license that has none, it makes terms written for this item alone -- no
+        ``url``, read today, titled by the license's id.
 
-        **A saved text is never removed, only emptied**: terms still unsaved that are emptied again are gone, as if
-        never typed, while ones the file holds stay as empty terms, and the next save writes them so.
+        **A saved text is never removed by typing, only emptied**: terms still unsaved that are emptied again are
+        gone, as if never typed, while ones the file holds stay as empty terms, and the next save writes them so. Only
+        taking the license off the record removes its text (:meth:`remove_license`).
 
-        :param title: the license's new title, or ``None`` to leave it.
-        :param text: the terms' new Markdown, or ``None`` to leave it.
+        :param license_id: the license, by its short id.
+        :param text: the terms' Markdown.
         """
-        held = self.license_terms
-        default_title = self.license or DEFAULT_LICENSE_TITLE
-        if held is None and not (title or text):
+        texts = self.license_terms or LicenseTermsSet()
+        held = texts.get(license_id)
+        if held is None:
+            if text:
+                self.license_terms = texts.with_terms(license_id, LicenseTerms(license_id, None, date.today(), text))
             return
-        current = held if held is not None else LicenseTerms(default_title, None, date.today(), "")
-        edited = replace(
-            current,
-            title=current.title if title is None else title,
-            text=current.text if text is None else text,
-        )
-        unsaved_and_empty = LICENSE_TERMS_KEY not in self.__base_data and not edited.text
-        # a title being typed may pass through the default one: only the text emptied under the title it was given,
-        # or a title emptied, takes the terms away
-        if unsaved_and_empty and (not edited.title or (title is None and edited.title == default_title)):
-            self.license_terms = None
-        elif held is None or edited != held:
-            self.license_terms = edited
+        if text == held.text:
+            return
+        saved = self.__base_data.get(LICENSE_TERMS_KEY)
+        if not text and not (isinstance(saved, dict) and license_id in saved):
+            self.__drop_text(texts, license_id)
+        else:
+            self.license_terms = texts.with_terms(license_id, replace(held, text=text))
 
-    def __on_license_terms_changed(self, terms: LicenseTerms | None) -> None:
-        """Write the edited license text through to the document and mark dirty (#688).
+    def replace_license(self, old: str, entry: AssetLicense, *, keep_text: bool) -> None:
+        """Put another license where one of the record's is (#705): its text goes under the new id, or out of the
+        ``.rehuterms``.
+
+        :param old: the license's id; one the record does not hold changes nothing.
+        :param entry: the license to hold in its place, under an id the record holds no other license under -- the
+            License dock refuses a taken one.
+        :param keep_text: keep the old license's text under the new id -- a custom license renamed -- rather than drop
+            it, as picking a preset does, whose own text is read instead.
+        """
+        licenses = self.licenses
+        if not any(held.license == old for held in licenses):
+            return
+        self.licenses = [entry if held.license == old else held for held in licenses]
+        texts = self.license_terms
+        if texts is None or old not in texts.terms or old == entry.license:
+            return
+        if keep_text:
+            self.license_terms = texts.renamed(old, entry.license)
+        else:
+            self.__drop_text(texts, old)
+
+    def hold_license_text(self, license_id: str, terms: LicenseTerms) -> None:
+        """Hold a text read for one of the record's licenses, as it was read (#705): a preset's, picked in the License
+        dock.
+
+        :param license_id: the license; one the record no longer holds takes no text, and neither does a document
+            locked since the text was asked for.
+        :param terms: the text, with where and when it was read.
+        """
+        if not self.locked and any(held.license == license_id for held in self.licenses):
+            self.license_terms = (self.license_terms or LicenseTermsSet()).with_terms(license_id, terms)
+
+    def remove_license(self, license_id: str) -> None:
+        """Take one license off the record, and its text out of the ``.rehuterms`` with it (#705).
+
+        :param license_id: the license's id; one the record does not hold changes nothing.
+        """
+        self.licenses = [entry for entry in self.licenses if entry.license != license_id]
+        texts = self.license_terms
+        if texts is not None and license_id in texts.terms:
+            self.__drop_text(texts, license_id)
+
+    def __drop_text(self, texts: LicenseTermsSet, license_id: str) -> None:
+        """Take one license's text out of the texts.
+
+        :param texts: the texts held.
+        :param license_id: the license whose text goes.
+        """
+        remaining = texts.with_terms(license_id, None)
+        # texts never saved need no file: none is written for them
+        self.license_terms = remaining if remaining.terms or LICENSE_TERMS_KEY in self.__base_data else None
+
+    def __on_license_terms_changed(self, terms: LicenseTermsSet | None) -> None:
+        """Write the edited license texts through to the document and mark dirty (#688).
 
         No-op while the model is seeding (construction, :meth:`revert`, :meth:`convert`), as every write-through
         handler here is.
 
-        :param terms: the new terms, or ``None`` for terms never saved that were emptied again.
+        :param terms: the new texts, or ``None`` for texts never saved that were emptied again.
         """
         if self.__seeding:
             return
         self.__document.license_terms = terms
+        self.dirty = True
+
+    def __on_licenses_changed(self, licenses: list[AssetLicense]) -> None:
+        """Write the edited licenses through to the document and mark dirty (#705); none removes the key.
+
+        No-op while the model is seeding, as every write-through handler here is.
+
+        :param licenses: the licenses, in order.
+        """
+        if self.__seeding:
+            return
+        self.__document.licenses = licenses
         self.dirty = True
 
     # endregion

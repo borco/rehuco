@@ -25,6 +25,7 @@ from .access import (
 )
 from .app_folders import APP_FOLDER_NAME, AppFolders, app_folders
 from .archive_facts import ArchiveFacts, read_archive_facts
+from .asset_license import AssetLicense
 from .bucket_joiner import BucketJoiner, BucketJunk, BucketSurvey, JoinResult
 from .bucketed_folders import Bucketing, BucketRules, bucketed_folders, record_levels
 from .catalog_snapshot import CatalogMatcher, CatalogSearchKey, CatalogSnapshot
@@ -146,6 +147,7 @@ from .legacy_manifest_jobs import LEGACY_MANIFEST_RETIRE_KIND, RetireLegacyManif
 from .license_terms import (
     LicenseTerms,
     LicenseTermsError,
+    LicenseTermsSet,
     is_license_terms_name,
     license_terms_owner,
     license_terms_path,
@@ -702,6 +704,7 @@ __all__ = [
     "AbandonableTaskJob",
     "AppFolders",
     "ArchiveFacts",
+    "AssetLicense",
     "AuthorEntry",
     "BACKUP_SUFFIX",
     "BLANK_PATTERN_PROBLEM",
@@ -897,6 +900,7 @@ __all__ = [
     "LibraryCursor",
     "LicenseTerms",
     "LicenseTermsError",
+    "LicenseTermsSet",
     "LinkInRecordError",
     "LoadedRecord",
     "LocationPattern",

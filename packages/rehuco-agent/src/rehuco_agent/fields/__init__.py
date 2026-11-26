@@ -35,14 +35,12 @@ from .int_field import IntField
 from .learning_paths_field import LearningPathsField
 from .multiple_choice_field import MultipleChoiceField
 from .optional_text_field import OptionalTextField
-from .optional_url_field import OptionalUrlField
 from .path_field import PathField
 from .rating_field import RatingField
 from .size_field import SizeField
 from .size_pair_field import SizePairField
 from .sources_field import SourcesField
 from .string_map_field import StringMapField
-from .text_choice_field import TextChoiceField
 from .text_field import TextField
 from .text_list_field import TextListField
 from .type_field import TypeField
@@ -76,9 +74,7 @@ __all__ = [
     "ContentCountField",
     "CountClaimField",
     "OptionalTextField",
-    "OptionalUrlField",
     "ChoiceField",
-    "TextChoiceField",
     "StringMapField",
     "SizeField",
     "TextListField",

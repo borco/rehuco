@@ -26,14 +26,12 @@ from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.learning_paths_field import LearningPathsField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.optional_text_field import OptionalTextField
-from rehuco_agent.fields.optional_url_field import OptionalUrlField
 from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.size_field import SizeField
 from rehuco_agent.fields.size_pair_field import SizePairField
 from rehuco_agent.fields.sources_field import SourcesField
 from rehuco_agent.fields.string_map_field import StringMapField
-from rehuco_agent.fields.text_choice_field import TextChoiceField
 from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
 from rehuco_agent.fields.type_field import TypeField
@@ -231,22 +229,8 @@ class OptionalTextFieldTester(OptionalTextField):
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
 
 
-class OptionalUrlFieldTester(OptionalUrlField):
-    """`OptionalUrlField` with fixed test tabs."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
-
-
 class ChoiceFieldTester(ChoiceField):
     """`ChoiceField` with fixed test tabs."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
-
-
-class TextChoiceFieldTester(TextChoiceField):
-    """`TextChoiceField` with fixed test tabs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
