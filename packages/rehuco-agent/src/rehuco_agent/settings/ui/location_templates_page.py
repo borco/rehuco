@@ -36,7 +36,7 @@ class LocationTemplatesPage(QWidget):
     Two frames. **Location name patterns** is the editable list, a
     :class:`~rehuco_agent.settings.ui.location_template_patterns_editor.LocationTemplatePatternsEditor` of
     one column each: a format string interpolating ``{title}`` / ``{publisher}`` / ``{authors}`` /
-    ``{year}``, plus ``{count}`` on a type whose plugin declares ``advertised_count`` (ReferenceImages,
+    ``{author_0}`` / ``{year}``, plus ``{count}`` on a type whose plugin declares ``advertised_count`` (ReferenceImages,
     #349), with ``{{ ... }}`` groups that drop out when a field is missing. **Try it** is a sample record
     (title / publisher / authors / year, plus count on such a type, editable) beside a read-only preview
     of the names the staged patterns would offer it -- exactly the list a `PathField` would show on a

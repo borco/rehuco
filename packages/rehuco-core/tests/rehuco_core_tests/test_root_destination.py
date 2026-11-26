@@ -279,6 +279,7 @@ def test_a_document_is_named_by_its_type_and_fields(kind: str, counted: bool) ->
         "title": "Intro",
         "publisher": "Acme",
         "authors": "Jane, John",
+        "author_0": "Jane",
         "year": "2025",
         "count": "900+",
         "site": "Acme",
