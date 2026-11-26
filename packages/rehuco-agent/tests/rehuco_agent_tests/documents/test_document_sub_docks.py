@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.app_logging import shared_log_bridge, shared_log_link_relay
 from rehuco_agent.dock_maximize import attach_maximize_handler
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB
 from rehuco_agent.documents.document_sub_docks import CONTENT_IMAGES_DOCK_NAME, DocumentSubDocks, SubDockHost
@@ -155,6 +155,26 @@ def test_a_teardown_detaches_the_log_surface_from_its_scope(
     sub_docks.teardown()
 
     detach_from.assert_called_once_with(shared_log_bridge())
+
+
+def test_a_link_clicked_in_a_documents_log_reaches_the_shared_relay(host: BareHost, model: RehuDocumentModel) -> None:
+    """A document's log surface is one the app builds, so a link clicked in it is opened as one in the window's log is
+    (#700).
+
+    **Test steps:**
+
+    * build sub-docks, and listen on the shared relay
+    * have the document's log surface report a clicked link
+    * verify the relay carried it
+    """
+    sub_docks = DocumentSubDocks(model, host.lent)
+    reported: list[object] = []
+    shared_log_link_relay().activated.connect(reported.append)
+
+    sub_docks.log_widget.link_activated.emit("https://store.example/pack")
+
+    assert reported == ["https://store.example/pack"]
+    sub_docks.teardown()
 
 
 def test_a_teardown_closes_an_open_image_viewer(host: BareHost, model: RehuDocumentModel) -> None:

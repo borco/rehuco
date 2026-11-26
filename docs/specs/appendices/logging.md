@@ -216,14 +216,15 @@ where the answer is.
 
 **Links are data on the record, never markup in the message** (#700). A call names which parts of its message are
 links with `extra={LOG_LINKS_ATTRIBUTE: (LogLink(text, target), ...)}`: the `text` is a part of the formatted message,
-the `target` any hashable the host understands. The bridge places each in the formatted message **once**, when the
-record arrives, as a span on the entry, so the run log file and a copied line read as the plain text they always were,
-and a record with no links is drawn, wrapped and searched exactly as before. The message column draws a span underlined
-in the palette's link color (the highlighted-text color on a selected row), the pointer is a hand over it, and a left
-click pressed and released on the same link reports its target through `link_activated` — once, on the release, so a
-press that becomes a drag to select opens nothing. The library knows nothing of what a target means: the agent
-relays every surface's clicks through one object and opens a web address in the user's browser, and a library item's
-record in the documents dock ([[acquisition-tooling#library-scan-job]]).
+found at its first occurrence after the link before it, the `target` any hashable the host understands. The bridge
+places each in the formatted message **once**, when the record arrives, as a span on the entry, so the run log file
+and a copied line read as the plain text they always were, and a record with no links is drawn, wrapped and searched
+exactly as before. The message column draws a span underlined in the palette's link color (the highlighted-text color
+on a selected row), and the pointer is a hand over it. **Only a plain left click opens a link**, reported through
+`link_activated` once, on the release: a click with `Ctrl` or `Shift` held selects, as anywhere else on the row, and a
+press that leaves its link before the release is a drag to select rows, even when it comes back. The library knows
+nothing of what a target means: the agent relays every surface's clicks through one object and opens a web address in
+the user's browser, and a library item's record in the documents dock ([[acquisition-tooling#library-scan-job]]).
 
 **Following the tail is a fact about where the reader is, not a mode they set.** New records scroll into
 view while the view is at the bottom, stop the moment the reader scrolls back, and resume when they

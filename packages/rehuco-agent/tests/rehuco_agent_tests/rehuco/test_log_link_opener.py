@@ -10,7 +10,7 @@ from typing import Final
 from unittest.mock import Mock
 from uuid import UUID
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QCoreApplication, QThreadPool, QUrl
 from PySide6.QtGui import QDesktopServices
 from pytest import LogCaptureFixture, fixture
 from pytest_mock import MockerFixture
@@ -167,15 +167,15 @@ def test_a_lookup_that_fails_is_refused_and_logged(
 
 
 def test_a_later_click_outdates_the_answer_of_an_earlier_one(
-    qtbot: QtBot, opener: LogLinkOpener, catalog: Mock, open_row: Mock
+    opener: LogLinkOpener, catalog: Mock, open_row: Mock
 ) -> None:
     """Only the last link clicked opens its record: a slow lookup that a click on another title has outdated is dropped.
 
     **Test steps:**
 
     * hold the first lookup on a share that does not answer, and click a second title
-    * verify the second record opened, then let the first lookup finish
-    * verify it opened nothing more
+    * let the first lookup finish, and wait for the pool to be done and its answers delivered
+    * verify only the second record was opened, whichever of the two lookups ended first
     """
     release = threading.Event()
     first = CatalogRow(2, ROOT_ID, "Assets", CatalogRecord("fab/first/info.rehu", RecordKind.REHU), 0.0)
@@ -190,8 +190,8 @@ def test_a_later_click_outdates_the_answer_of_an_earlier_one(
     opener.open(LibraryRecordLink(ROOT_ID, "Fab", "first"))
     opener.open(LINK)
 
-    qtbot.waitUntil(lambda: open_row.called, timeout=WAIT_MS)
     release.set()
-    qtbot.wait(100)
+    assert QThreadPool.globalInstance().waitForDone(WAIT_MS)
+    QCoreApplication.sendPostedEvents()
 
     open_row.assert_called_once_with((ROOT_ID, "fab/pack/info.rehu"))

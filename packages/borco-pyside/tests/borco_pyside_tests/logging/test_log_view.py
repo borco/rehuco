@@ -571,6 +571,62 @@ def test_a_click_on_a_link_selects_its_row(view: LogView, model: LogModel) -> No
     assert [index.row() for index in view.selectionModel().selectedRows()] == [0]
 
 
+def test_a_click_with_ctrl_or_shift_held_selects_and_reports_nothing(view: LogView, model: LogModel) -> None:
+    """A modified click is the selection gesture it is anywhere on the row, on a link too: on a scan's line nearly all
+    the text is link, and picking rows to copy must open none of them.
+
+    **Test steps:**
+
+    * Show two linked rows, and click the first's title plainly.
+    * Ctrl+click the second row's title, then Shift+click the first's.
+    * Assert only the plain click was reported, and both rows are selected.
+    """
+    add_linked_row(model)
+    add_linked_row(model)
+    reported: list[object] = []
+    view.link_activated.connect(reported.append)
+    second = message_point(view, 0) + QPoint(0, view.rowHeight(0))
+
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, message_point(view, 0))
+    QTest.mouseClick(view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier, second)
+    QTest.mouseClick(
+        view.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier, message_point(view, 0)
+    )
+
+    assert reported == ["record"]
+    assert sorted(index.row() for index in view.selectionModel().selectedRows()) == [0, 1]
+
+
+def test_a_press_dragged_off_its_link_and_back_reports_nothing(view: LogView, model: LogModel) -> None:
+    """A press that leaves its link is a drag to select rows, and stays one when it comes back to where it began.
+
+    **Test steps:**
+
+    * Press on a title, move down onto the next row's plain text, move back onto the title and release.
+    * Assert nothing was reported.
+    * Press, move within the same title and release, and assert that one is reported: a hand is never still.
+    """
+    add_linked_row(model)
+    add_linked_row(model)
+    reported: list[object] = []
+    view.link_activated.connect(reported.append)
+    viewport = view.viewport()
+    title, none = Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier
+
+    QTest.mousePress(viewport, title, none, message_point(view, 0))
+    QTest.mouseMove(viewport, message_point(view, 5) + QPoint(0, view.rowHeight(0)))
+    QTest.mouseMove(viewport, message_point(view, 0))
+    QTest.mouseRelease(viewport, title, none, message_point(view, 0))
+
+    assert not reported
+
+    QTest.mousePress(viewport, title, none, message_point(view, 0))
+    QTest.mouseMove(viewport, message_point(view, 1))
+    QTest.mouseRelease(viewport, title, none, message_point(view, 1))
+
+    assert reported == ["record"]
+
+
 def test_a_press_on_one_link_released_on_another_reports_nothing(view: LogView, model: LogModel) -> None:
     """A press that is dragged to somewhere else is a selection gesture, not a click on either link.
 

@@ -17,6 +17,3 @@ class LogLinkRelay(QObject):
     activated = Signal(object)
     """Emitted with the clicked link's target, typed as plain ``object`` so that whatever a record put there arrives as
     itself."""
-
-    def __init__(self, parent: QObject | None = None) -> None:
-        super().__init__(parent)

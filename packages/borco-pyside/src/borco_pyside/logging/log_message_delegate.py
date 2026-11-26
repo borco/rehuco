@@ -21,9 +21,10 @@ from .log_model import LogModel
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a delegate method; the persistent form arrives from a view holding onto an index."""
 
-LINE_SEPARATOR: Final = "\u2028"
-"""What a line break of the message is laid out as in a record with links: a `QTextLayout` is one paragraph and
-does not break at a newline, which ``drawText`` does. One character for one, so a link's offsets still hold."""
+LAYOUT_CHARACTERS: Final = str.maketrans({"\n": "\u2028", "\t": " "})
+"""What a record with links has replaced before it is laid out, so it reads as ``drawText`` draws the same message
+without links: a `QTextLayout` is one paragraph and breaks at a line separator, never at a newline, and it sets a tab
+at a tab stop where the plain path draws one space. One character for one, so a link's offsets still hold."""
 
 
 class LogMessageDelegate(QStyledItemDelegate):
@@ -129,9 +130,28 @@ class LogMessageDelegate(QStyledItemDelegate):
             if line.y() <= local.y() < line.y() + line.height():
                 if not 0 <= local.x() < line.naturalTextWidth():
                     return None
-                character = line.xToCursor(local.x(), QTextLine.CursorPosition.CursorOnCharacter)
-                return next((link.target for link in entry.links if link.start <= character < link.end), None)
+                unit = line.xToCursor(local.x(), QTextLine.CursorPosition.CursorOnCharacter)
+                units = LogMessageDelegate.__units
+                return next(
+                    (
+                        link.target
+                        for link in entry.links
+                        if units(entry.message, link.start) <= unit < units(entry.message, link.end)
+                    ),
+                    None,
+                )
         return None
+
+    @staticmethod
+    def __units(message: str, offset: int) -> int:
+        """An offset into the message as Qt counts it: in UTF-16 units, where a character outside the basic plane (an
+        emoji in a title) is two, while a link's span counts it as the one character Python does.
+
+        :param message: the message.
+        :param offset: an offset into it, in characters.
+        :returns: the same place, in UTF-16 units.
+        """
+        return len(message[:offset].encode("utf-16-le")) // 2
 
     @staticmethod
     def __layout(option: QStyleOptionViewItem, entry: LogEntry) -> QTextLayout:
@@ -152,12 +172,12 @@ class LogMessageDelegate(QStyledItemDelegate):
         formats = []
         for link in entry.links:
             span = QTextLayout.FormatRange()
-            span.start = link.start
-            span.length = link.end - link.start
+            span.start = LogMessageDelegate.__units(entry.message, link.start)
+            span.length = LogMessageDelegate.__units(entry.message, link.end) - span.start
             span.format = link_format
             formats.append(span)
 
-        layout = QTextLayout(entry.message.replace("\n", LINE_SEPARATOR), option.font)
+        layout = QTextLayout(entry.message.translate(LAYOUT_CHARACTERS), option.font)
         text_option = QTextOption()
         text_option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         layout.setTextOption(text_option)
