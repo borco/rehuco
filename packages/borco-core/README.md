@@ -24,6 +24,10 @@ Currently provides:
 
 - **`borco_core.atomic_write`** — crash-safe file writes: a temporary sibling, flushed and `fsync`ed, then
   replaced atomically.
+- **`borco_core.read_only_removal`** — `remove_file` and `remove_folder`, removing what is read-only (Windows'
+  attribute) or sits in a read-only folder of the caller's own (POSIX), every mode given back when it still refuses.
+- **`borco_core.retry_refused`** — trying again, a bounded number of times, a filesystem call Windows refuses while
+  another process briefly holds the file.
 - **`borco_core.logging`** — `LogScope`, nested scopes carried on log records, and
   `SharedRotatingFileHandler`, a rotating log file several processes can append to.
 - **`borco_core.shared_read`** — `shared_read_open`, reading a file without blocking its rename on Windows.
