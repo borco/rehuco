@@ -7,6 +7,7 @@ from .file_holders import file_holders
 from .folder_holders import folder_holders
 from .path_presence import Device, Presence, PresenceScan, StorageKind, device_of, presence_of
 from .process_control import end_process, has_window, show_window
+from .read_only_removal import remove_clearing_read_only, remove_file, remove_folder
 from .retry_refused import retry_refused
 from .shared_read import shared_read_open
 from .text_search import TextMatcher, fold, read_value, search_terms
@@ -32,6 +33,9 @@ __all__ = [
     "has_window",
     "presence_of",
     "read_value",
+    "remove_clearing_read_only",
+    "remove_file",
+    "remove_folder",
     "retry_refused",
     "search_terms",
     "shared_read_open",

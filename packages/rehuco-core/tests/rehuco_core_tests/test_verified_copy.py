@@ -5,10 +5,12 @@ with it, and a canceled copy takes back what it wrote."""
 import filecmp
 import json
 import logging
+import os
+import stat
 from pathlib import Path
 from typing import Any, Final
 
-from pytest import LogCaptureFixture, raises
+from pytest import LogCaptureFixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CopyJournal,
@@ -521,6 +523,34 @@ def test_the_original_goes_once_its_copy_verified(tmp_path: Path) -> None:
     assert not record.parent.exists()
     assert relocation.relocate(record) == copy.target
     assert not remove_leftovers(listing.files, listing.folders)
+
+
+@mark.windows  # only Windows refuses to remove a file or folder marked read-only
+def test_a_read_only_original_goes_and_its_copy_is_writable(tmp_path: Path) -> None:
+    """An original whose files and folders are marked read-only, as an archive extracts them, is removed whole once
+    its copy verified (#711); the copy is written afresh, so nothing of it is read-only.
+
+    **Test steps:**
+
+    * make a folder record, then mark its folder and everything in it read-only
+    * copy and check it, then remove the original
+    * check nothing was reported and the original's folder is gone
+    * check every file and folder of the copy is writable
+    """
+    record = make_folder_record(tmp_path / "a")
+    for path in [record.parent, *record.parent.rglob("*")]:
+        os.chmod(path, stat.S_IREAD)
+    copy = copier(record, tmp_path / "b")
+    journal = CopyJournal()
+    copy.copy(journal)
+    report = copy.verify_target(trust=None, algorithm="xxh3")
+
+    _, left = remove_original(copy, journal, list(report.statuses))
+
+    assert not left
+    assert not record.parent.exists()
+    target = copy.target.parent
+    assert all(path.stat().st_mode & stat.S_IWRITE for path in [target, *target.rglob("*")])
 
 
 def test_a_screenshot_changed_meanwhile_is_copied_again_before_the_original_goes(tmp_path: Path) -> None:

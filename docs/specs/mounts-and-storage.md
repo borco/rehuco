@@ -471,6 +471,13 @@ The system chooses *how* to perform a move/rename rather than assuming:
   record lands in, so it is still found after the destination root is mapped elsewhere.
 - **Once the source stopped being a record, the cleanup always runs.** The copy verified, so a cancel past that
   point takes nothing back: a job given up on in its cleanup phase finishes removing the source instead.
+- **A read-only original is removed too** (#711). Archives carry the read-only attribute of what they stored, and
+  Windows refuses to remove a file or folder that has it, so a removal refused on a read-only path makes it writable
+  and tries once more. What still refuses (a file another program holds open, a folder not empty) gets its attribute
+  back and is reported, as before. A cancel's removal of the copy, the folders a move in place leaves empty and the
+  buckets a join empties (one customized in Explorer is read-only) follow the same rule. A path found gone once
+  refused is gone, not refused. The copy itself is written afresh and its folders made, so it is never read-only,
+  whatever the source was: its `.rehu` and sidecars stay writable for a later save, rename or delete.
 - **A record holding a symbolic link or a junction is not copied.** A copy neither follows a link nor carries one,
   so the move is refused naming the link, and anything already transferred is removed. A rename on one volume moves
   the folder whole and is not affected.
