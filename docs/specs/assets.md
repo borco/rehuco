@@ -184,7 +184,9 @@ so Fab's Personal and Professional tiers, which grant the same rights, are one `
 - **An item owned under several tiers holds every one** (#684, #705): each is an entry of `licenses` with its text,
   broadest first -- Professional, Personal, *CC BY*, *UE Marketplace*, *UEFN - Reference only*, a tier no list names
   coming after under its own group and slug, with no `url` -- and an id met twice is kept once, its text read from
-  the first tier of it. The tiers are the library entry's, never the public listing's, which offers all of them.
+  the first tier of it. The tiers are the library entry's, never the public listing's, which offers all of them. A
+  Fab URL dropped on a record reads them from the account's own state of that listing, when the persona browser is
+  logged in to Fab, by the same rule (#702); the text of each is not read by a drop.
 - **What Fab gives** (#686): each owned item names its license(s) as a `group` (`name`, `slug`, `url`) and a `path`
   (`license/standard/reference-plus-source`, `license/cc/cc-by`, `license/legacy/uem`). **The `path` is the stable
   identifier** and the short id is derived from it; the label is not (*Creative Commons* and *Creative Commons

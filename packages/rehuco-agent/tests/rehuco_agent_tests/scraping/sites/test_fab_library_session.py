@@ -459,6 +459,21 @@ def test_a_live_item_is_read_through_the_fab_scraper(monkeypatch: MonkeyPatch) -
     assert item.license_paths == {"fab-standard": "license/standard/reference-plus-source"}
 
 
+def test_a_live_item_is_read_without_asking_for_the_account_state(monkeypatch: MonkeyPatch) -> None:
+    """The entry already says what is owned, so the scan never asks for the listing's state (#702).
+
+    **Test steps:**
+
+    * read the item of a live entry
+    * verify no address of the account's listing states was fetched
+    """
+    session, fetcher = session_with(monkeypatch, live_fetcher(public_listing()))
+
+    session.read_item(entry_of(result_of(licenses=[PERSONAL])))
+
+    assert not [call for call in fetcher.fetch.call_args_list if "/listings-states/" in call.args[0]]
+
+
 def test_a_listing_that_answers_404_is_written_from_its_library_entry(monkeypatch: MonkeyPatch) -> None:
     """A listing that left between the listing and the read is written as a delisted item is.
 

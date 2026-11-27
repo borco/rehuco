@@ -273,7 +273,8 @@ names its store in its own sources and author link.
 A `fab.com/listings/<uid>` URL dropped on an open record fills it from the listing's JSON, which reads logged out
 (#686), so the scraper needs no browser (`needs_browser` false) and is a `FetchingScraper`. It asks for
 `/i/listings/<uid>` and, for each of the listing's formats, `/i/listings/<uid>/asset-formats/<code>`; a format
-whose request fails costs only what it would have given, and is logged.
+whose request fails costs only what it would have given, and is logged. Last it asks what the account owns of the
+listing (#702, the license bullet below), which only a persona logged in to Fab is answered.
 
 - **From the listing**: `title`; the seller as an author with the seller's page; `released` from the first
   publication and `source_updated` from the latest, each a day; the description as Markdown; `site_id` the uid and
@@ -292,12 +293,20 @@ whose request fails costs only what it would have given, and is logged.
   (`5.0-5.6`, compared as numbers); `advertised_triangles` and `advertised_texture_size` are the ranges the
   formats state, as a value, a band or a list (`12`, `1000-4999`, `1024,2048`: [[assets#block]]); a format whose
   range holds only zero (`[0, 1)`, a ZBrush sculpt's placeholder beside its FBX's real band) states nothing.
-- **A license only when the listing offers one**, by Fab's `(group, slug)`: Standard's tiers `fab-standard`
-  with the EULA's address, `cc-by` `cc-by-4.0` with its page, the Marketplace license `fab-ue-only` with none, and
-  Standard's *UEFN - Reference only* tier `fab-uefn-reference-only` with the EULA's address, a restriction
-  being a license of its own ([[assets#licenses]]).
-  A listing of several tiers, or a license with no id here, is left out: the account owns one tier, which only
-  the library says ([[assets#licenses]]).
+- **The licenses the account owns, else the one the listing offers**, by Fab's `(group, slug)`: Standard's tiers
+  `fab-standard` with the EULA's address, `cc-by` `cc-by-4.0` with its page, the Marketplace license `fab-ue-only`
+  with none, and Standard's *UEFN - Reference only* tier `fab-uefn-reference-only` with the EULA's address, a
+  restriction being a license of its own ([[assets#licenses]]).
+  A listing of several tiers, or a license with no id here, is left out of what the listing alone says: the account
+  owns some tier, which only its own state says. So a drop asks for it, one more request after the formats,
+  `GET /i/users/me/listings-states/<uid>` (#702): logged in it answers `acquired` and an `ownership` list of tiers, each
+  a `slug` and a `path` whose second segment is the group, and those tiers are the record's `licenses` by the rule the
+  library scan applies (`Fab.apply_owned_licenses`: broadest first, each id once, the listing's own offer replaced).
+  Logged out, as any plain HTTP request is, it answers `401`: the owned license needs **Use browser** ticked for Fab
+  and a persona logged in to it. Whatever stops the answer being read (a login wall, a refusal, a challenge page, an
+  item not acquired, tiers that name no license) leaves the scrape as the listing alone gives it, with one line in
+  the log; it never fails the scrape. The state carries no acquisition time, so `acquired` stays the scan's, and the
+  license texts are not read by a drop.
 - **Never written**: `acquired` (the library's), the measured counts, a size or a count the listing does not
   state, a kind it does not name (`unknown` instead).
 - **A listing that answers 404** (delisted: 102 of 4,250 in the owner's library) fails the drop with *This Fab
@@ -822,8 +831,9 @@ Every scan takes turns on the queue's one library chain, whatever its store, and
   with the persona browser opened, at Fab's home page or at the library; a 429, a 5xx, a request that does not
   complete, a script that times out, and a browser that went away (given up, so the next request starts another) are
   waited for. A live item is read through the Fab scraper ([[acquisition-tooling#fab-scraper]]); the library adds
-  `acquired`, the owned license ([[assets#licenses]]) and its `license-` tags. The license texts: the Standard
-  License's JSON at `/i/eula/fab_eula`, Creative Commons' plain legal code from its own site, none for the Marketplace.
+  `acquired` and the owned licenses ([[assets#licenses]]) from its entries, so it reads the listing without asking
+  for the state (`Fab.scrape_listing`). The license texts: the Standard License's JSON at `/i/eula/fab_eula`,
+  Creative Commons' plain legal code from its own site, none for the Marketplace.
 - **A known item is skipped**: one the root already holds a record of, found by its source's `site_id`
   ([[assets#site-id]]), is neither read again nor written over (owner, 2026-11-22). The record is the user's from the
   moment it is written, so a scan run again and again only adds what was acquired since, and keeps no copy of what it

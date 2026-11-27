@@ -1,8 +1,9 @@
 """Fab's library, open for one scan run ([[acquisition-tooling#library-scan-job]], [[assets#licenses]], #684).
 
-What only the library knows is read here: the listing, oldest acquisition first; the tiers of a license the account
-owns; the text of each. Everything an item itself says is the Fab scraper's (#701), so an item filed by a scan and one
-filed by a drop read alike.
+What the library says is read here: the listing, oldest acquisition first; the tiers of a license the account owns,
+from its entries (a drop reads them from the listing's state, #702, and both apply
+:meth:`~.fab.Fab.apply_owned_licenses`); the text of each. Everything an item itself says is the Fab scraper's (#701),
+so an item filed by a scan and one filed by a drop read alike.
 """
 
 import base64
@@ -19,7 +20,7 @@ from ..browser_fetcher import PersonaLease
 from ..library_site import LibraryEntry, ScannedItem
 from ..protocols import FetchError, PageGoneError
 from ..results import InvalidScrapeResultError, ScrapeResult
-from .fab import HOSTS, LIBRARY_ASSET_URL, LISTING_URL, NON_SLUG, SITE_URL, Fab
+from .fab import HOSTS, LIBRARY_ASSET_URL, LISTING_URL, SITE_URL, Fab, OwnedTier
 from .fab_license_texts import FabLicenseTexts
 from .fab_session_fetcher import FabSessionFetcher
 
@@ -33,16 +34,6 @@ LIBRARY_QUERY: Final = {"sort_by": "createdAt", "source": "acquired"}
 
 CHECK_QUERY: Final = {"source": "acquired", "count": 0, "aggregate_on": "category_per_listing_type"}
 """A request that lists nothing and answers only for a session that may read the library."""
-
-OWNED_LICENSE_ORDER: Final = (
-    ("standard", "professional"),
-    ("standard", "personal"),
-    ("cc", "cc-by"),
-    ("legacy", "legacy-uem"),
-    ("standard", "uefn-reference-only"),
-)
-"""Fab's license tiers, the broadest rights first: the one an item holds under, when the account owns several, is the
-first of these it owns, and a tier named here goes before one that is not."""
 
 NULL_UID: Final = "00000000-0000-0000-0000-000000000000"
 """The entitlement id of a cursor that stands before every entry of its millisecond."""
@@ -129,14 +120,14 @@ class FabLibrarySession:
         result = None
         if live:
             try:
-                result = Fab().scrape_url(entry.url, self.__fetcher)
+                result = Fab().scrape_listing(entry.url, self.__fetcher)
             except PageGoneError:
                 LOG.info("%s left the store; written from the library.", entry.title)
         if result is None:
             result = Fab.scrape_library_entry(raw)
         owned = FabLibrarySession.__owned_tiers(raw)
         fields = dict(result.fields)
-        license_paths = FabLibrarySession.__license_fields(fields, owned)
+        license_paths = Fab.apply_owned_licenses(fields, owned)
         merged = ScrapeResult(fields=fields, description=result.description, images=result.images)
         try:
             checked = ScrapeResult.coerce(merged)
@@ -269,61 +260,20 @@ class FabLibrarySession:
         return moment.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
     @staticmethod
-    def __owned_tiers(raw: Mapping[str, Any]) -> list[dict[str, Any]]:
-        """The license tiers the account owns an item under, the broadest rights first.
+    def __owned_tiers(raw: Mapping[str, Any]) -> list[OwnedTier]:
+        """The license tiers the account owns an item under, as its library entry states them.
 
         :param raw: the library entry.
-        :returns: the tiers, as the entry states them; empty for none (a delisted item may have none).
+        :returns: the tiers; empty for none (a delisted item may have none).
         """
         entitlement = raw.get("entitlement")
         stated = entitlement.get("licenses") if isinstance(entitlement, dict) else None
         tiers = [tier for tier in stated if isinstance(tier, dict)] if isinstance(stated, list) else []
-        return sorted(tiers, key=FabLibrarySession.__rank)
-
-    @staticmethod
-    def __rank(tier: Mapping[str, Any]) -> int:
-        """How broad the rights of a tier are, by :data:`OWNED_LICENSE_ORDER`.
-
-        :param tier: an owned tier.
-        :returns: its place in the order; one the order does not name is after every one it does.
-        """
-        pair = FabLibrarySession.__pair_of(tier)
-        return OWNED_LICENSE_ORDER.index(pair) if pair in OWNED_LICENSE_ORDER else len(OWNED_LICENSE_ORDER)
-
-    @staticmethod
-    def __pair_of(tier: Mapping[str, Any]) -> tuple[str, str]:
-        """A tier's group and slug, which Fab's license table is keyed by.
-
-        :param tier: an owned tier.
-        :returns: ``(group, slug)``; a part the tier does not state is empty.
-        """
-        group = tier.get("group")
-        return str(group.get("slug") if isinstance(group, dict) else ""), str(tier.get("slug") or "")
-
-    @staticmethod
-    def __license_fields(fields: dict[str, Any], owned: list[dict[str, Any]]) -> dict[str, str]:
-        """Write the owned licenses into an item's fields: each tier an entry of its ``licenses``, the broadest first
-        and each id once (#705); a tier this scraper has no id for is kept under its own slug, with no url.
-
-        :param fields: the item's fields, changed here.
-        :param owned: the owned tiers, the broadest first.
-        :returns: the path naming each license's text, by id, from the first tier of that id that states one; empty
-            when none is owned.
-        """
-        # what the listing offered is replaced: the library names the tiers that are owned
-        fields.pop("licenses", None)
-        entries: list[dict[str, str]] = []
-        paths: dict[str, str] = {}
-        for tier in owned:
-            pair = FabLibrarySession.__pair_of(tier)
-            entry = Fab.license_entry(*pair) or {"license": NON_SLUG.sub("-", "-".join(pair).lower()).strip("-")}
-            license_id = entry["license"]
-            if not license_id or any(kept["license"] == license_id for kept in entries):
-                continue
-            entries.append(entry)
-            path = tier.get("path")
-            if isinstance(path, str) and path:
-                paths[license_id] = path
-        if entries:
-            fields["licenses"] = entries
-        return paths
+        return [
+            OwnedTier(
+                str(tier["group"].get("slug") if isinstance(tier.get("group"), dict) else ""),
+                str(tier.get("slug") or ""),
+                tier["path"] if isinstance(tier.get("path"), str) else "",
+            )
+            for tier in tiers
+        ]
