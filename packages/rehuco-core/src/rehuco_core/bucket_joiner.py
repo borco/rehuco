@@ -27,6 +27,8 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Final
 
+from borco_core import remove_file, remove_folder
+
 from .prefix_buckets import (
     BUCKETS_MARKER,
     TEMPORARY_BUCKET_PREFIX,
@@ -336,8 +338,9 @@ class BucketJoiner:
                 return self.__leave(folder, f"{found} arrived while it was joined")
             if not self.__delete_junk(folder, junk):
                 return False
-            (bucket / BUCKETS_MARKER).unlink(missing_ok=True)
-            bucket.rmdir()
+            # a bucket customized in Explorer is read-only, its desktop.ini deleted above as junk (#711)
+            remove_file(bucket / BUCKETS_MARKER, missing_ok=True)
+            remove_folder(bucket)
         return True
 
     def __leave(self, folder: Path, reason: str) -> bool:

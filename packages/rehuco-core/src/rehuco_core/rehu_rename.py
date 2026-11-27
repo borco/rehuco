@@ -29,6 +29,8 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Final
 
+from borco_core import remove_folder
+
 from .checksum_record import checksum_record_path, rename_checksum_entries, update_checksum_record
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .path_keys import path_key
@@ -196,7 +198,8 @@ def remove_empty_parents(start: Path, stop_at: Path) -> list[Path]:
 
     What a move in place may leave behind: the folder its record left, emptied, and the ones above it emptied by that.
     Removing stops at the first folder that is not empty or will not go, and never reaches ``stop_at`` itself or
-    anything outside it.
+    anything outside it. An empty read-only folder is made writable and removed (#711); a read-only one that is not
+    empty keeps its attribute.
 
     :param start: the deepest folder to try.
     :param stop_at: the folder to stop beneath -- the root's.
@@ -207,7 +210,7 @@ def remove_empty_parents(start: Path, stop_at: Path) -> list[Path]:
     folder = start
     while len(folder.parts) > len(stop_parts) and tuple(map(path_key, folder.parts[: len(stop_parts)])) == stop_parts:
         try:
-            folder.rmdir()
+            remove_folder(folder)
         except OSError:
             break
         removed.append(folder)
