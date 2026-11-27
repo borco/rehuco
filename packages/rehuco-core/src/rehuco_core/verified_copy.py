@@ -15,8 +15,8 @@ own: :class:`~rehuco_core.MoveRecordJob` runs them in order, and checks between 
   again where it changed: slow work, done off the GUI thread;
 - :meth:`VerifiedCopy.detach_source` -- inside the rename barrier, and so on the GUI thread: the source checked to be
   as it was reconciled, by one listing, and its ``.rehu`` and ``.checksum`` removed, so it stops being a record;
-- :func:`remove_leftovers` -- the rest of the source removed, off the GUI thread again, a read-only file or folder
-  among it too (#711);
+- :func:`remove_leftovers` -- the rest of the source removed, off the GUI thread again, what is read-only or sits in
+  a read-only folder of the record's among it too (#711);
 - :meth:`VerifiedCopy.remove_copy` -- what a canceled copy wrote, taken away again.
 
 What one copy wrote is kept in a :class:`CopyJournal` its job saves, so a copy stopped by a quit picks up where it was,
@@ -273,22 +273,25 @@ def remove_leftovers(files: Iterable[str], folders: Iterable[str]) -> list[str]:
     """Remove what is left of a source whose record was detached: its files, then its folders, the deepest first.
 
     A file already gone is no failure; a folder that still holds something -- a file that came since, a stale lock --
-    stays, and is reported. A read-only file or folder is made writable and removed (#711); one that still refuses --
-    held open by another program -- keeps its attribute, and is reported.
+    stays, and is reported. A read-only file or folder is removed, and so is one in a read-only folder of the source's
+    own (#711); one that still refuses -- held open by another program -- keeps its mode, and is reported. The folder
+    holding the source's own folder is never changed.
 
     :param files: the source's files (:attr:`SourceListing.files`).
     :param folders: its folders, a parent before its children (:attr:`SourceListing.folders`).
     :returns: what could not be removed, as a sentence per item -- empty when the source is gone.
     """
+    folders = list(folders)
+    ours = {Path(folder) for folder in folders}
     left: list[str] = []
     for path in files:
         try:
-            remove_file(Path(path), missing_ok=True)
+            remove_file(Path(path), missing_ok=True, parent_is_ours=Path(path).parent in ours)
         except OSError as error:
             left.append(f"{path} ({error.strerror or error})")
-    for path in reversed(list(folders)):
+    for path in reversed(folders):
         try:
-            remove_folder(Path(path))
+            remove_folder(Path(path), parent_is_ours=Path(path).parent in ours)
         except FileNotFoundError:
             continue
         except OSError as error:
@@ -538,9 +541,10 @@ class VerifiedCopy:
         now = self.listing()
         if (now.record, now.files, now.folders) != (reconciled.record, reconciled.files, reconciled.folders):
             raise SourceChangedError("The record changed while being moved.")
-        remove_file(reconciled.record)
+        ours = reconciled.record.parent in {Path(folder) for folder in reconciled.folders}
+        remove_file(reconciled.record, parent_is_ours=ours)
         try:
-            remove_file(checksum_record_path(reconciled.record), missing_ok=True)
+            remove_file(checksum_record_path(reconciled.record), missing_ok=True, parent_is_ours=ours)
         except OSError:
             LOG.warning("Could not remove the checksum record of %s yet.", reconciled.record, exc_info=True)
         return Relocation(reconciled.pairs)
@@ -548,23 +552,25 @@ class VerifiedCopy:
     def remove_copy(self, journal: CopyJournal) -> list[str]:
         """Take away what a copy wrote and made -- a canceled copy's undo, the source untouched.
 
-        A copy writes its files afresh and makes its folders, so none carries the source's read-only attribute; one
-        made read-only since is removed all the same, as the source's leftovers are (:func:`remove_leftovers`).
+        A copy writes its files afresh and makes its folders, so none carries the source's read-only mode or
+        attribute; one made read-only since is removed all the same, as the source's leftovers are
+        (:func:`remove_leftovers`), the folders the copy made being its own.
 
         :param journal: what the copy wrote and made.
         :returns: what could not be removed, as a sentence per item.
         """
+        made_here = {self.__place(made) for made in journal.made}
         left: list[str] = []
         for written in reversed(journal.written):
             path = self.__place(written)
             try:
-                remove_file(path, missing_ok=True)
+                remove_file(path, missing_ok=True, parent_is_ours=path.parent in made_here)
             except OSError as error:
                 left.append(f"{path} ({error.strerror or error})")
         for made in reversed(journal.made):
             path = self.__place(made)
             try:
-                remove_folder(path)
+                remove_folder(path, parent_is_ours=path.parent in made_here)
             except FileNotFoundError:
                 continue
             except OSError as error:

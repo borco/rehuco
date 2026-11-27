@@ -198,8 +198,9 @@ def remove_empty_parents(start: Path, stop_at: Path) -> list[Path]:
 
     What a move in place may leave behind: the folder its record left, emptied, and the ones above it emptied by that.
     Removing stops at the first folder that is not empty or will not go, and never reaches ``stop_at`` itself or
-    anything outside it. An empty read-only folder is made writable and removed (#711); a read-only one that is not
-    empty keeps its attribute.
+    anything outside it. An empty read-only folder is removed (#711); a read-only one that is not empty keeps its mode.
+    No folder is made writable to remove one inside it, since the walk cannot know beforehand that it removes that
+    folder too: on POSIX, an empty folder in a read-only one stays, and the walk stops there.
 
     :param start: the deepest folder to try.
     :param stop_at: the folder to stop beneath -- the root's.

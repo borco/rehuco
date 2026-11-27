@@ -338,9 +338,11 @@ class BucketJoiner:
                 return self.__leave(folder, f"{found} arrived while it was joined")
             if not self.__delete_junk(folder, junk):
                 return False
-            # a bucket customized in Explorer is read-only, its desktop.ini deleted above as junk (#711)
-            remove_file(bucket / BUCKETS_MARKER, missing_ok=True)
-            remove_folder(bucket)
+            # a bucket customized in Explorer is read-only, its desktop.ini deleted above as junk (#711); the marker
+            # is in the bucket, which goes next, and a nested bucket in an outer one, which goes after it -- only
+            # the folder being joined stays as it is
+            remove_file(bucket / BUCKETS_MARKER, missing_ok=True, parent_is_ours=True)
+            remove_folder(bucket, parent_is_ours=bucket.parent != folder)
         return True
 
     def __leave(self, folder: Path, reason: str) -> bool:

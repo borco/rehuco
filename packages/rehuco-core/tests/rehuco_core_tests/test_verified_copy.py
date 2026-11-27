@@ -553,6 +553,43 @@ def test_a_read_only_original_goes_and_its_copy_is_writable(tmp_path: Path) -> N
     assert all(path.stat().st_mode & stat.S_IWRITE for path in [target, *target.rglob("*")])
 
 
+@mark.skipif(os.name == "nt", reason="POSIX asks the folder holding a path; Windows asks the path, tested above")
+def test_an_original_in_read_only_folders_goes_and_the_folder_above_is_untouched(tmp_path: Path) -> None:
+    """An original whose folders are read-only, as an archive extracts them on POSIX, is emptied once its copy
+    verified (#711): each of its own folders is made writable for the moment a file or folder in it goes. The folder
+    holding it is not the record's, so a read-only one keeps its mode, and the record's emptied folder is reported.
+
+    **Test steps:**
+
+    * make a folder record, then make its files ``0444``, its folders and the folder holding it ``0555``
+    * copy and check it, then remove the original
+    * check the record's folder is the one thing reported, empty, and the folder above has the mode it had
+    * check every file and folder of the copy is writable
+    """
+    record = make_folder_record(tmp_path / "a")
+    above = record.parent.parent
+    folders = [above, record.parent, *(path for path in record.parent.rglob("*") if path.is_dir())]
+    for path in record.parent.rglob("*"):
+        if path.is_file():
+            os.chmod(path, 0o444)
+    for folder in reversed(folders):
+        os.chmod(folder, 0o555)
+    mode_above = above.stat().st_mode
+    copy = copier(record, tmp_path / "b")
+    journal = CopyJournal()
+    copy.copy(journal)
+    report = copy.verify_target(trust=None, algorithm="xxh3")
+
+    _, left = remove_original(copy, journal, list(report.statuses))
+
+    assert [line.split(" (")[0] for line in left] == [str(record.parent)]
+    assert tree(record.parent) == []
+    assert above.stat().st_mode == mode_above
+    os.chmod(above, 0o755)
+    target = copy.target.parent
+    assert all(path.stat().st_mode & stat.S_IWRITE for path in [target, *target.rglob("*")])
+
+
 def test_a_screenshot_changed_meanwhile_is_copied_again_before_the_original_goes(tmp_path: Path) -> None:
     """A file no checksum covers may change while the copy waits; it is copied again and compared before the source
     is removed.
