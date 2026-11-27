@@ -1,5 +1,6 @@
 """Tests for the Fab scraper (#701), from the listings and formats the #686 spike read, trimmed to what it reads
-(``fab_samples/``: no prices, ratings or account state)."""
+(``fab_samples/``: no prices or ratings, and of the account only the ownership a ``state-*`` answer is about,
+#702)."""
 
 # one scraper's mapping, a region per field: split in two, a field's cases would no longer be read in one place, so
 # the module-length cap is lifted here, as it is for the model's tests
@@ -952,7 +953,8 @@ def test_scrape_page_reads_a_listing_body_alone() -> None:
 
 
 def test_every_format_is_asked_for_by_its_code_once() -> None:
-    """The scraper asks for the listing, then each format by its code, and for nothing else (#701).
+    """The scraper asks for the listing, then each format by its code, then what the account owns of it, and for
+    nothing else (#701, #702).
 
     **Test steps:**
 
@@ -970,6 +972,7 @@ def test_every_format_is_asked_for_by_its_code_once() -> None:
         f"{base}/asset-formats/blender",
         f"{base}/asset-formats/fbx",
         f"{base}/asset-formats/obj",
+        f"{SITE}/i/users/me/listings-states/{listing['uid']}",
     ]
 
 
@@ -986,7 +989,10 @@ def test_a_dropped_uid_in_capitals_asks_for_the_lower_case_address() -> None:
 
     result = Fab().scrape_url(f"{SITE}/listings/{listing['uid'].upper()}", fetcher)
 
-    fetcher.fetch.assert_called_once_with(f"{SITE}/i/listings/{listing['uid']}")
+    assert [call.args[0] for call in fetcher.fetch.call_args_list] == [
+        f"{SITE}/i/listings/{listing['uid']}",
+        f"{SITE}/i/users/me/listings-states/{listing['uid']}",
+    ]
     assert result.fields["site_id"] == listing["uid"]
 
 
@@ -1028,13 +1034,14 @@ def test_a_seller_with_no_profile_address_is_a_name_alone() -> None:
 
 def test_the_samples_hold_nothing_personal() -> None:
     """The trimmed samples keep nothing of the account that read them: no price, which names its currency, no
-    entitlement, no rating or review (#701).
+    entitlement, no rating or review (#701); a state answer (#702) holds the ownership it is about and nothing else of
+    the account.
 
     **Test steps:**
 
     * read every sample
-    * verify none has a key naming a price, a currency, an entitlement, a rating, a review or a wishlist, and
-      none states an amount in the persona's currency
+    * verify none has a key naming a price, a currency, an entitlement, a rating, a review or a wishlist, nor an
+      ownership unless it is a state answer, and none states an amount in the persona's currency
     """
     forbidden = ("price", "currency", "entitlement", "rating", "review", "wishlist", "ownership")
 
@@ -1047,7 +1054,9 @@ def test_the_samples_hold_nothing_personal() -> None:
 
     for path in SAMPLES.glob("*.json"):
         text = path.read_text(encoding="utf-8")
-        assert not [word for word in forbidden if any(word in key for key in keys_of(json.loads(text)))], path.name
+        allowed = ("ownership",) if path.name.startswith("state-") else ()
+        found = [word for word in forbidden if any(word in key for key in keys_of(json.loads(text)))]
+        assert not [word for word in found if word not in allowed], path.name
         assert not re.search(r"\bRON\b", text), path.name
 
 

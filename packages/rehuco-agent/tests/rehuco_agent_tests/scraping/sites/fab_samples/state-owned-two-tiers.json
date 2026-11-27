@@ -1,0 +1,16 @@
+{
+  "acquired": true,
+  "ownership": [
+    {
+      "name": "Personal",
+      "path": "license/standard/reference-plus-source",
+      "slug": "personal"
+    },
+    {
+      "name": "UEFN - Reference only",
+      "path": "license/standard/reference-only",
+      "slug": "uefn-reference-only"
+    }
+  ],
+  "uid": "e3ad8089-e375-4f0e-8218-b43345c69d3c"
+}

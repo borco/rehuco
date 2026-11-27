@@ -8,14 +8,15 @@ addresses itself, and never reads the page. The library scan (#684) reads each o
 so an item filed either way reads alike.
 
 **What a listing does not say is left out**, never guessed: a license of several tiers (the account owns some, which
-only the library says), a size with no files, a count Fab states no range for. ``acquired`` is the scan's alone.
+only the account's own state says, :meth:`Fab.scrape_url` asks for it), a size with no files, a count Fab states no
+range for. ``acquired`` is the scan's alone.
 """
 
 import json
 import logging
 import re
 from collections.abc import Iterable, Mapping
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
@@ -57,6 +58,9 @@ still found (#684)."""
 EULA_URL: Final = SITE_URL + "/eula"
 """Where Fab states the Standard License."""
 
+STATE_URL: Final = SITE_URL + "/i/users/me/listings-states/{uid}"
+"""What the account owns of one listing (#702): answers only a session logged in, ``401`` to a plain request."""
+
 GONE_MESSAGE: Final = "This Fab listing is no longer public: {url}"
 """What a drop of a listing that answers 404 fails with; writing such an item from the library is #684's."""
 
@@ -94,7 +98,18 @@ LICENSES: Final = {
 """Fab's license ``(group, slug)`` to the record's short id and the URL of its terms ([[assets#licenses]]); the
 Marketplace license is limited to Unreal Engine, so it is the ``fab-ue-only`` restriction, with no terms page, and
 the Standard License's *UEFN - Reference only* tier is a restriction too, so it has an id of its own. A pair
-not here, as a listing of several tiers, is left out: the library names the one that is owned."""
+not here, as a listing of several tiers, is left out: the account's state of the listing, or its library, names
+those that are owned (:meth:`Fab.apply_owned_licenses`)."""
+
+OWNED_LICENSE_ORDER: Final = (
+    ("standard", "professional"),
+    ("standard", "personal"),
+    ("cc", "cc-by"),
+    ("legacy", "legacy-uem"),
+    ("standard", "uefn-reference-only"),
+)
+"""Fab's license tiers, the broadest rights first: the one an item holds under, when the account owns several, is the
+first of these it owns, and a tier named here goes before one that is not."""
 
 ARCHIVE_EXTENSIONS: Final = frozenset({"zip", "rar", "7z"})
 """Extensions that name a container, not a file format: Fab's *Texture Set* and *Additional files* formats state
@@ -124,6 +139,20 @@ slash would split the tag on the search line, where ``-`` is the block's own sep
 
 MAX_IMAGE_SLOT: Final = 99
 """The last screenshot slot ([[data-model#image-meanings]])."""
+
+
+class OwnedTier(NamedTuple):
+    """One license tier the account owns an item under (#684, #702).
+
+    :param group: the tier's group slug (``standard``).
+    :param slug: the tier's own slug (``personal``).
+    :param path: Fab's stable id for the license (``license/standard/reference-plus-source``), which names its text;
+        empty when the tier states none.
+    """
+
+    group: str
+    slug: str
+    path: str
 
 
 class Fab:
@@ -159,9 +188,38 @@ class Fab:
         return Fab.__result(Fab.__listing_of(page, page.url), ())
 
     def scrape_url(self, url: str, fetcher: PageFetcher) -> ScrapeResult:
-        """Read a listing from its JSON, and each of its formats from theirs.
+        """Read a listing as :meth:`scrape_listing` does, then what the account owns of it: the licenses it holds the
+        item under replace the one tier a listing may offer (#702).
+
+        The answer is the account's, so it comes only through a session logged in to Fab (the persona browser); a
+        plain request is refused, and the scrape goes on as :meth:`scrape_listing` read it, with one line in the log.
+
+        :param url: the listing page dropped.
+        :param fetcher: what to fetch with.
+        :returns: the listing's fields, description and images.
+        :raises PageGoneError: the listing answers 404.
+        :raises FetchError: the listing's JSON is unreadable.
+        :raises RefetchRequestedError: Fab refused for the moment.
+        :raises LoginRequiredError: Fab asked for a login.
+        """
+        result = self.scrape_listing(url, fetcher)
+        uid = str(result.fields["site_id"])
+        tiers = Fab.__owned_tiers(fetcher, uid)
+        if not tiers:
+            return result
+        fields = dict(result.fields)
+        Fab.apply_owned_licenses(fields, tiers)
+        if "licenses" not in fields:
+            # tiers that name nothing a license id can be made of: what the listing offered is not taken away
+            Fab.__not_read(uid, "the answer names no license")
+            return result
+        return ScrapeResult(fields=fields, description=result.description, images=result.images)
+
+    def scrape_listing(self, url: str, fetcher: PageFetcher) -> ScrapeResult:
+        """Read a listing from its JSON, and each of its formats from theirs, asking nothing of the account.
 
         A format whose request fails costs only what it would have given: the rest of the listing is still written.
+        The library scan reads its items through this, since its entries already say what is owned.
 
         :param url: the listing page dropped.
         :param fetcher: what to fetch with.
@@ -189,8 +247,8 @@ class Fab:
 
     @staticmethod
     def license_entry(group: object, slug: object) -> dict[str, str] | None:
-        """The ``licenses`` entry of one of Fab's license tiers ([[assets#licenses]], #705), which the library scan uses
-        for each tier the account owns.
+        """The ``licenses`` entry of one of Fab's license tiers ([[assets#licenses]], #705): the one tier a listing
+        offers, and each tier the account owns (:meth:`apply_owned_licenses`).
 
         :param group: the tier's group slug (``standard``).
         :param slug: the tier's own slug (``personal``).
@@ -201,6 +259,34 @@ class Fab:
             return None
         short_id, url = known
         return {"license": short_id, **({"url": url} if url else {})}
+
+    @staticmethod
+    def apply_owned_licenses(fields: dict[str, Any], owned: Iterable[OwnedTier]) -> dict[str, str]:
+        """Write the owned licenses into an item's fields: each tier an entry of its ``licenses``, the broadest first
+        and each id once (#705); a tier this scraper has no id for is kept under its own slug, with no url. The one
+        rule of the library scan and of a drop.
+
+        :param fields: the item's fields, changed here; what the listing offered is replaced.
+        :param owned: the owned tiers, in any order.
+        :returns: the path naming each license's text, by id, from the first tier of that id that states one; empty
+            when none is owned.
+        """
+        fields.pop("licenses", None)
+        entries: list[dict[str, str]] = []
+        paths: dict[str, str] = {}
+        for tier in sorted(owned, key=Fab.__rank):
+            entry = Fab.license_entry(tier.group, tier.slug) or {
+                "license": NON_SLUG.sub("-", f"{tier.group}-{tier.slug}".lower()).strip("-")
+            }
+            license_id = entry["license"]
+            if not license_id or any(kept["license"] == license_id for kept in entries):
+                continue
+            entries.append(entry)
+            if tier.path:
+                paths[license_id] = tier.path
+        if entries:
+            fields["licenses"] = entries
+        return paths
 
     @staticmethod
     def scrape_library_entry(entry: Mapping[str, Any]) -> ScrapeResult:
@@ -245,6 +331,69 @@ class Fab:
             description=None,
             images=tuple(ScrapedImage(slot, url, page_url) for slot, url in enumerate(urls)),
         )
+
+    @staticmethod
+    def __rank(tier: OwnedTier) -> int:
+        """How broad the rights of a tier are, by :data:`OWNED_LICENSE_ORDER`.
+
+        :param tier: an owned tier.
+        :returns: its place in the order; one the order does not name is after every one it does.
+        """
+        pair = (tier.group, tier.slug)
+        return OWNED_LICENSE_ORDER.index(pair) if pair in OWNED_LICENSE_ORDER else len(OWNED_LICENSE_ORDER)
+
+    @staticmethod
+    def __owned_tiers(fetcher: PageFetcher, uid: str) -> list[OwnedTier]:
+        """The tiers the account owns a listing under, as its state says (#702).
+
+        Never fails the scrape: whatever stops the answer being read (a login wall, a refusal, a body that is no JSON, a
+        challenge page, an item not owned) is one line in the log, and the listing is written without it.
+
+        :param fetcher: what to fetch with.
+        :param uid: the listing's uid.
+        :returns: the tiers; empty when the answer could not be read or names none.
+        """
+        try:
+            page = fetcher.fetch(STATE_URL.format(uid=uid))
+        except (RequestException, FetchError, LoginRequiredError) as error:
+            return Fab.__not_read(uid, str(error) or type(error).__name__)
+        if page.status is not None and page.status >= 400:
+            return Fab.__not_read(uid, f"Fab answered {page.status}")
+        state = Fab.__json_of(page)
+        if not isinstance(state, dict):
+            return Fab.__not_read(uid, "the answer is not JSON")
+        if "acquired" not in state:
+            # a refusal a browser could not give the status of: {"detail": "Authentication credentials were not ..."}
+            return Fab.__not_read(uid, f"the answer is not a listing's state ({state.get('detail')})")
+        if state["acquired"] is not True:
+            return Fab.__not_read(uid, "the account does not own it")
+        tiers = [tier for tier in map(Fab.__tier_of, Fab.__entries(state, "ownership")) if tier is not None]
+        return tiers or Fab.__not_read(uid, "the answer names no license")
+
+    @staticmethod
+    def __not_read(uid: str, reason: str) -> list[OwnedTier]:
+        """Say the owned license of a listing was not read.
+
+        :param uid: the listing's uid.
+        :param reason: why; a fetcher's own sentence may end in a period, which the line's own replaces.
+        :returns: no tiers.
+        """
+        LOG.info("The license owned for Fab listing %s was not read: %s.", uid, reason.rstrip("."))
+        return []
+
+    @staticmethod
+    def __tier_of(entry: Mapping[str, Any]) -> OwnedTier | None:
+        """One ``ownership`` entry of a listing's state as a tier. It has a slug and a path but no group, which is
+        the path's second segment (``license/standard/...``).
+
+        :param entry: the entry.
+        :returns: the tier; ``None`` for an entry whose slug or path is not what Fab states.
+        """
+        slug, path = entry.get("slug"), entry.get("path")
+        parts = path.split("/") if isinstance(path, str) else []
+        if not isinstance(slug, str) or not slug or len(parts) < 3 or parts[0] != "license":
+            return None
+        return OwnedTier(parts[1], slug, str(path))
 
     @staticmethod
     def __spec_values(listing: Mapping[str, Any], key: str) -> list[object]:
