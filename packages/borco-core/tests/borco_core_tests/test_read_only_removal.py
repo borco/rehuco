@@ -1,4 +1,4 @@
-"""Tests for removing a file or a folder that carries the read-only attribute."""
+"""Tests for removing a file or a folder that is read-only, or sits in a read-only folder."""
 
 import stat
 from pathlib import Path
@@ -15,6 +15,9 @@ READ_ONLY: Final = stat.S_IFREG | stat.S_IREAD
 
 WRITABLE: Final = READ_ONLY | stat.S_IWRITE
 """The same file's mode once writable."""
+
+READ_ONLY_FOLDER: Final = stat.S_IFDIR | 0o555
+"""A read-only folder's mode, as an archive extracts it on POSIX."""
 
 
 def path_with_mode(mocker: MockerFixture, mode: int) -> Mock:
@@ -269,3 +272,152 @@ def test_a_read_only_folder_refused_is_made_writable_and_removed(mocker: MockerF
 
     assert path.rmdir.call_count == 2
     path.chmod.assert_called_once_with(stat.S_IFDIR | stat.S_IREAD | stat.S_IWRITE)
+
+
+def in_folder(mocker: MockerFixture, path: Mock, mode: int) -> Mock:
+    """Give ``path`` a folder holding it, whose ``stat`` reports ``mode``.
+
+    :param mocker: pytest-mock's fixture.
+    :param path: the path, from :func:`path_with_mode`.
+    :param mode: what the folder's ``stat`` reports.
+    :returns: the folder.
+    """
+    folder = path_with_mode(mocker, mode)
+    path.parent = folder
+    return folder
+
+
+def test_a_path_in_a_read_only_folder_of_ours_is_removed_and_the_folder_given_back(mocker: MockerFixture) -> None:
+    """POSIX asks the folder holding a path: a writable file in a read-only folder the caller owns is removed with
+    that folder made writable for the moment, which then gets its mode back.
+
+    **Test steps:**
+
+    * hand a writable file in a read-only folder that is the caller's, refused once, then allowed
+    * verify it ran twice, the file was never changed, and the folder was made writable, then given back
+    """
+    path = path_with_mode(mocker, WRITABLE)
+    folder = in_folder(mocker, path, READ_ONLY_FOLDER)
+    removal = mocker.Mock(side_effect=[PermissionError("folder read-only"), None])
+
+    remove_clearing_read_only(path, removal, parent_is_ours=True)
+
+    assert removal.call_count == 2
+    path.chmod.assert_not_called()
+    assert folder.chmod.call_args_list == [mocker.call(READ_ONLY_FOLDER | stat.S_IWRITE), mocker.call(READ_ONLY_FOLDER)]
+
+
+def test_a_folder_that_is_not_ours_is_never_read(mocker: MockerFixture) -> None:
+    """The folder holding a path is changed only when the caller says it is its own: otherwise it is not even read,
+    and a writable path refused raises its refusal.
+
+    **Test steps:**
+
+    * hand a writable file in a read-only folder that is not the caller's, and a removal refused
+    * verify the refusal is raised after one try, the folder neither read nor changed
+    """
+    path = path_with_mode(mocker, WRITABLE)
+    folder = in_folder(mocker, path, READ_ONLY_FOLDER)
+    removal = mocker.Mock(side_effect=PermissionError("folder read-only"))
+
+    with pytest.raises(PermissionError, match="folder read-only"):
+        remove_clearing_read_only(path, removal)
+
+    removal.assert_called_once()
+    folder.stat.assert_not_called()
+    folder.chmod.assert_not_called()
+
+
+def test_a_path_and_its_folder_still_refused_both_get_their_modes_back(mocker: MockerFixture) -> None:
+    """A read-only file in a read-only folder of ours refused again once both are writable gets both modes back.
+
+    **Test steps:**
+
+    * hand a read-only file in a read-only folder of the caller's, refused twice
+    * verify the second refusal is raised, and each was made writable, then given back
+    """
+    path = path_with_mode(mocker, READ_ONLY)
+    folder = in_folder(mocker, path, READ_ONLY_FOLDER)
+    removal = mocker.Mock(side_effect=[PermissionError("read-only"), PermissionError("held")])
+
+    with pytest.raises(PermissionError, match="held"):
+        remove_clearing_read_only(path, removal, parent_is_ours=True)
+
+    assert path.chmod.call_args_list == [mocker.call(WRITABLE), mocker.call(READ_ONLY)]
+    assert folder.chmod.call_args_list == [mocker.call(READ_ONLY_FOLDER | stat.S_IWRITE), mocker.call(READ_ONLY_FOLDER)]
+
+
+def test_a_folder_that_cannot_be_made_writable_gives_the_path_its_mode_back(mocker: MockerFixture) -> None:
+    """When the folder will not be made writable after the path was, the path gets its mode back, and the refusal is
+    raised, chained to why.
+
+    **Test steps:**
+
+    * hand a read-only file in a read-only folder of the caller's, the folder's ``chmod`` failing
+    * verify the refusal is raised after one try, and the file was made writable, then given back
+    """
+    path = path_with_mode(mocker, READ_ONLY)
+    folder = in_folder(mocker, path, READ_ONLY_FOLDER)
+    folder.chmod.side_effect = OSError("attributes denied")
+    removal = mocker.Mock(side_effect=PermissionError("refused"))
+
+    with pytest.raises(PermissionError, match="refused") as caught:
+        remove_clearing_read_only(path, removal, parent_is_ours=True)
+
+    assert str(caught.value.__cause__) == "attributes denied"
+    removal.assert_called_once()
+    assert path.chmod.call_args_list == [mocker.call(WRITABLE), mocker.call(READ_ONLY)]
+
+
+def test_a_folder_gone_once_refused_is_gone_not_refused(mocker: MockerFixture) -> None:
+    """A folder holding the path that is gone once the path was refused means the path is gone too.
+
+    **Test steps:**
+
+    * hand a file in a folder of the caller's whose ``stat`` finds nothing, and a removal refused
+    * verify ``FileNotFoundError`` is raised after one try, nothing changed
+    """
+    path = path_with_mode(mocker, READ_ONLY)
+    folder = in_folder(mocker, path, READ_ONLY_FOLDER)
+    folder.stat.side_effect = FileNotFoundError("gone")
+    removal = mocker.Mock(side_effect=PermissionError("refused"))
+
+    with pytest.raises(FileNotFoundError, match="gone"):
+        remove_clearing_read_only(path, removal, parent_is_ours=True)
+
+    removal.assert_called_once()
+    path.chmod.assert_not_called()
+
+
+def test_remove_file_hands_on_whose_the_folder_is(mocker: MockerFixture) -> None:
+    """``remove_file`` makes a read-only folder of the caller's writable for the unlink.
+
+    **Test steps:**
+
+    * remove a writable file in a read-only folder of the caller's, its unlink refused once
+    * verify the folder was made writable, then given back
+    """
+    path = path_with_mode(mocker, WRITABLE)
+    folder = in_folder(mocker, path, READ_ONLY_FOLDER)
+    path.unlink.side_effect = [PermissionError("folder read-only"), None]
+
+    remove_file(path, parent_is_ours=True)
+
+    assert folder.chmod.call_args_list == [mocker.call(READ_ONLY_FOLDER | stat.S_IWRITE), mocker.call(READ_ONLY_FOLDER)]
+
+
+def test_remove_folder_hands_on_whose_the_folder_is(mocker: MockerFixture) -> None:
+    """``remove_folder`` makes a read-only folder of the caller's writable for the ``rmdir``.
+
+    **Test steps:**
+
+    * remove a writable folder in a read-only folder of the caller's, its ``rmdir`` refused once
+    * verify the folder holding it was made writable, then given back
+    """
+    path = path_with_mode(mocker, stat.S_IFDIR | 0o755)
+    folder = in_folder(mocker, path, READ_ONLY_FOLDER)
+    path.rmdir.side_effect = [PermissionError("folder read-only"), None]
+
+    remove_folder(path, parent_is_ours=True)
+
+    assert folder.chmod.call_args_list == [mocker.call(READ_ONLY_FOLDER | stat.S_IWRITE), mocker.call(READ_ONLY_FOLDER)]
