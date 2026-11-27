@@ -70,7 +70,7 @@ same spelling a ``.rehu``'s ``created``/``updated`` carry ([[field-schema#record
 CHECKSUM_STATUS_KEY: Final = "status"
 """An entry's key holding what the last check answered -- one of :data:`ChecksumStatus`'s values."""
 
-ChecksumStatus = Literal["matched", "mismatched", "missing", "added", "malformed"]
+ChecksumStatus = Literal["matched", "mismatched", "missing", "added", "malformed", "present"]
 """What one check of one file can answer ([[data-model#checksums]], #203).
 
 ``matched`` / ``mismatched`` -- the file was hashed and compared. ``missing`` -- the record lists it and
@@ -79,7 +79,9 @@ run hashed it and recorded it ``matched`` (:func:`~rehuco_core.rehu_checksums.ve
 only ever *reported*, since the file goes from no checksum to verified in one step. ``malformed`` -- an
 entry this build cannot read; it costs itself, is carried through untouched, and its neighbors still
 verify. ``malformed`` is only ever *reported* too, never written into an entry: writing anything into an
-entry this build cannot read is what carrying it through byte-for-byte exists to avoid."""
+entry this build cannot read is what carrying it through byte-for-byte exists to avoid. ``present`` -- the file
+is there, and nothing was hashed: only a read-only check that asked for no hashing says it
+(:func:`~rehuco_core.inspect_checksums`, #715), and likewise never written."""
 
 MATCHED_STATUS: Final = "matched"
 """The one :data:`ChecksumStatus` value a surface reasons about by name -- *this file was hashed and the

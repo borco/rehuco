@@ -426,6 +426,19 @@ shows an image its checksum does not cover:
   resource refuses (#245) rather than seeding a record whose every line would read as a claim about a file that has
   gone. Where a record *is* already there and a manifest is still beside it, the remediation below applies instead.
 
+- **A record can be checked without the app, and the check writes nothing** (#715). `inspect_checksums`
+  (`rehuco_core.checksum_inspection`) is the third reader beside a verify and the files sub-dock: it reads the
+  record and the files it lists, hashes under each entry's own recorded algorithm through the same `digest_content`,
+  and answers in a verify's `ChecksumReport`, so a line in a terminal and a line in the log say the same words. What a
+  verify *maintains* it leaves out: no date, no adopted file, no prune or hand-over, no seeding from a legacy manifest,
+  no trust registered, no lock -- so a share the app is using sees nothing of the run and a read-only disk can be
+  checked. An entry the coverage rule would prune is checked like any other, since deciding whose claim it is belongs
+  to a run that edits. **Files without a checksum** are `enumerate_content_files`' answer less the record's hashed
+  entries (an entry that cannot be read still covers its file), so the check and the app agree on what is content, and
+  **`--no-checksum`** reads nothing: the report's `present` is that answer, never written to a record. The command is
+  `tools/verify_checksums.py`, run through `uv` from a checkout; it takes the excluded files from the app's own
+  settings (`--settings-dir` as the app's option) and never records a result.
+
 - **A record written before its manifest was absorbed is remediated, not left** (#259). What retirement leaves is a
   clean rule going forward and a catalog that predates it — resources hand-converted into `.rehu` + `.sfv` +
   `.checksum`, where nothing in the files says whether the record came from that manifest or was baselined
