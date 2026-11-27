@@ -25,7 +25,7 @@ CLEAN_STATUSES: Final = frozenset({"matched", "added"})
 hashed a file the record held no hash for and recorded it ``matched`` -- so a resource whose only news is a
 new file has come back clean."""
 
-STATUS_ORDER: Final = ("matched", "mismatched", "missing", "added", "malformed")
+STATUS_ORDER: Final = ("matched", "present", "mismatched", "missing", "added", "malformed")
 """The order a summary counts verdicts in: what was checked first, then what the run added, then what it could
 not read -- ``"210 matched, 2 mismatched, 3 added"``. A status this build does not know follows, alphabetically."""
 

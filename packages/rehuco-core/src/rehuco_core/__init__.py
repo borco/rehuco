@@ -38,6 +38,7 @@ from .checksum_algorithms import (
 )
 from .checksum_claim_moves import TakenClaims, enclosing_directory_record, hand_over_claims, take_enclosing_claims
 from .checksum_entry_merge import merge_checksum_entries
+from .checksum_inspection import ChecksumInspection, inspect_checksums
 from .checksum_jobs import (
     CHECKSUM_GENERATE_KIND,
     CHECKSUM_SWEEP_KIND,
@@ -789,6 +790,7 @@ __all__ = [
     "ChecksumCheckpoint",
     "ChecksumDigest",
     "ChecksumEntry",
+    "ChecksumInspection",
     "ChecksumJob",
     "ChecksumProgress",
     "ChecksumRecordError",
@@ -1162,6 +1164,7 @@ __all__ = [
     "hand_over_claims",
     "has_bucketed_layout",
     "insert_bookmark",
+    "inspect_checksums",
     "is_bucket_chain",
     "is_bucketed_template",
     "is_checksum_fresh",
