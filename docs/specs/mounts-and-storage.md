@@ -492,7 +492,11 @@ The system chooses *how* to perform a move/rename rather than assuming:
   root are never changed: a record's folder in a read-only one stays, emptied, and is reported. What still refuses (a
   file another program holds open, a folder not empty) gets every mode back and is reported, as before. A cancel's
   removal of the copy and the buckets a join empties (one customized in Explorer is read-only) follow the same rule;
-  the folders a move in place leaves empty are removed when read-only, never made writable to remove one inside. A
+  the folders a move in place leaves empty are removed when read-only, never made writable to remove one inside.
+  A folder a move left that holds only excluded files (`.DS_Store`, `Thumbs.db`, the user's own patterns) is
+  empty (#714): they go to the Recycle Bin when the setting is on and a bin can take them, and are deleted for
+  good otherwise, read-only or not, with no question; then the folder goes. One holding anything else keeps
+  them. A
   path found gone once refused is gone, not refused. The copy itself is written afresh and its folders made, so it is
   never read-only, whatever the source was: its `.rehu` and sidecars stay writable for a later save, rename or delete.
 - **A record holding a symbolic link or a junction is not copied.** A copy neither follows a link nor carries one,

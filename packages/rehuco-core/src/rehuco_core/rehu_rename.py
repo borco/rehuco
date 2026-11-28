@@ -26,15 +26,17 @@ import logging
 import os
 import time
 from collections.abc import Iterable, Sequence
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Final
 
-from borco_core import remove_folder
+from borco_core import remove_file, remove_folder
 
 from .checksum_record import checksum_record_path, rename_checksum_entries, update_checksum_record
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .path_keys import path_key
 from .record_file_lock import RecordFileLock, is_lock_name
+from .rehu_screenshot_ordering import DEFAULT_DELETER, Deleter, NoTrashBinError, UnlinkDeleter
 from .relocation import Relocation
 from .resource_scoping import is_directory_scoped, is_record_name
 
@@ -193,7 +195,54 @@ def files_of_record(names: Iterable[str], document_name: str) -> list[str]:
     return [name for name in named_after if not any(path_key(name).startswith(other) for other in foreign)]
 
 
-def remove_empty_parents(start: Path, stop_at: Path) -> list[Path]:
+def delete_excluded_files(folder: Path, excluded_patterns: Sequence[str], deleter: Deleter = DEFAULT_DELETER) -> None:
+    """Delete the files a folder holds that ``excluded_patterns`` names, when it holds nothing else (#714).
+
+    What makes a folder empty for :func:`remove_empty_parents`: the files an operating system drops there
+    (``.DS_Store``, ``Thumbs.db``) are no content. A folder holding anything else -- a file the patterns do not name,
+    a sub-folder -- is left as it is, none of its files deleted, since the folder stays.
+
+    :param folder: the folder.
+    :param excluded_patterns: the globs naming the files, matched in any case.
+    :param deleter: how one is deleted; a file already gone is no failure, and one no Recycle Bin can take
+        (:class:`~rehuco_core.NoTrashBinError`) is deleted for good, as the app does elsewhere, with no one
+        asked: nobody named these files, and a queued move has no one to ask. A file deleted for good -- that one, or
+        every one when ``deleter`` is the plain unlink -- goes read-only or not (#711), the folder made writable for
+        the moment, since it is removed next.
+    :raises OSError: the folder could not be read, or a file could not be deleted (logged); the files before it
+        are gone.
+    """
+    patterns = tuple(pattern.lower() for pattern in excluded_patterns)
+    entries: list[Path] = []
+    # stops at the first entry that keeps the folder: a crowded one is not listed whole to learn it stays
+    for entry in folder.iterdir():
+        if entry.is_dir() or not any(fnmatchcase(entry.name.lower(), pattern) for pattern in patterns):
+            return
+        entries.append(entry)
+    for entry in entries:
+        try:
+            for_good = isinstance(deleter, UnlinkDeleter)
+            if not for_good:
+                try:
+                    deleter.delete(entry)
+                except NoTrashBinError:
+                    for_good = True
+            if for_good:
+                remove_file(entry, parent_is_ours=True)
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            LOG.warning("Could not delete %s, left in %s by the move: %s", entry.name, folder, error)
+            raise
+        LOG.info("Deleted %s from %s, left there by the move.", entry.name, folder)
+
+
+def remove_empty_parents(
+    start: Path,
+    stop_at: Path,
+    excluded_patterns: Sequence[str] = (),
+    deleter: Deleter = DEFAULT_DELETER,
+) -> list[Path]:
     """Remove ``start`` and each folder above it while it is empty, stopping beneath ``stop_at`` (#579).
 
     What a move in place may leave behind: the folder its record left, emptied, and the ones above it emptied by that.
@@ -202,18 +251,33 @@ def remove_empty_parents(start: Path, stop_at: Path) -> list[Path]:
     No folder is made writable to remove one inside it, since the walk cannot know beforehand that it removes that
     folder too: on POSIX, an empty folder in a read-only one stays, and the walk stops there.
 
+    A folder holding nothing but files named by ``excluded_patterns`` is empty too (#714): they are deleted through
+    ``deleter``, or for good where no Recycle Bin can take them, then the folder. A folder holding anything else
+    keeps them, and one whose file could not be deleted stays, the failure logged.
+
+    The folders are compared by their parts, as spelled: a ``start`` holding a ``..`` could name a folder outside
+    ``stop_at`` while reading as one inside it, so nothing is removed for one.
+
     :param start: the deepest folder to try.
     :param stop_at: the folder to stop beneath -- the root's.
+    :param excluded_patterns: the globs naming the files a folder may hold and still be empty, matched in any case;
+        none by default.
+    :param deleter: how such a file is deleted.
     :returns: the folders removed, deepest first.
     """
     removed: list[Path] = []
+    if os.pardir in start.parts:
+        return removed
     stop_parts = tuple(map(path_key, stop_at.parts))
     folder = start
     while len(folder.parts) > len(stop_parts) and tuple(map(path_key, folder.parts[: len(stop_parts)])) == stop_parts:
         try:
+            if excluded_patterns:
+                delete_excluded_files(folder, excluded_patterns, deleter)
             remove_folder(folder)
         except OSError:
             break
+        LOG.info("Removed %s, left empty by the move.", folder)
         removed.append(folder)
         folder = folder.parent
     return removed

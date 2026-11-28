@@ -4,13 +4,14 @@ runs reports through."""
 
 from pathlib import Path
 from typing import Final
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 from pytest import mark
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.move_settings import shared_move_settings
-from rehuco_core import LEADING_DOT_PROBLEM, RehuDocument, RenameCoordinator
+from rehuco_core import EXCLUDED_FILE_PATTERNS, LEADING_DOT_PROBLEM, Deleter, RehuDocument, RenameCoordinator
 
 ROOT: Final = Path(Path.cwd().anchor) / "tutorials"
 RECORD: Final = ROOT / "Old" / "Foo" / "info.rehu"
@@ -152,6 +153,35 @@ def test_the_folder_left_behind_goes_only_when_the_setting_says(tmp_path: Path, 
     assert (tmp_path / "Jane" / "Foo" / "info.rehu").is_file()
     assert (tmp_path / "Old").exists() is not remove
     assert tmp_path.is_dir()
+
+
+@mark.usefixtures("real_path_stat")
+def test_a_folder_left_holding_only_a_system_file_goes_through_the_configured_deleter(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    """A folder the record left holding only files the Files page excludes is removed too, each deleted as the
+    deletion setting says (#714).
+
+    **Test steps:**
+
+    * set the choice on, exclude ``*.tmp`` too, put a ``cache.tmp`` in ``Old``, and hand the model's deleter lookup
+      a mock that unlinks
+    * move the record out of ``Old``
+    * verify the mock was handed the file, and ``Old`` is gone
+    """
+    shared_move_settings().remove_empty_folders = True
+    model = make_record(tmp_path)
+    shared_excluded_files_settings().patterns = (*EXCLUDED_FILE_PATTERNS, "*.tmp")
+    junk = tmp_path / "Old" / "cache.tmp"
+    junk.write_bytes(b"junk")
+    deleter = Mock(spec=Deleter)
+    deleter.delete.side_effect = lambda path: path.unlink()
+    mocker.patch("rehuco_agent.documents.rehu_document_model.configured_deleter", return_value=deleter)
+
+    assert model.move_in_root(tmp_path / "Jane", "Foo", tmp_path) is True
+
+    deleter.delete.assert_called_once_with(junk)
+    assert not (tmp_path / "Old").exists()
 
 
 @mark.usefixtures("real_path_stat")

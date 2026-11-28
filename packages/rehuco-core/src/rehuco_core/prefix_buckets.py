@@ -502,6 +502,23 @@ class BucketChain:
         return cls(PurePosixPath(folder), tuple(buckets))
 
 
+def restored_buckets(bucketed: Any, chains: Any) -> tuple[tuple[int, ...], tuple[BucketChain, ...]]:
+    """The bucketed levels and the chains a saved move names (#680).
+
+    :param bucketed: the saved levels.
+    :param chains: the saved chains.
+    :returns: the levels still to resolve, and the chains still to settle.
+    :raises ValueError: either is not the shape written.
+    """
+    if not (
+        isinstance(bucketed, list) and all(isinstance(index, int) and not isinstance(index, bool) for index in bucketed)
+    ):
+        raise ValueError("A saved move's bucketed levels are not a list of indices.")
+    if not isinstance(chains, list):
+        raise ValueError("A saved move's buckets are not a list.")
+    return tuple(bucketed), tuple(BucketChain.from_state(chain) for chain in chains)
+
+
 @dataclass(frozen=True, slots=True)
 class BucketedPlace:
     """A layout's place with its buckets resolved.

@@ -4,13 +4,19 @@ record's checksum entries renamed with its files (#339)."""
 
 import errno
 import logging
+import os
+import stat
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import Mock
 
 from pytest import LogCaptureFixture, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CROSS_DEVICE_WINERROR,
+    EXCLUDED_FILE_PATTERNS,
+    Deleter,
+    NoTrashBinError,
     RehuRenamer,
     Relocation,
     RenameCoordinator,
@@ -375,6 +381,184 @@ def test_nothing_outside_the_root_is_removed(tmp_path: Path) -> None:
     assert not remove_empty_parents(root, root)
     assert not remove_empty_parents(beside, root)
     assert root.is_dir() and beside.is_dir()
+
+
+def test_a_folder_holding_only_excluded_files_is_empty(tmp_path: Path, caplog: LogCaptureFixture) -> None:
+    """A folder holding nothing but excluded files goes, and the files go through the deleter first (#714).
+
+    **Test steps:**
+
+    * make ``root/a/b`` with a ``.DS_Store`` in ``b`` and a ``THUMBS.DB`` in ``a``
+    * remove from ``b`` up to ``root`` with a deleter that unlinks and remembers
+    * check both folders went, the deleter was handed both files, each logged with its folder, and the root stays
+    """
+    root = tmp_path / "root"
+    start = root / "a" / "b"
+    start.mkdir(parents=True)
+    junk = [start / ".DS_Store", start.parent / "THUMBS.DB"]
+    for path in junk:
+        path.write_bytes(b"junk")
+    deleter = Mock(spec=Deleter)
+    deleter.delete.side_effect = lambda path: path.unlink()
+
+    with caplog.at_level(logging.INFO):
+        removed = remove_empty_parents(start, root, EXCLUDED_FILE_PATTERNS, deleter)
+
+    assert removed == [start, start.parent]
+    assert f"Deleted .DS_Store from {start}" in caplog.text
+    assert f"Deleted THUMBS.DB from {start.parent}" in caplog.text
+    assert f"Removed {start}, left empty by the move." in caplog.text
+    assert [call.args[0] for call in deleter.delete.call_args_list] == junk
+    assert root.is_dir() and not any(root.iterdir())
+
+
+def test_a_folder_holding_something_else_keeps_its_excluded_files(tmp_path: Path) -> None:
+    """A folder holding a file the patterns do not name, or a folder -- even one named as an excluded file is --
+    stays with every file it holds (#714).
+
+    **Test steps:**
+
+    * make ``root/a`` holding a ``.DS_Store`` and ``notes.txt``, ``root/c`` holding a ``.DS_Store`` and a folder,
+      and ``root/d`` holding a folder named ``._stuff``
+    * remove from each up to ``root``
+    * check nothing went, and the deleter was never asked
+    """
+    root = tmp_path / "root"
+    (root / "a").mkdir(parents=True)
+    (root / "c" / "inner").mkdir(parents=True)
+    (root / "d" / "._stuff").mkdir(parents=True)
+    for path in (root / "a" / ".DS_Store", root / "a" / "notes.txt", root / "c" / ".DS_Store"):
+        path.write_bytes(b"x")
+    deleter = Mock(spec=Deleter)
+
+    assert not remove_empty_parents(root / "a", root, EXCLUDED_FILE_PATTERNS, deleter)
+    assert not remove_empty_parents(root / "c", root, EXCLUDED_FILE_PATTERNS, deleter)
+    assert not remove_empty_parents(root / "d", root, EXCLUDED_FILE_PATTERNS, deleter)
+
+    deleter.delete.assert_not_called()
+    assert (root / "a" / ".DS_Store").is_file() and (root / "c" / ".DS_Store").is_file()
+
+
+def test_a_user_added_pattern_counts(tmp_path: Path) -> None:
+    """The patterns are the caller's list, not only the built-in one (#714).
+
+    **Test steps:**
+
+    * make ``root/a`` holding ``cache.tmp``
+    * remove with ``*.tmp`` named, and then check it went
+    """
+    root = tmp_path / "root"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / "cache.tmp").write_bytes(b"x")
+
+    assert remove_empty_parents(root / "a", root, ("*.tmp",)) == [root / "a"]
+
+
+def test_an_excluded_file_already_gone_is_no_refusal(tmp_path: Path) -> None:
+    """A file that went between the listing and its deletion does not keep its folder (#714).
+
+    **Test steps:**
+
+    * make ``root/a`` with a ``.DS_Store``
+    * remove with a deleter that unlinks the file and then says it was not found
+    * check the folder went
+    """
+    root = tmp_path / "root"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / ".DS_Store").write_bytes(b"x")
+
+    def vanish(path: Path) -> None:
+        path.unlink()
+        raise FileNotFoundError(errno.ENOENT, "gone", str(path))
+
+    deleter = Mock(spec=Deleter)
+    deleter.delete.side_effect = vanish
+
+    assert remove_empty_parents(root / "a", root, EXCLUDED_FILE_PATTERNS, deleter) == [root / "a"]
+
+
+def test_an_excluded_file_no_bin_can_take_is_deleted_for_good(tmp_path: Path) -> None:
+    """A deleter with no Recycle Bin to reach does not keep the folder: the file is deleted for good (#714).
+
+    **Test steps:**
+
+    * make ``root/a`` with a ``.DS_Store``
+    * remove with a deleter that reaches no bin
+    * check the file and the folder went
+    """
+    root = tmp_path / "root"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / ".DS_Store").write_bytes(b"x")
+    deleter = Mock(spec=Deleter)
+    deleter.delete.side_effect = NoTrashBinError("no bin")
+
+    assert remove_empty_parents(root / "a", root, EXCLUDED_FILE_PATTERNS, deleter) == [root / "a"]
+    deleter.delete.assert_called_once_with(root / "a" / ".DS_Store")
+
+
+def test_a_read_only_excluded_file_goes_when_deleted_for_good(tmp_path: Path) -> None:
+    """An excluded file an archive left read-only does not keep its folder (#711, #714): deleted for good, it goes
+    read-only or not -- by the plain unlink, and after a deleter that reaches no Recycle Bin.
+
+    **Test steps:**
+
+    * make ``root/a`` and ``root/b``, each with a read-only ``.DS_Store``
+    * remove ``a`` with no deleter named, and ``b`` with one that reaches no bin
+    * check both folders went
+    """
+    root = tmp_path / "root"
+    for name in ("a", "b"):
+        (root / name).mkdir(parents=True)
+        (root / name / ".DS_Store").write_bytes(b"x")
+        (root / name / ".DS_Store").chmod(stat.S_IREAD)
+    deleter = Mock(spec=Deleter)
+    deleter.delete.side_effect = NoTrashBinError("no bin")
+
+    assert remove_empty_parents(root / "a", root, EXCLUDED_FILE_PATTERNS) == [root / "a"]
+    assert remove_empty_parents(root / "b", root, EXCLUDED_FILE_PATTERNS, deleter) == [root / "b"]
+
+
+def test_a_start_spelled_through_a_parent_removes_nothing(tmp_path: Path) -> None:
+    """A start holding a ``..`` reads as inside the root while naming a folder outside it: nothing is removed (#714).
+
+    **Test steps:**
+
+    * make a root, and a folder beside it holding a ``.DS_Store``
+    * remove from the folder, spelled through the root and ``..``
+    * check the folder and its file stay
+    """
+    root = tmp_path / "root"
+    beside = tmp_path / "beside"
+    root.mkdir()
+    beside.mkdir()
+    (beside / ".DS_Store").write_bytes(b"x")
+
+    assert not remove_empty_parents(root / os.pardir / "beside", root, EXCLUDED_FILE_PATTERNS)
+    assert (beside / ".DS_Store").is_file()
+
+
+def test_a_file_the_deleter_refuses_keeps_its_folder(tmp_path: Path, caplog: LogCaptureFixture) -> None:
+    """A refusal stops the walk there, logged, the folder and its file as they were (#714).
+
+    **Test steps:**
+
+    * make ``root/a/b`` with a ``.DS_Store`` in ``b``
+    * remove with a deleter that refuses
+    * check nothing went and the refusal is logged
+    """
+    root = tmp_path / "root"
+    start = root / "a" / "b"
+    start.mkdir(parents=True)
+    (start / ".DS_Store").write_bytes(b"x")
+    deleter = Mock(spec=Deleter)
+    deleter.delete.side_effect = PermissionError(errno.EACCES, "denied")
+
+    with caplog.at_level(logging.WARNING):
+        removed = remove_empty_parents(start, root, EXCLUDED_FILE_PATTERNS, deleter)
+
+    assert not removed
+    assert (start / ".DS_Store").is_file()
+    assert ".DS_Store" in caplog.text
 
 
 # endregion

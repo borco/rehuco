@@ -126,7 +126,7 @@
          <string>Remove the left-behind folders up to the root, only while each is empty</string>
         </property>
         <property name="toolTip">
-         <string>After a record moves to the place its root's layout gives it, the folder it left -- and each folder above it, up to the root -- is removed while it is empty. A folder holding anything else is left, and so is every folder above it.</string>
+         <string>After a record moves to the place its root's layout gives it, the folder it left -- and each folder above it, up to the root -- is removed while it is empty. A folder holding only files this page excludes is empty: they are deleted first, to the Recycle Bin when that is on and can take them. A folder holding anything else is left, and so is every folder above it.</string>
         </property>
        </widget>
       </item>

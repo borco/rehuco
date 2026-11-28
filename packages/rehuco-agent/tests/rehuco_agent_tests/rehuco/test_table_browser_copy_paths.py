@@ -4,6 +4,7 @@ choosing one asks for -- *Refresh License* and the two copies. What the paths ar
 
 from dataclasses import replace
 
+from borco_pyside.file_browser import FILE_BROWSER_NAME
 from pytest import MonkeyPatch
 from pytestqt.qtbot import QtBot
 from rehuco_agent.rehuco import TableBrowser
@@ -20,8 +21,15 @@ from .test_table_browser import (  # noqa: F401  # pylint: disable=unused-import
     select,
 )
 
-SELECTION_ENTRIES = ["Open in Web Browser", "Refresh License", "Copy paths", "Copy paths as JSON"]
-"""The four entries' texts, in menu order: the open entry (#679), the refresh (#688), then the two copies."""
+SELECTION_ENTRIES = [
+    f"Open in {FILE_BROWSER_NAME}",
+    "Open in Web Browser",
+    "Refresh License",
+    "Copy paths",
+    "Copy paths as JSON",
+]
+"""The five entries' texts, in menu order: the two open entries (#720, #679), the refresh (#688), then the two
+copies."""
 
 
 def asset_row(path: str) -> CatalogRow:
@@ -40,7 +48,7 @@ def test_a_selection_offers_its_entries_on_any_cell(browser: TableBrowser, monke
     **Test steps:**
 
     * select a row and right-click its Title cell
-    * verify the menu holds the four entries alone
+    * verify the menu holds the five entries alone
     """
     browser.set_rows([row("a/info.rehu", 1)], [ROOT_ID])
     select(browser, 0)
@@ -53,19 +61,19 @@ def test_a_selection_offers_its_entries_on_any_cell(browser: TableBrowser, monke
 def test_an_authors_cell_keeps_its_entries_and_adds_the_selections_after_a_separator(
     browser: TableBrowser, monkeypatch: MonkeyPatch
 ) -> None:
-    """The author entries come first, as before, then a separator and the selection's four.
+    """The author entries come first, as before, then a separator and the selection's five.
 
     **Test steps:**
 
     * select a row with two authors and right-click its Authors cell
-    * verify both author entries, a separator, then the four entries
+    * verify both author entries, a separator, then the five entries
     """
     browser.set_rows([authored_row("a.rehu", "Ann", "Bob")], [ROOT_ID])
     select(browser, 0)
 
     actions = right_click(browser, CatalogColumn.AUTHORS, monkeypatch)
 
-    assert [action.isSeparator() for action in actions] == [False, False, True, False, False, False, False]
+    assert [action.isSeparator() for action in actions] == [False, False, True, False, False, False, False, False]
     assert [action.text() for action in actions if not action.isSeparator()] == [
         "Filter by Ann",
         "Filter by Bob",
@@ -108,7 +116,7 @@ def test_choosing_a_copy_asks_for_the_selected_rows_in_the_tables_order_and_its_
     keys = ((ROOT_ID, "a/info.rehu"), (ROOT_ID, "c.rehu"))
 
     for action, expected in zip(
-        actions[2:],
+        actions[3:],
         (CopyFormat("Copy paths", quoted_paths), CopyFormat("Copy paths as JSON", json_paths, True)),
         strict=True,
     ):
@@ -134,9 +142,9 @@ def test_a_copy_that_names_licenses_says_which_of_the_selected_rows_are_assets(
     actions = right_click(browser, CatalogColumn.TITLE, monkeypatch)
 
     with qtbot.waitSignal(browser.copy_paths_requested) as as_json:
-        actions[3].trigger()
+        actions[4].trigger()
     with qtbot.waitSignal(browser.copy_paths_requested) as quoted:
-        actions[2].trigger()
+        actions[3].trigger()
 
     assert as_json.args is not None and as_json.args[2] == frozenset({(ROOT_ID, "a/info.rehu"), (ROOT_ID, "c.rehu")})
     assert quoted.args is not None and quoted.args[2] == frozenset()
@@ -155,10 +163,10 @@ def test_refresh_license_is_offered_only_while_an_asset_is_selected(
     """
     browser.set_rows([row("a/info.rehu", 1), asset_row("b.rehu")], [ROOT_ID])
     select(browser, 0)
-    assert not right_click(browser, CatalogColumn.TITLE, monkeypatch)[1].isEnabled()
+    assert not right_click(browser, CatalogColumn.TITLE, monkeypatch)[2].isEnabled()
 
     select(browser, 1, 0)
-    action = right_click(browser, CatalogColumn.TITLE, monkeypatch)[1]
+    action = right_click(browser, CatalogColumn.TITLE, monkeypatch)[2]
     with qtbot.waitSignal(browser.refresh_license_requested) as requested:
         action.trigger()
 
