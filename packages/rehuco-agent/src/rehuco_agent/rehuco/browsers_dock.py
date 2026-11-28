@@ -39,6 +39,7 @@ from .browser_presets import DEFAULT_PRESET, BrowserPreset, browser_presets
 from .catalog_rows_loader import CatalogRowsLoad, CatalogRowsLoader
 from .catalog_table_model import RowKey
 from .copied_paths import CopiedPath, CopyFormat
+from .file_reveals import reveal_places
 from .license_lookup import LicenseLookup
 from .root_catalog import RootCatalog
 from .root_storage import ROOT_STORAGE_OFFLINE_TOOLTIPS
@@ -476,6 +477,7 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         browser.row_activated.connect(self.__on_row_activated)
         browser.copy_paths_requested.connect(self.__copy_paths)
         browser.refresh_license_requested.connect(self.__refresh_license)
+        browser.reveal_requested.connect(self.__reveal)
 
         browser.query_changed.connect(lambda: self.__fill(browser))
         browser.current_changed.connect(lambda key: self.__on_current_changed(browser, key))
@@ -554,6 +556,25 @@ class BrowsersDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # optional in the binding, never absent in a running GUI application
         if clipboard is not None:  # pragma: no branch
             clipboard.setText(text)
+
+    def __reveal(self, rows: object) -> None:
+        """Open a browser's selected resources in the system's file browser (#720): a directory-scoped record's folder
+        opened, a standalone record's file selected (``resource_path``). A row whose place this machine does not reach
+        -- its root gone from the file, or offline -- opens nothing and is named in the log at INFO.
+
+        :param rows: the rows' ``(root_id, relative)`` keys, in the table's order, as the object-typed relay carried
+            them.
+        """
+        places: list[Path] = []
+        for row in cast(tuple[RowKey, ...], rows):
+            key = self.__catalog.resource_key(*row)
+            if key is None:
+                LOG.info("%s is not opened in the file browser: its root is not in the catalog", row[1])
+            elif row[0] in self.__offline:
+                LOG.info("%s is not opened in the file browser: its root cannot be reached", key.path)
+            else:
+                places.append(resource_path(key.path))
+        reveal_places(self, places)
 
     def __refresh_license(self, rows: object) -> None:
         """Hand the ``.rehu`` of a browser's selected rows to *Refresh License* (#688): a row the catalog no longer

@@ -752,6 +752,14 @@ third, the **Tag Browser**, lists the values its records share ([[plugins#tag-br
     copies reads the selected assets' licenses again and compares them with the texts saved in their records; it is
     disabled while no selected row is an asset. A record with no text gets one, and the user is asked, in a dialog that
     does not block the window, which licenses' differing texts to replace.
+  - **Open in Explorer** (#720). With rows selected, the first entry of the selection's group — *Open in Finder* on
+    macOS, *Open in file manager* elsewhere (`borco_pyside.FILE_BROWSER_NAME`) — reveals each selected record in the
+    system's file browser through `reveal_in_file_browser`, in the table's order: a directory-scoped record's folder
+    opened, a standalone record's `.rehu` selected in its folder (`resource_path`, as *Copy paths*). A row whose
+    place this machine does not reach — its root gone from the file, or offline, or the record and its folder gone
+    from the disk — opens nothing and is named in the log at INFO; the entry is disabled while every selected row is
+    under an offline root. More than ten places asks "Open N places in Explorer?" first, Cancel the default, as *Open in Web
+    Browser* does.
   - **Open in Web Browser** (#679, [[assets#install]]). With rows selected, the entry above the copies opens each
     selected record's primary source URL in the system's browser, from the cache alone, so an offline root does not
     matter: the table's order, an address shared by several records once, and only `http` and `https` addresses naming a host
