@@ -722,6 +722,15 @@ landed, only say which rows were asked for: what a save carries is a document's 
 show or drop, so the window acts on them. The status bar's *N pending saves*, hidden at zero, opens the dock with the
 toggle on.
 
+**A move's menu leads with its places** (#712), behind their own separator. Over one move row, **Show Rehu** opens the
+record where it is now — the original until the move detaches it, then the copy — and **Show Move Source in Explorer**
+and **Show Move Destination in Explorer** (*Finder* on macOS, *file manager* elsewhere) reveal where it came from and
+where it goes. Once the record moved, the destination is where the record is now, a finished move's included: a
+bucket split or a rename may have taken it on from the place the move named. Once the original is removed, Show Move
+Source reveals the folder that held it. A place the job cannot name, its root unmapped, leaves its entry disabled.
+**Retry is offered on a done row that is not clean** as on a failed one: the job decides what running it again does,
+and a move removes only what its cleanup left ([[mounts-and-storage#safe-move-rename]]).
+
 **The bulk clears are the dock's own sweeps, not an engine feature.** #237 deleted `clear_finished()`
 because deciding *which* jobs a sweep drops is a view's business: *Clear done jobs*, *Clear failed
 jobs* and *Clear all finished jobs* filter `queue.jobs()` and call `queue.remove(*serials)`. **Clear removes

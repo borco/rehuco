@@ -168,6 +168,30 @@
     <string>Look into the selected failed or waiting save.</string>
    </property>
   </action>
+  <action name="show_rehu_action">
+   <property name="text">
+    <string>Show Rehu</string>
+   </property>
+   <property name="toolTip">
+    <string>Open the record the selected move is moving: the original until it has moved, then the copy.</string>
+   </property>
+  </action>
+  <action name="show_source_action">
+   <property name="text">
+    <string>Show Move Source</string>
+   </property>
+   <property name="toolTip">
+    <string>Show where the selected move takes the record from.</string>
+   </property>
+  </action>
+  <action name="show_destination_action">
+   <property name="text">
+    <string>Show Move Destination</string>
+   </property>
+   <property name="toolTip">
+    <string>Show where the selected move takes the record to.</string>
+   </property>
+  </action>
   <action name="discard_save_action">
    <property name="text">
     <string>Discard Save…</string>

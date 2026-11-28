@@ -473,6 +473,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         self.__move_host.follow_pending_saves(self.__pending_saves.pending_payload)
         self.__task_queue_widget.inspect_save_requested.connect(self.__on_inspect_save)
+        self.__task_queue_widget.open_record_requested.connect(self.open_path)
         self.__task_queue_widget.discard_saves_requested.connect(
             lambda serials: self.__pending_saves.discard(self, serials)
         )

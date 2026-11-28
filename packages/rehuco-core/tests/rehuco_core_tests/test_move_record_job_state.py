@@ -6,28 +6,36 @@ Split from :mod:`test_move_record_job`, whose fixtures and helpers are imported 
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 from pytest import raises
+from pytest_mock import MockerFixture
 from rehuco_core import (
     DEFAULT_TASK_JOB_REGISTRY,
     RECORD_MOVE_KIND,
     MoveMode,
     MovePhase,
     MoveRecordJob,
+    RenameCoordinator,
 )
 
 from rehuco_core_tests.test_move_record_job import (  # noqa: F401  # pylint: disable=unused-import
     DESTINATION_ROOT,
+    MODULE,
     NEW_NAME,
     SOURCE_ROOT,
+    fixture_control,
     fixture_host,
     fixture_roots,
     make_record,
     mover,
+    target_of,
 )
+
+LEFT: Final = ["content.zip (Access is denied)"]
+"""What a cleanup that could not remove everything says it left."""
 
 
 # region what the queue asks
@@ -231,6 +239,159 @@ def test_a_state_restores_every_choice(roots: dict[UUID, Path], host: MagicMock)
     assert (restored.create_if_missing, restored.remove_empty_folders) == (True, True)
     assert (restored.algorithm, restored.excluded_patterns) == ("sha256", ("*.tmp",))
     assert restored.label == "Move - Intro"
+
+
+# endregion
+
+
+# region a move that left part of its original (#712)
+
+
+def test_a_retry_of_a_move_that_left_files_removes_only_those(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock, mocker: MockerFixture
+) -> None:
+    """A move done but for what its original kept goes back to removing that, and nothing else: no check, no copy.
+
+    **Test steps:**
+
+    * make the cleanup leave the original's files the first time, and move a record: done, not clean
+    * let the cleanup work, retry the job and run it, counting the checks
+    * check no check or copy ran, the original is gone, the copy whole, and the outcome clean
+    """
+    record = make_record(roots[SOURCE_ROOT])
+    cleanup = mocker.patch(f"{MODULE}.remove_leftovers", return_value=LEFT)
+    job = mover(record, host)
+    job.run(control)
+    assert job.outcome is not None and not job.outcome.clean
+    assert job.phase is MovePhase.DONE and job.leftover is not None
+    mocker.stop(cleanup)
+    verify = mocker.patch(f"{MODULE}.verify_checksums")
+    copy = mocker.patch(f"{MODULE}.VerifiedCopy")
+
+    job.reset()
+    assert job.phase is MovePhase.CLEANUP
+    job.run(control)
+
+    verify.assert_not_called()
+    copy.assert_not_called()
+    assert not record.parent.exists()
+    assert (target_of(roots) / "info.rehu").exists()
+    assert job.phase is MovePhase.DONE and job.leftover is None
+    assert job.outcome is not None and job.outcome.clean
+
+
+def test_a_retry_that_still_cannot_remove_everything_keeps_what_is_left(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock, mocker: MockerFixture
+) -> None:
+    """A retried removal that is refused again says so again, and can be retried again.
+
+    **Test steps:**
+
+    * make every cleanup leave the original's files, move a record, then retry it
+    * check the outcome is still not clean and the leftover is kept for the next retry
+    """
+    mocker.patch(f"{MODULE}.remove_leftovers", return_value=LEFT)
+    job = mover(make_record(roots[SOURCE_ROOT]), host)
+    job.run(control)
+
+    job.reset()
+    job.run(control)
+
+    assert job.outcome is not None and not job.outcome.clean
+    assert job.leftover is not None
+
+
+def test_what_a_move_left_and_where_it_came_from_survive_a_restart(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock, mocker: MockerFixture
+) -> None:
+    """A move restored after a restart still knows what its original kept and where it was.
+
+    **Test steps:**
+
+    * make the cleanup leave the original's files, move a record, and restore a new job from its state
+    * check the restored job names the same leftover and origin, and a retry of it goes back to removing
+    """
+    record = make_record(roots[SOURCE_ROOT])
+    mocker.patch(f"{MODULE}.remove_leftovers", return_value=LEFT)
+    job = mover(record, host)
+    job.run(control)
+
+    restored = mover(None, host)
+    restored.restore_state(job.capture_state())
+
+    assert restored.leftover == job.leftover
+    assert restored.origin == record
+    restored.reset()
+    assert restored.phase is MovePhase.CLEANUP
+
+
+def test_a_move_names_where_its_record_was_and_where_it_goes(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock
+) -> None:
+    """The origin follows the record until it leaves, and stays where it was then; the landing is its place there.
+
+    **Test steps:**
+
+    * build a copy and a rename of a record and read both places
+    * run each and read them again
+    """
+    record = make_record(roots[SOURCE_ROOT])
+    copying = mover(record, host)
+    assert (copying.origin, copying.landing) == (record, target_of(roots))
+
+    copying.run(control)
+
+    assert (copying.origin, copying.landing) == (record, target_of(roots))
+    assert copying.source == target_of(roots) / "info.rehu"
+    other = make_record(roots[DESTINATION_ROOT] / "elsewhere")
+    renaming = mover(other, host, mode=MoveMode.RENAME, new_name="Other")
+    renaming.run(control)
+    assert renaming.origin == other
+    assert mover(record, host, destination_root=uuid4()).landing is None
+
+
+def test_a_moved_record_s_landing_follows_it(roots: dict[UUID, Path], host: MagicMock, control: MagicMock) -> None:
+    """Once the record moved, its landing is where the record is, not the place the move named: a bucket split or a
+    rename may have taken it on.
+
+    **Test steps:**
+
+    * move a record, then rename it where it landed, through the move's own rename barrier
+    * check the landing is the renamed folder
+    """
+    coordinator = RenameCoordinator()
+    job = mover(make_record(roots[SOURCE_ROOT]), host, coordinator=coordinator)
+    job.run(control)
+    assert job.source is not None
+
+    coordinator.rename(job.source, "Renamed")
+
+    assert job.landing == target_of(roots).parent / "Renamed"
+
+
+def test_a_move_saved_before_it_named_its_origin_names_none_once_moved(
+    roots: dict[UUID, Path], host: MagicMock
+) -> None:
+    """A state written without the origin cannot say where a record that left was, so it says nothing.
+
+    **Test steps:**
+
+    * capture a finished move, drop its origin, and restore it; then one still in its source phase
+    * check the first names no origin, and the second names where its record is
+    """
+    record = make_record(roots[SOURCE_ROOT])
+    done = mover(record, host)
+    done.phase = MovePhase.DONE
+    state = done.capture_state()
+    del state["origin"]
+    waiting = mover(record, host)
+
+    restored, unstarted = mover(None, host), mover(None, host)
+    restored.restore_state(state)
+    unstarted.restore_state(waiting.capture_state())
+
+    assert restored.origin is None
+    assert unstarted.origin == record
 
 
 # endregion

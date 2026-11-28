@@ -185,12 +185,8 @@ from .migrations import (
     migrate_rehuco_data,
 )
 from .move_cleanup import MoveCleanup
-from .move_record_job import (
-    RECORD_MOVE_KIND,
-    MoveMode,
-    MovePhase,
-    MoveRecordJob,
-)
+from .move_phases import MoveMode, MovePhase
+from .move_record_job import RECORD_MOVE_KIND, MoveRecordJob
 from .natural_sort import natural_path_sort_key, natural_sort_key
 from .path_keys import path_key
 from .plugins import (

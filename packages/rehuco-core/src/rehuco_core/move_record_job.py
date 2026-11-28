@@ -58,7 +58,6 @@ does.
 import logging
 import threading
 from collections.abc import Callable
-from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Any, Final, cast
 from uuid import UUID
@@ -70,6 +69,7 @@ from .checksum_reporting import checksum_report_is_clean, checksum_report_summar
 from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
 from .move_cleanup import MoveCleanup
+from .move_phases import COPYING_PHASES, MoveMode, MovePhase
 from .prefix_buckets import BucketChain, BucketSplitter, resolve_buckets, ungoverned_reason, unresolve_buckets
 from .record_bucket_mover import RecordBucketMover
 from .record_file_lock import RecordFileLock, RecordLockedError
@@ -140,50 +140,13 @@ STATE_ALGORITHM_KEY: Final = "algorithm"
 STATE_EXCLUDED_PATTERNS_KEY: Final = "excluded_patterns"
 STATE_BUCKETED_KEY: Final = "bucketed"
 STATE_CHAINS_KEY: Final = "bucket_chains"
+STATE_ORIGIN_KEY: Final = "origin"
+STATE_LEFTOVER_KEY: Final = "leftover"
 """The keys this job writes itself down under; read back by it and by nothing else.
 
 The source is its root's id and the path under it, or with no root the absolute path; the destination is always a root
-and a path under it. The settings are captured, so a restored job is the job that was queued."""
-
-
-class MoveMode(StrEnum):
-    """How a record gets to its new place."""
-
-    RENAME = "rename"
-    """One volume: renamed, verified before and after when the setting for the volume says so."""
-
-    COPY = "copy"
-    """Another volume: copied, the copy verified, the original removed only then."""
-
-
-class MovePhase(StrEnum):
-    """Where a move is; kept, so a stopped move comes back to it."""
-
-    SOURCE = "source"
-    """The record is checked, and verified when it must be."""
-
-    MOVE = "move"
-    """The files are copied, or the record renamed."""
-
-    TARGET = "target"
-    """The record is checked where it now is."""
-
-    FINISH = "finish"
-    """A copy's original is brought level with it, then stops being a record."""
-
-    CLEANUP = "cleanup"
-    """What is left of a copy's original is removed."""
-
-    SPLIT = "split"
-    """The buckets a bucketed place went into are settled (#680)."""
-
-    DONE = "done"
-    """Nothing is left to do."""
-
-
-COPYING_PHASES: Final = frozenset({MovePhase.SOURCE, MovePhase.MOVE, MovePhase.TARGET, MovePhase.FINISH})
-"""The phases a copy's files can be at the destination while the original is whole: what a cancel takes back. The
-source check is one of them for a retried move, which starts over from it with its copy kept."""
+and a path under it. The settings are captured, so a restored job is the job that was queued. Where the record was once
+it left, and what of the original its cleanup could not remove, are absolute paths, as the cleanup's are (#712)."""
 
 
 # a move's members are what it was asked and where it has got; grouping them would put a second shape between the
@@ -267,6 +230,10 @@ class MoveRecordJob(TaskJobBase):
         self.journal = CopyJournal()
         self.verified: tuple[str, ...] = ()
         self.cleanup: MoveCleanup | None = None
+        self.leftover: MoveCleanup | None = None
+        """The cleanup that could not remove everything, for a retry to run again (#712); ``None`` otherwise."""
+        self.__origin: Path | None = None
+        """Where the record was, once it left there."""
         self.__outcome: JobOutcome | None = None
         self.__state_lock: Final = threading.Lock()
         self.__cancel_asked = False
@@ -298,13 +265,37 @@ class MoveRecordJob(TaskJobBase):
         return None if root is None else root.joinpath(*self.into.parts)
 
     @property
-    def partial(self) -> Path | None:
-        """Where a copy's files are while the original is whole and the copy is not taken back: its folder for a
-        folder record, the folder its files are in for a file record; ``None`` otherwise. Reads no file."""
+    def origin(self) -> Path | None:
+        """Where the record was before this move (#712): followed while it is still there, fixed once it left; ``None``
+        for a move that left and does not know from where, as one saved before this was written down. Reads no file."""
+        if self.__origin is not None:
+            return self.__origin
+        return None if self.__moved() else self.source
+
+    @property
+    def landing(self) -> Path | None:
+        """Where the record goes (#712): its folder for a folder record, the folder its files go in for a file record;
+        ``None`` when the destination root is unmapped. **Once it moved, where the record is**: its folder, or a file
+        record's ``.rehu`` -- followed, since a bucket split or a rename may have taken it on from the place the move
+        named. Reads no file."""
         path, destination = self.source, self.destination
-        if not self.__holds_a_copy() or path is None or destination is None:
+        if path is not None and self.__moved():
+            return path.parent if is_directory_scoped(path) else path
+        if path is None or destination is None:
             return None
         return destination / self.new_name if is_directory_scoped(path) else destination
+
+    def __moved(self) -> bool:
+        """Whether the record left its original place: a copy's original detached, or the rename done."""
+        return self.phase in (MovePhase.CLEANUP, MovePhase.SPLIT, MovePhase.DONE) or (
+            self.mode is MoveMode.RENAME and self.phase is MovePhase.TARGET
+        )
+
+    @property
+    def partial(self) -> Path | None:
+        """Where a copy's files are while the original is whole and the copy is not taken back (:attr:`landing`);
+        ``None`` otherwise. Reads no file."""
+        return self.landing if self.__holds_a_copy() else None
 
     def __holds_a_copy(self) -> bool:
         """Whether a copy wrote or made anything it can still take back: the original is whole."""
@@ -347,13 +338,16 @@ class MoveRecordJob(TaskJobBase):
 
     def reset(self) -> None:
         """Start a retried move from its first phase, keeping what a copy wrote, which the copy itself re-checks; one
-        whose original already stopped being a record goes on from there."""
+        whose original already stopped being a record goes on from there, and one done but for what its cleanup could
+        not remove goes back to removing that, and only that (#712)."""
         super().reset()
         with self.__state_lock:
             self.__cancel_asked = False
             self.__keep_partial = False
         self.__outcome = None
-        if self.phase not in (MovePhase.CLEANUP, MovePhase.SPLIT, MovePhase.DONE):
+        if self.leftover is not None:
+            self.cleanup, self.leftover, self.phase = self.leftover, None, MovePhase.CLEANUP
+        elif self.phase not in (MovePhase.CLEANUP, MovePhase.SPLIT, MovePhase.DONE):
             self.phase = MovePhase.SOURCE
 
     def cancel(self) -> None:
@@ -516,6 +510,7 @@ class MoveRecordJob(TaskJobBase):
             self.mode = MoveMode.COPY
             self.phase = MovePhase.SOURCE
             return
+        self.__origin = path
         self.__remove_left(left, root)
         self.__outcome = JobOutcome(f"Moved to {destination}")
         self.phase = MovePhase.TARGET if self.check_renamed else self.__landed()
@@ -640,6 +635,7 @@ class MoveRecordJob(TaskJobBase):
             def detach(listing: SourceListing = reconciled, after: MoveCleanup = cleanup) -> Relocation:
                 """Make the original stop being a record; from here on a cancel leaves the copy alone."""
                 relocation = copy.detach_source(listing)
+                self.__origin = listing.record
                 self.cleanup = after
                 self.phase = MovePhase.CLEANUP
                 return relocation
@@ -677,7 +673,7 @@ class MoveRecordJob(TaskJobBase):
         left = remove_leftovers(cleanup.files, cleanup.folders)
         self.__wait_for_source()
         self.__remove_left(Path(cleanup.left), None if cleanup.root is None else Path(cleanup.root))
-        self.cleanup = None
+        self.cleanup, self.leftover = None, cleanup if left else None
         if left:
             self.__outcome = JobOutcome(
                 f"Moved to {destination}; could not remove from the original: {'; '.join(left)}", clean=False
@@ -852,6 +848,8 @@ class MoveRecordJob(TaskJobBase):
             STATE_JOURNAL_KEY: self.journal.to_state(),
             STATE_VERIFIED_KEY: list(self.verified),
             STATE_CLEANUP_KEY: None if self.cleanup is None else self.cleanup.to_state(),
+            STATE_LEFTOVER_KEY: None if self.leftover is None else self.leftover.to_state(),
+            STATE_ORIGIN_KEY: None if self.__origin is None else str(self.__origin),
             STATE_CHECK_SOURCE_KEY: self.check_source,
             STATE_CHECK_RENAMED_KEY: self.check_renamed,
             STATE_CREATE_IF_MISSING_KEY: self.create_if_missing,
@@ -888,8 +886,11 @@ class MoveRecordJob(TaskJobBase):
         cleanup = MoveCleanup.from_state(state.get(STATE_CLEANUP_KEY))
         if (cleanup is None) is (state.get(STATE_PHASE_KEY) == MovePhase.CLEANUP.value):
             raise ValueError("A saved move's cleanup does not go with its phase.")
+        origin = state.get(STATE_ORIGIN_KEY)
         self.__restore_source(state)
         self.cleanup = cleanup
+        self.leftover = MoveCleanup.from_state(state.get(STATE_LEFTOVER_KEY))
+        self.__origin = Path(origin) if isinstance(origin, str) and origin else None
         self.destination_root = destination_root
         self.into = PurePosixPath(into)
         self.new_name = name

@@ -7,6 +7,7 @@ from typing import Any, Final, cast
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.file_browser import FILE_BROWSER_NAME, reveal_in_file_browser
 from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import (
     QtAdsAutoHideButtonSuppressor,
@@ -26,6 +27,7 @@ from rehuco_core import (
     JobScope,
     JobState,
     JobStatus,
+    MoveRecordJob,
     StopRequest,
     TaskQueue,
 )
@@ -65,12 +67,17 @@ LOG_DOCK_TITLE: Final = "Log"
 """Tab titles of the two sub-docks. ``Log`` matches the window's own dock and every resource's, because
 all three are the same surface about a different subject ([[appendices.logging#surfaces]])."""
 
-RETRIABLE_STATES: Final = frozenset({JobState.FAILED, JobState.CANCELED})
-"""The states :meth:`~rehuco_core.TaskQueue.retry` accepts -- a finished job that can be run again.
+RETRIABLE_KEYS: Final[frozenset[TaskRowKey]] = frozenset({JobState.FAILED, JobState.CANCELED, UNCLEAN_DONE})
+"""The rows Retry is offered on -- a finished job that can be run again.
 
-``DONE`` is deliberately absent: retrying it is not *wrong*, but offering it as a control invites
+A clean ``DONE`` is deliberately absent: retrying it is not *wrong*, but offering it as a control invites
 re-running work that succeeded ([[appendices.task-queue#kept]] frames retry as the recovery for a
-failure or a cancelation)."""
+failure or a cancelation). A done job that is not clean is offered (#712): it left something to act on, and the job
+decides what running it again does -- a move removes only what its cleanup left."""
+
+SHOW_SOURCE_TEXT: Final = f"Show Move Source in {FILE_BROWSER_NAME}"
+SHOW_DESTINATION_TEXT: Final = f"Show Move Destination in {FILE_BROWSER_NAME}"
+"""What a move's two reveal actions read, naming this platform's file browser (#712)."""
 
 PAUSABLE_STATES: Final = frozenset({JobState.QUEUED, JobState.RUNNING, JobState.WAITING})
 """The states Pause acts on: anything not yet finished that is not already held.
@@ -170,6 +177,9 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
 
     discard_saves_requested = Signal(list)
     """Discard Save was triggered; carries the serials of the selected saves that have not landed."""
+
+    open_record_requested = Signal(object)
+    """Show Rehu was triggered over one move (#712); carries the ``.rehu`` it is moving, where it is now."""
 
     def __init__(
         self, queue: TaskQueue, parent: QWidget | None = None, *, stylesheet_host: QWidget | None = None
@@ -341,6 +351,11 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
     def __setup_context_menu(self) -> None:
         ui = self.__ui
         ui.task_view.customContextMenuRequested.connect(self.__show_context_menu)
+        ui.show_source_action.setText(SHOW_SOURCE_TEXT)
+        ui.show_destination_action.setText(SHOW_DESTINATION_TEXT)
+        ui.show_rehu_action.triggered.connect(self.__show_rehu)
+        ui.show_source_action.triggered.connect(self.__show_source)
+        ui.show_destination_action.triggered.connect(self.__show_destination)
 
     def __show_context_menu(self, position: QPoint) -> None:
         ui = self.__ui
@@ -348,6 +363,14 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         ui.clear_action.setText(f"Clear {count} jobs" if count > 1 else "Clear job")
 
         menu = QMenu(self)
+        move = self.__selected_move()
+        if move is not None:
+            # a move's places lead its menu (#712): what a reader of a move row most often wants is to look at them
+            ui.show_rehu_action.setEnabled(move.source is not None)
+            ui.show_source_action.setEnabled(move.origin is not None)
+            ui.show_destination_action.setEnabled(move.landing is not None)
+            menu.addActions([ui.show_rehu_action, ui.show_source_action, ui.show_destination_action])
+            menu.addSeparator()
         menu.addAction(ui.pause_action)
         menu.addAction(ui.resume_action)
         menu.addAction(ui.cancel_action)
@@ -579,7 +602,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         ui.pause_action.setToolTip(TaskQueueWidget.__pause_tooltip(statuses))
         self.__update_resume(statuses)
         ui.cancel_action.setEnabled(bool(states - FINISHED_JOB_STATES))
-        ui.retry_action.setEnabled(bool(states) and states <= RETRIABLE_STATES)
+        ui.retry_action.setEnabled(bool(statuses) and all(status_key(status) in RETRIABLE_KEYS for status in statuses))
         # an unfinished job leaves by Cancel, which asks what it asks (#634); a save not landed goes to its owner
         ui.clear_action.setEnabled(
             bool(statuses)
@@ -741,6 +764,33 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         """Remove every finished row -- but the saves that have not landed: each still holds edits, and is dropped only
         by asking for it ([[sync#unlanded-save]], #497). An unfinished job stays: it leaves by Cancel (#634)."""
         self.__clear_in({*FINISHED_JOB_STATES, UNCLEAN_DONE})
+
+    def __selected_move(self) -> MoveRecordJob | None:
+        """The one selected row's move, when that is what it is (#712).
+
+        :returns: the job; ``None`` for no row, several, or a row that is not a move.
+        """
+        serials = self.__selected_serials()
+        job = self.__queue.job(serials[0]) if len(serials) == 1 else None
+        return job if isinstance(job, MoveRecordJob) else None
+
+    def __show_rehu(self) -> None:
+        """Ask the owner to open the record the selected move is moving, where it is now (#712)."""
+        if (move := self.__selected_move()) is not None and (path := move.source) is not None:
+            self.open_record_requested.emit(path)
+
+    def __show_source(self) -> None:
+        """Show where the selected move takes its record from (#712); once the record left, what is still there of the
+        folder it was in."""
+        if (move := self.__selected_move()) is not None and (path := move.origin) is not None:
+            # the record's .rehu, else its folder; else, the original removed, the folder that held it
+            if not reveal_in_file_browser(path):
+                reveal_in_file_browser(path.parent.parent)
+
+    def __show_destination(self) -> None:
+        """Show where the selected move takes its record to (#712): there, or the folder it goes in until it is."""
+        if (move := self.__selected_move()) is not None and (path := move.landing) is not None:
+            reveal_in_file_browser(path)
 
     def __inspect_selection(self) -> None:
         """Ask the owner to show the one selected save (#497)."""
