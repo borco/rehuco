@@ -15,6 +15,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     DEFAULT_TASK_JOB_REGISTRY,
     RECORD_MOVE_KIND,
+    LeftoversRemoved,
     MoveMode,
     MovePhase,
     MoveRecordJob,
@@ -259,7 +260,7 @@ def test_a_retry_of_a_move_that_left_files_removes_only_those(
     * check no check or copy ran, the original is gone, the copy whole, and the outcome clean
     """
     record = make_record(roots[SOURCE_ROOT])
-    cleanup = mocker.patch(f"{MODULE}.remove_leftovers", return_value=LEFT)
+    cleanup = mocker.patch(f"{MODULE}.remove_leftovers", return_value=LeftoversRemoved(0, 0, LEFT))
     job = mover(record, host)
     job.run(control)
     assert job.outcome is not None and not job.outcome.clean
@@ -290,7 +291,7 @@ def test_a_retry_that_still_cannot_remove_everything_keeps_what_is_left(
     * make every cleanup leave the original's files, move a record, then retry it
     * check the outcome is still not clean and the leftover is kept for the next retry
     """
-    mocker.patch(f"{MODULE}.remove_leftovers", return_value=LEFT)
+    mocker.patch(f"{MODULE}.remove_leftovers", return_value=LeftoversRemoved(0, 0, LEFT))
     job = mover(make_record(roots[SOURCE_ROOT]), host)
     job.run(control)
 
@@ -312,7 +313,7 @@ def test_what_a_move_left_and_where_it_came_from_survive_a_restart(
     * check the restored job names the same leftover and origin, and a retry of it goes back to removing
     """
     record = make_record(roots[SOURCE_ROOT])
-    mocker.patch(f"{MODULE}.remove_leftovers", return_value=LEFT)
+    mocker.patch(f"{MODULE}.remove_leftovers", return_value=LeftoversRemoved(0, 0, LEFT))
     job = mover(record, host)
     job.run(control)
 

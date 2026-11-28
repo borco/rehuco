@@ -456,6 +456,15 @@ The system chooses *how* to perform a move/rename rather than assuming:
   A failure with both ends answering is what it says: a refusal of the disk (access denied, disk full) fails, a
   verdict refuses. The check before every start lets a record whose share does not answer be tried, so the wait
   carries on by itself.
+- **Each step says it ended** (#713), in one INFO line led by the move's label, with its count and its place --
+  counts only, never a line per file: the checksums verified before copying, the files copied (what this run wrote and
+  its size, and apart what an earlier run had written) to the destination folder, the checksums verified after, the
+  files no checksum covers compared byte for byte, and the files and folders of the original that are gone from its
+  folder -- the whole original, whichever step or earlier run took each -- with how many items could not be removed. A
+  rename says *renamed* with its two places, and its two verifies when the Files page asks for them. A run that goes
+  on from a later phase, or starts over with an earlier copy kept, says so first; a canceled run says *canceled*, with
+  where its copy stays when it was kept, and a copy taken back says what was removed. A wait and a pause with a reason
+  are the queue's own lines.
 - **The document stays editable** while its move runs, and the record may be renamed: the copy holds its record and
   every file as tracked locations, so its reads follow the rename.
 - A **cancel** removes what the copy wrote and the folders it made, and nothing that was there before, for as long as

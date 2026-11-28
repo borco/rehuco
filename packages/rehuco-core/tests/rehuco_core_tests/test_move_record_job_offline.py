@@ -18,6 +18,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     ChecksumReport,
     JobWaiting,
+    LeftoversRemoved,
     MoveMode,
     MovePhase,
     RenameCoordinator,
@@ -249,9 +250,9 @@ def test_a_cleanup_whose_source_goes_away_while_removing_waits_though_nothing_re
     record = make_record(roots[SOURCE_ROOT])
     probes: list[MagicMock] = []
 
-    def going_offline(*_: Any) -> list[str]:
+    def going_offline(*_: Any) -> LeftoversRemoved:
         probes.append(offline(mocker, roots[SOURCE_ROOT]))
-        return []
+        return LeftoversRemoved(0, 0, [])
 
     cleanup = mocker.patch(f"{MODULE}.remove_leftovers", autospec=True, side_effect=going_offline)
     job = mover(record, host)
@@ -283,7 +284,7 @@ def test_a_cleanup_left_with_its_shares_answering_is_reported_not_waited_for(
     * check the move is done, its outcome naming the item
     """
     record = make_record(roots[SOURCE_ROOT])
-    mocker.patch(f"{MODULE}.remove_leftovers", return_value=["kept.txt (Access is denied)"])
+    mocker.patch(f"{MODULE}.remove_leftovers", return_value=LeftoversRemoved(0, 0, ["kept.txt (Access is denied)"]))
     job = mover(record, host)
     real = VerifiedCopy.detach_source
 
@@ -464,7 +465,9 @@ def test_a_move_given_up_on_in_its_cleanup_with_its_source_away_leaves_the_rest(
     record = make_record(roots[SOURCE_ROOT])
     synchronous_threads(mocker)
     offline(mocker, roots[SOURCE_ROOT])
-    mocker.patch(f"{MODULE}.remove_leftovers", return_value=["content.zip (The network name is gone)"])
+    mocker.patch(
+        f"{MODULE}.remove_leftovers", return_value=LeftoversRemoved(0, 0, ["content.zip (The network name is gone)"])
+    )
     job = mover(record, host)
     with raises(JobWaiting):
         job.run(control)

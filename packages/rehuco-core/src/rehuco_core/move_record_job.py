@@ -70,6 +70,7 @@ from .checksum_trust import DEFAULT_CHECKSUM_TRUST, ChecksumTrust
 from .constants import EXCLUDED_FILE_PATTERNS
 from .move_cleanup import MoveCleanup
 from .move_phases import COPYING_PHASES, MoveMode, MovePhase
+from .move_step_log import MoveStepLog
 from .prefix_buckets import BucketChain, BucketSplitter, resolve_buckets, ungoverned_reason, unresolve_buckets
 from .record_bucket_mover import RecordBucketMover
 from .record_file_lock import RecordFileLock, RecordLockedError
@@ -236,6 +237,7 @@ class MoveRecordJob(TaskJobBase):
         """Where the record was, once it left there."""
         self.__outcome: JobOutcome | None = None
         self.__state_lock: Final = threading.Lock()
+        self.__steps: Final = MoveStepLog(LOG, lambda: self.label)
         self.__cancel_asked = False
         self.__keep_partial = False
         self.__working: Final = threading.Lock()
@@ -405,6 +407,7 @@ class MoveRecordJob(TaskJobBase):
         :raises OSError: with both ends answering, a file could not be read, written, renamed or removed.
         """
         refused = False
+        self.__steps.resumed(self.phase, self.journal)
         try:
             with self.__working:
                 while self.phase is not MovePhase.DONE:
@@ -425,6 +428,7 @@ class MoveRecordJob(TaskJobBase):
             with self.__state_lock:
                 canceled, keep = self.__cancel_asked, self.__keep_partial
             # however the run ended: a cancel that arrived while it was already unwinding for a pause is still a cancel
+            self.__steps.canceled(canceled and self.phase is not MovePhase.DONE, self.partial if keep else None)
             if refused or (canceled and not keep):
                 self.__undo_copy()
 
@@ -476,7 +480,7 @@ class MoveRecordJob(TaskJobBase):
             progress=control.report,
             checkpoint=self.checkpoint,
         )
-        LOG.info("%s: the original: %s", self.label, checksum_report_summary(report))
+        self.__steps.verified(report, "before", self.mode)
         if not checksum_report_is_clean(report):
             raise VerifiedCopyError(
                 f"The original did not verify ({checksum_report_summary(report)}), so it was not moved."
@@ -491,7 +495,8 @@ class MoveRecordJob(TaskJobBase):
         self.__resolve_buckets()
         destination = self.__destination()
         if self.mode is MoveMode.COPY:
-            self.__copy(destination).copy(self.journal, progress=control.report, checkpoint=self.checkpoint)
+            tally = self.__copy(destination).copy(self.journal, progress=control.report, checkpoint=self.checkpoint)
+            self.__steps.copied(tally, destination)
             self.phase = MovePhase.TARGET
             return
         path = self.__path()
@@ -511,6 +516,7 @@ class MoveRecordJob(TaskJobBase):
             self.phase = MovePhase.SOURCE
             return
         self.__origin = path
+        self.__steps.renamed(path, destination, self.new_name)
         self.__remove_left(left, root)
         self.__outcome = JobOutcome(f"Moved to {destination}")
         self.phase = MovePhase.TARGET if self.check_renamed else self.__landed()
@@ -583,7 +589,7 @@ class MoveRecordJob(TaskJobBase):
                 trust=self.__trust, algorithm=self.algorithm, progress=control.report, checkpoint=self.checkpoint
             )
             self.verified = tuple(sorted(report.statuses))
-            LOG.info("%s: the copy: %s", self.label, checksum_report_summary(report))
+            self.__steps.verified(report, "after", self.mode)
             self.phase = MovePhase.FINISH
             return
         report = verify_checksums(
@@ -595,7 +601,7 @@ class MoveRecordJob(TaskJobBase):
             progress=control.report,
             checkpoint=self.checkpoint,
         )
-        LOG.info("%s: after the rename: %s", self.label, checksum_report_summary(report))
+        self.__steps.verified(report, "after", self.mode)
         if not checksum_report_is_clean(report):
             # the phase is left to the run: a check that could not read a dead share is waited for and made again
             raise VerifiedCopyError(
@@ -623,7 +629,9 @@ class MoveRecordJob(TaskJobBase):
         """
         copy = self.__copy(self.__destination())
         while self.phase is MovePhase.FINISH:
-            reconciled = copy.reconcile(self.journal, self.verified)
+            compared: list[str] = []
+            reconciled = copy.reconcile(self.journal, self.verified, compared)
+            self.__steps.compared(compared)
             path = reconciled.record
             cleanup = MoveCleanup(
                 tuple(reconciled.files),
@@ -670,13 +678,14 @@ class MoveRecordJob(TaskJobBase):
         cleanup = cast(MoveCleanup, self.cleanup)
         destination = self.__destination()
         self.__wait_for_source()
-        left = remove_leftovers(cleanup.files, cleanup.folders)
+        removal = remove_leftovers(cleanup.files, cleanup.folders)
         self.__wait_for_source()
+        self.__steps.removed(removal, cleanup.left)
         self.__remove_left(Path(cleanup.left), None if cleanup.root is None else Path(cleanup.root))
-        self.cleanup, self.leftover = None, cleanup if left else None
-        if left:
+        self.cleanup, self.leftover = None, cleanup if removal.left else None
+        if removal.left:
             self.__outcome = JobOutcome(
-                f"Moved to {destination}; could not remove from the original: {'; '.join(left)}", clean=False
+                f"Moved to {destination}; could not remove from the original: {'; '.join(removal.left)}", clean=False
             )
         else:
             self.__outcome = JobOutcome(f"Moved to {destination}")
@@ -699,8 +708,10 @@ class MoveRecordJob(TaskJobBase):
                     "%s: the destination does not answer, so the copy in %s was left in place.", self.label, destination
                 )
                 return
-            for line in self.__copy(destination).remove_copy(self.journal):
+            stayed = self.__copy(destination).remove_copy(self.journal)
+            for line in stayed:
                 LOG.warning("Could not remove %s from a canceled move's copy.", line)
+            self.__steps.took_back(self.journal, destination, len(stayed))
             self.journal = CopyJournal()
 
     def __wait_if_offline(self, error: OSError) -> None:
