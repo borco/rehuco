@@ -394,6 +394,18 @@ def test_each_state_reads_as_its_own_word(state: JobState, expected: str) -> Non
     assert state_text(JobStatus(serial=1, label="job", state=state)) == expected
 
 
+def test_a_done_job_that_is_not_clean_reads_as_needing_a_look() -> None:
+    """The sentence the unclean glyph stands for, so the icon and the words agree (#712).
+
+    **Test steps:**
+
+    * ask for the text of a done job that is not clean, and of a clean one
+    * verify only the first reads as needing a look
+    """
+    assert state_text(JobStatus(serial=1, label="job", state=JobState.DONE, clean=False)) == "Done, needs a look"
+    assert state_text(JobStatus(serial=1, label="job", state=JobState.DONE)) == "Done"
+
+
 def test_a_pending_cancel_reads_as_canceling_over_the_state() -> None:
     """*Canceling…* is the state plus ``stop_requested``, so a watcher is honest before the job obeys.
 

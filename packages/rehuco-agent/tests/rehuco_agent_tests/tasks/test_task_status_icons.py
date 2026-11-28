@@ -1,7 +1,7 @@
 """Tests for the status-icon lookup: which glyph a row wears, and the recolored icon cache (#248)."""
 
 from pytest import mark
-from rehuco_agent.tasks.task_status_icons import PENDING_STOP_ICONS, STATE_ICONS, status_icon
+from rehuco_agent.tasks.task_status_icons import PENDING_STOP_ICONS, STATE_ICONS, UNCLEAN_DONE_ICON, status_icon
 from rehuco_core import JobState, JobStatus, StopRequest
 
 
@@ -67,6 +67,36 @@ def test_the_pending_glyphs_are_not_reused_from_the_states() -> None:
     * verify all eight are distinct
     """
     assert len(set(STATE_ICONS.values()) | set(PENDING_STOP_ICONS.values())) == len(JobState) + len(StopRequest)
+
+
+def test_a_done_job_that_is_not_clean_wears_a_glyph_of_its_own() -> None:
+    """A finished job with something left to act on must not look like one that finished well (#712).
+
+    **Test steps:**
+
+    * look up a done job that is not clean, a clean done one, and a failed one marked not clean
+    * verify only the first wears the unclean glyph, which no state glyph shares
+    """
+    assert status_icon(JobStatus(serial=1, label="job", state=JobState.DONE, clean=False)) == UNCLEAN_DONE_ICON
+    assert status_icon(status(JobState.DONE)) == STATE_ICONS[JobState.DONE]
+    assert (
+        status_icon(JobStatus(serial=1, label="job", state=JobState.FAILED, clean=False))
+        == STATE_ICONS[JobState.FAILED]
+    )
+    assert UNCLEAN_DONE_ICON not in set(STATE_ICONS.values()) | set(PENDING_STOP_ICONS.values())
+
+
+def test_a_pending_stop_still_wins_over_an_unclean_finish() -> None:
+    """A retried row asked to stop reads as stopping, whatever its last run left (#712).
+
+    **Test steps:**
+
+    * look up a done, not clean job that has been asked to cancel
+    * verify it answers the canceling glyph
+    """
+    unclean = JobStatus(serial=1, label="job", state=JobState.DONE, clean=False, stop_requested=StopRequest.CANCEL)
+
+    assert status_icon(unclean) == PENDING_STOP_ICONS[StopRequest.CANCEL]
 
 
 # endregion

@@ -30,6 +30,7 @@ from .task_job import (
     FINISHED_JOB_STATES,
     AbandonableTaskJob,
     JobCanceled,
+    JobOutcome,
     JobPaused,
     JobScope,
     JobState,
@@ -131,7 +132,7 @@ class TaskQueue:
         done: int
         total: int | None
 
-    # Nineteen, and each is a distinct fact about one job: its identity and label, the job itself, the
+    # Twenty, and each is a distinct fact about one job: its identity and label, the job itself, the
     # context it was enqueued in, what it declared about itself (the chain it takes turns in and its kind included),
     # where it has got to, what it reported, why it failed or what it waits for and until when, what it was asked, and
     # what it last gave the queue to write down.
@@ -168,6 +169,7 @@ class TaskQueue:
         due: float | None = None
         """When a :attr:`~rehuco_core.tasks.JobState.WAITING` job's wait ends, on :func:`time.monotonic`'s clock."""
         summary: str | None = None
+        clean: bool = True
         stop_requested: StopRequest | None = None
         resume_requested: bool = False
 
@@ -198,6 +200,7 @@ class TaskQueue:
                 resumes_where_it_stopped=self.resumes_where_it_stopped,
                 persistable=self.persistable,
                 summary=self.summary,
+                clean=self.clean,
                 chain=self.chain,
                 kind=self.kind,
             )
@@ -595,6 +598,7 @@ class TaskQueue:
                 entry.total = None
                 entry.message = None
                 entry.summary = None
+                entry.clean = True
                 entry.stop_requested = None
                 entry.resume_requested = False
                 self.__capture(entry)
@@ -748,7 +752,7 @@ class TaskQueue:
 
     # region internals
 
-    # six, because a restored job is accepted with everything an earlier session left it holding; the
+    # seven, because a restored job is accepted with everything an earlier session left it holding; the
     # alternative is a second acceptance path that would have to keep the first one's invariants.
     # pylint: disable-next=too-many-arguments
     def __accept(
@@ -761,6 +765,7 @@ class TaskQueue:
         total: int | None = None,
         message: str | None = None,
         summary: str | None = None,
+        clean: bool = True,
     ) -> TaskQueue.Entry:
         """Take a job into the queue and tell the listeners, whether it is new or restored.
 
@@ -779,6 +784,7 @@ class TaskQueue:
         :param message: why it failed or what it waits for, for a job restored as failed or waiting; a waiting one
             is due at once.
         :param summary: what it found, for a job restored as done.
+        :param clean: whether what it found left nothing to act on, for a job restored as done (#712).
         :returns: the entry now in the queue.
         :raises ValueError: if the job's chain belongs to no registered family.
         :raises RuntimeError: if the queue has been shut down.
@@ -807,6 +813,7 @@ class TaskQueue:
             message=message,
             due=monotonic() if state is JobState.WAITING else None,
             summary=summary,
+            clean=clean,
         )
         self.__next_serial += 1
         self.__capture(entry)
@@ -863,6 +870,8 @@ class TaskQueue:
                 total=total,
                 message=message if isinstance(message, str) else None,
                 summary=summary if isinstance(summary, str) else None,
+                # not clean only when a done job was saved as exactly that (#712): anything else reads as clean
+                clean=saved is not JobState.DONE or item.get("clean") is not False,
             )
         except ValueError as error_raised:
             # a job class whose chain family this build no longer registers: one dropped row, never a failed start
@@ -951,6 +960,7 @@ class TaskQueue:
             "state": captured.state,
             "message": entry.message,
             "summary": entry.summary,
+            "clean": entry.clean,
         }
         if entry.resumes_where_it_stopped:
             item["done"] = captured.done
@@ -1242,6 +1252,9 @@ class TaskQueue:
         row it deleted has just failed would be announcing a job that, as far as anyone watching is
         concerned, no longer exists.
 
+        **An unclean finish is logged even then** (#712): a job removed while it ran and finishing anyway may still
+        have left something to act on, and with its row gone the log is the one place left to say so.
+
         **A paused outcome is reconciled against what was asked by the time it lands.** The job's raise
         and this recording are two moments with its own cleanup between them, and a request can arrive
         in the gap. A cancel that came after the pause wins, since recorded onto a parked job it would
@@ -1256,6 +1269,9 @@ class TaskQueue:
         state, message, retry_after = entry.context.run(self.__invoke, entry, control)
         with self.__condition:
             self.__running.pop(entry.lane, None)
+            outcome = TaskQueue.__outcome_of(entry) if state is JobState.DONE else None
+            if outcome is not None and not outcome.clean:
+                entry.context.run(TaskQueue.__log_unclean, entry, outcome)
             if self.__entry(entry.serial) is entry:
                 with self.__watching_paused():
                     if state is JobState.PAUSED:
@@ -1276,28 +1292,42 @@ class TaskQueue:
                     entry.resume_requested = False
                     entry.state = state
                     entry.message = message
-                    entry.summary = TaskQueue.__summary_of(entry) if state is JobState.DONE else None
+                    entry.summary = None if outcome is None else outcome.summary
+                    entry.clean = outcome is None or outcome.clean
                     self.__notify_updated(entry)
             self.__condition.notify_all()
 
     @staticmethod
-    def __summary_of(entry: TaskQueue.Entry) -> str | None:
+    def __outcome_of(entry: TaskQueue.Entry) -> JobOutcome | None:
         """What a job that just finished says it found, if it reports one (#457).
 
-        Defensive, like everything the engine asks of a job: a job whose report raises costs its own summary, never
+        Defensive, like everything the engine asks of a job: a job whose report raises costs its own outcome, never
         the state the engine is about to record.
 
         :param entry: the finished job.
-        :returns: its one-line outcome; ``None`` for a job that reports none.
+        :returns: its outcome; ``None`` for a job that reports none.
         """
         if not isinstance(entry.job, ReportingTaskJob):
             return None
         try:
-            outcome = entry.job.outcome
+            return entry.job.outcome
         except Exception as error:  # pylint: disable=broad-exception-caught
             LOG.warning("Task outcome could not be read: %s", entry.label, exc_info=error)
             return None
-        return None if outcome is None else outcome.summary
+
+    @staticmethod
+    def __log_unclean(entry: TaskQueue.Entry, outcome: JobOutcome) -> None:
+        """Say once, in the log, that a job finished with something left to act on (#712).
+
+        The engine says it whoever is listening: a row in the Tasks dock and a banner on the document that started the
+        task are surfaces, and either may be closed. Run in the job's captured context, like its failure line, so the
+        record is found from the Tasks dock, the document's log and the window's.
+
+        :param entry: the finished job.
+        :param outcome: what it said it found.
+        """
+        with LogScope.open(JobScope(entry.serial)):
+            LOG.warning("Task finished with something to look at: %s -- %s", entry.label, outcome.summary)
 
     @staticmethod
     def __invoke(entry: TaskQueue.Entry, control: TaskQueue.Control) -> tuple[JobState, str | None, float]:

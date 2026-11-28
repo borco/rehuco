@@ -4,16 +4,52 @@ view draws its own text -- both in the paint order `LogLevelDelegate`/`LogMessag
 """
 
 from collections.abc import Mapping
-from typing import Final
+from typing import Final, Literal
 
 from borco_pyside.logging import BAND_TINT_ALPHA
 from PySide6.QtCore import QModelIndex, QObject, QPersistentModelIndex, QRect, Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
-from rehuco_core import JobState
+from rehuco_core import JobState, JobStatus, TaskQueueItem
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a delegate method; the persistent form arrives from a view holding onto an index."""
+
+UNCLEAN_DONE: Final = "unclean_done"
+"""What a done row whose outcome is not clean is drawn as (#712): a warning, not a success."""
+
+type TaskRowKey = JobState | Literal["unclean_done"]
+"""What a row's look is chosen by: its state, but for a done job that left something to act on, :data:`UNCLEAN_DONE`."""
+
+
+def row_key(state: JobState, *, clean: bool = True) -> TaskRowKey:
+    """What a row is drawn as.
+
+    :param state: the row's job state.
+    :param clean: whether its outcome left nothing to act on (:attr:`~rehuco_core.JobStatus.clean`).
+    :returns: :data:`UNCLEAN_DONE` for a done job that is not clean, else the state.
+    """
+    return UNCLEAN_DONE if state is JobState.DONE and not clean else state
+
+
+def saved_row_key(item: TaskQueueItem) -> TaskRowKey | str | None:
+    """What a saved row will be drawn as once restored, read off the item the queue wrote (#712).
+
+    :param item: the saved item.
+    :returns: :data:`UNCLEAN_DONE` for a done job saved as not clean, else its saved state as written.
+    """
+    state = item.get("job_state")
+    return UNCLEAN_DONE if state == JobState.DONE and item.get("clean") is False else state
+
+
+def status_key(status: JobStatus) -> TaskRowKey:
+    """What a row is drawn as, read off its status.
+
+    :param status: the job to draw.
+    :returns: its :func:`row_key`.
+    """
+    return row_key(status.state, clean=status.clean)
+
 
 TEXT_HPADDING: Final = 4
 """Horizontal inset of a cell's text from its rect, in pixels."""
@@ -30,17 +66,20 @@ class TaskRowDelegate(QStyledItemDelegate):
     table).
 
     **The colors come from the caller.** A state absent from ``state_colors`` is drawn plain -- the
-    treatment ``PAUSED`` gets: there is nothing to draw attention to about a job someone parked.
+    treatment ``PAUSED`` gets: there is nothing to draw attention to about a job someone parked. A done job that is
+    not clean is its own key, :data:`UNCLEAN_DONE` (#712), so the caller can color it apart from one that finished well.
 
     :param parent: optional Qt parent.
-    :param state_colors: the tint per state; states absent from it are drawn plain.
+    :param state_colors: the tint per state, and per :data:`UNCLEAN_DONE`; keys absent from it are drawn plain.
     """
 
-    def __init__(self, parent: QObject | None = None, *, state_colors: Mapping[JobState, QColor] | None = None) -> None:
+    def __init__(
+        self, parent: QObject | None = None, *, state_colors: Mapping[TaskRowKey, QColor] | None = None
+    ) -> None:
         super().__init__(parent)
-        self.__state_colors: dict[JobState, QColor] = dict(state_colors or {})
+        self.__state_colors: dict[TaskRowKey, QColor] = dict(state_colors or {})
 
-    def color_for(self, state: JobState) -> QColor | None:
+    def color_for(self, state: TaskRowKey) -> QColor | None:
         """The caller's color for ``state``, at full strength.
 
         What :meth:`tint_for` waters down for a background, and what anything wanting the state's own
@@ -52,7 +91,7 @@ class TaskRowDelegate(QStyledItemDelegate):
         color = self.__state_colors.get(state)
         return QColor(color) if color is not None else None
 
-    def tint_for(self, state: JobState) -> QColor | None:
+    def tint_for(self, state: TaskRowKey) -> QColor | None:
         """The color this delegate fills ``state``'s rows with, alpha already applied.
 
         :param state: the state to look up.
@@ -65,7 +104,7 @@ class TaskRowDelegate(QStyledItemDelegate):
         tint.setAlpha(BAND_TINT_ALPHA)
         return tint
 
-    def paint_background(self, painter: QPainter, option: QStyleOptionViewItem, state: JobState) -> None:
+    def paint_background(self, painter: QPainter, option: QStyleOptionViewItem, state: TaskRowKey) -> None:
         """Fill the cell: the selection color when selected, then the state's tint over it.
 
         :param painter: the painter to draw with.

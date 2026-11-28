@@ -11,7 +11,7 @@ from rehuco_core import JobState, JobStatus
 
 from .task_progress_renderers import progress_text
 from .task_queue_model import TaskQueueModel
-from .task_row_delegate import TEXT_HPADDING, ModelIndex, TaskRowDelegate
+from .task_row_delegate import TEXT_HPADDING, ModelIndex, TaskRowDelegate, TaskRowKey, status_key
 
 FIGURE_WIDTH: Final = 100
 """How much of the cell's right-hand edge is kept for the progress figure, in pixels.
@@ -91,7 +91,7 @@ class TaskInfoDelegate(TaskRowDelegate):
             return
         painter.save()
         try:
-            self.paint_background(painter, option, status.state)
+            self.paint_background(painter, option, status_key(status))
             if status.state in (JobState.FAILED, JobState.WAITING) or (
                 status.state is JobState.PAUSED and status.message is not None
             ):
@@ -123,9 +123,9 @@ class TaskInfoDelegate(TaskRowDelegate):
             self.paint_text(painter, figure, text, alignment=Qt.AlignmentFlag.AlignRight)
         total = status.total
         if total is not None and total > 0:
-            self.__paint_bar(painter, option, status.state, status.done / total)
+            self.__paint_bar(painter, option, status_key(status), status.done / total)
 
-    def __paint_bar(self, painter: QPainter, option: QStyleOptionViewItem, state: JobState, fraction: float) -> None:
+    def __paint_bar(self, painter: QPainter, option: QStyleOptionViewItem, state: TaskRowKey, fraction: float) -> None:
         """Draw the bar: an outlined groove, filled to ``fraction`` in the state's own color.
 
         **Drawn here rather than through the style** (#251's rule, applied to the one cell that had
@@ -160,7 +160,7 @@ class TaskInfoDelegate(TaskRowDelegate):
         finally:
             painter.restore()
 
-    def __chunk_color(self, state: JobState, ink: QColor) -> QColor:
+    def __chunk_color(self, state: TaskRowKey, ink: QColor) -> QColor:
         """What the filled part is drawn in: the state's own color, else the row's ink, muted.
 
         :param state: the row's job state.

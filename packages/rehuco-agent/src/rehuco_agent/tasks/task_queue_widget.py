@@ -32,7 +32,7 @@ from rehuco_core import (
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..dock_maximize import attach_maximize_handler
-from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR
+from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR, WARNING_COLOR
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.logs_settings import shared_logs_settings
 from .partial_copy_question import GiveUp, PartialCopyQuestion
@@ -40,6 +40,7 @@ from .pending_saves_filter import PendingSavesFilter, is_pending_save
 from .task_info_delegate import TaskInfoDelegate
 from .task_queue_model import INFO_COLUMN, LABEL_COLUMN, STARTS_OVER_HINT, STATE_COLUMN, TaskQueueModel
 from .task_queue_widget_ui import Ui_TaskQueueWidget
+from .task_row_delegate import UNCLEAN_DONE, TaskRowKey, status_key
 from .task_state_delegate import STATE_COLUMN_WIDTH, TaskStateDelegate
 from .task_text_delegate import TaskTextDelegate
 
@@ -91,18 +92,21 @@ PENDING_SAVES_STATE_KEY: Final = "pending_saves"
 MAXIMIZED_DOCK_STATE_KEY: Final = "maximized_dock"
 """The key the saved layout keeps the name of its maximized sub-dock under, beside the tree (#576)."""
 
-TASK_STATE_COLORS: Final[dict[JobState, QColor]] = {
+TASK_STATE_COLORS: Final[dict[TaskRowKey, QColor]] = {
     JobState.QUEUED: QColor(QUEUED_COLOR),
     JobState.WAITING: QColor(QUEUED_COLOR),
     JobState.RUNNING: QColor(INFO_COLOR),
     JobState.DONE: QColor(DONE_COLOR),
+    UNCLEAN_DONE: QColor(WARNING_COLOR),
     JobState.FAILED: QColor(ERROR_COLOR),
     JobState.CANCELED: QColor(ERROR_COLOR),
 }
 """What a task row is tinted by (#251), from the same tokens the log dock and the inline notice banner
 use (`rehuco_agent.fields.colors`) -- ``FAILED``/``CANCELED`` sharing :data:`~.fields.colors.ERROR_COLOR`
 by decision: both are *did not finish*, and what separates a job that broke from one that was stopped
-on purpose is left to the state column's text. ``WAITING`` shares the queued color for the same kind of reason:
+on purpose is left to the state column's text. A done job that is not clean takes
+:data:`~.fields.colors.WARNING_COLOR` (#712): it finished, so it is not an error, and it is not a success either.
+``WAITING`` shares the queued color for the same kind of reason:
 both are *will run by itself*, and the glyph tells them apart.
 
 ``JobState.PAUSED`` is deliberately absent, which paints it plain, the same way
@@ -324,7 +328,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         ui.retry_action.triggered.connect(self.__retry_selection)
         ui.clear_action.triggered.connect(self.__clear_selection)
         ui.clear_done_action.triggered.connect(lambda: self.__clear_in({JobState.DONE}))
-        ui.clear_failed_action.triggered.connect(lambda: self.__clear_in({JobState.FAILED}))
+        ui.clear_failed_action.triggered.connect(lambda: self.__clear_in({JobState.FAILED, UNCLEAN_DONE}))
         ui.clear_all_action.triggered.connect(self.__clear_all)
         ui.move_to_top_action.triggered.connect(lambda: self.__move_to_end(top=True))
         ui.move_up_action.triggered.connect(lambda: self.__move_by(-1))
@@ -715,22 +719,28 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
             self.discard_saves_requested.emit(dropped)
         return [serial for serial in serials if serial not in pending]
 
-    def __clear_in(self, states: set[JobState]) -> None:
-        """Remove every job currently in one of ``states`` -- a dock sweep, not an engine feature
+    def __clear_in(self, keys: set[TaskRowKey]) -> None:
+        """Remove every job currently drawn as one of ``keys`` -- a dock sweep, not an engine feature
         (#237 deleted ``clear_finished()`` for exactly this reason: deciding *which* jobs a sweep drops
         is a view's business). A failed save is not swept: it has not landed, and still holds the edits it could not
-        write ([[sync#unlanded-save]], #497).
+        write ([[sync#unlanded-save]], #497). A done job that is not clean is swept with the failed ones, not the done
+        ones (#712): it is the row a reader has still to look at.
 
-        :param states: which finished states to drop.
+        :param keys: which finished states to drop, :data:`~.task_row_delegate.UNCLEAN_DONE` for the done jobs that
+            are not clean.
         """
         self.__remove(
-            [status.serial for status in self.__queue.jobs() if status.state in states and not is_pending_save(status)]
+            [
+                status.serial
+                for status in self.__queue.jobs()
+                if status_key(status) in keys and not is_pending_save(status)
+            ]
         )
 
     def __clear_all(self) -> None:
         """Remove every finished row -- but the saves that have not landed: each still holds edits, and is dropped only
         by asking for it ([[sync#unlanded-save]], #497). An unfinished job stays: it leaves by Cancel (#634)."""
-        self.__clear_in(set(FINISHED_JOB_STATES))
+        self.__clear_in({*FINISHED_JOB_STATES, UNCLEAN_DONE})
 
     def __inspect_selection(self) -> None:
         """Ask the owner to show the one selected save (#497)."""

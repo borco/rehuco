@@ -536,6 +536,15 @@ on the row as `JobStatus.summary`, saved and restored like the failure reason. I
 row can show, so the Tasks dock and a document's banner say the same thing in the same words, while the per-file
 findings stay on the job and in the log.
 
+**A finish that is not clean is shown as one** (#712). `JobOutcome.clean` is *the user should look*: the record move
+that left its original behind, the rebalance that left files, a verify with mismatches, a license refresh with a result
+to look into. The engine keeps it on the row as `JobStatus.clean`, saved and restored beside the summary (a queue file
+without it reads as clean), and when a job finishes with it false writes one WARNING, the task's label and its summary,
+under the job's own scope -- so the log holds it with no document open and no dock visible. The dock draws such a row as
+a warning, not a success: its own glyph, the warning color and *Done, needs a look*, the summary in the info cell. Where
+the dock tells a failed row from a done one, it counts this row with the failed: *Clear failed jobs* and the *clear
+failed tasks* restart setting take it, *Clear done jobs* and *clear done tasks* leave it.
+
 `SweepChecksumsJob` (#242) is the third, and it is what §3.1 was written for — **a job whose cursor is its
 own output**. It keeps nothing at all: re-entering `run` walks the folder again and skips every resource the
 last pass finished, because that pass wrote each record's dates as it went. Two things fell out of building
@@ -662,12 +671,13 @@ every pixel this delegate decided, identical on all three platforms. It is the s
 applied to the one cell that had escaped it: **this table paints its own background, and a style-drawn
 box over the top is not a cell this table controls.**
 
-**The state column is icons, no words.** Nine glyphs cover every reading it ever had — the seven states,
+**The state column is icons, no words.** Ten glyphs cover every reading it ever had — the seven states,
 plus *pausing* and *canceling* for a job that has been asked to stop and has not reached its checkpoint
-(§3.3). Each takes the state's own color, so a row and its glyph are one signal seen twice; `PAUSED`,
-which #251 leaves untinted, draws in the row's own ink for the same reason it draws no tint. `WAITING` shares the
-queued color — both mean *will run by itself* — and draws a clock rather than a second hourglass, because waiting for
-its turn and waiting for something outside the app must not read as one at a glance. Losing the
+(§3.3), and a warning triangle for a done job that left something to act on (#712). Each takes the state's own
+color, so a row and its glyph are one signal seen twice; `PAUSED`, which #251 leaves untinted, draws in the row's own
+ink for the same reason it draws no tint. `WAITING` shares the queued color — both mean *will run by itself* — and
+draws a raised hand rather than a second hourglass, because waiting for its turn and waiting for something outside the
+app must not read as one at a glance. Losing the
 words is what lets the column shrink to the width of its own header and gives the eye something to scan
 a long queue by, and the sentence is not gone: `state_text` still writes it, the model still answers it
 as the display role, and it leads the row's tooltip — which is what an icon-only cell owes a reader who

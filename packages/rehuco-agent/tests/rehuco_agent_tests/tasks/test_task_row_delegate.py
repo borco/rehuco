@@ -13,13 +13,20 @@ from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
-from rehuco_agent.tasks.task_row_delegate import TaskRowDelegate
-from rehuco_core import JobState
+from rehuco_agent.tasks.task_row_delegate import (
+    UNCLEAN_DONE,
+    TaskRowDelegate,
+    TaskRowKey,
+    row_key,
+    saved_row_key,
+    status_key,
+)
+from rehuco_core import JobState, JobStatus, TaskQueueItem
 
 QUEUED_COLOR: Final = QColor("#FFB300")
 FAILED_COLOR: Final = QColor("#C62828")
 
-STATE_COLORS: Final = {JobState.QUEUED: QUEUED_COLOR, JobState.FAILED: FAILED_COLOR}
+STATE_COLORS: Final[dict[TaskRowKey, QColor]] = {JobState.QUEUED: QUEUED_COLOR, JobState.FAILED: FAILED_COLOR}
 """Two of the six states colored, so the untinted case (``RUNNING``, absent here) is covered too."""
 
 CELL: Final = QRect(0, 0, 120, 24)
@@ -116,6 +123,70 @@ def test_a_state_with_no_color_has_no_tint(delegate: TaskRowDelegate, state: Job
     * assert there is no tint
     """
     assert delegate.tint_for(state) is None
+
+
+def test_an_unclean_done_row_is_tinted_by_its_own_color() -> None:
+    """A done row that is not clean has a key of its own, so a caller can color it apart from a clean one (#712).
+
+    **Test steps:**
+
+    * build a delegate whose map colors the done and unclean-done keys differently
+    * verify each key answers its own tint
+    """
+    warning = QColor("#F4511E")
+    delegate = TaskRowDelegate(state_colors={JobState.DONE: QUEUED_COLOR, UNCLEAN_DONE: warning})
+
+    done_tint, unclean_tint = delegate.tint_for(JobState.DONE), delegate.tint_for(UNCLEAN_DONE)
+
+    assert done_tint is not None
+    assert unclean_tint is not None
+    assert (done_tint.rgb(), unclean_tint.rgb()) == (QUEUED_COLOR.rgb(), warning.rgb())
+
+
+@mark.parametrize(
+    ("state", "clean", "expected"),
+    [
+        (JobState.DONE, True, JobState.DONE),
+        (JobState.DONE, False, UNCLEAN_DONE),
+        (JobState.FAILED, False, JobState.FAILED),
+        (JobState.RUNNING, False, JobState.RUNNING),
+    ],
+)
+def test_only_a_done_row_that_is_not_clean_has_the_unclean_key(
+    state: JobState, clean: bool, expected: JobState | str
+) -> None:
+    """Not clean is a way of being done: it changes how nothing else is drawn (#712).
+
+    **Test steps:**
+
+    * ask for the key of a row in each state, clean or not
+    * verify only the done row that is not clean answers the unclean key, from the state and from the status alike
+    """
+    assert row_key(state, clean=clean) == expected
+    assert status_key(JobStatus(serial=1, label="job", state=state, clean=clean)) == expected
+
+
+@mark.parametrize(
+    ("item", "expected"),
+    [
+        ({"job_state": "done", "clean": False}, UNCLEAN_DONE),
+        ({"job_state": "done", "clean": True}, "done"),
+        ({"job_state": "done"}, "done"),
+        ({"job_state": "failed", "clean": False}, "failed"),
+        ({}, None),
+    ],
+)
+def test_a_saved_row_has_the_key_it_will_be_drawn_by(item: dict[str, object], expected: str | None) -> None:
+    """The restart sweeps read the saved item the way the dock will read the restored row (#712).
+
+    **Test steps:**
+
+    * ask for the key of saved items: not clean, clean, written before the flag existed, failed, and empty
+    * verify only a done item saved as not clean has the unclean key, and the rest read as their saved state
+    """
+    saved: TaskQueueItem = item  # type: ignore[assignment]
+
+    assert saved_row_key(saved) == expected
 
 
 # endregion

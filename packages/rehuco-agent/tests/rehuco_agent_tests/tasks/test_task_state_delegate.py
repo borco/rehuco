@@ -15,8 +15,9 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.svg_icon_cache import SvgIconCache
 from rehuco_agent.tasks.task_queue_model import TaskQueueModel
+from rehuco_agent.tasks.task_row_delegate import UNCLEAN_DONE, TaskRowKey
 from rehuco_agent.tasks.task_state_delegate import STATUS_ICON_SIZE, TaskStateDelegate
-from rehuco_agent.tasks.task_status_icons import PENDING_STOP_ICONS, STATE_ICONS
+from rehuco_agent.tasks.task_status_icons import PENDING_STOP_ICONS, STATE_ICONS, UNCLEAN_DONE_ICON
 from rehuco_core import JobState, JobStatus, StopRequest
 
 CELL: Final = QRect(0, 0, 52, 24)
@@ -24,7 +25,13 @@ CELL: Final = QRect(0, 0, 52, 24)
 RUNNING_COLOR: Final = QColor("#64B5F6")
 DONE_COLOR: Final = QColor("#43A047")
 
-STATE_COLORS: Final = {JobState.RUNNING: RUNNING_COLOR, JobState.DONE: DONE_COLOR}
+WARNING_COLOR: Final = QColor("#F4511E")
+
+STATE_COLORS: Final[dict[TaskRowKey, QColor]] = {
+    JobState.RUNNING: RUNNING_COLOR,
+    JobState.DONE: DONE_COLOR,
+    UNCLEAN_DONE: WARNING_COLOR,
+}
 """Two states colored, so the uncolored case (``PAUSED``, as the app itself leaves it) is covered."""
 
 
@@ -120,6 +127,21 @@ def test_a_state_with_a_color_draws_its_glyph_in_it(
     paint(JobStatus(serial=1, label="job", state=JobState.RUNNING), painter, option)
 
     assert requested(asked) == (STATE_ICONS[JobState.RUNNING], RUNNING_COLOR)
+
+
+def test_a_done_row_that_is_not_clean_draws_its_own_glyph_in_the_warning_color(
+    painter: QPainter, option: QStyleOptionViewItem, asked: Any
+) -> None:
+    """A finished job with something to act on is drawn as a warning, not as the success its state says (#712).
+
+    **Test steps:**
+
+    * paint a done row that is not clean
+    * verify the unclean glyph was asked for, in the warning color rather than the done one
+    """
+    paint(JobStatus(serial=1, label="job", state=JobState.DONE, clean=False), painter, option)
+
+    assert requested(asked) == (UNCLEAN_DONE_ICON, WARNING_COLOR)
 
 
 def test_a_state_with_no_color_draws_in_the_rows_own_ink(

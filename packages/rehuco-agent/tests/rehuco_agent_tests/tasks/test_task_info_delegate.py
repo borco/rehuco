@@ -18,6 +18,7 @@ from pytest_mock import MockerFixture
 from rehuco_agent.tasks import task_info_delegate as delegate_module
 from rehuco_agent.tasks.task_info_delegate import BAR_HEIGHT, FIGURE_WIDTH, TaskInfoDelegate
 from rehuco_agent.tasks.task_queue_model import TaskQueueModel
+from rehuco_agent.tasks.task_row_delegate import TaskRowKey
 from rehuco_core import PROGRESS_UNIT_BYTES, JobState, JobStatus
 
 CELL: Final = QRect(0, 0, 400, 24)
@@ -26,7 +27,7 @@ CELL: Final = QRect(0, 0, 400, 24)
 RUNNING_COLOR: Final = QColor("#64B5F6")
 DONE_COLOR: Final = QColor("#43A047")
 
-STATE_COLORS: Final = {JobState.RUNNING: RUNNING_COLOR, JobState.DONE: DONE_COLOR}
+STATE_COLORS: Final[dict[TaskRowKey, QColor]] = {JobState.RUNNING: RUNNING_COLOR, JobState.DONE: DONE_COLOR}
 """Two states colored, so the uncolored case (``PAUSED``, as the app itself leaves it) is covered."""
 
 COUNTED: Final = "counted"

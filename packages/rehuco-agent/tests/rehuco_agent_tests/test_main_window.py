@@ -6023,8 +6023,8 @@ def test_a_queue_that_will_not_settle_is_logged_rather_than_waited_on(
 @mark.parametrize(
     ("clear_done", "clear_failed", "kept"),
     [
-        (False, False, ["done", "failed", "canceled", "queued", "failed save"]),
-        (True, False, ["failed", "canceled", "queued", "failed save"]),
+        (False, False, ["done", "unclean", "failed", "canceled", "queued", "failed save"]),
+        (True, False, ["unclean", "failed", "canceled", "queued", "failed save"]),
         (False, True, ["done", "canceled", "queued", "failed save"]),
         (True, True, ["canceled", "queued", "failed save"]),
     ],
@@ -6038,12 +6038,14 @@ def test_each_clear_on_restart_setting_drops_only_its_own_kind(
 
     **Test steps:**
 
-    * stand in a saved queue holding one job of each finished state, plus one queued and one failed save
+    * stand in a saved queue holding one job of each finished state, a done one that was not clean (#712, swept
+      with the failed ones), plus one queued and one failed save
     * set each combination of the two clear settings
     * verify exactly the expected jobs reached ``restore``
     """
     saved = [
         {"kind": "x", "label": "done", "job_state": "done", "state": {}},
+        {"kind": "x", "label": "unclean", "job_state": "done", "state": {}, "clean": False},
         {"kind": "x", "label": "failed", "job_state": "failed", "state": {}},
         {"kind": "x", "label": "canceled", "job_state": "canceled", "state": {}},
         {"kind": "x", "label": "queued", "job_state": "queued", "state": {}},

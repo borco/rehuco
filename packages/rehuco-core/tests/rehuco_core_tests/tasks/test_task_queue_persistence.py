@@ -162,6 +162,20 @@ class ReportingCounterJob(CounterJob):
         return JobOutcome("2 matched")
 
 
+class UncleanCounterJob(CounterJob):
+    """A persistable job whose run leaves something to act on (#712)."""
+
+    kind = "unclean-counter"
+
+    @property
+    def outcome(self) -> JobOutcome | None:
+        """What the run found.
+
+        :returns: a fixed one-line outcome that is not clean.
+        """
+        return JobOutcome("1 mismatched", clean=False)
+
+
 # endregion
 
 # region Fixtures
@@ -187,6 +201,7 @@ def registry_fixture() -> TaskJobRegistry:
     registry = TaskJobRegistry()
     registry.register(CounterJob.kind, CounterJob)
     registry.register(ReportingCounterJob.kind, ReportingCounterJob)
+    registry.register(UncleanCounterJob.kind, UncleanCounterJob)
     return registry
 
 
@@ -825,6 +840,52 @@ def test_a_summary_is_only_taken_back_for_a_done_job_and_only_as_text(
     queue.restore(items, registry)
 
     assert [status.summary for status in queue.jobs()] == [None, None]
+
+
+def test_a_finished_job_that_was_not_clean_is_not_clean_after_a_restart(
+    queue: TaskQueue, registry: TaskJobRegistry, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """A row that needed a look still says so once the app has been restarted (#712).
+
+    **Test steps:**
+
+    * run an unclean job and a clean one and serialize the queue
+    * restore the items into a second queue
+    * verify the saved items carried whether each was clean and the restored rows say the same
+    """
+    queue.enqueue(UncleanCounterJob("unclean"))
+    queue.enqueue(ReportingCounterJob("clean"))
+    settles(lambda: all(status.state is JobState.DONE for status in queue.jobs()))
+    items = queue.serialize()
+
+    second = TaskQueue()
+    try:
+        second.restore(items, registry)
+        assert [item.get("clean") for item in items] == [False, True]
+        assert [status.clean for status in second.jobs()] == [False, True]
+    finally:
+        second.shutdown()
+
+
+def test_a_saved_item_without_a_clean_flag_restores_clean(queue: TaskQueue, registry: TaskJobRegistry) -> None:
+    """A queue file written before #712 has no flag, and a flag that is not a bool, or sits on a row not done, is
+    not trusted: each reads as clean.
+
+    **Test steps:**
+
+    * restore a done job with no flag, a done job whose flag is not a bool and a failed job saved as not clean
+    * verify every row is clean
+    """
+    not_bool: Any = "no"
+    items: list[TaskQueueItem] = [
+        {"kind": "counter", "label": "old", "job_state": "done", "state": {"cursor": 0}},
+        {"kind": "counter", "label": "odd", "job_state": "done", "state": {"cursor": 0}, "clean": not_bool},
+        {"kind": "counter", "label": "failed", "job_state": "failed", "state": {"cursor": 0}, "clean": False},
+    ]
+
+    queue.restore(items, registry)
+
+    assert [status.clean for status in queue.jobs()] == [True, True, True]
 
 
 # endregion

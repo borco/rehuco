@@ -166,6 +166,7 @@ from .tasks import (
     TaskQueueWidget,
     job_already_queued,
 )
+from .tasks.task_row_delegate import UNCLEAN_DONE, TaskRowKey, saved_row_key
 from .tray_icon import TrayIcon
 
 LOG: Final = logging.getLogger(__name__)
@@ -1809,17 +1810,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         settings = TasksSettings()
         settings.load(persistent_settings())
         items = self.__task_queue_store.read_items()
-        dropped_states = set()
+        dropped_states: set[TaskRowKey] = set()
         if settings.clear_done_on_restart:
             dropped_states.add(JobState.DONE)
         if settings.clear_failed_on_restart:
-            dropped_states.add(JobState.FAILED)
+            # a done task that was not clean is swept with the failed ones, not the done ones (#712)
+            dropped_states.update((JobState.FAILED, UNCLEAN_DONE))
         if dropped_states:
             # a failed save still holds the edits it could not land (#497): never swept, whatever the setting says
             items = [
                 item
                 for item in items
-                if item.get("job_state") not in dropped_states
+                if saved_row_key(item) not in dropped_states
                 or (item.get("job_state") == JobState.FAILED and item.get("kind") == SAVE_RECORD_KIND)
             ]
         unfinished_state = JobState.QUEUED if settings.resume_on_restart else JobState.PAUSED

@@ -901,6 +901,45 @@ def test_the_sweeps_drop_only_their_own_kind(widget: TaskQueueWidget, rig: Rig) 
     assert rig.queue.remove.call_args_list == [call(rig.serial("done")), call(rig.serial("failed"))]
 
 
+def test_a_done_job_that_is_not_clean_is_swept_with_the_failed_ones(widget: TaskQueueWidget, rig: Rig) -> None:
+    """The row a reader still has to look at goes with the failed, not with the done (#712).
+
+    **Test steps:**
+
+    * script a done job, a done job that is not clean and a failed job
+    * trigger Clear done, then Clear failed
+    * verify Clear done took only the clean one, and Clear failed took the failed one and the unclean one
+    """
+    rig.add("done", JobState.DONE)
+    rig.add("unclean", JobState.DONE, summary="1 mismatched", clean=False)
+    rig.add("failed", JobState.FAILED, message="ValueError: nope")
+    rig.settle()
+    ui = ui_of(widget)
+
+    ui.clear_done_action.trigger()  # type: ignore[attr-defined]
+    ui.clear_failed_action.trigger()  # type: ignore[attr-defined]
+
+    assert rig.queue.remove.call_args_list == [call(rig.serial("done")), call(*rig.serials("unclean", "failed"))]
+
+
+def test_clear_all_takes_a_done_job_that_is_not_clean_too(widget: TaskQueueWidget, rig: Rig) -> None:
+    """*Clear all* removes what is finished however it finished, an unclean done job included (#712).
+
+    **Test steps:**
+
+    * script a done job that is not clean and a running job
+    * trigger Clear all
+    * verify the engine was asked to remove the unclean one alone
+    """
+    rig.add("unclean", JobState.DONE, clean=False)
+    rig.add("running", JobState.RUNNING)
+    rig.settle()
+
+    ui_of(widget).clear_all_action.trigger()  # type: ignore[attr-defined]
+
+    rig.queue.remove.assert_called_once_with(rig.serial("unclean"))
+
+
 def test_a_sweep_with_nothing_of_its_kind_removes_nothing(widget: TaskQueueWidget, rig: Rig) -> None:
     """A sweep over a queue holding none of its kind is a no-op, not an empty removal.
 
