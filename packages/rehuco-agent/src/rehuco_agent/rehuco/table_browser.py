@@ -27,6 +27,7 @@ from .catalog_table_model import (
     RowKey,
 )
 from .copied_paths import CopyFormat, json_paths, quoted_paths
+from .file_reveals import OPEN_IN_FILE_BROWSER_TEXT
 from .filter_line import SCOPE_SEPARATOR, SCOPE_TOKEN, parse_filter, with_token, without_retired_tokens
 from .rehuco_browser_panel_ui import Ui_RehucoBrowserPanel
 from .status_line_label import StatusLineLabel
@@ -106,6 +107,12 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
     current_changed: Signal = Signal(object)
     """Emitted with the new :attr:`current_resource` -- a ``(root_id, relative)`` pair, or ``None`` -- whenever it
     changes: by a selection, or by the selected row itself being renamed or removed."""
+
+    reveal_requested: Signal = Signal(object)
+    """Emitted when *Open in Explorer* (or the platform's file browser) is chosen (#720), with the selected rows'
+    :data:`~rehuco_agent.rehuco.catalog_table_model.RowKey` tuple in the table's order: the catalog resolves them to
+    paths. The entry is disabled while every selected row is under a root that cannot be reached. Typed as plain
+    ``object``, as below."""
 
     copy_paths_requested: Signal = Signal(object, object, object)
     """Emitted when *Copy paths* or *Copy paths as JSON* is chosen (#646), with the selected rows'
@@ -458,8 +465,9 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
 
     def __on_context_menu(self, position: QPoint) -> None:
         """Open the table's menu, if it has anything to offer: an Authors cell offers to filter by each of its authors
-        (#460), and a selection to open its rows' pages (#679), refresh their licenses (#688) or copy their paths
-        (#646), after a separator when both do. A cell with no authors and nothing selected opens nothing.
+        (#460), and a selection to open its rows in the file browser (#720) or their pages (#679), refresh their
+        licenses (#688) or copy their paths (#646), after a separator when both do. A cell with no authors and
+        nothing selected opens nothing.
 
         :param position: where it was asked for, in the table's viewport coordinates.
         """
@@ -476,6 +484,9 @@ class TableBrowser(QWidget):  # pylint: disable=too-many-instance-attributes
             if authors and selected:
                 menu.addSeparator()
             if selected:
+                reveal = menu.addAction(OPEN_IN_FILE_BROWSER_TEXT)
+                reveal.setEnabled(any(self.__model.offline_reason(root_id) is None for root_id, _relative in selected))
+                reveal.triggered.connect(lambda _checked=False: self.reveal_requested.emit(selected))
                 pages = self.__selected_pages()
                 open_pages = menu.addAction(OPEN_PAGES_TEXT)
                 open_pages.setEnabled(bool(pages))
