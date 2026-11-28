@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QStyleOptionViewItem
 from rehuco_core import JobStatus
 
 from .task_queue_model import TaskQueueModel
-from .task_row_delegate import ModelIndex, TaskRowDelegate
+from .task_row_delegate import ModelIndex, TaskRowDelegate, status_key
 
 
 class TaskTextDelegate(TaskRowDelegate):
@@ -36,7 +36,7 @@ class TaskTextDelegate(TaskRowDelegate):
             return
         painter.save()
         try:
-            self.paint_background(painter, option, status.state)
+            self.paint_background(painter, option, status_key(status))
             text = index.data(Qt.ItemDataRole.DisplayRole)
             self.paint_text(painter, option.rect, text if isinstance(text, str) else "")
         finally:

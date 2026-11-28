@@ -23,7 +23,7 @@ from pathlib import Path
 from threading import Event, Thread, get_ident
 from threading import enumerate as live_threads
 from time import monotonic, sleep
-from typing import Final
+from typing import Final, override
 
 import pytest
 from borco_core.logging import LogScope
@@ -355,12 +355,16 @@ class ReportingJob(SampleJob):
     :param label: the job's label.
     :param summary: what it reports once it has run; ``None`` makes it report nothing.
     :param broken: whether reading its outcome raises.
+    :param clean: whether what it reports leaves nothing to act on.
     """
 
-    def __init__(self, label: str = "reporting", summary: str | None = "3 matched", broken: bool = False) -> None:
+    def __init__(
+        self, label: str = "reporting", summary: str | None = "3 matched", broken: bool = False, clean: bool = True
+    ) -> None:
         super().__init__(label)
         self.__summary: Final = summary
         self.__broken: Final = broken
+        self.__clean: Final = clean
         self.__ran = False
 
     @property
@@ -372,7 +376,7 @@ class ReportingJob(SampleJob):
         """
         if self.__broken:
             raise RuntimeError("no report today")
-        return JobOutcome(self.__summary) if self.__ran and self.__summary is not None else None
+        return JobOutcome(self.__summary, self.__clean) if self.__ran and self.__summary is not None else None
 
     def reset(self) -> None:
         """Forget having run, as a retried job does."""
@@ -2467,6 +2471,147 @@ def test_an_outcome_that_cannot_be_read_costs_only_its_summary(
 
     assert queue.jobs()[0].summary is None
     assert "Task outcome could not be read: opaque" in caplog.text
+
+
+def test_a_job_that_left_something_to_act_on_is_marked_not_clean(
+    queue: TaskQueue, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """The row keeps whether the run was clean, as it keeps what the run found (#712).
+
+    **Test steps:**
+
+    * run a clean reporting job, an unclean one, a silent one and a plain one
+    * verify only the unclean one is not clean, and it is still done with its summary
+    """
+    clean = queue.enqueue(ReportingJob("clean"))
+    unclean = queue.enqueue(ReportingJob("unclean", summary="2 mismatched", clean=False))
+    silent = queue.enqueue(ReportingJob("silent", summary=None))
+    plain = queue.enqueue(RecordingJob("plain"))
+
+    settles(lambda: all(status.state is JobState.DONE for status in queue.jobs()))
+
+    assert {status.serial: status.clean for status in queue.jobs()} == {
+        clean: True,
+        unclean: False,
+        silent: True,
+        plain: True,
+    }
+    assert next(status.summary for status in queue.jobs() if status.serial == unclean) == "2 mismatched"
+
+
+class ScopeRecordingHandler(logging.Handler):
+    """A log handler that notes each record's message and the scopes open as it is logged, which is where a record's
+    scope is read ([[appendices.logging#scopes]])."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.seen: list[tuple[str, tuple[Hashable, ...]]] = []
+
+    @override
+    def emit(self, record: logging.LogRecord) -> None:
+        """Note one record.
+
+        :param record: what was logged.
+        """
+        self.seen.append((record.getMessage(), LogScope.of(record)))
+
+
+def test_an_unclean_finish_is_logged_once_with_the_task_s_label_and_summary(
+    queue: TaskQueue, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """The log says it whoever is listening; a clean finish says nothing at warning level (#712).
+
+    **Test steps:**
+
+    * run a clean job and an unclean one
+    * verify exactly one warning, naming the unclean task and its summary, under that job's own scope
+    """
+    handler = ScopeRecordingHandler()
+    logging.getLogger("rehuco_core.tasks.task_queue").addHandler(handler)
+    try:
+        queue.enqueue(ReportingJob("clean"))
+        unclean = queue.enqueue(ReportingJob("unclean", summary="2 mismatched", clean=False))
+        settles(lambda: all(status.state is JobState.DONE for status in queue.jobs()))
+    finally:
+        logging.getLogger("rehuco_core.tasks.task_queue").removeHandler(handler)
+
+    assert handler.seen == [("Task finished with something to look at: unclean -- 2 mismatched", (JobScope(unclean),))]
+
+
+class HeldUncleanJob(SampleJob):
+    """A job the test holds mid-run, which heeds no stop and finishes with something left to act on (#712).
+
+    :param label: the job's label.
+    """
+
+    def __init__(self, label: str = "held") -> None:
+        super().__init__(label)
+        self.entered: Final = Event()
+        self.release: Final = Event()
+        self.__ran = False
+
+    @property
+    def outcome(self) -> JobOutcome | None:
+        """What the run found.
+
+        :returns: an outcome that is not clean once the job has run, else ``None``.
+        """
+        return JobOutcome("1 left behind", clean=False) if self.__ran else None
+
+    @override
+    def run(self, control: JobControl) -> None:
+        """Announce, wait to be let go, and finish without looking at any request.
+
+        :param control: unused.
+        """
+        del control
+        self.entered.set()
+        self.release.wait(TIMEOUT)
+        self.__ran = True
+
+
+def test_an_unclean_finish_is_logged_for_a_job_removed_while_it_ran(
+    queue: TaskQueue, caplog: pytest.LogCaptureFixture
+) -> None:
+    """With its row gone, the log is the one place left to say the job left something behind (#712).
+
+    **Test steps:**
+
+    * start a job that heeds no stop, remove it while it runs, then let it finish unclean
+    * verify the warning names it and its summary
+    """
+    held = HeldUncleanJob()
+    serial = queue.enqueue(held)
+    assert held.entered.wait(TIMEOUT)
+
+    with caplog.at_level(logging.WARNING):
+        queue.remove(serial)
+        held.release.set()
+        assert queue.wait_until_idle(TIMEOUT)
+
+    assert "Task finished with something to look at: held -- 1 left behind" in caplog.text
+
+
+def test_a_retried_job_is_clean_again_until_it_finishes_unclean(
+    queue: TaskQueue, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """A row about to run again must not go on saying its last run needed a look (#712).
+
+    **Test steps:**
+
+    * run an unclean job, then hold the queue and retry it
+    * verify it is clean while it waits, and unclean again once it has finished
+    """
+    serial = queue.enqueue(ReportingJob("unclean", summary="2 mismatched", clean=False))
+    settles(lambda: not queue.jobs()[0].clean)
+    hold = GatedJob("hold")
+    queue.enqueue(hold)
+    settles(hold.entered.is_set)
+    queue.retry(serial)
+
+    assert queue.jobs()[0].clean
+    hold.release.set()
+    settles(lambda: not queue.jobs()[0].clean)
 
 
 # endregion

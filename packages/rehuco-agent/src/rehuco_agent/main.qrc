@@ -108,6 +108,7 @@
         <file alias="icons/task_canceling.svg">../../../../design/icons/task_canceling.svg</file>
         <file alias="icons/task_clear_done.svg">../../../../design/icons/task_clear_done.svg</file>
         <file alias="icons/task_done.svg">../../../../design/icons/task_done.svg</file>
+        <file alias="icons/task_done_unclean.svg">../../../../design/icons/task_done_unclean.svg</file>
         <file alias="icons/task_failed.svg">../../../../design/icons/task_failed.svg</file>
         <file alias="icons/task_pause.svg">../../../../design/icons/task_pause.svg</file>
         <file alias="icons/task_paused.svg">../../../../design/icons/task_paused.svg</file>

@@ -212,6 +212,24 @@ def test_inspect_opens_the_saves_document_and_looks_at_it_there(mocker: MockerFi
     inspect.assert_called_once_with(window, SERIAL, model)
 
 
+def test_show_rehu_opens_the_record_a_move_names(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """*Show Rehu* on a move row opens the record it names, as any path is opened (#712).
+
+    **Test steps:**
+
+    * build the window with ``open_path`` patched
+    * have the Tasks dock ask for a record
+    * verify that path was opened
+    """
+    open_path = mocker.patch.object(MainWindow, "open_path")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    private(window, "task_queue_widget").open_record_requested.emit(KEY.path)
+
+    open_path.assert_called_once_with(KEY.path)
+
+
 def test_inspect_of_a_row_that_is_no_save_does_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
     """*Inspect* on a row the save owner knows no record for opens nothing.
 

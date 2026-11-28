@@ -9,8 +9,12 @@ vanished parent gives up rather than walking further up looking for one that exi
 
 import sys
 from pathlib import Path
+from typing import Final
 
 from PySide6.QtCore import QDir, QProcess, QUrl
+
+FILE_BROWSER_NAME: Final = {"win32": "Explorer", "darwin": "Finder"}.get(sys.platform, "file manager")
+"""What this platform's file browser is called, for an action that reveals a path in it."""
 
 
 class FileBrowser:  # pylint: disable=too-few-public-methods

@@ -106,6 +106,8 @@ class TaskQueueItem(TypedDict):
     :param error: what a queue file written before #497 calls ``message``; read, never written.
     :param summary: what a finished job found (:attr:`~rehuco_core.tasks.JobStatus.summary`), kept so a restored
         row still says what its run found.
+    :param clean: whether that run left nothing to act on (:attr:`~rehuco_core.tasks.JobStatus.clean`, #712); absent in
+        a file written before it, which reads as clean.
     :param done: units finished. **Written only for a job that declares**
         :attr:`~rehuco_core.tasks.TaskJob.resumes_where_it_stopped`, because only such a job genuinely
         is as far along as its bar says; for a job that starts over, restoring a bar that is about to
@@ -120,5 +122,6 @@ class TaskQueueItem(TypedDict):
     message: NotRequired[str | None]
     error: NotRequired[str | None]
     summary: NotRequired[str | None]
+    clean: NotRequired[bool]
     done: NotRequired[int]
     total: NotRequired[int | None]

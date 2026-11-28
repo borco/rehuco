@@ -9,6 +9,8 @@ from typing import Any, Final, override
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
 from rehuco_core import JobState, JobStatus, StopRequest, TaskQueue
 
+from .task_row_delegate import UNCLEAN_DONE, status_key
+
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
 
@@ -32,6 +34,9 @@ STATE_LABELS: Final = {
 }
 """What a bare state reads as, before :func:`state_text` folds in a pending stop."""
 
+UNCLEAN_DONE_LABEL: Final = "Done, needs a look"
+"""What a done row whose outcome is not clean reads as (#712), the sentence its glyph stands for."""
+
 
 def state_text(status: JobStatus) -> str:
     """What a row's state column says, one field read twice: the state, and whether a stop is pending.
@@ -48,6 +53,8 @@ def state_text(status: JobStatus) -> str:
         return "Canceling…"
     if status.stop_requested is StopRequest.PAUSE:
         return "Pausing…"
+    if status_key(status) == UNCLEAN_DONE:
+        return UNCLEAN_DONE_LABEL
     return STATE_LABELS.get(status.state, status.state)
 
 

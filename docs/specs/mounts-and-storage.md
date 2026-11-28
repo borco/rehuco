@@ -471,6 +471,10 @@ The system chooses *how* to perform a move/rename rather than assuming:
   record lands in, so it is still found after the destination root is mapped elsewhere.
 - **Once the source stopped being a record, the cleanup always runs.** The copy verified, so a cancel past that
   point takes nothing back: a job given up on in its cleanup phase finishes removing the source instead.
+- **A cleanup that could not remove everything keeps its listing** (#712), and the move ends done but not clean. Retry
+  then runs that cleanup again and nothing else — no check, no copy — and ends clean once all of it went, or not clean
+  again with what is still there. The listing is saved with the queue, and so is where the record was, for the Tasks
+  dock to show.
 - **A read-only original is removed too** (#711). Archives carry the modes and attributes of what they stored.
   Windows refuses to remove a file or folder whose read-only attribute is set; POSIX asks the folder holding it, so a
   file in a read-only folder is refused whatever its own mode. A refused removal makes the path writable and tries once

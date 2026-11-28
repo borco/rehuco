@@ -6,11 +6,11 @@ from typing import Final, override
 from PySide6.QtCore import QObject, QRect, QSize
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QStyleOptionViewItem
-from rehuco_core import JobState, JobStatus
+from rehuco_core import JobStatus
 
 from ..svg_icon_cache import SvgIconCache
 from .task_queue_model import TaskQueueModel
-from .task_row_delegate import ModelIndex, TaskRowDelegate
+from .task_row_delegate import ModelIndex, TaskRowDelegate, TaskRowKey, status_key
 from .task_status_icons import status_icon
 
 STATUS_ICON_SIZE: Final = 16
@@ -50,7 +50,9 @@ class TaskStateDelegate(TaskRowDelegate):
     :param state_colors: the color per state; states absent from it draw plain.
     """
 
-    def __init__(self, parent: QObject | None = None, *, state_colors: Mapping[JobState, QColor] | None = None) -> None:
+    def __init__(
+        self, parent: QObject | None = None, *, state_colors: Mapping[TaskRowKey, QColor] | None = None
+    ) -> None:
         super().__init__(parent, state_colors=state_colors)
         self.__icons: Final = SvgIconCache()
 
@@ -62,10 +64,11 @@ class TaskStateDelegate(TaskRowDelegate):
             return
         painter.save()
         try:
-            self.paint_background(painter, option, status.state)
+            key = status_key(status)
+            self.paint_background(painter, option, key)
             # the pen paint_background just set is the row's own ink, which is what a state with no
             # color of its own draws in
-            color = self.color_for(status.state) or painter.pen().color()
+            color = self.color_for(key) or painter.pen().color()
             self.__icons.icon(status_icon(status), color).paint(painter, TaskStateDelegate.__icon_rect(option))
         finally:
             painter.restore()

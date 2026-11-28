@@ -7,6 +7,7 @@ from typing import Any, Final, cast
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.file_browser import FILE_BROWSER_NAME, reveal_in_file_browser
 from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import (
     QtAdsAutoHideButtonSuppressor,
@@ -26,13 +27,14 @@ from rehuco_core import (
     JobScope,
     JobState,
     JobStatus,
+    MoveRecordJob,
     StopRequest,
     TaskQueue,
 )
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..dock_maximize import attach_maximize_handler
-from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR
+from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR, WARNING_COLOR
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.logs_settings import shared_logs_settings
 from .partial_copy_question import GiveUp, PartialCopyQuestion
@@ -40,6 +42,7 @@ from .pending_saves_filter import PendingSavesFilter, is_pending_save
 from .task_info_delegate import TaskInfoDelegate
 from .task_queue_model import INFO_COLUMN, LABEL_COLUMN, STARTS_OVER_HINT, STATE_COLUMN, TaskQueueModel
 from .task_queue_widget_ui import Ui_TaskQueueWidget
+from .task_row_delegate import UNCLEAN_DONE, TaskRowKey, status_key
 from .task_state_delegate import STATE_COLUMN_WIDTH, TaskStateDelegate
 from .task_text_delegate import TaskTextDelegate
 
@@ -64,12 +67,17 @@ LOG_DOCK_TITLE: Final = "Log"
 """Tab titles of the two sub-docks. ``Log`` matches the window's own dock and every resource's, because
 all three are the same surface about a different subject ([[appendices.logging#surfaces]])."""
 
-RETRIABLE_STATES: Final = frozenset({JobState.FAILED, JobState.CANCELED})
-"""The states :meth:`~rehuco_core.TaskQueue.retry` accepts -- a finished job that can be run again.
+RETRIABLE_KEYS: Final[frozenset[TaskRowKey]] = frozenset({JobState.FAILED, JobState.CANCELED, UNCLEAN_DONE})
+"""The rows Retry is offered on -- a finished job that can be run again.
 
-``DONE`` is deliberately absent: retrying it is not *wrong*, but offering it as a control invites
+A clean ``DONE`` is deliberately absent: retrying it is not *wrong*, but offering it as a control invites
 re-running work that succeeded ([[appendices.task-queue#kept]] frames retry as the recovery for a
-failure or a cancelation)."""
+failure or a cancelation). A done job that is not clean is offered (#712): it left something to act on, and the job
+decides what running it again does -- a move removes only what its cleanup left."""
+
+SHOW_SOURCE_TEXT: Final = f"Show Move Source in {FILE_BROWSER_NAME}"
+SHOW_DESTINATION_TEXT: Final = f"Show Move Destination in {FILE_BROWSER_NAME}"
+"""What a move's two reveal actions read, naming this platform's file browser (#712)."""
 
 PAUSABLE_STATES: Final = frozenset({JobState.QUEUED, JobState.RUNNING, JobState.WAITING})
 """The states Pause acts on: anything not yet finished that is not already held.
@@ -91,18 +99,21 @@ PENDING_SAVES_STATE_KEY: Final = "pending_saves"
 MAXIMIZED_DOCK_STATE_KEY: Final = "maximized_dock"
 """The key the saved layout keeps the name of its maximized sub-dock under, beside the tree (#576)."""
 
-TASK_STATE_COLORS: Final[dict[JobState, QColor]] = {
+TASK_STATE_COLORS: Final[dict[TaskRowKey, QColor]] = {
     JobState.QUEUED: QColor(QUEUED_COLOR),
     JobState.WAITING: QColor(QUEUED_COLOR),
     JobState.RUNNING: QColor(INFO_COLOR),
     JobState.DONE: QColor(DONE_COLOR),
+    UNCLEAN_DONE: QColor(WARNING_COLOR),
     JobState.FAILED: QColor(ERROR_COLOR),
     JobState.CANCELED: QColor(ERROR_COLOR),
 }
 """What a task row is tinted by (#251), from the same tokens the log dock and the inline notice banner
 use (`rehuco_agent.fields.colors`) -- ``FAILED``/``CANCELED`` sharing :data:`~.fields.colors.ERROR_COLOR`
 by decision: both are *did not finish*, and what separates a job that broke from one that was stopped
-on purpose is left to the state column's text. ``WAITING`` shares the queued color for the same kind of reason:
+on purpose is left to the state column's text. A done job that is not clean takes
+:data:`~.fields.colors.WARNING_COLOR` (#712): it finished, so it is not an error, and it is not a success either.
+``WAITING`` shares the queued color for the same kind of reason:
 both are *will run by itself*, and the glyph tells them apart.
 
 ``JobState.PAUSED`` is deliberately absent, which paints it plain, the same way
@@ -166,6 +177,9 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
 
     discard_saves_requested = Signal(list)
     """Discard Save was triggered; carries the serials of the selected saves that have not landed."""
+
+    open_record_requested = Signal(object)
+    """Show Rehu was triggered over one move (#712); carries the ``.rehu`` it is moving, where it is now."""
 
     def __init__(
         self, queue: TaskQueue, parent: QWidget | None = None, *, stylesheet_host: QWidget | None = None
@@ -324,7 +338,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         ui.retry_action.triggered.connect(self.__retry_selection)
         ui.clear_action.triggered.connect(self.__clear_selection)
         ui.clear_done_action.triggered.connect(lambda: self.__clear_in({JobState.DONE}))
-        ui.clear_failed_action.triggered.connect(lambda: self.__clear_in({JobState.FAILED}))
+        ui.clear_failed_action.triggered.connect(lambda: self.__clear_in({JobState.FAILED, UNCLEAN_DONE}))
         ui.clear_all_action.triggered.connect(self.__clear_all)
         ui.move_to_top_action.triggered.connect(lambda: self.__move_to_end(top=True))
         ui.move_up_action.triggered.connect(lambda: self.__move_by(-1))
@@ -337,6 +351,11 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
     def __setup_context_menu(self) -> None:
         ui = self.__ui
         ui.task_view.customContextMenuRequested.connect(self.__show_context_menu)
+        ui.show_source_action.setText(SHOW_SOURCE_TEXT)
+        ui.show_destination_action.setText(SHOW_DESTINATION_TEXT)
+        ui.show_rehu_action.triggered.connect(self.__show_rehu)
+        ui.show_source_action.triggered.connect(self.__show_source)
+        ui.show_destination_action.triggered.connect(self.__show_destination)
 
     def __show_context_menu(self, position: QPoint) -> None:
         ui = self.__ui
@@ -344,6 +363,14 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         ui.clear_action.setText(f"Clear {count} jobs" if count > 1 else "Clear job")
 
         menu = QMenu(self)
+        move = self.__selected_move()
+        if move is not None:
+            # a move's places lead its menu (#712): what a reader of a move row most often wants is to look at them
+            ui.show_rehu_action.setEnabled(move.source is not None)
+            ui.show_source_action.setEnabled(move.origin is not None)
+            ui.show_destination_action.setEnabled(move.landing is not None)
+            menu.addActions([ui.show_rehu_action, ui.show_source_action, ui.show_destination_action])
+            menu.addSeparator()
         menu.addAction(ui.pause_action)
         menu.addAction(ui.resume_action)
         menu.addAction(ui.cancel_action)
@@ -575,7 +602,7 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
         ui.pause_action.setToolTip(TaskQueueWidget.__pause_tooltip(statuses))
         self.__update_resume(statuses)
         ui.cancel_action.setEnabled(bool(states - FINISHED_JOB_STATES))
-        ui.retry_action.setEnabled(bool(states) and states <= RETRIABLE_STATES)
+        ui.retry_action.setEnabled(bool(statuses) and all(status_key(status) in RETRIABLE_KEYS for status in statuses))
         # an unfinished job leaves by Cancel, which asks what it asks (#634); a save not landed goes to its owner
         ui.clear_action.setEnabled(
             bool(statuses)
@@ -715,22 +742,55 @@ class TaskQueueWidget(QMainWindow):  # pylint: disable=too-many-instance-attribu
             self.discard_saves_requested.emit(dropped)
         return [serial for serial in serials if serial not in pending]
 
-    def __clear_in(self, states: set[JobState]) -> None:
-        """Remove every job currently in one of ``states`` -- a dock sweep, not an engine feature
+    def __clear_in(self, keys: set[TaskRowKey]) -> None:
+        """Remove every job currently drawn as one of ``keys`` -- a dock sweep, not an engine feature
         (#237 deleted ``clear_finished()`` for exactly this reason: deciding *which* jobs a sweep drops
         is a view's business). A failed save is not swept: it has not landed, and still holds the edits it could not
-        write ([[sync#unlanded-save]], #497).
+        write ([[sync#unlanded-save]], #497). A done job that is not clean is swept with the failed ones, not the done
+        ones (#712): it is the row a reader has still to look at.
 
-        :param states: which finished states to drop.
+        :param keys: which finished states to drop, :data:`~.task_row_delegate.UNCLEAN_DONE` for the done jobs that
+            are not clean.
         """
         self.__remove(
-            [status.serial for status in self.__queue.jobs() if status.state in states and not is_pending_save(status)]
+            [
+                status.serial
+                for status in self.__queue.jobs()
+                if status_key(status) in keys and not is_pending_save(status)
+            ]
         )
 
     def __clear_all(self) -> None:
         """Remove every finished row -- but the saves that have not landed: each still holds edits, and is dropped only
         by asking for it ([[sync#unlanded-save]], #497). An unfinished job stays: it leaves by Cancel (#634)."""
-        self.__clear_in(set(FINISHED_JOB_STATES))
+        self.__clear_in({*FINISHED_JOB_STATES, UNCLEAN_DONE})
+
+    def __selected_move(self) -> MoveRecordJob | None:
+        """The one selected row's move, when that is what it is (#712).
+
+        :returns: the job; ``None`` for no row, several, or a row that is not a move.
+        """
+        serials = self.__selected_serials()
+        job = self.__queue.job(serials[0]) if len(serials) == 1 else None
+        return job if isinstance(job, MoveRecordJob) else None
+
+    def __show_rehu(self) -> None:
+        """Ask the owner to open the record the selected move is moving, where it is now (#712)."""
+        if (move := self.__selected_move()) is not None and (path := move.source) is not None:
+            self.open_record_requested.emit(path)
+
+    def __show_source(self) -> None:
+        """Show where the selected move takes its record from (#712); once the record left, what is still there of the
+        folder it was in."""
+        if (move := self.__selected_move()) is not None and (path := move.origin) is not None:
+            # the record's .rehu, else its folder; else, the original removed, the folder that held it
+            if not reveal_in_file_browser(path):
+                reveal_in_file_browser(path.parent.parent)
+
+    def __show_destination(self) -> None:
+        """Show where the selected move takes its record to (#712): there, or the folder it goes in until it is."""
+        if (move := self.__selected_move()) is not None and (path := move.landing) is not None:
+            reveal_in_file_browser(path)
 
     def __inspect_selection(self) -> None:
         """Ask the owner to show the one selected save (#497)."""

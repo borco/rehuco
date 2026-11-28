@@ -392,7 +392,9 @@ class JobOutcome:
     wants beside the state, and it is a string.
 
     :param summary: the line.
-    :param clean: whether the run found nothing to act on; a surface may draw a clean line quietly.
+    :param clean: whether the run found nothing to act on. ``False`` means *the user should look*: the engine keeps it
+        on the row (:attr:`JobStatus.clean`) and logs the summary once as a WARNING (#712), and a surface may draw a
+        clean line quietly.
     """
 
     summary: str
@@ -507,6 +509,10 @@ class JobStatus:
         silently.
     :param summary: what a finished job found, as its :attr:`ReportingTaskJob.outcome` says it, else ``None``
         (#457). Kept with a finished job across a restart, like :attr:`message`.
+    :param clean: whether a finished job's outcome left nothing to act on, as :attr:`JobOutcome.clean` says it (#712);
+        ``True`` for a job that reports none, and for every job that has not finished. ``False`` is a done job the
+        user should look at: a surface draws it apart from one that finished well. Kept across a restart, like
+        :attr:`summary`.
     :param chain: the job's :attr:`TaskJob.chain`, read once at enqueue (#563): which jobs it takes turns with,
         or ``None`` for one that runs beside everything else.
     :param kind: the job's :attr:`~rehuco_core.tasks.PersistableTaskJob.kind`, read once at enqueue, or ``None``
@@ -527,6 +533,7 @@ class JobStatus:
     resumes_where_it_stopped: bool = False
     persistable: bool = False
     summary: str | None = None
+    clean: bool = True
     chain: str | None = DISK_CHAIN
     kind: str | None = None
 
