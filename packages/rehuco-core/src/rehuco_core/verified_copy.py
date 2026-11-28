@@ -269,7 +269,36 @@ class SourceListing:
     pairs: tuple[tuple[Path, Path], ...]
 
 
-def remove_leftovers(files: Iterable[str], folders: Iterable[str]) -> list[str]:
+@dataclass(frozen=True, slots=True)
+class CopyTally:
+    """What one :meth:`VerifiedCopy.copy` did (#713).
+
+    :param written: the files this run wrote, the record's own ``.checksum`` included.
+    :param size: their size, in bytes.
+    :param already: the content files found already at the target, written by an earlier run.
+    """
+
+    written: int
+    size: int
+    already: int
+
+
+@dataclass(frozen=True, slots=True)
+class LeftoversRemoved:
+    """What :func:`remove_leftovers` did (#713).
+
+    :param files: the source's files that are gone: removed by it, or gone before it looked -- the ``.rehu`` the detach
+        took, what an earlier pass removed -- so a pass run again still counts the whole original.
+    :param folders: its folders that are gone, counted the same way.
+    :param left: what could not be removed, as a sentence per item.
+    """
+
+    files: int
+    folders: int
+    left: list[str]
+
+
+def remove_leftovers(files: Iterable[str], folders: Iterable[str]) -> LeftoversRemoved:
     """Remove what is left of a source whose record was detached: its files, then its folders, the deepest first.
 
     A file already gone is no failure; a folder that still holds something -- a file that came since, a stale lock --
@@ -279,9 +308,9 @@ def remove_leftovers(files: Iterable[str], folders: Iterable[str]) -> list[str]:
 
     :param files: the source's files (:attr:`SourceListing.files`).
     :param folders: its folders, a parent before its children (:attr:`SourceListing.folders`).
-    :returns: what could not be removed, as a sentence per item -- empty when the source is gone.
+    :returns: how many files and folders went, and what could not be removed -- nothing when the source is gone.
     """
-    folders = list(folders)
+    files, folders = list(files), list(folders)
     ours = {Path(folder) for folder in folders}
     left: list[str] = []
     for path in files:
@@ -289,6 +318,7 @@ def remove_leftovers(files: Iterable[str], folders: Iterable[str]) -> list[str]:
             remove_file(Path(path), missing_ok=True, parent_is_ours=Path(path).parent in ours)
         except OSError as error:
             left.append(f"{path} ({error.strerror or error})")
+    kept_files = len(left)
     for path in reversed(folders):
         try:
             remove_folder(Path(path), parent_is_ours=Path(path).parent in ours)
@@ -298,7 +328,7 @@ def remove_leftovers(files: Iterable[str], folders: Iterable[str]) -> list[str]:
             left.append(f"{path} ({error.strerror or error})")
     for line in left:
         LOG.warning("Could not remove %s from the original after its copy verified.", line)
-    return left
+    return LeftoversRemoved(len(files) - kept_files, len(folders) - (len(left) - kept_files), left)
 
 
 class VerifiedCopy:
@@ -413,13 +443,14 @@ class VerifiedCopy:
         *,
         progress: ChecksumProgress | None = None,
         checkpoint: ChecksumCheckpoint | None = None,
-    ) -> None:
+    ) -> CopyTally:
         """Write every carried file to the target, skipping a content file already there whose hash matches the record.
 
         :param journal: what this copy has written so far, added to as it writes -- read back by a resumed copy and by
             :meth:`remove_copy`.
         :param progress: told how far the copy has got, in bytes.
         :param checkpoint: the caller's place to stop, called between chunks and never caught.
+        :returns: how many files this run wrote, their size, and how many an earlier run had written.
         :raises FileExistsError: the target's place holds something this copy did not write.
         :raises OSError: a file could not be read or written.
         """
@@ -438,14 +469,21 @@ class VerifiedCopy:
 
         count(0)
         self.__make_folders(carried, journal)
+        written = skipped = already = 0
         for carried_file in carried.files:
             if self.__is_own_record(carried_file):
                 self.__copy_record(carried, carried_file, journal)
                 count(carried_file.source.stat().st_size)
             elif self.__already_there(carried_file, recorded, checkpoint):
-                count(carried_file.source.stat().st_size)
+                there = carried_file.source.stat().st_size
+                count(there)
+                skipped += there
+                already += 1
+                continue
             else:
                 self.copy_file(carried_file, journal, on_chunk=count, checkpoint=checkpoint)
+            written += 1
+        return CopyTally(written, done[0] - skipped, already)
 
     def verify_target(
         self,
@@ -490,7 +528,9 @@ class VerifiedCopy:
             )
         return report
 
-    def reconcile(self, journal: CopyJournal, verified: Iterable[str]) -> SourceListing:
+    def reconcile(
+        self, journal: CopyJournal, verified: Iterable[str], compared: list[str] | None = None
+    ) -> SourceListing:
         """Bring the copy level with the source as it is now, once the copy verified -- the slow half of the move's
         last step, done off the GUI thread.
 
@@ -500,6 +540,7 @@ class VerifiedCopy:
 
         :param journal: what the copy wrote; a file copied again here joins it.
         :param verified: the names the target check matched, as the copy's record spells them.
+        :param compared: told the name of each file no checksum covers that was compared with its copy (#713).
         :returns: the listing the copy now matches -- taken before anything was compared, so a file changing meanwhile
             shows against it (:meth:`detach_source`).
         :raises VerifiedCopyError: a content file appeared that the check did not cover, or a file still differs from
@@ -520,7 +561,11 @@ class VerifiedCopy:
             )
         self.__make_folders(carried, journal)
         for item in carried.files:
-            if item.content is None and not self.__is_own_record(item) and not self.__same(item):
+            if item.content is not None or self.__is_own_record(item):
+                continue
+            if compared is not None:
+                compared.append(item.source.name)
+            if not self.__same(item):
                 self.copy_file(item, journal)
                 if not self.__same(item):
                     raise VerifiedCopyError(f'"{item.source.name}" changed while being moved; the original was kept.')

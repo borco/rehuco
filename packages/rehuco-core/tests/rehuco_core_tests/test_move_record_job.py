@@ -14,10 +14,12 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     ChecksumReport,
     ChecksumTrust,
+    CopyTally,
     JobCanceled,
     JobControl,
     JobPaused,
     JobWaiting,
+    LeftoversRemoved,
     LinkInRecordError,
     MoveMode,
     MovePhase,
@@ -250,9 +252,10 @@ def test_a_corrupted_copy_keeps_the_original(
     record = make_record(roots[SOURCE_ROOT])
     real = VerifiedCopy.copy
 
-    def corrupting(self: VerifiedCopy, *args: Any, **kwargs: Any) -> None:
-        real(self, *args, **kwargs)
+    def corrupting(self: VerifiedCopy, *args: Any, **kwargs: Any) -> CopyTally:
+        tally = real(self, *args, **kwargs)
         (self.target.parent / "content.zip").write_bytes(b"X" + CONTENT[1:])
+        return tally
 
     mocker.patch.object(VerifiedCopy, "copy", autospec=True, side_effect=corrupting)
     job = mover(record, host)
@@ -470,7 +473,7 @@ def test_what_the_original_kept_is_said_in_the_outcome(
     * check the outcome is not clean and names it
     """
     record = make_record(roots[SOURCE_ROOT])
-    mocker.patch(f"{MODULE}.remove_leftovers", return_value=["kept.txt (Access is denied)"])
+    mocker.patch(f"{MODULE}.remove_leftovers", return_value=LeftoversRemoved(0, 0, ["kept.txt (Access is denied)"]))
     job = mover(record, host)
 
     job.run(control)

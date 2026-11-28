@@ -14,6 +14,7 @@ from pytest import LogCaptureFixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CopyJournal,
+    LeftoversRemoved,
     LinkInRecordError,
     Relocation,
     RenameCoordinator,
@@ -500,7 +501,7 @@ def remove_original(copy: VerifiedCopy, journal: CopyJournal, verified: list[str
     """
     listing = copy.reconcile(journal, verified)
     relocation = copy.detach_source(listing)
-    return relocation, remove_leftovers(listing.files, listing.folders)
+    return relocation, remove_leftovers(listing.files, listing.folders).left
 
 
 def test_the_original_goes_once_its_copy_verified(tmp_path: Path) -> None:
@@ -511,7 +512,7 @@ def test_the_original_goes_once_its_copy_verified(tmp_path: Path) -> None:
 
     * copy and check a folder record, then remove the source, keeping its listing
     * check the source folder is gone, nothing was left, and the relocation moves the folder to the copy
-    * remove the same listing again, and check nothing is reported
+    * remove the same listing again, and check nothing is reported, and all of it still counts as gone
     """
     record, copy, journal, verified = copied_and_checked(tmp_path)
     listing = copy.reconcile(journal, verified)
@@ -519,10 +520,12 @@ def test_the_original_goes_once_its_copy_verified(tmp_path: Path) -> None:
     relocation = copy.detach_source(listing)
 
     assert not record.exists() and (record.parent / "content.zip").exists()
-    assert not remove_leftovers(listing.files, listing.folders)
+    assert not remove_leftovers(listing.files, listing.folders).left
     assert not record.parent.exists()
     assert relocation.relocate(record) == copy.target
-    assert not remove_leftovers(listing.files, listing.folders)
+    assert remove_leftovers(listing.files, listing.folders) == LeftoversRemoved(
+        len(listing.files), len(listing.folders), []
+    )
 
 
 @mark.windows  # only Windows refuses to remove a file or folder marked read-only
@@ -704,7 +707,7 @@ def test_a_checksum_record_that_will_not_go_yet_is_left_for_the_cleanup(
 
     with caplog.at_level(logging.WARNING):
         copy.detach_source(listing)
-    left = remove_leftovers(listing.files, listing.folders)
+    left = remove_leftovers(listing.files, listing.folders).left
 
     assert not record.exists()
     assert "Could not remove the checksum record" in caplog.text
