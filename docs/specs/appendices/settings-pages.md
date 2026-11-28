@@ -227,7 +227,10 @@ with now.
 **Moving records**, the page's second frame (`MoveSettings`, #579, #339), holds *Remove the left-behind folders up
 to the root, only while each is empty*, off by default. It is read when a record lands at the place a root's layout
 gives it ([[plugins#tutorial-plugin]]'s path row): with it on, the folder the record left and each folder above it are
-removed while empty, stopping at the first that holds anything else and never reaching the root. Under it, *Split a
+removed while empty, stopping at the first that holds anything else and never reaching the root. A folder holding
+only excluded files (`.DS_Store`, `Thumbs.db`, the Files page's own list) is empty: they go by the deletion
+setting, to the Recycle Bin when it is on and can take them, deleted for good otherwise, with no question
+(#714). Under it, *Split a
 folder of buckets above* (200 entries by default, never under 50) and *Join its buckets back at or below* (100) are the
 prefix buckets' limits ([[mounts-and-storage#buckets]], #680): a move asks the first as it settles the folders it went
 into. They are one widget, `BucketLimitsEditor`, which the balance dialog shows too (#681,

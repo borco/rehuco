@@ -71,12 +71,20 @@ from .constants import EXCLUDED_FILE_PATTERNS
 from .move_cleanup import MoveCleanup
 from .move_phases import COPYING_PHASES, MoveMode, MovePhase
 from .move_step_log import MoveStepLog
-from .prefix_buckets import BucketChain, BucketSplitter, resolve_buckets, ungoverned_reason, unresolve_buckets
+from .prefix_buckets import (
+    BucketChain,
+    BucketSplitter,
+    resolve_buckets,
+    restored_buckets,
+    ungoverned_reason,
+    unresolve_buckets,
+)
 from .record_bucket_mover import RecordBucketMover
 from .record_file_lock import RecordFileLock, RecordLockedError
 from .record_move_host import BUCKETS_GUARD, DEFAULT_RECORD_MOVE_HOST, RecordMoveHost
 from .rehu_checksums import verify_checksums
 from .rehu_rename import is_cross_device, remove_empty_parents
+from .rehu_screenshot_ordering import Deleter
 from .relocation import Relocation
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
@@ -95,6 +103,7 @@ from .tasks import (
     JobWaiting,
     TaskJobBase,
 )
+from .tc_backups_jobs import DEFAULT_DELETER_PROVIDER
 from .verified_copy import (
     CopyJournal,
     SourceChangedError,
@@ -178,6 +187,8 @@ class MoveRecordJob(TaskJobBase):
     :param coordinator: the rename barrier.
     :param trust: where this machine has verified which record.
     :param host: what the app lends this move.
+    :param deleter: how an excluded file left in a folder the record left is deleted (#714); the app's provider answers
+        when ``None``, a move restored after a restart too.
     :param label: the row's name; derived from the record when ``None``.
     """
 
@@ -204,9 +215,11 @@ class MoveRecordJob(TaskJobBase):
         coordinator: RenameCoordinator | None = None,
         trust: ChecksumTrust | None = None,
         host: RecordMoveHost | None = None,
+        deleter: Deleter | None = None,
         label: str | None = None,
     ) -> None:
         super().__init__()
+        self.__deleter: Final = deleter
         self.__coordinator: Final = coordinator if coordinator is not None else DEFAULT_RENAME_COORDINATOR
         self.__trust: Final = trust if trust is not None else DEFAULT_CHECKSUM_TRUST
         self.__host: Final[RecordMoveHost] = host if host is not None else DEFAULT_RECORD_MOVE_HOST
@@ -782,10 +795,9 @@ class MoveRecordJob(TaskJobBase):
         :param folder: the folder the record's own entry was in.
         :param root: the source root's folder; ``None`` for a record under no root, which is left as it is.
         """
-        if not self.remove_empty_folders or root is None:
-            return
-        for removed in remove_empty_parents(folder, root):
-            LOG.info("Removed %s, left empty by the move.", removed)
+        if self.remove_empty_folders and root is not None:
+            deleter = self.__deleter if self.__deleter is not None else DEFAULT_DELETER_PROVIDER.resolve()
+            remove_empty_parents(folder, root, self.excluded_patterns, deleter)
 
     def __copy(self, destination: Path) -> VerifiedCopy:
         """The copy of this record into ``destination``.
@@ -916,26 +928,10 @@ class MoveRecordJob(TaskJobBase):
         self.algorithm = algorithm
         if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
             self.excluded_patterns = tuple(excluded)
-        self.bucketed, self.chains = self.__restored_buckets(state)
+        self.bucketed, self.chains = restored_buckets(
+            state.get(STATE_BUCKETED_KEY, []), state.get(STATE_CHAINS_KEY, [])
+        )
         self.label = self.__derived_label()
-
-    @staticmethod
-    def __restored_buckets(state: dict[str, Any]) -> tuple[tuple[int, ...], tuple[BucketChain, ...]]:
-        """The bucketed levels and the chains a state names; none for a state saved before buckets (#680).
-
-        :param state: the saved state.
-        :returns: the levels still to resolve, and the chains still to settle.
-        :raises ValueError: either is not the shape written.
-        """
-        bucketed, chains = state.get(STATE_BUCKETED_KEY, []), state.get(STATE_CHAINS_KEY, [])
-        if not (
-            isinstance(bucketed, list)
-            and all(isinstance(index, int) and not isinstance(index, bool) for index in bucketed)
-        ):
-            raise ValueError("A saved move's bucketed levels are not a list of indices.")
-        if not isinstance(chains, list):
-            raise ValueError("A saved move's buckets are not a list.")
-        return tuple(bucketed), tuple(BucketChain.from_state(chain) for chain in chains)
 
     def __captured_source(self) -> dict[str, Any]:
         """The source end: its root and the path under it when it has a mapped root holding it, else the path.

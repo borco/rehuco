@@ -6,7 +6,7 @@ import errno
 import logging
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 from uuid import UUID, uuid4
 
 from pytest import LogCaptureFixture, fixture, raises
@@ -15,6 +15,7 @@ from rehuco_core import (
     ChecksumReport,
     ChecksumTrust,
     CopyTally,
+    Deleter,
     JobCanceled,
     JobControl,
     JobPaused,
@@ -671,6 +672,81 @@ def test_the_left_folders_go_when_asked(roots: dict[UUID, Path], host: MagicMock
 
     assert not (roots[SOURCE_ROOT] / "Old").exists()
     assert roots[SOURCE_ROOT].is_dir()
+
+
+def test_a_left_folder_holding_only_an_excluded_file_goes_through_the_deleter(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock
+) -> None:
+    """A folder the record left holding only a ``.DS_Store`` is empty: the file goes through the deleter handed to the
+    job, then the folder (#714).
+
+    **Test steps:**
+
+    * put a ``.DS_Store`` in the record's old parent folder
+    * move the record with removing left-behind folders on, and a deleter that unlinks and remembers
+    * check the deleter was handed the file, and the old parent folder is gone
+    """
+    record = make_record(roots[SOURCE_ROOT])
+    junk = roots[SOURCE_ROOT] / "Old" / ".DS_Store"
+    junk.write_bytes(b"junk")
+    deleter = Mock(spec=Deleter)
+    deleter.delete.side_effect = lambda path: path.unlink()
+
+    mover(record, host, remove_empty_folders=True, deleter=deleter).run(control)
+
+    deleter.delete.assert_called_once_with(junk)
+    assert not (roots[SOURCE_ROOT] / "Old").exists()
+
+
+def test_a_restored_move_asks_the_app_for_its_deleter_and_keeps_its_patterns(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock, mocker: MockerFixture
+) -> None:
+    """A move handed no deleter -- every move the app queues, and one restored after a restart -- asks the app's
+    provider as it removes, and the patterns it was queued with decide what is no content (#714).
+
+    **Test steps:**
+
+    * put a ``cache.tmp`` in the record's old parent folder, and make the provider answer a deleter that unlinks
+    * queue a move naming ``*.tmp`` excluded, restore another from its state, and run that one
+    * check the provider's deleter was handed the file, and the old parent folder is gone
+    """
+    record = make_record(roots[SOURCE_ROOT])
+    junk = roots[SOURCE_ROOT] / "Old" / "cache.tmp"
+    junk.write_bytes(b"junk")
+    deleter = mocker.patch(f"{MODULE}.DEFAULT_DELETER_PROVIDER").resolve.return_value
+    deleter.delete.side_effect = Path.unlink
+    queued = mover(record, host, remove_empty_folders=True, excluded_patterns=("*.tmp",))
+    restored = mover(None, host)
+    restored.restore_state(queued.capture_state())
+
+    restored.run(control)
+
+    deleter.delete.assert_called_once_with(junk)
+    assert not (roots[SOURCE_ROOT] / "Old").exists()
+
+
+def test_a_left_folder_whose_excluded_file_the_deleter_refuses_stays(
+    roots: dict[UUID, Path], host: MagicMock, control: MagicMock
+) -> None:
+    """A file the deleter refuses keeps its folder, and the move still ends (#714).
+
+    **Test steps:**
+
+    * put a ``.DS_Store`` in the record's old parent folder
+    * move the record with a deleter that refuses
+    * check the folder and the file stay, and the move is done
+    """
+    record = make_record(roots[SOURCE_ROOT])
+    junk = roots[SOURCE_ROOT] / "Old" / ".DS_Store"
+    junk.write_bytes(b"junk")
+    deleter = Mock(spec=Deleter)
+    deleter.delete.side_effect = PermissionError(errno.EACCES, "denied")
+
+    job = mover(record, host, remove_empty_folders=True, deleter=deleter)
+    job.run(control)
+
+    assert junk.is_file()
+    assert job.phase is MovePhase.DONE
 
 
 # endregion

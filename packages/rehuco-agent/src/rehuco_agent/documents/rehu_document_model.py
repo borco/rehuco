@@ -1412,8 +1412,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             if not self.__move(new_name, target, None if move is None else move[0]):
                 return False
             if move is not None and move[1] is not None and shared_move_settings().remove_empty_folders:
-                for folder in remove_empty_parents(left, move[1]):
-                    LOG.info("Removed %s, left empty by the move", folder)
+                remove_empty_parents(
+                    left, move[1], shared_excluded_files_settings().excluded_file_patterns, configured_deleter()
+                )
         # after the move was announced and every holder followed it: a check planned before the cache rebased its row
         # would be dropped as overtaken
         self.renamed.emit()
