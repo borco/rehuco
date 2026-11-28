@@ -1,0 +1,3331 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/assets/">
+      
+      
+        <link rel="prev" href="../reference-images/">
+      
+      
+        <link rel="next" href="../diagrams/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Assets - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#19-assets-store-libraries-as-records" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Assets
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../external-tools/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  External Tools
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Assets
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Assets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#191-the-asset-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1 The asset block
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§19.1 The asset block">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1911-a-count-the-store-states-as-a-range" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1.1 A count the store states as a range
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1912-kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1.2 kind
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1913-a-record-keeps-its-license-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1.3 A record keeps its license text
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1914-a-source-carries-the-stores-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1.4 A source carries the store's id
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#192-a-record-without-its-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.2 A record without its files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#193-using-an-asset-and-installing-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.3 Using an asset, and installing one
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#194-what-adding-the-type-touches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.4 What adding the type touches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#195-deferral" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.5 Deferral
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/assets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Assets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Qt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/vlc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    VLC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_22" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_22" id="__nav_2_22_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_22_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_22">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../external-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    External Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#191-the-asset-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1 The asset block
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§19.1 The asset block">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1911-a-count-the-store-states-as-a-range" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1.1 A count the store states as a range
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1912-kind" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1.2 kind
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1913-a-record-keeps-its-license-text" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1.3 A record keeps its license text
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1914-a-source-carries-the-stores-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.1.4 A source carries the store's id
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#192-a-record-without-its-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.2 A record without its files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#193-using-an-asset-and-installing-one" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.3 Using an asset, and installing one
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#194-what-adding-the-type-touches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.4 What adding the type touches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#195-deferral" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §19.5 Deferral
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="19-assets-store-libraries-as-records">§19. Assets: Store Libraries as Records</h1>
+<p><span class="slug-ref">[[[assets]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[assets#overview]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/673">#673: docs: the asset type, the library wizard and prefix buckets</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/674">#674: feat(core): declare the asset type and its block</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/675">#675: feat(core): a source's site_id, and finding a record by site and id</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/676">#676: feat(core): asset columns and a formats link table in the cache</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/677">#677: feat(core): the .rehuterms license sidecar</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/678">#678: feat(agent): asset fields in the editor, the browser and the search line</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/679">#679: feat(agent): Open in Web Browser on the browser's selection</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/688">#688: feat(agent): the license subdock, Refresh License, and the sidecar's path in Copy as JSON</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/705">#705: feat: an asset holds a list of licenses, each with its own text</a></li>
+</ul>
+<p><strong>The block, the cache, the license sidecar, the editor, the browser and the license's dock are built</strong>
+(<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/674" title="GitHub Issue: borco/rehuco #674">#674</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/676" title="GitHub Issue: borco/rehuco #676">#676</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/677" title="GitHub Issue: borco/rehuco #677">#677</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/678" title="GitHub Issue: borco/rehuco #678">#678</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/679" title="GitHub Issue: borco/rehuco #679">#679</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/688" title="GitHub Issue: borco/rehuco #688">#688</a>): <code>asset</code> is a declared type whose fields are read and checked as §19.1 says, kept
+in the catalog cache, one column each and <code>formats</code> in a link table of its own, shown and edited beside a record's
+other fields, and a column, a preset and a filter token of the browsers, with <em>Open in Web Browser</em> and <em>Refresh
+License</em> on their selection, and the license's text shown and edited in a dock of its own. The rest is the design for
+this fourth resource type: something acquired from a store to be used in other work, such as a 3D model, a texture
+set, an animation pack, an audio pack, a Blender add-on or an Unreal plugin. It answers the <em>3D objects as a resource
+category</em> question <span class="slug-ref">[[appendices.open-questions#still-open]]</span> left open.</p>
+<ul>
+<li><strong>What it is for.</strong> A store library of a few thousand items, most of them never downloaded, that has to answer three
+  questions fast: <em>what do I own</em>, <em>can I use it in this project</em> (format, engine version, license) and <em>where is it</em>.</li>
+<li><strong>A record is mostly metadata.</strong> One <code>.rehu</code> and a few screenshots per item; the files themselves arrive later, for
+  the few items actually used (<span class="slug-ref">[[assets#online-only]]</span>).</li>
+<li><strong>Records are created by a scan of the store account</strong>, not by hand: the library wizard
+  (<span class="slug-ref">[[acquisition-tooling#library-wizard]]</span>) reads what the account owns and writes one record per item.</li>
+<li><strong>A library is thousands of small files in one root</strong>, so such a root spreads them over prefix buckets
+  (<span class="slug-ref">[[mounts-and-storage#buckets]]</span>).</li>
+<li><strong>Daz3D is the same type with more on it</strong> (<span class="slug-ref">[[assets#install]]</span>), not a type beside it.</li>
+</ul>
+<h2 id="191-the-asset-block">§19.1 The <code>asset</code> block</h2>
+<p><span class="slug-ref">[[[assets#block]]]</span></p>
+<p><strong>Every field is optional, and a missing field means <em>not known</em>.</strong> A plugin has no triangle count and a scan of a
+store page measures nothing; neither is an error, and neither writes a zero. The block follows the rules every plugin
+block does (<span class="slug-ref">[[plugins#plugin-blocks]]</span>).</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Value type</th>
+<th>Filled by</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kind</code></td>
+<td>one of <span class="slug-ref">[[assets#kind]]</span></td>
+<td>scan, or by hand</td>
+<td>what the item is; <code>unknown</code> until something says</td>
+</tr>
+<tr>
+<td><code>licenses</code></td>
+<td>list of <code>{license, url}</code></td>
+<td>scan</td>
+<td>each license the item is held under (<span class="slug-ref">[[assets#licenses]]</span>): a short id (<code>fab-standard</code>, <code>cc-by-4.0</code>, <code>fab-ue-only</code>), unique in the list, and where the store states its terms, if it does</td>
+</tr>
+<tr>
+<td><code>formats</code></td>
+<td>string list</td>
+<td>scan</td>
+<td>file formats delivered: <code>fbx</code>, <code>glb</code>, <code>blend</code>, <code>uasset</code></td>
+</tr>
+<tr>
+<td><code>compatibility</code></td>
+<td>map, string to string</td>
+<td>scan</td>
+<td>what it works with and in which versions: <code>{"blender": "&gt;=4,&lt;5", "unreal": "5.1-5.6"}</code></td>
+</tr>
+<tr>
+<td><code>source_updated</code></td>
+<td>partial-precision date</td>
+<td>scan</td>
+<td>when the store last changed the item</td>
+</tr>
+<tr>
+<td><code>advertised_version</code></td>
+<td>string</td>
+<td>scan</td>
+<td>the version the store offers</td>
+</tr>
+<tr>
+<td><code>current_version</code></td>
+<td>string</td>
+<td>by hand, or an install manager</td>
+<td>the version of the local files</td>
+</tr>
+<tr>
+<td><code>advertised_size</code></td>
+<td>size (bytes)</td>
+<td>scan</td>
+<td>the download size the store states</td>
+</tr>
+<tr>
+<td><code>advertised_triangles</code></td>
+<td>range text</td>
+<td>scan</td>
+<td>the triangle count the store states, per format (<span class="slug-ref">[[assets#ranges]]</span>)</td>
+</tr>
+<tr>
+<td><code>advertised_texture_size</code></td>
+<td>range text</td>
+<td>scan</td>
+<td>the longest side of the largest texture the store states (<span class="slug-ref">[[assets#ranges]]</span>)</td>
+</tr>
+<tr>
+<td><code>triangles</code></td>
+<td>integer</td>
+<td>measured</td>
+<td>triangle count of the heaviest mesh at full detail</td>
+</tr>
+<tr>
+<td><code>texture_size</code></td>
+<td>integer</td>
+<td>measured</td>
+<td>longest side, in pixels, of its largest texture</td>
+</tr>
+<tr>
+<td><code>acquired</code></td>
+<td>UTC time, or a partial-precision date</td>
+<td>scan</td>
+<td>when the account got it, where the store says</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Reused from the core, not repeated in the table:</strong> <code>description</code>, <code>released</code> (the store's publication date),
+  <code>authors</code>, the tag lists, the screenshots, and the measured size pair (<span class="slug-ref">[[field-schema#duration-size]]</span>).</li>
+<li><strong>Taken from the set tutorials and reference images share:</strong> <code>rating</code>, <code>favorite</code>, <code>online</code> (<span class="slug-ref">[[assets#online-only]]</span>)
+  and <code>collections</code> (a store bundle is a collection). <code>complete</code>, <code>keep</code> and <code>learning_paths</code> are left out: they
+  describe content being studied, and an asset is not.</li>
+<li><strong><code>source_updated</code> is not <code>updated</code>.</strong> The core's <code>updated</code> is when the <em>record</em> was last edited
+  (<span class="slug-ref">[[field-schema#resource-types]]</span>); a store changing its item is a fact about the item.</li>
+<li><strong><code>advertised_size</code> exists here and nowhere else.</strong> <span class="slug-ref">[[field-schema#duration-size]]</span> has none because no site
+  publishes a tutorial's size. Stores do publish an asset's, and for a record with no files it is the only size there
+  is: it is what a download is planned with.</li>
+<li><strong>The version pair is the size pair's shape:</strong> what the store offers beside what is on disk. An item whose two
+  versions differ has an update waiting.</li>
+<li><strong>The advertised counts are what the store states, as text</strong> (<span class="slug-ref">[[assets#ranges]]</span>); the <strong>measured</strong> ones are
+  filled after a download, by hand until something measures them, and the scan never guesses them.
+  The measured fields are <code>triangles</code> and <code>texture_size</code>. <code>triangles</code> is the heaviest single mesh because a pack's total says nothing
+  about what one object costs to draw.</li>
+<li><strong><code>acquired</code> is never asked for.</strong> Where the store shows the date the scan records it; where it does not, the field
+  stays empty. Fab states it for every owned item (the entitlement's <code>createdAt</code>). It sorts the library, and beside
+  the date a license was read (<span class="slug-ref">[[assets#licenses]]</span>) it says how far the saved terms are from the day the item was got.</li>
+<li><strong><code>acquired</code> is a time where the store gives one</strong>, unlike <code>released</code>, the core's publication date: an ISO 8601 UTC
+  time with six fractional digits and a <code>Z</code> (Fab's <code>createdAt</code> to the microsecond: <code>2024-05-03T12:34:56.789123Z</code>),
+  a partial-precision date (<code>2024-05-03</code>) where the store gives only a day. Never a local offset, so its text sorts
+  in time order and the cache compares it as text; the library scan's cursor is the newest one
+  (<span class="slug-ref">[[acquisition-tooling#library-scan-job]]</span>).</li>
+<li><strong><code>formats</code> is a field, not tags</strong>, because it is the filter used most and the tag lists are the store's own
+  vocabulary. The cache gives it a link table of its own, as tags have.</li>
+<li><strong>What the store calls its categories goes into <code>advertised_tags</code> untouched</strong>, as every scraped tag does
+  (<span class="slug-ref">[[acquisition-tooling#scraper-protocols]]</span>).</li>
+<li><strong>What the scan makes from a store's field, rather than copies from its tag list, is a tag too, always prefixed
+  by what it is</strong>, because a store's own tags describe what is depicted and a bare word collides with them (a
+  <em>mature</em> wolf, a <em>windows</em> prop). As tags, two spellings of one label merge the way any tag does, where fields
+  would each need a merge of their own. The separator is <code>-</code>, never <code>:</code>, which the search line reads as a field
+  token. From Fab:</li>
+<li><code>rating-mature</code> where the listing is <code>isMature</code>;</li>
+<li><code>platform-&lt;name&gt;</code>, lower-cased, for each of an Unreal format's <code>targetPlatforms</code> (<code>platform-windows</code>,
+    <code>platform-mac</code>); none means any;</li>
+<li><code>ai-forbidden</code> where the listing is <code>isAiForbidden</code>, Fab's <em>NoAI</em> mark: no generative-AI datasets, development
+    or training under a Standard License, as the item was tagged when it was got. It does not bar using AI tools on
+    the file (<span class="slug-ref">[[appendices.assets#ai-tags]]</span>);</li>
+<li><code>ai-generated</code> where the listing is <code>isAiGenerated</code>, Fab's <em>CreatedWithAI</em> mark.</li>
+</ul>
+<p>The licenses an item is owned under are its <code>licenses</code>, never tags (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/705" title="GitHub Issue: borco/rehuco #705">#705</a>).
+- <strong>A delisted item</strong>, written without its listing, carries only the labels its library entry states: <code>rating-mature</code>
+  and <code>platform-&lt;name&gt;</code>. The AI marks are a listing's alone.
+- <strong>A rig and levels of detail are the user's tags</strong> (<code>extra_tags</code>). Fab states them per format and mostly leaves
+  them empty, so the scan writes nothing for them.
+- <strong>What an item needs or supplies is not here.</strong> No Fab listing states it; Daz3D's products do, and its design adds
+  <code>requires</code> / <code>provides</code> when it is made (<span class="slug-ref">[[assets#install]]</span>).</p>
+<h3 id="1911-a-count-the-store-states-as-a-range">§19.1.1 A count the store states as a range</h3>
+<p><span class="slug-ref">[[[assets#ranges]]]</span></p>
+<p>A store gives some figures as a band: Fab's triangle count of a format is <code>[12, 13)</code>, a texture's longest side
+<code>[1024, 2049)</code>. <code>advertised_triangles</code> and <code>advertised_texture_size</code> keep them as <strong>text a person reads at a
+glance and types by hand</strong>, inclusive at both ends: a value alone (<code>12</code>), a band (<code>1000-4999</code>), several values or
+bands apart as a comma list, ascending (<code>1024,2048</code>, <code>12,40-60</code>), written and read only by
+<code>rehuco_core.ValueRange</code>. A count the store states no range for, or one with nothing inside it, is left out.
+A text typed that is no range stays as it was typed: it never locks the document, and a search finds nothing in it.
+A value has at most 18 digits (<code>rehuco_core.value_range.MAX_DIGITS</code>); a longer one is no value, since the cache's integers could not
+hold it.</p>
+<p><strong>A search compares by the bounds</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/678" title="GitHub Issue: borco/rehuco #678">#678</a>): <code>advertised_triangles&lt;15</code> finds a record when <strong>any</strong> value of its range is
+below 15, so <code>14</code>, <code>12-13</code>, <code>1-14</code> and <code>10-20</code> all match; <code>&gt;15</code> finds one whose largest value is above it, and <code>&lt;=</code> and
+<code>&gt;=</code> read the same two ends. The word is the field's full name, an operator and a whole number, with no space, since
+the line splits on them; <code>triangles&lt;15</code> stays free text, the measured count not being a range. The cache keeps the two
+bounds of each field in columns of their own (schema v11), <code>NULL</code> where the text is no range, so the comparison is an
+integer one and a text that is no range is never found.</p>
+<h3 id="1912-kind">§19.1.2 <code>kind</code></h3>
+<p><span class="slug-ref">[[[assets#kind]]]</span></p>
+<p>One value from a closed list: <code>model</code>, <code>pack</code>, <code>character</code>, <code>animation</code>, <code>material</code>, <code>texture</code>, <code>decal</code>, <code>brush</code>,
+<code>hdri</code>, <code>audio</code>, <code>vfx</code>, <code>plugin</code>, <code>tool</code>, <code>template</code>, <code>unknown</code>.</p>
+<ul>
+<li>A <code>pack</code> is many models sold as one item: an environment, a kit, a prop set.</li>
+<li>A <code>decal</code> is a texture projected onto a surface: cracks, stains, road markings. A <code>brush</code> is a sculpting or painting
+  brush, or an alpha. Fab lists both as categories of their own.</li>
+<li>A missing <code>kind</code> reads as not known. The kind filter still finds such a record both as <code>unknown</code> and as an empty
+  kind, so the unsorted items are one filter away whichever way they came to be: <code>kind:unknown</code> finds an asset with
+  that kind or none, <code>kind:""</code> an asset with none, and both only among assets, a tutorial's kind being missing for good.
+  The other tokens an asset adds are <code>licenses:</code> and <code>formats:</code>, each matching one value whole as the other field
+  tokens do, case and accents ignored as a tag's are: <code>licenses:fab-standard</code> finds every asset holding that license
+  among its licenses.</li>
+<li>A MetaHuman is a <code>character</code>. A Blender add-on or an Unreal code plugin is a <code>plugin</code>; a standalone program is a
+  <code>tool</code>; a sample project is a <code>template</code>.</li>
+<li><strong><code>unknown</code> is a real value, not a missing one.</strong> A scan that cannot classify an item writes <code>unknown</code>, so the items
+  nobody has sorted are one filter away. It is the one field of the block that is never left empty.</li>
+<li>A site's scan maps the store's own listing type to a kind where the store states one, and writes <code>unknown</code>
+  otherwise. It does not infer a kind from a title.</li>
+</ul>
+<h3 id="1913-a-record-keeps-its-license-text">§19.1.3 A record keeps its license text</h3>
+<p><span class="slug-ref">[[[assets#licenses]]]</span></p>
+<p>The terms are what decides whether an item can ship, and they are the store's to change or to take down. So <strong>a
+record keeps the texts themselves, in a sidecar beside it</strong>: <code>&lt;stem&gt;.rehuterms</code>, one per record, never shared between
+records. <strong>An item is held under a list of licenses</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/705" title="GitHub Issue: borco/rehuco #705">#705</a>): an account can own one under several -- the Standard
+License and its <em>UEFN - Reference only</em> tier, say -- so the block's <code>licenses</code> names each, in the user's order, by its
+short id (what a library is filtered by) and, where the store states its terms, their <code>url</code>. Ids are unique in the list,
+so Fab's Personal and Professional tiers, which grant the same rights, are one <code>fab-standard</code>.</p>
+<ul>
+<li><strong>The file is JSON, one text per license id.</strong> Each id holds <code>title</code>, <code>url</code> (where the text was read), <code>read</code>, the
+  date it was read -- a store's terms change, and a saved text is only as good as its date -- and <code>text</code>, the terms as
+  Markdown <strong>as a list of their lines</strong>, so the file reads line by line and every line is kept exactly, trailing
+  spaces included; text with no <code>url</code> has no <code>url</code> key. It is written as a <code>.rehu</code> is (two-space indents, characters
+  as they are), read and written by <code>rehuco_core.license_terms</code>, an atomic write under the record's own lock, and a
+  file that cannot be read is refused, never taken for empty terms. JSON over YAML (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/705" title="GitHub Issue: borco/rehuco #705">#705</a>): a YAML block shows a text
+  better, but turns any line ending in a space into one escaped string, and its parser is ten to five hundred times
+  slower (0.5-25 ms against 0.05 ms for a 57 KB text), which Refresh License over a library of 20,000 feels; the
+  cache's scan never opens the file.</li>
+<li><strong>It is bookkeeping, not content.</strong> Named by its suffix alone, <code>&lt;stem&gt;.rehuterms</code> is left out of a record's content,
+  size and checksums as a screenshot and a <code>.rehuser</code> are, so a scan writing it or a refresh replacing it never makes a
+  checksum stale, and a move never refuses a record for it. The Files list shows it as the record's <em>license</em>.</li>
+<li><strong>It belongs to the record as its screenshots and its <code>.rehuser</code> do.</strong> A rename, a move and a delete carry it, and a
+  record moved by hand takes it along with the rest of its files. A root that is offline takes nothing from another
+  root's records, and a store that has gone leaves every text where it was.</li>
+<li><strong>The scan writes it with a new record</strong> (<span class="slug-ref">[[acquisition-tooling#library-scan-job]]</span>), reading each distinct license
+  once per run, keyed by the store's license <strong>path</strong> rather than by its <code>url</code>, which differs between labels of one
+  license and may be empty (below). The text is therefore the terms on the day of the scan, which for an item got years
+  earlier is not the day it was got; <code>acquired</code> beside <code>read</code> shows the gap, and nothing recovers the older text.</li>
+<li><strong>An item owned under several tiers holds every one</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/684" title="GitHub Issue: borco/rehuco #684">#684</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/705" title="GitHub Issue: borco/rehuco #705">#705</a>): each is an entry of <code>licenses</code> with its text,
+  broadest first -- Professional, Personal, <em>CC BY</em>, <em>UE Marketplace</em>, <em>UEFN - Reference only</em>, a tier no list names
+  coming after under its own group and slug, with no <code>url</code> -- and an id met twice is kept once, its text read from
+  the first tier of it. The tiers are the library entry's, never the public listing's, which offers all of them. A
+  Fab URL dropped on a record reads them from the account's own state of that listing, when the persona browser is
+  logged in to Fab, by the same rule (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/702" title="GitHub Issue: borco/rehuco #702">#702</a>); the text of each is not read by a drop.</li>
+<li><strong>What Fab gives</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/686" title="GitHub Issue: borco/rehuco #686">#686</a>): each owned item names its license(s) as a <code>group</code> (<code>name</code>, <code>slug</code>, <code>url</code>) and a <code>path</code>
+  (<code>license/standard/reference-plus-source</code>, <code>license/cc/cc-by</code>, <code>license/legacy/uem</code>). <strong>The <code>path</code> is the stable
+  identifier</strong> and the short id is derived from it; the label is not (<em>Creative Commons</em> and <em>Creative Commons
+  Attribution (CC BY 4.0)</em> are both <code>license/cc/cc-by</code>, and their URLs differ: a generic index page, and the license's
+  own page). <em>Standard License</em> links to <code>/eula</code>, whose full text is public JSON at <code>/i/eula/fab_eula</code>; the CC pages
+  read logged out; <em>UE Marketplace</em> has no URL, so its entry has an id and no text. An item may hold several
+  licenses (a Personal and a UEFN <em>reference only</em> tier; 241 of 4,250), and three delisted items hold none.</li>
+<li><strong>A file with no <code>url</code> is terms written for that item alone.</strong> It is typed in, and nothing ever refreshes it.</li>
+<li><strong>It is read and edited in a License subdock of its own</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/688" title="GitHub Issue: borco/rehuco #688">#688</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/705" title="GitHub Issue: borco/rehuco #705">#705</a>), as the description is, since the text can
+  be long; the Main Editor shows no license. An asset's document has it, hidden by default. <strong>At its top, a list of
+  the record's licenses</strong>, each its id and its <code>url</code>, growing with its rows and never scrolling; the first is selected
+  when the record is shown, and the one selected is kept while the record still holds it, under a new id too. Below
+  it, the selected license's terms <strong>rendered as Markdown</strong> under their title, with a line saying the day and the
+  address they were read from. <strong>F2</strong> or the dock's <em>Edit</em> action makes the list editable and swaps the rendered terms
+  for <strong>an editor</strong> of the text: the list shows an add and a delete button beside it and a grip at each row's left
+  that drags the row to another place, as the Roots view's do. <strong>The id is picked from a list</strong>: <em>Custom</em> first, then
+  the presets a scan writes, a preset another row holds shown but not to be picked. <strong>A preset is its <code>url</code> and its
+  text</strong>: picking one sets the row's <code>url</code> and reads its text in the background over plain HTTP, as <em>Refresh License</em>
+  does, the text landing when it arrives (none for <code>fab-ue-only</code>, which has no terms page; a text that cannot be read
+  is logged, and a refresh fills it in later). <strong>Picking <em>Custom</em> leaves that name in the cell, selected</strong>, to be typed over or kept as it
+  is, with no <code>url</code> or text of a preset's -- many records can hold a license so named, each with its own text; a custom license renamed keeps the <code>url</code> and text its user gave it. The <code>url</code> cell is
+  typed into. An id is never emptied or given twice. <strong>A row added stays while the dock edits</strong>, wherever the focus
+  goes, and is a license once it has an id; the rows still without one go when the editing stops or the record is
+  saved. Deleting a license takes its text out of the file. Reading, the list shows neither buttons nor grips and
+  takes no edit. A license with no text shows nothing but its row, the empty view saying so. The text's day, and its
+  <code>url</code> where it was read, are shown and never edited. Typing into a license with none makes terms written for that
+  item alone, titled by the license's id, with no <code>url</code> and today for the day; terms typed and emptied again before a
+  save are gone, and a saved text is never removed by
+  typing, only emptied. <strong>A double-click on the record's
+  <code>.rehuterms</code> row in the Files list shows the dock</strong> in its reading mode; for a type with no such dock, as in the
+  Roots view, the system's app opens the file. A file that cannot be read is named in the dock and left alone until it
+  is fixed, and a document that cannot be written shows the terms and cannot edit them.</li>
+<li><strong>The text is saved with the record, by its Save</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/688" title="GitHub Issue: borco/rehuco #688">#688</a>). In memory the terms ride the document's payload as a
+  per-user state does, under a reserved top-level key that no <code>.rehu</code> ever holds, so an edit makes the document dirty, a
+  Revert drops it, and the save's check, a save kept across a quit and the conflict dialog treat it as one of the
+  record's details. It is judged apart from the rest in one way: a save that finds its own text already in the file,
+  as after one cut short between the text and the record, is no conflict, and a document that holds none takes the
+  file's. The save writes the <code>.rehuterms</code> before the record, and only where its text differs. <strong>A writer
+  that read the record without the text -- progress, a Measure, a rename of a value -- leaves the file as it is</strong>, and a
+  file that cannot be read is never written over. A text changed on disk meanwhile is the record changed there: an open
+  document without edits reads it again, and one with edits is told, and the save shows the difference.</li>
+<li><strong>Nothing reads a license from the net when a record is opened.</strong> A saved text changes only through <em>Refresh
+  License</em>, on the browser dock's selection: each distinct <code>url</code> among the selected records' licenses is read once and
+  compared with what each record holds for that license.</li>
+<li><strong>A refresh never replaces a text unasked.</strong> A record with none gets one. Where the terms differ, the user is shown
+  the license, both dates and how many records hold the older text, and it is replaced only on a yes. The text an item
+  was got under may be the one that still applies to it, so it is not the tool's to overwrite.</li>
+<li><strong>How a refresh runs</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/688" title="GitHub Issue: borco/rehuco #688">#688</a>). It is a job on the task queue, off the GUI thread, unchained and not kept across a
+  quit.
+  Each record is read for its type, its licenses and its saved texts, and <strong>each license is settled on its own</strong>:
+  <strong>a text is compared as its Markdown without the blanks around it</strong>, never by its title or its day, and a write
+  changes that license's text alone. A text with no <code>url</code> is never touched, whatever its license's <code>url</code> says, and a
+  record that is not an asset, a license that states no address and one that states an address no reader knows are
+  left as they are. The texts Fab's listings point at are read over plain HTTP, with no login: the Standard License from its
+  public JSON and Creative Commons BY from its plain legal code (an address is matched to its reader whatever its case
+  or closing slash, since the record's is the license's page and not where its text is read from); a text is kept with
+  its lines ended in LF whatever the server sent. A store that does not answer costs the records of that license,
+  counted as such, and no other; a record that is unreadable, locked, on a share that does not answer or gone is
+  counted, logged and left as it was, and the rest go on. <strong>The question is a dialog that does not block the window</strong>: one row per license, each unchecked,
+  with how many records hold another text, the days those were read and the day the store's was; <em>Replace Checked</em>
+  enqueues a second job that replaces the checked licenses' texts <strong>only in a record that still holds the text that
+  was compared</strong>, and <em>Keep All</em> changes nothing. The row of the Tasks dock says what the run counted.</li>
+<li><strong>A restriction is a different license, never a note.</strong> Content a store limits to one engine gets an id of its own
+  (<code>fab-ue-only</code>; Fab's UEFN <em>reference only</em> tier, <code>fab-uefn-reference-only</code>) so the limit is a filter, not a
+  sentence in a description.</li>
+<li><strong><em>Copy paths as JSON</em> names the file</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/688" title="GitHub Issue: borco/rehuco #688">#688</a>). The list holds an object for every selected resource, its <code>path</code> and,
+  for an asset that has a <code>.rehuterms</code>, its <code>license</code>: the path of that file, so whatever reads the selection can read
+  the terms. Whether a record has one is a question for its disk, so it is asked off the GUI thread and the clipboard
+  is set once it answers; <em>Copy paths</em> stays immediate and plain.</li>
+</ul>
+<p>Why the text is kept, and when a license binds the buyer, is <span class="slug-ref">[[appendices.assets#acquisition]]</span>.</p>
+<p>A few thousand copies of two or three texts is the price, and it is paid on purpose: one shared copy per root, a
+cache, or a license record of its own each leave some record without its terms the day a root is offline, a file is
+moved by hand, or a store is gone.</p>
+<h3 id="1914-a-source-carries-the-stores-id">§19.1.4 A source carries the store's id</h3>
+<p><span class="slug-ref">[[[assets#site-id]]]</span></p>
+<p><code>sources[]</code> (<span class="slug-ref">[[field-schema#sources]]</span>) gains one optional key, <strong><code>site_id</code></strong>: the store's own identifier for the item,
+a listing id or a SKU. It is a core field because any type's source can have one, though only the library scan needs
+it.</p>
+<ul>
+<li><strong>It is the match key for a rescan.</strong> A store renames items and serves one item under several URLs; the id is the
+  one thing that stays.</li>
+<li><strong>It is a row of the source's card in the editor</strong>, under the publisher: read, corrected, typed in for a source a
+  scrape never filled, or emptied, which removes the key.</li>
+<li><strong>The cache indexes <code>(site, site_id)</code></strong>, where the site is the source's <code>publisher</code>, which a scraper fills with
+  its <code>site_name</code> (<span class="slug-ref">[[acquisition-tooling#scraper-registry]]</span>), compared ignoring case, so finding the record for a
+  listing is one lookup and never a walk. A source has no site key of its own: a publisher edited by hand stops the
+  match.</li>
+<li><strong>An item owned on two stores is one record with two sources</strong>, each with its own id, as a tutorial sold on two
+  platforms already is.</li>
+</ul>
+<h2 id="192-a-record-without-its-files">§19.2 A record without its files</h2>
+<p><span class="slug-ref">[[[assets#online-only]]]</span></p>
+<p><strong>Most asset records hold no content, and that needs no field.</strong> The measured <code>current_size</code> already says it: empty or
+zero means nothing is local, a value means the files are there. This is the reading <span class="slug-ref">[[field-schema#online-flag]]</span>
+already gives a tutorial kept as a <code>.rehu</code>, its screenshots and a URL, and it closes the <em>online-only and mixed
+local/online resources</em> question for this type.</p>
+<ul>
+<li><strong><code>online</code></strong> keeps its meaning: the item can still be had from its source. A rescan that no longer finds an item in
+  the account sets it false and changes nothing else; <strong>a scan never deletes a record</strong>.</li>
+<li><strong>Downloading is not this type's business.</strong> Files reach a record's place by whatever means the store offers; the
+  next size measurement finds them.</li>
+</ul>
+<h2 id="193-using-an-asset-and-installing-one">§19.3 Using an asset, and installing one</h2>
+<p><span class="slug-ref">[[[assets#install]]]</span></p>
+<p><strong>There is no install action for assets in general</strong>, because there is no one thing to do: a store's launcher adds its
+packs to a project, a Blender add-on installs through Blender, and a loose model goes through whatever import pipeline
+the project has. Unlike Daz3D (<span class="slug-ref">[[plugins#daz3d-plugin]]</span>), where installing is registering with one application, none
+of that is rehuco's to drive.</p>
+<ul>
+<li><strong>What the browser offers instead is <em>Open in Web Browser</em></strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/679" title="GitHub Issue: borco/rehuco #679">#679</a>) on the selected records, in the table's context
+  menu above <em>Refresh License</em> and the two copies: each record's primary source URL, opened in the user's everyday
+  browser, in the table's order and once however many records share it. From there the store's own page does the rest.
+  Only an <code>http</code> or <code>https</code> address naming a host counts, since a <code>.rehu</code> is outside input; a record with none adds nothing, and with
+  none selected that has one the entry is disabled. More than ten pages asks first, with Cancel the default.</li>
+<li><strong>A site may bring its own install manager later.</strong> Daz3D is the first, and the per-user, per-machine <code>installed</code>
+  field <span class="slug-ref">[[data-model]]</span> reserves for it belongs to that manager's block, as does <code>current_version</code> when a manager sets
+  it. A store that turns out to be worth the same treatment gets the same shape.</li>
+<li><strong>Daz3D is therefore <code>asset</code> plus a manager</strong>: its <code>sku</code> is a <code>site_id</code>, and the <code>requires</code>/<code>provides</code> its
+  products state are fields its design adds to this block. It is not a second type with a second set of columns.</li>
+</ul>
+<h2 id="194-what-adding-the-type-touches">§19.4 What adding the type touches</h2>
+<p><span class="slug-ref">[[[assets#new-type-touches]]]</span></p>
+<p>The first type added since the original three, so the places that enumerate types are listed once, here, for whoever
+adds the next.</p>
+<ul>
+<li><strong><code>rehuco-core</code>:</strong> the field tuples and <code>BUILTIN_PLUGINS</code> in <code>plugins/plugin_registry.py</code>, and the exports beside
+  it; <code>BLOCK_TARGETS</code> and a migrations subpackage once the block's shape first changes (<code>asset</code> has neither yet: a
+  block with no chain is version 0); the per-key value rules in <code>rehu_locks.py</code>, checked only where the type
+  declares the key; the typed getters on <code>rehu_document.py</code>; <code>TYPE_FIELD_COLUMNS</code> (with <code>COLUMN_FIELDS</code> for a column
+  named apart from its field, as <code>asset_kind</code> is), the column DDL and a schema step in <code>rehudb.py</code> and
+  <code>migrations/rehudb/</code>, with the formats link table; <code>rehudb_scan.py</code>, which fills them; <code>PLUGIN_PLACEHOLDERS</code> in
+  <code>location_pattern.py</code>; and, for a type with a sidecar of its own as this one has (<span class="slug-ref">[[assets#licenses]]</span>), whatever
+  enumerates a record's files.</li>
+<li><strong><code>rehuco-agent</code>:</strong> the field-to-widget map in <code>documents/document_fields.py</code>; <code>TYPE_DOCK_NAMES</code>; the browser's
+  columns and presets; the root layouts editor; the per-type settings pages and location templates; <code>type_label</code>;
+  <code>SCRAPED_FIELD_NAMES</code> and the scrape result schema. A type that adds filterable fields adds them to the filter line's
+  <code>CatalogField</code> and to the in-memory matcher (<code>catalog_snapshot.py</code>), which the contract test holds to the cache's.</li>
+<li><strong>Specs:</strong> the badge table in <span class="slug-ref">[[plugins#badge-colors]]</span> and the mapping table in <span class="slug-ref">[[field-schema#resource-types]]</span>.</li>
+</ul>
+<h2 id="195-deferral">§19.5 Deferral</h2>
+<p><span class="slug-ref">[[[assets#deferral]]]</span></p>
+<ul>
+<li><strong>Measuring</strong> <code>triangles</code> and <code>texture_size</code> from downloaded files. Until then they are typed in.</li>
+<li><strong>Install managers</strong>, Daz3D's included (<span class="slug-ref">[[assets#install]]</span>).</li>
+<li><strong>Licenses as something to browse.</strong> A branch of the Tag Browser (<span class="slug-ref">[[plugins#tag-browser]]</span>) listing the license ids
+  in use, and a document per license, wait until someone wants more than the filter.</li>
+<li><strong>Any store beyond the first.</strong> The wizard's protocol (<span class="slug-ref">[[acquisition-tooling#library-wizard]]</span>) is what a second one
+  is written against; none is designed here.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../reference-images/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Reference Images">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Reference Images
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../diagrams/" class="md-footer__link md-footer__link--next" aria-label="Next: Overview">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
